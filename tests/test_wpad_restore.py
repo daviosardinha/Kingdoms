@@ -11,19 +11,20 @@ class WpadRestoreSourceTests(unittest.TestCase):
 
     def test_restore_is_bounded_and_uses_exact_baseline_as_success_oracle(self):
         for token in (
-            'WPAD_RESTORE_ATTEMPTS:-3',
-            'WPAD_RENEW_TIMEOUT_SECONDS:-45',
+            'WPAD_RESTORE_ATTEMPTS:-2',
+            'WPAD_RESTORE_TIMEOUT_SECONDS:-60',
             'WPAD_VERIFY_TIMEOUT_SECONDS:-45',
-            'phase03-trigger-ws01-renew6.yml',
+            'phase03-wpad-restore-baseline.yml',
             'verify-wpad-reset.sh',
             'PHASE03_WPAD_RESTORE_COMPLETE=True',
-            'exact baseline verification remains authoritative',
+            'exact verification remains authoritative',
         ):
             self.assertIn(token, self.script)
 
-        self.assertIn('case "$renew_rc" in', self.script)
+        self.assertIn('case "$restore_rc" in', self.script)
         self.assertIn('124|137)', self.script)
         self.assertIn('if timeout --kill-after=5 "$VERIFY_TIMEOUT_SECONDS" bash "$VERIFY_SCRIPT"; then', self.script)
+        self.assertNotIn('phase03-trigger-ws01-renew6.yml', self.script)
 
     def test_restore_refuses_to_run_while_mitm6_is_active(self):
         self.assertIn("mitm6 is still active; stop the WPAD attack runtime before restoring WS01", self.script)
