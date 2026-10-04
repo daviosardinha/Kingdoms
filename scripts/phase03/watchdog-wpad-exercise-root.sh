@@ -10,8 +10,14 @@ LOCK="${5:?lock file required}"
 TOKEN="${6:?exercise token required}"
 BASELINE="$OWNER_HOME/.config/kingdoms/phase03-wpad-baseline.json"
 
-exec 9>"$LOCK"
-flock 9
+if ! exec 9>"$LOCK"; then
+  echo "FAIL: WPAD watchdog could not open lifecycle lock: $LOCK" >&2
+  exit 1
+fi
+if ! flock 9; then
+  echo "FAIL: WPAD watchdog could not acquire lifecycle lock: $LOCK" >&2
+  exit 1
+fi
 
 if [[ ! -f "$ACTIVE" ]]; then
   echo 'PASS: WPAD watchdog fired after normal completion; no active marker remains'
