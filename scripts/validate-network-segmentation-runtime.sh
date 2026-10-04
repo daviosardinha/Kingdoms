@@ -20,6 +20,15 @@ declare -A EXPECTED_NAME=(
     [GOAD-WS01]=WS01
 )
 
+declare -A INVENTORY_ALIAS=(
+    [GOAD-DC01]=dc01
+    [GOAD-DC02]=dc02
+    [GOAD-DC03]=dc03
+    [GOAD-SRV02]=srv02
+    [GOAD-SRV03]=srv03
+    [GOAD-WS01]=ws01
+)
+
 declare -A NAT_IP=()
 
 declare -i PASS_COUNT=0
@@ -76,17 +85,62 @@ router_cmd() {
     )
 }
 
-vagrant_ps() {
+provisioning_ps() {
     local vm="$1"
-    local script encoded
-    script="$(cat)"
-    encoded="$(printf '%s' "${script}" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+    local host="${INVENTORY_ALIAS[${vm}]:-}"
+    local ps_file play_file output rc
 
-    (
-        cd "${PROVIDER}"
-        timeout 240 vagrant winrm "${vm}" -c \
-            "powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}"
-    ) 2>&1 | tr -d '\r'
+    [[ -n "${host}" ]] || fatal "no Ansible inventory alias for ${vm}"
+    [[ -n "${ANSIBLE_PLAYBOOK:-}" ]] || fatal "Ansible runtime is not initialized"
+
+    ps_file="$(mktemp "${LOG_DIR}/provisioning-ps.XXXXXX.ps1")"
+    play_file="$(mktemp "${LOG_DIR}/provisioning-ps.XXXXXX.yml")"
+    cat > "${ps_file}"
+
+    python3 - "${host}" "${ps_file}" "${play_file}" <<'PY'
+from pathlib import Path
+import sys
+
+host = sys.argv[1]
+ps = Path(sys.argv[2]).read_text().splitlines()
+out = Path(sys.argv[3])
+indented = "\n".join("          " + line for line in ps)
+out.write_text(
+    f"""---
+- name: GOAD_NOMAD provisioning validation
+  hosts: {host}
+  gather_facts: false
+  tasks:
+    - name: Execute provisioning validation PowerShell
+      ansible.windows.win_powershell:
+        script: |
+{indented}
+      register: validation
+    - name: Show validation output
+      ansible.builtin.debug:
+        var: validation.output
+"""
+)
+PY
+
+    if output="$(
+        cd "${ROOT}/ansible"
+        ANSIBLE_CONFIG="${ANSIBLE_CFG}" \
+        timeout 600 "${ANSIBLE_PLAYBOOK}" \
+            -i "${INVENTORY_DATA}" \
+            -i "${INVENTORY_PROVIDER}" \
+            "${play_file}" 2>&1
+    )"; then
+        rc=0
+    else
+        rc=$?
+    fi
+
+    rm -f "${ps_file}" "${play_file}"
+    printf '%s\n' "${output}"
+
+    (( rc == 0 )) || return "${rc}"
+    ! grep -Eq 'failed=[1-9]|unreachable=[1-9]' <<<"${output}"
 }
 
 find_ansible_playbook() {
@@ -242,7 +296,7 @@ esac
 [[ -d "${PROVIDER}" ]] || fatal "GOAD_PROVIDER_DIR does not exist: ${PROVIDER}"
 [[ -d "${ROOT}/.git" ]] || fatal "run this validator from a Git clone"
 
-for cmd in git bash python3 vmrun vagrant ip nc timeout iconv base64 sudo; do
+for cmd in git bash python3 vmrun ip nc timeout iconv base64 sudo; do
     require_command "${cmd}"
 done
 
@@ -279,10 +333,10 @@ ip route show 10.4.20.0/24 | grep -Fq 'via 10.4.10.1' || fatal "SevenKingdoms pr
 ip route show 10.4.30.0/24 | grep -Fq 'via 10.4.10.1' || fatal "ESSOS provisioning route missing"
 pass "provisioning-only host routes"
 
-section "3. VAGRANT MANAGEMENT / NAT ADDRESS DISCOVERY"
+section "3. WINDOWS PROVISIONING NAT ADDRESS DISCOVERY"
 
 for vm in "${WINDOWS_VMS[@]}"; do
-    if ! out="$(vagrant_ps "${vm}" <<'PS'
+    if ! out="$(provisioning_ps "${vm}" <<'PS'
 $ErrorActionPreference = 'Stop'
 Write-Output "COMPUTERNAME=$env:COMPUTERNAME"
 
@@ -306,11 +360,11 @@ if (-not $ip) {
 Write-Output "NATIP=$ip"
 PS
 )"; then
-        fatal "${vm} Vagrant management query failed during NAT address discovery"
+        fatal "${vm} segmented provisioning query failed during NAT address discovery"
     fi
     printf '%s\n' "${out}" | tee "${LOG_DIR}/${vm}-management.log"
 
-    printf '%s\n' "${out}" | grep -Fq "COMPUTERNAME=${EXPECTED_NAME[$vm]}" || fatal "${vm} Vagrant management returned unexpected computer name"
+    printf '%s\n' "${out}" | grep -Fq "COMPUTERNAME=${EXPECTED_NAME[$vm]}" || fatal "${vm} segmented provisioning query returned unexpected computer name"
 
     nat="$(printf '%s\n' "${out}" | sed -n 's/.*NATIP=\([0-9.]*\).*/\1/p' | tail -n 1)"
     [[ -n "${nat}" ]] || fatal "could not discover NAT IP for ${vm}"
@@ -318,11 +372,11 @@ PS
 
     printf '%-12s %-15s %s\n' "${vm}" "${nat}" "${EXPECTED_NAME[$vm]}"
 done
-pass "all six Vagrant management paths"
+pass "all six Windows provisioning NAT paths"
 
 section "4. WS01 CLEAN FOUNDATION CONTRACT"
 
-out="$(vagrant_ps GOAD-WS01 <<'PS'
+out="$(provisioning_ps GOAD-WS01 <<'PS'
 $ErrorActionPreference = 'Stop'
 
 $computer = Get-CimInstance Win32_ComputerSystem
@@ -398,7 +452,7 @@ pass "trust/DNS source replay"
 
 section "6. POST-REPLAY DNS STATE"
 
-out="$(vagrant_ps GOAD-DC02 <<'PS'
+out="$(provisioning_ps GOAD-DC02 <<'PS'
 $ErrorActionPreference = 'Stop'
 
 if ((Get-WindowsFeature DNS).InstallState -ne 'Installed') { throw 'DNS Server role is not installed' }
@@ -436,7 +490,7 @@ printf '%s\n' "${out}" | tee "${LOG_DIR}/winterfell-dns.log"
 printf '%s\n' "${out}" | grep -Fq 'WINTERFELL_DNS=PASS' || fatal "Winterfell DNS validation failed"
 pass "Winterfell DNS hardening / forwarders"
 
-out="$(vagrant_ps GOAD-DC01 <<'PS'
+out="$(provisioning_ps GOAD-DC01 <<'PS'
 $ErrorActionPreference = 'Stop'
 $essos = Get-DnsServerZone -Name 'essos.local' -ErrorAction Stop
 if ($essos.ZoneType.ToString() -ne 'Forwarder') { throw "essos.local is not a forwarder on Kingslanding: $($essos.ZoneType)" }
@@ -451,7 +505,7 @@ pass "forest-replicated ESSOS forwarder"
 
 section "7. TRUST / BOT / LINKED-SQL HEALTH IN PROVISIONING MODE"
 
-out="$(vagrant_ps GOAD-DC02 <<'PS'
+out="$(provisioning_ps GOAD-DC02 <<'PS'
 $ErrorActionPreference = 'Stop'
 Import-Module ActiveDirectory
 $dc = nltest /dsgetdc:sevenkingdoms.local /force | Out-String
@@ -465,7 +519,7 @@ printf '%s\n' "${out}" | tee "${LOG_DIR}/parent-child-trust.log"
 printf '%s\n' "${out}" | grep -Fq 'PARENT_CHILD_TRUST=PASS' || fatal "parent/child trust validation failed"
 pass "parent/child trust"
 
-out="$(vagrant_ps GOAD-DC01 <<'PS'
+out="$(provisioning_ps GOAD-DC01 <<'PS'
 $ErrorActionPreference = 'Stop'
 Import-Module ActiveDirectory
 $dc = nltest /dsgetdc:essos.local /force | Out-String
@@ -488,7 +542,7 @@ pass "SevenKingdoms/ESSOS forest trust"
 # state, not a completed task failure. Wait for each short-lived bot to settle,
 # then require the completed Ready/0 contract. Always persist probe output so a
 # real task or WinRM failure remains diagnosable.
-if ! out="$(vagrant_ps GOAD-DC02 <<'PS'
+if ! out="$(provisioning_ps GOAD-DC02 <<'PS'
 $ErrorActionPreference = 'Stop'
 
 foreach ($name in 'ntlm_bot','responder_bot') {
@@ -556,7 +610,7 @@ bash "${ROOT}/scripts/validate-rdp-runtime.sh" --bot-mode "${RDP_BOT_MODE}" ||
     fatal "NORTH RDP/connect_bot contract failed in ${RDP_BOT_MODE} mode"
 pass "NORTH RDP/connect_bot ${RDP_BOT_MODE} contract"
 
-out="$(vagrant_ps GOAD-SRV02 <<'PS'
+out="$(provisioning_ps GOAD-SRV02 <<'PS'
 $ErrorActionPreference = 'Stop'
 $cs = 'Server=127.0.0.1,1433;User ID=sa;Password=Sup1_sa_P@ssw0rd!;Encrypt=False;TrustServerCertificate=True'
 $conn = New-Object System.Data.SqlClient.SqlConnection $cs
@@ -581,7 +635,7 @@ printf '%s\n' "${out}" | tee "${LOG_DIR}/sql-castelblack-braavos.log"
 printf '%s\n' "${out}" | grep -Fq 'CASTELBLACK_TO_BRAAVOS=PASS' || fatal "Castelblack -> Braavos linked SQL failed"
 pass "Castelblack -> Braavos linked SQL"
 
-out="$(vagrant_ps GOAD-SRV03 <<'PS'
+out="$(provisioning_ps GOAD-SRV03 <<'PS'
 $ErrorActionPreference = 'Stop'
 $cs = 'Server=127.0.0.1,1433;User ID=sa;Password=sa_P@ssw0rd!Ess0s;Encrypt=False;TrustServerCertificate=True'
 $conn = New-Object System.Data.SqlClient.SqlConnection $cs
