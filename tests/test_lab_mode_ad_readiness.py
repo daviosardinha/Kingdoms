@@ -328,6 +328,30 @@ class LabModeAdReadinessTests(unittest.TestCase):
         self.assertNotIn("Reset-ComputerMachinePassword", fn)
         self.assertNotIn("netsh", fn)
 
+    def test_provisioning_nat_powershell_subexpressions_are_bash_safe(self):
+        text = self.text
+        start = text.index("management_mac_for_vm()")
+        end = text.index("ensure_child_dc_time_ready()", start)
+        fn = text[start:end]
+
+        for token in (
+            r'ip=\$(\$addresses[0])',
+            r'gateway=\$(\$gateway[0])',
+            r'"\$(\$ipif.Dhcp)"',
+            r'alias=\$(\$adapter.Name)',
+            r'status=\$(\$adapter.Status)',
+        ):
+            self.assertIn(token, fn)
+
+        for forbidden in (
+            r'\$($addresses[0])',
+            r'\$($gateway[0])',
+            r'\$($ipif.Dhcp)',
+            r'\$($adapter.Name)',
+            r'\$($adapter.Status)',
+        ):
+            self.assertNotIn(forbidden, fn)
+
     def test_domain_preflight_uses_guestops_not_vagrant_forwarded_winrm(self):
         text = self.text
         fn = text[text.index("preflight_domain_health()"):
