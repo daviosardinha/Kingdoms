@@ -875,6 +875,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             'ready for hardened segmented start'
         )
         return True
+
     def install(self):
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
         if self.lab_name != 'GOAD':
