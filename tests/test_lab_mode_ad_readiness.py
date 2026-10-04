@@ -304,8 +304,9 @@ class LabModeAdReadinessTests(unittest.TestCase):
         end = text.index("ensure_child_dc_time_ready()", start)
         fn = text[start:end]
 
+        self.assertIn("readonly PROVISIONING_NAT_TIMEOUT_SECONDS=180", text)
+
         for token in (
-            "PROVISIONING_NAT_TIMEOUT_SECONDS=180",
             "ethernet0\\.(address|generatedAddress)",
             "Get-NetAdapter -IncludeHidden",
             "Get-NetIPInterface",
