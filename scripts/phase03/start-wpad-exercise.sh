@@ -6,7 +6,7 @@ ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
 STATE_DIR="$STATE_HOME/kingdoms"
 ACTIVE="${WPAD_ACTIVE_MARKER:-$STATE_DIR/phase03-wpad-active}"
-LOCK="${WPAD_LOCK_FILE:-/tmp/kingdoms-phase03-wpad.lock}"
+LOCK="${WPAD_LOCK_FILE:-$STATE_DIR/phase03-wpad.lock}"
 WATCHDOG_UNIT='kingdoms-phase03-wpad-watchdog'
 WATCHDOG_DELAY="${WPAD_WATCHDOG_DELAY:-15m}"
 TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
@@ -14,8 +14,14 @@ TOKEN="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 cd "$ROOT"
 install -d -m 700 "$STATE_DIR"
 
-exec 9>"$LOCK"
-flock 9
+if ! exec 9>"$LOCK"; then
+  echo "FAIL: could not open WPAD lifecycle lock: $LOCK" >&2
+  exit 1
+fi
+if ! flock 9; then
+  echo "FAIL: could not acquire WPAD lifecycle lock: $LOCK" >&2
+  exit 1
+fi
 
 bash scripts/phase03/assert-wpad-exercise-clean.sh
 
