@@ -6,7 +6,7 @@
     phase03_wpad_baseline_path: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-wpad-baseline.json"
     phase03_wpad_baseline: "{{ lookup('ansible.builtin.file', phase03_wpad_baseline_path) | from_json }}"
   tasks:
-    - name: Restore NORTH-facing IPv6 and DNS state from captured baseline
+    - name: Release malicious DHCPv6 state and restore baseline DNS on WS01
       ansible.windows.win_powershell:
         script: |
           $ErrorActionPreference = 'Stop'
@@ -20,63 +20,43 @@
               throw "WPAD baseline interface identity changed: expected $baselineAlias/$baselineIndex, got $($cfg.InterfaceAlias)/$($cfg.InterfaceIndex)"
           }
 
-          $baselineIPv6 = @(
-              '{{ phase03_wpad_baseline.IPv6Addresses | map(attribute='Address') | join('|||') }}'.Split('|||') |
-                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-                  ForEach-Object { ([string]$_) -replace '%\d+$','' } |
-                  Sort-Object -Unique
-          )
-
           $baselineDns = @(
               '{{ phase03_wpad_baseline.IPv6DnsServers | join('|||') }}'.Split('|||') |
                   Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
                   Sort-Object -Unique
           )
 
-          $currentIPv6 = @(
-              Get-NetIPAddress -InterfaceIndex $baselineIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
-                  ForEach-Object {
-                      [pscustomobject]@{
-                          Address = ([string]$_.IPAddress) -replace '%\d+$',''
-                          PrefixLength = [int]$_.PrefixLength
-                      }
-                  }
-          )
+          # mitm6 injects its address and DNS through DHCPv6. Releasing the
+          # DHCPv6 lease removes that attacker-owned state while leaving IPv4
+          # and the native link-local address untouched.
+          $release = Start-Process \
+              -FilePath "$env:SystemRoot\System32\ipconfig.exe" \
+              -ArgumentList @('/release6', $baselineAlias) \
+              -NoNewWindow \
+              -PassThru \
+              -Wait
 
-          $removed = @()
-          foreach ($entry in $currentIPv6) {
-              if ($baselineIPv6 -notcontains $entry.Address) {
-                  Remove-NetIPAddress                       -InterfaceIndex $baselineIndex                       -AddressFamily IPv6                       -IPAddress $entry.Address                       -Confirm:$false                       -ErrorAction Stop
-                  $removed += $entry.Address
-                  $Ansible.Changed = $true
-              }
+          Write-Output "PHASE03_WPAD_RESTORE_RELEASE6_RC=$($release.ExitCode)"
+          $Ansible.Changed = $true
+
+          # Restore DNS to the captured pre-attack state. An empty captured
+          # list means return the interface to automatic/default DNS.
+          if ($baselineDns.Count -eq 0) {
+              Set-DnsClientServerAddress \
+                  -InterfaceIndex $baselineIndex \
+                  -ResetServerAddresses \
+                  -ErrorAction Stop
           }
-
-          $currentDns = @(
-              Get-DnsClientServerAddress                   -InterfaceIndex $baselineIndex                   -AddressFamily IPv6                   -ErrorAction SilentlyContinue |
-                  ForEach-Object { $_.ServerAddresses } |
-                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-                  Sort-Object -Unique
-          )
-
-          $dnsDiff = @(Compare-Object -ReferenceObject $baselineDns -DifferenceObject $currentDns)
-          if ($dnsDiff.Count -ne 0) {
-              if ($baselineDns.Count -eq 0) {
-                  Set-DnsClientServerAddress                       -InterfaceIndex $baselineIndex                       -ResetServerAddresses                       -ErrorAction Stop
-              }
-              else {
-                  Set-DnsClientServerAddress                       -InterfaceIndex $baselineIndex                       -ServerAddresses $baselineDns                       -ErrorAction Stop
-              }
-              $Ansible.Changed = $true
+          else {
+              Set-DnsClientServerAddress \
+                  -InterfaceIndex $baselineIndex \
+                  -ServerAddresses $baselineDns \
+                  -ErrorAction Stop
           }
 
           Start-Sleep -Seconds 2
 
           Write-Output "PHASE03_WPAD_RESTORE_INTERFACE=$baselineAlias"
-          Write-Output "PHASE03_WPAD_RESTORE_REMOVED_IPV6_COUNT=$($removed.Count)"
-          foreach ($addr in $removed) {
-              Write-Output "PHASE03_WPAD_RESTORE_REMOVED_IPV6=$addr"
-          }
           Write-Output "PHASE03_WPAD_RESTORE_BASELINE_DNSV6_COUNT=$($baselineDns.Count)"
           Write-Output "PHASE03_WPAD_RESTORE_MUTATION_COMPLETE=True"
       register: restore
