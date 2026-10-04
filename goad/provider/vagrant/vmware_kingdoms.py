@@ -917,6 +917,144 @@ Write-Output ("KINGDOMS_NT5DS_BACKOFF_READY|changed={0}|reload={1}|minutes=1|max
         Log.error(f'GOAD Kingdoms: NT5DS backoff policy failed for {machine}: {detail}')
         return False
 
+    def _ensure_installed_child_dc_time(self, machine, host):
+        """Recover WINTERFELL time without changing trust or leaving manual peers.
+
+        Installed starts already prove KINGSLANDING first and expose the routed
+        management plane. If WINTERFELL is still on Local CMOS Clock, try the
+        normal AD hierarchy first, then bootstrap once from the known forest-root
+        PDC over NTP and restore DOMHIER before the validation-only AD gate runs.
+        """
+        if machine != 'GOAD-DC02':
+            return True
+
+        script = r"""
+$ErrorActionPreference = 'Stop'
+$expected = 'kingslanding.sevenkingdoms.local'
+
+function Current-TimeSource {
+    return ((& w32tm.exe /query /source 2>$null | Out-String).Trim().TrimEnd('.'))
+}
+
+$source = Current-TimeSource
+if ($source -ieq $expected) {
+    Write-Output "KINGDOMS_CHILD_DC_TIME_READY|mode=already_ready|source=$source"
+    exit 0
+}
+
+$parentAddress = @(
+    Resolve-DnsName -Name $expected -Server 127.0.0.1 -Type A -DnsOnly -ErrorAction Stop |
+        Where-Object { $_.IPAddress }
+)
+if ($parentAddress.Count -eq 0) {
+    throw "$expected did not resolve through WINTERFELL local DNS"
+}
+
+$strip = @(& w32tm.exe /stripchart /computer:$expected /samples:2 /dataonly 2>&1)
+if ($LASTEXITCODE -ne 0) {
+    throw "NTP path to $expected is not ready: $($strip -join ' ')"
+}
+
+$parametersPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters'
+$originalNtpProperty = Get-ItemProperty -Path $parametersPath -Name NtpServer -ErrorAction SilentlyContinue
+$hadOriginalNtpServer = ($null -ne $originalNtpProperty)
+$originalNtpServer = if ($hadOriginalNtpServer) { $originalNtpProperty.NtpServer } else { $null }
+
+function Restore-DomainHierarchy {
+    & w32tm.exe /config /syncfromflags:domhier /update | Out-Null
+    $restoreRc = $LASTEXITCODE
+    if ($hadOriginalNtpServer) {
+        Set-ItemProperty -Path $parametersPath -Name NtpServer -Value $originalNtpServer -ErrorAction SilentlyContinue
+    }
+    else {
+        Remove-ItemProperty -Path $parametersPath -Name NtpServer -ErrorAction SilentlyContinue
+    }
+    Restart-Service W32Time -Force -ErrorAction Stop
+    return $restoreRc
+}
+
+& w32tm.exe /config /syncfromflags:domhier /update | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "unable to select domain-hierarchy time"
+}
+Restart-Service W32Time -Force -ErrorAction Stop
+Start-Sleep -Seconds 2
+
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    & nltest.exe '/dsgetdc:sevenkingdoms.local' /timeserv /force | Out-Null
+    & w32tm.exe /resync /rediscover /nowait | Out-Null
+    Start-Sleep -Seconds 5
+    $source = Current-TimeSource
+    if ($source -ieq $expected) {
+        Write-Output "KINGDOMS_CHILD_DC_TIME_READY|mode=domhier|source=$source|attempt=$attempt"
+        exit 0
+    }
+}
+
+& w32tm.exe /config "/manualpeerlist:$expected,0x8" /syncfromflags:manual /update | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Restore-DomainHierarchy | Out-Null
+    throw "unable to configure temporary manual bootstrap peer"
+}
+Restart-Service W32Time -Force -ErrorAction Stop
+
+$manualSource = ''
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    & w32tm.exe /resync /nowait | Out-Null
+    Start-Sleep -Seconds 5
+    $manualSource = Current-TimeSource
+    if ($manualSource -ieq $expected) {
+        break
+    }
+}
+
+if ($manualSource -ine $expected) {
+    $restoreRc = Restore-DomainHierarchy
+    throw "manual bootstrap did not acquire $expected (source=$manualSource restore_rc=$restoreRc)"
+}
+
+$restoreRc = Restore-DomainHierarchy
+if ($restoreRc -ne 0) {
+    throw "manual bootstrap synchronized but DOMHIER restoration failed (rc=$restoreRc)"
+}
+Start-Sleep -Seconds 2
+
+for ($attempt = 1; $attempt -le 4; $attempt++) {
+    & nltest.exe '/dsgetdc:sevenkingdoms.local' /timeserv /force | Out-Null
+    & w32tm.exe /resync /rediscover /nowait | Out-Null
+    Start-Sleep -Seconds 5
+    $source = Current-TimeSource
+    if ($source -ieq $expected) {
+        Write-Output "KINGDOMS_CHILD_DC_TIME_READY|mode=manual_bootstrap_restored|source=$source|attempt=$attempt"
+        exit 0
+    }
+}
+
+throw "DOMHIER did not retain $expected after temporary bootstrap (source=$source)"
+"""
+
+        try:
+            result = self._lab_winrm_session(host).run_ps(script)
+        except Exception as exc:
+            Log.error(f'GOAD Kingdoms: child-DC time recovery failed for {machine}: {exc}')
+            return False
+
+        if (
+            result.status_code == 0
+            and b'KINGDOMS_CHILD_DC_TIME_READY' in result.std_out
+        ):
+            detail = result.std_out.decode(errors='replace').strip()
+            Log.success(f'GOAD Kingdoms: {machine} child-DC time ready ({detail})')
+            return True
+
+        detail = (
+            result.std_err.decode(errors='replace').strip()
+            or result.std_out.decode(errors='replace').strip()
+            or f'PowerShell status {result.status_code}'
+        )
+        Log.error(f'GOAD Kingdoms: child-DC time recovery failed for {machine}: {detail}')
+        return False
+
     def _wait_installed_ad_ready(self, machine, host, timeout=300):
         """Wait for the AD dependency contract required by a cold start.
 
@@ -1169,6 +1307,10 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
                 machine, host, timeout=min(300, remaining)
             ):
                 return False
+
+            if machine == 'GOAD-DC02':
+                if not self._ensure_installed_child_dc_time(machine, host):
+                    return False
 
             if machine in ('GOAD-SRV02', 'GOAD-SRV03', 'GOAD-WS01'):
                 if not self._ensure_installed_member_time_policy(machine, host):
