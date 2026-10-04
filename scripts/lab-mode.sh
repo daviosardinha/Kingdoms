@@ -2340,8 +2340,8 @@ enter_provisioning_mode() {
     #
     # Rebuild the Windows provisioning management plane first.
     #
-    echo "[*] Persisting and connecting Windows NAT adapters"
-    echo "    domain controllers first with AD readiness; members second"
+    echo "[*] Runtime-connecting Windows NAT adapters while preserving persistent isolation"
+    echo "    domain controllers first with NAT + AD readiness; members second"
 
     configure_windows_nat_provisioning
 
