@@ -991,27 +991,35 @@ POWERSHELL
     repair_script="$(cat <<POWERSHELL
 \$ErrorActionPreference = 'Continue'
 
-# Parent-domain discovery can lag local AD readiness after a cold boot.
-# Treat that as a transient prerequisite, not as a failed repair.
-\$parentDomainLocator = @(& nltest.exe '/dsgetdc:${parent_domain}' /force 2>&1 | ForEach-Object { "\$_" })
-\$parentDomainLocatorRc = \$LASTEXITCODE
-if (\$parentDomainLocatorRc -ne 0) {
-    \$detail = ((\$parentDomainLocator -join ' ') -replace '[|\r\n]', ' ').Trim()
-    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_domain_locator|rc=\$parentDomainLocatorRc|detail=\$detail"
+# Do not gate W32Time recovery on a generic nltest parent-domain lookup.
+# DsGetDcName can transiently return 1355 after lifecycle transitions even when
+# the routed parent path, DNS records and expected PDC are already healthy.
+# Prove the deterministic parent PDC through DNS instead, then prove NTP reachability.
+\$parentPdcQuery = '_ldap._tcp.pdc._msdcs.${parent_domain}'
+\$parentPdcRecords = @(
+    Resolve-DnsName `
+        -Name \$parentPdcQuery `
+        -Server 127.0.0.1 `
+        -Type SRV `
+        -ErrorAction SilentlyContinue |
+        Where-Object { \$_.Type -eq 'SRV' }
+)
+
+if (\$parentPdcRecords.Count -eq 0) {
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns|detail=no SRV answer for \$parentPdcQuery"
     exit 0
 }
 
-# Even after the parent domain is locatable, its TIMESERV advertisement may
-# need a little longer to converge. Keep waiting inside the existing bounded
-# readiness budget instead of turning that startup race into a fatal repair.
-\$parentLocator = @(& nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force 2>&1 | ForEach-Object { "\$_" })
-\$parentLocatorRc = \$LASTEXITCODE
-if (\$parentLocatorRc -ne 0) {
-    \$detail = ((\$parentLocator -join ' ') -replace '[|\r\n]', ' ').Trim()
-    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_timeserv_locator|rc=\$parentLocatorRc|detail=\$detail"
+\$parentPdcTargets = @(
+    \$parentPdcRecords |
+        ForEach-Object { "\$($_.NameTarget)".TrimEnd('.') }
+)
+
+if (-not (\$parentPdcTargets | Where-Object { \$_ -ieq '${parent_server}' })) {
+    \$detail = ((\$parentPdcTargets -join ',') -replace '[|\r\n]', ' ').Trim()
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns|detail=expected ${parent_server}; got \$detail"
     exit 0
 }
-
 # Prove UDP/123 reaches the expected forest-root PDC before changing W32Time.
 # A temporarily unavailable NTP path is also a prerequisite wait condition.
 \$strip = @(& w32tm.exe /stripchart /computer:${parent_server} /samples:2 /dataonly 2>&1 | ForEach-Object { "\$_" })
@@ -1051,8 +1059,9 @@ Start-Sleep -Seconds 2
 
 for (\$syncAttempt = 1; \$syncAttempt -le 12; \$syncAttempt++) {
     if (\$syncAttempt -eq 1 -or ((\$syncAttempt - 1) % 3) -eq 0) {
-        # Prime the parent-domain locator immediately before rediscovery. This
-        # avoids waiting for W32Time's default 15-minute peer-resolution backoff.
+        # Prime DC Locator best-effort immediately before rediscovery. A transient
+        # 1355 here is not a hard prerequisite: DNS already proved the expected
+        # forest-root PDC and stripchart proved the NTP path.
         & nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force | Out-Null
         & w32tm.exe /resync /rediscover /nowait | Out-Null
         \$lastResyncRc = \$LASTEXITCODE
