@@ -230,6 +230,7 @@ class InstalledWindows(unittest.TestCase):
         self.provider._vmx_path.side_effect = lambda name: f'/instance/{name}.vmx'
         self.provider._running_instance_vms.return_value = []
         self.provider._wait_lab_winrm_ready.return_value = True
+        self.provider._ensure_installed_child_dc_time.return_value = True
         self.provider._wait_installed_ad_ready.return_value = True
 
     def test_direct_power_is_serialized_by_ad_readiness(self):
@@ -368,6 +369,37 @@ class InstalledWindows(unittest.TestCase):
                     )
                 self.provider.command.run_vagrant.assert_not_called()
 
+    def test_child_dc_time_recovery_runs_after_winrm_before_ad_validation(self):
+        events = []
+
+        def winrm(machine, host, timeout):
+            events.append(('winrm', machine))
+            return True
+
+        def child_time(machine, host):
+            events.append(('child-time', machine))
+            return True
+
+        def ad_ready(machine, host, timeout):
+            events.append(('ad', machine))
+            return True
+
+        self.provider._wait_lab_winrm_ready.side_effect = winrm
+        self.provider._ensure_installed_child_dc_time.side_effect = child_time
+        self.provider._wait_installed_ad_ready.side_effect = ad_ready
+
+        self.assertTrue(self.method(self.provider, 'GOAD-DC02'))
+        self.assertEqual(
+            [event for event in events if event[1] == 'GOAD-DC02'],
+            [
+                ('winrm', 'GOAD-DC02'),
+                ('child-time', 'GOAD-DC02'),
+                ('ad', 'GOAD-DC02'),
+            ],
+        )
+        self.assertFalse(
+            any(event[0] == 'child-time' and event[1] == 'GOAD-DC01' for event in events)
+        )
     def test_installed_members_receive_time_policy_before_ad_readiness(self):
         self.provider.goad_nomad_windows = ['GOAD-DC01', 'GOAD-DC02', 'GOAD-SRV02']
         self.provider.management_hosts = {
@@ -442,6 +474,35 @@ class InstalledWindows(unittest.TestCase):
         self.provider._bring_up_router.assert_not_called()
         self.process.run.assert_not_called()
 
+    def test_installed_child_dc_time_recovery_is_bounded_and_restores_domhier(self):
+        text = (
+            ROOT / 'goad/provider/vagrant/vmware_kingdoms.py'
+        ).read_text(encoding='utf-8')
+        fn = text[
+            text.index('    def _ensure_installed_child_dc_time('):
+            text.index('    def _wait_installed_ad_ready(')
+        ]
+
+        for token in (
+            "Resolve-DnsName -Name $expected -Server 127.0.0.1 -Type A -DnsOnly",
+            "w32tm.exe /stripchart /computer:$expected",
+            'function Restore-DomainHierarchy',
+            '"/manualpeerlist:$expected,0x8"',
+            '/syncfromflags:manual /update',
+            '/syncfromflags:domhier /update',
+            'Remove-ItemProperty -Path $parametersPath -Name NtpServer',
+            'KINGDOMS_CHILD_DC_TIME_READY|mode=manual_bootstrap_restored',
+            'for ($attempt = 1; $attempt -le 3; $attempt++)',
+            'for ($attempt = 1; $attempt -le 4; $attempt++)',
+        ):
+            self.assertIn(token, fn)
+
+        for forbidden in (
+            'Reset-ComputerMachinePassword',
+            '/sc_reset:',
+            'netdom resetpwd',
+        ):
+            self.assertNotIn(forbidden, fn)
     def test_installed_ad_gate_is_validation_only(self):
         text = (
             ROOT / 'goad/provider/vagrant/vmware_kingdoms.py'
