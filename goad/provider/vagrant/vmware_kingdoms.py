@@ -742,6 +742,140 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         Log.success('GOAD Kingdoms: all instance VMs stopped and VMware state verified (no Vagrant NAT communicator)')
         return True
 
+    def _restore_exercise_nic_contract_offline(self):
+        """Reassert persistent exercise isolation while restored guests are off."""
+        running = self._running_instance_vms()
+        if running is None:
+            return False
+
+        active_windows = [
+            machine for machine in self.goad_nomad_windows if machine in running
+        ]
+        if active_windows:
+            Log.error(
+                'GOAD Kingdoms: refusing offline NIC normalization while Windows '
+                'guests are running: ' + ', '.join(active_windows)
+            )
+            return False
+
+        pattern = re.compile(
+            r'^\s*ethernet0\.startConnected\s*=.*$',
+            re.IGNORECASE | re.MULTILINE,
+        )
+
+        for machine in self.goad_nomad_windows:
+            vmx = self._vmx_path(machine)
+            if not vmx or not os.path.isfile(vmx):
+                Log.error(
+                    f'GOAD Kingdoms: restored VMX is missing for {machine}; '
+                    'cannot reassert exercise NIC isolation'
+                )
+                return False
+
+            with open(vmx, 'r', encoding='utf-8') as handle:
+                text = handle.read()
+
+            replacement = 'ethernet0.startConnected = "FALSE"'
+            if pattern.search(text):
+                text = pattern.sub(replacement, text)
+            else:
+                if text and not text.endswith('\n'):
+                    text += '\n'
+                text += replacement + '\n'
+
+            with open(vmx, 'w', encoding='utf-8') as handle:
+                handle.write(text)
+
+            with open(vmx, 'r', encoding='utf-8') as handle:
+                verify = handle.read()
+            if not re.search(
+                r'^\s*ethernet0\.startConnected\s*=\s*"FALSE"\s*$',
+                verify,
+                re.IGNORECASE | re.MULTILINE,
+            ):
+                Log.error(
+                    f'GOAD Kingdoms: failed to restore {machine} persistent '
+                    'management NIC isolation'
+                )
+                return False
+
+            Log.success(
+                f'GOAD Kingdoms: {machine} restored with '
+                'ethernet0.startConnected=FALSE'
+            )
+
+        return True
+
+    def reset(self):
+        """Restore the latest snapshot and normalize segmented exercise state.
+
+        Some VMware Workstation/Vagrant plugin builds start guests during
+        ``snapshot pop`` even when ``--no-start`` is supplied. The generated
+        Vagrantfile also intentionally carries ``ethernet0.startConnected=TRUE``
+        for provisioning compatibility, so an auto-start can overwrite a clean
+        exercise snapshot's persistent management-NIC state.
+
+        Treat ``--no-start`` as a preference, not a guarantee. If the provider
+        starts restored guests in recorded exercise mode, stop that restored
+        range locally, reassert ``ethernet0.startConnected=FALSE`` while every
+        Windows VM is powered off, and only then return control to GOAD's
+        existing hardened ``start()`` path.
+        """
+        if self.lab_name != 'GOAD':
+            return super().reset()
+
+        if not getattr(self, '_last_bounded_vagrant_reaped', True):
+            Log.error(
+                'GOAD Kingdoms: previous Vagrant cleanup is incomplete; '
+                'refusing snapshot restore'
+            )
+            return False
+
+        mode = self.get_runtime_mode()
+        Log.info(
+            'GOAD Kingdoms: restoring latest snapshot without auto-start; '
+            'segmented lifecycle will normalize restored state afterward'
+        )
+        if not self._run_vagrant_bounded(
+            ['snapshot', 'pop', '--no-delete', '--no-start'],
+            timeout=900,
+        ):
+            Log.error('GOAD Kingdoms: snapshot restore failed')
+            return False
+
+        running = self._running_instance_vms()
+        if running is None:
+            return False
+
+        if mode == 'exercise':
+            if running:
+                Log.warning(
+                    'GOAD Kingdoms: VMware provider auto-started restored guests '
+                    'despite --no-start; stopping them before exercise NIC '
+                    'normalization: ' + ', '.join(running)
+                )
+                if not self.stop():
+                    Log.error(
+                        'GOAD Kingdoms: could not stop auto-started restored guests; '
+                        'refusing to continue reset'
+                    )
+                    return False
+
+            if not self._restore_exercise_nic_contract_offline():
+                return False
+
+            Log.success(
+                'GOAD Kingdoms: snapshot restored and offline exercise NIC '
+                'contract reasserted; ready for hardened segmented start'
+            )
+            return True
+
+        Log.success(
+            f'GOAD Kingdoms: snapshot restored for recorded {mode} mode; '
+            'ready for hardened segmented start'
+        )
+        return True
+
     def install(self):
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
         if self.lab_name != 'GOAD':
