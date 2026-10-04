@@ -285,8 +285,48 @@ class VMwareShutdownGraceTests(unittest.TestCase):
         )
 
 
-class LiveProcessCleanupTests(unittest.TestCase):
-    def test_vm_monitor_in_inherited_group_survives_real_controller_cleanup(self):
+class KingdomsSnapshotResetTests(unittest.TestCase):
+    def setUp(self):
+        self.log = Mock()
+        cls = provider_class(dict(
+            psutil=Mock(),
+            os=os,
+            time=time,
+            subprocess=Mock(),
+            Log=self.log,
+        ))
+        self.provider = cls()
+        self.provider.lab_name = 'GOAD'
+        self.provider._last_bounded_vagrant_reaped = True
+        self.provider._run_vagrant_bounded = Mock(return_value=True)
+        self.provider._running_instance_vms = Mock(return_value=[])
+
+    def test_reset_restores_snapshot_without_starting_guests(self):
+        self.assertTrue(self.provider.reset())
+
+        self.provider._run_vagrant_bounded.assert_called_once_with(
+            ['snapshot', 'pop', '--no-delete', '--no-start'],
+            timeout=900,
+        )
+        self.provider._running_instance_vms.assert_called_once_with()
+
+    def test_reset_fails_if_vagrant_started_any_restored_guest(self):
+        self.provider._running_instance_vms.return_value = ['GOAD-DC01']
+
+        self.assertFalse(self.provider.reset())
+        self.log.error.assert_any_call(
+            'GOAD Kingdoms: snapshot restore violated --no-start; '
+            'restored guests are already running: GOAD-DC01'
+        )
+
+    def test_reset_does_not_claim_success_when_snapshot_restore_fails(self):
+        self.provider._run_vagrant_bounded.return_value = False
+
+        self.assertFalse(self.provider.reset())
+        self.provider._running_instance_vms.assert_not_called()
+
+
+class LiveProcessCleanupTests(unittest.TestCase):    def test_vm_monitor_in_inherited_group_survives_real_controller_cleanup(self):
         try:
             import psutil
         except ImportError:
