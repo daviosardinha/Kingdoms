@@ -9,6 +9,7 @@ readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
 readonly AD_REPAIR_TIMEOUT_SECONDS=90
+readonly PROVISIONING_NAT_TIMEOUT_SECONDS=180
 
 readonly DOMAIN_CONTROLLERS=(
     GOAD-DC01
@@ -945,6 +946,276 @@ last_marker_line() {
     printf '%s\n' "${marker}"
 }
 
+
+management_mac_for_vm() {
+    local vm="$1"
+    local vmx line value
+
+    vmx="$(vmx_for "${vm}")"
+
+    line="$(
+        grep -Eim1 '^[[:space:]]*ethernet0\.(address|generatedAddress)[[:space:]]*=' "${vmx}" ||
+            true
+    )"
+    [[ -n "${line}" ]] ||
+        fail "${vm}: VMware management MAC is missing from ${vmx}"
+
+    value="$(
+        sed -E 's/.*"([^"]+)".*/\1/' <<<"${line}" |
+            tr '[:upper:]' '[:lower:]'
+    )"
+
+    [[ "${value}" =~ ^([0-9a-f]{2}:){5}[0-9a-f]{2}$ ]] ||
+        fail "${vm}: invalid VMware management MAC: ${value}"
+
+    printf '%s\n' "${value}"
+}
+
+provisioning_nat_probe() {
+    local vm="$1"
+    local timeout_seconds="$2"
+    local expected_mac script
+
+    expected_mac="$(management_mac_for_vm "${vm}")"
+
+    script="$(cat <<POWERSHELL
+\$ErrorActionPreference = 'Continue'
+
+\$expectedMac = '${expected_mac}'.Replace(':','-').ToUpperInvariant()
+\$adapter = Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue |
+    Where-Object {
+        \$_.MacAddress -and
+        \$_.MacAddress.ToUpperInvariant() -eq \$expectedMac
+    } |
+    Select-Object -First 1
+
+if (-not \$adapter) {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=adapter_not_found|mac=\$expectedMac"
+    exit 0
+}
+
+\$ifIndex = [int]\$adapter.ifIndex
+\$ipif = Get-NetIPInterface -InterfaceIndex \$ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+\$dhcp = if (\$ipif) { "\$((\$ipif | Select-Object -First 1).Dhcp)" } else { '<none>' }
+
+\$addresses = @(
+    Get-NetIPAddress -InterfaceIndex \$ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+            \$_.IPAddress -ne '127.0.0.1' -and
+            \$_.IPAddress -notlike '169.254.*' -and
+            \$_.IPAddress -notmatch '^10\.4\.'
+        } |
+        Select-Object -ExpandProperty IPAddress -Unique
+)
+
+\$gateway = @(
+    Get-NetRoute -InterfaceIndex \$ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue |
+        Sort-Object RouteMetric |
+        Select-Object -First 1 -ExpandProperty NextHop
+)
+
+\$aliasSafe = (([string]\$adapter.Name -replace '[|\r\n]', ' ').Trim())
+\$statusSafe = (([string]\$adapter.Status -replace '[|\r\n]', ' ').Trim())
+
+if (\$adapter.Status -ne 'Up') {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=link|alias=\$aliasSafe|status=\$statusSafe|mac=\$expectedMac"
+    exit 0
+}
+
+if (\$dhcp -ne 'Enabled') {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=dhcp_disabled|alias=\$aliasSafe|dhcp=\$dhcp|mac=\$expectedMac"
+    exit 0
+}
+
+if (\$addresses.Count -eq 0) {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=address|alias=\$aliasSafe|status=\$statusSafe|dhcp=\$dhcp|mac=\$expectedMac"
+    exit 0
+}
+
+if (\$gateway.Count -eq 0 -or -not \$gateway[0] -or \$gateway[0] -eq '0.0.0.0') {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=gateway|alias=\$aliasSafe|ip=\$($addresses[0])|mac=\$expectedMac"
+    exit 0
+}
+
+Write-Output "KINGDOMS_PROVISIONING_NAT_READY|alias=\$aliasSafe|ip=\$($addresses[0])|gateway=\$($gateway[0])|mac=\$expectedMac"
+POWERSHELL
+)"
+
+    vmware_guest_powershell_capture "${vm}" "${script}" "${timeout_seconds}"
+}
+
+repair_provisioning_nat_guest() {
+    local vm="$1"
+    local timeout_seconds="$2"
+    local expected_mac script
+
+    expected_mac="$(management_mac_for_vm "${vm}")"
+
+    script="$(cat <<POWERSHELL
+\$ErrorActionPreference = 'Continue'
+
+\$expectedMac = '${expected_mac}'.Replace(':','-').ToUpperInvariant()
+\$adapter = Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue |
+    Where-Object {
+        \$_.MacAddress -and
+        \$_.MacAddress.ToUpperInvariant() -eq \$expectedMac
+    } |
+    Select-Object -First 1
+
+if (-not \$adapter) {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_FAILED|reason=adapter_not_found|mac=\$expectedMac"
+    exit 0
+}
+
+\$ifIndex = [int]\$adapter.ifIndex
+\$ipif = Get-NetIPInterface -InterfaceIndex \$ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+
+if (-not \$ipif -or "\$($ipif.Dhcp)" -ne 'Enabled') {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_FAILED|reason=dhcp_disabled|alias=\$($adapter.Name)|mac=\$expectedMac"
+    exit 0
+}
+
+try {
+    if (\$adapter.Status -ne 'Up') {
+        Disable-NetAdapter -InterfaceIndex \$ifIndex -Confirm:\$false -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        Enable-NetAdapter -InterfaceIndex \$ifIndex -Confirm:\$false -ErrorAction Stop
+        Start-Sleep -Seconds 2
+    }
+
+    \$adapter = Get-NetAdapter -InterfaceIndex \$ifIndex -ErrorAction Stop
+    if (\$adapter.Status -eq 'Up') {
+        \$cfg = Get-CimInstance Win32_NetworkAdapterConfiguration -ErrorAction SilentlyContinue |
+            Where-Object { [int]\$_.InterfaceIndex -eq \$ifIndex } |
+            Select-Object -First 1
+
+        if (\$cfg -and \$cfg.DHCPEnabled) {
+            \$renew = Invoke-CimMethod -InputObject \$cfg -MethodName RenewDHCPLease -ErrorAction SilentlyContinue
+            \$renewCode = if (\$renew) { \$renew.ReturnValue } else { '<none>' }
+            Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_EVIDENCE|stage=dhcp_renew|rc=\$renewCode"
+        }
+    }
+
+    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_ATTEMPTED|alias=\$($adapter.Name)|status=\$($adapter.Status)|mac=\$expectedMac"
+}
+catch {
+    \$detail = ((\$_.Exception.Message -replace '[|\r\n]', ' ').Trim())
+    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_FAILED|reason=adapter_bounce|detail=\$detail|mac=\$expectedMac"
+}
+POWERSHELL
+)"
+
+    vmware_guest_powershell_capture "${vm}" "${script}" "${timeout_seconds}"
+}
+
+wait_provisioning_nat_ready() {
+    local vm="$1"
+    local started="${SECONDS}"
+    local elapsed=0
+    local remaining="${PROVISIONING_NAT_TIMEOUT_SECONDS}"
+    local probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+    local output=""
+    local marker=""
+    local last_state="reason=guestops_transport"
+    local consecutive_not_ready=0
+    local repair_attempts=0
+    local next_report=20
+
+    while (( SECONDS - started < PROVISIONING_NAT_TIMEOUT_SECONDS )); do
+        elapsed=$((SECONDS - started))
+        remaining=$((PROVISIONING_NAT_TIMEOUT_SECONDS - elapsed))
+        probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+        (( remaining < probe_timeout )) && probe_timeout="${remaining}"
+        (( probe_timeout > 0 )) || break
+
+        output=""
+        marker=""
+
+        if output="$(provisioning_nat_probe "${vm}" "${probe_timeout}")"; then
+            marker="$(
+                last_marker_line "${output}" \
+                    'KINGDOMS_PROVISIONING_NAT_READY|' \
+                    'KINGDOMS_PROVISIONING_NAT_NOT_READY|'
+            )"
+        fi
+
+        if [[ "${marker}" == KINGDOMS_PROVISIONING_NAT_READY\|* ]]; then
+            echo "        [+] ${vm} provisioning NAT ready: ${marker}"
+            return 0
+        fi
+
+        if [[ "${marker}" == KINGDOMS_PROVISIONING_NAT_NOT_READY\|* ]]; then
+            last_state="${marker#KINGDOMS_PROVISIONING_NAT_NOT_READY|}"
+            consecutive_not_ready=$((consecutive_not_ready + 1))
+        else
+            last_state="reason=guestops_transport"
+            consecutive_not_ready=0
+        fi
+
+        if (( consecutive_not_ready >= 2 && repair_attempts < 2 )); then
+            repair_attempts=$((repair_attempts + 1))
+            echo "        [*] ${vm} provisioning NAT is not usable; bounded guest-side adapter repair ${repair_attempts}/2"
+            vmrun_named_device_action "${vm}" connect 3 1 || true
+
+            elapsed=$((SECONDS - started))
+            remaining=$((PROVISIONING_NAT_TIMEOUT_SECONDS - elapsed))
+            (( remaining > 0 )) || break
+            probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+            (( remaining < probe_timeout )) && probe_timeout="${remaining}"
+
+            output="$(repair_provisioning_nat_guest "${vm}" "${probe_timeout}" || true)"
+            [[ -z "${output}" ]] || printf '            %s\n' "${output}" | tail -20
+            consecutive_not_ready=0
+        fi
+
+        elapsed=$((SECONDS - started))
+        remaining=$((PROVISIONING_NAT_TIMEOUT_SECONDS - elapsed))
+        (( remaining < 0 )) && remaining=0
+        if (( elapsed >= next_report )); then
+            echo "        [*] waiting for ${vm} provisioning NAT (${elapsed}s elapsed, ${remaining}s remaining); ${last_state}"
+            next_report=$((next_report + 20))
+        fi
+
+        (( remaining > 0 )) || break
+        if (( remaining < AD_READINESS_RETRY_DELAY_SECONDS )); then
+            sleep "${remaining}"
+        else
+            sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
+        fi
+    done
+
+    fail "${vm} provisioning NAT did not become usable within ${PROVISIONING_NAT_TIMEOUT_SECONDS}s; ${last_state}; repair_attempts=${repair_attempts}"
+}
+
+guestops_provisioning_nat_check() (
+    local vm="${1:-GOAD-DC02}"
+    local vmx output marker
+
+    vmx="$(vmx_for "${vm}")"
+    [[ "$(get_start_connected "${vmx}")" == "TRUE" ]] ||
+        fail "${vm}: provisioning NAT check requires persistent NAT to be TRUE"
+    is_running "${vmx}" ||
+        fail "${vm}: provisioning NAT sheck requires the VM to be running"
+
+    output="$(provisioning_nat_probe "${vm}" "${AD_READINESS_PROBE_TIMEOUT_SECONDS}")" || {
+        printf '%s\n' "${output}" >&2
+        fail "${vm}: provisioning NAT GuestOps probe failed"
+    }
+    printf '%s\n' "${output}"
+
+    marker="$(
+        last_marker_line "${output}" \
+            'KINGDOMS_PROVISIONING_NAT_READY|' \
+            'KINGDOMS_PROVISIONING_NAT_NOT_READY|'
+    )"
+
+    [[ "${marker}" == KINGDOMS_PROVISIONING_NAT_READY\|* ]] ||
+        fail "${vm}: provisioning NAT is not ready: ${marker:-no marker}"
+
+    echo "[+] ${vm} provisioning NAT sheck passed"
+)
+
 ensure_child_dc_time_ready() {
     local vm="$1"
     local domain="${DC_DOMAIN[${vm}]}"
@@ -1693,19 +1964,18 @@ POWERSHELL
 preflight_domain_health() {
     local vm
 
-    echo "[*] Proving AD identity health before isolation restarts"
+    echo "[*] Proving AD identity health before isolation restarts through VMware Guest Operations"
 
     for vm in "${DOMAIN_CONTROLLERS[@]}"; do
-        wait_domain_controller_ready "${vm}"
+        READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"
     done
 
     for vm in "${DOMAIN_MEMBERS[@]}"; do
-        wait_domain_member_ready "${vm}"
+        READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"
     done
 
     echo "[+] AD identity preflight passed"
 }
-
 preflight_exercise_time_dependencies() {
     local vm
 
@@ -1722,19 +1992,23 @@ preflight_exercise_time_dependencies() {
 configure_windows_nat_provisioning() {
     local vm
 
-    # DCs must be fully advertising before any dependent member is rebooted.
-    # Merely seeing the VM process or WinRM is not enough for Netlogon.
+    # Provisioning has two independent contracts:
+    #   1. ethernet0 must provide a real DHCP-backed VMware NAT path;
+    #   2. Windows/AD identity must be healthy.
+    # The segmented Ansible inventory does not use Vagrant forwarded WinRM.
+    # Prove NAT from inside the guest and prove AD through Guest Operations.
     for vm in "${DOMAIN_CONTROLLERS[@]}"; do
         ensure_vm_nat_state "${vm}" TRUE connect
-        wait_domain_controller_ready "${vm}"
+        wait_provisioning_nat_ready "${vm}"
+        READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"
     done
 
     for vm in "${DOMAIN_MEMBERS[@]}"; do
         ensure_vm_nat_state "${vm}" TRUE connect
-        wait_domain_member_ready "${vm}"
+        wait_provisioning_nat_ready "${vm}"
+        READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"
     done
 }
-
 prove_isolated_guest_ready() (
     local vm="$1"
     local kind="$2"
