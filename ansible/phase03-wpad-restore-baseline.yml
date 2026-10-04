@@ -39,19 +39,65 @@
           Write-Output "PHASE03_WPAD_RESTORE_RELEASE6_RC=$($release.ExitCode)"
           $Ansible.Changed = $true
 
-          # Restore DNS to the captured pre-attack state. An empty captured
-          # list means return the interface to automatic/default DNS.
+          # Restore only IPv6 DNS. Do not use Set-DnsClientServerAddress
+          # -ResetServerAddresses here because that is broader than the WPAD
+          # rollback contract and may also affect IPv4 DNS on the interface.
           if ($baselineDns.Count -eq 0) {
-              Set-DnsClientServerAddress \
-                  -InterfaceIndex $baselineIndex \
-                  -ResetServerAddresses \
-                  -ErrorAction Stop
+              $dnsReset = Start-Process \
+                  -FilePath "$env:SystemRoot\\System32\\netsh.exe" \
+                  -ArgumentList @(
+                      'interface','ipv6','set','dnsservers',
+                      "name=$baselineAlias",
+                      'source=dhcp'
+                  ) \
+                  -NoNewWindow \
+                  -PassThru \
+                  -Wait
+
+              if ($dnsReset.ExitCode -ne 0) {
+                  throw "IPv6 DNS reset failed with rc=$($dnsReset.ExitCode)"
+              }
+
+              Write-Output "PHASE03_WPAD_RESTORE_DNSV6_MODE=dhcp"
           }
           else {
-              Set-DnsClientServerAddress \
-                  -InterfaceIndex $baselineIndex \
-                  -ServerAddresses $baselineDns \
-                  -ErrorAction Stop
+              $first = $baselineDns[0]
+              $dnsSet = Start-Process \
+                  -FilePath "$env:SystemRoot\\System32\\netsh.exe" \
+                  -ArgumentList @(
+                      'interface','ipv6','set','dnsservers',
+                      "name=$baselineAlias",
+                      "address=$first",
+                      'validate=no'
+                  ) \
+                  -NoNewWindow \
+                  -PassThru \
+                  -Wait
+
+              if ($dnsSet.ExitCode -ne 0) {
+                  throw "IPv6 DNS baseline set failed with rc=$($dnsSet.ExitCode)"
+              }
+
+              for ($i = 1; $i -lt $baselineDns.Count; $i++) {
+                  $dnsAdd = Start-Process \
+                      -FilePath "$env:SystemRoot\\System32\\netsh.exe" \
+                      -ArgumentList @(
+                          'interface','ipv6','add','dnsservers',
+                          "name=$baselineAlias",
+                          "address=$($baselineDns[$i])",
+                          "index=$($i + 1)",
+                          'validate=no'
+                      ) \
+                      -NoNewWindow \
+                      -PassThru \
+                      -Wait
+
+                  if ($dnsAdd.ExitCode -ne 0) {
+                      throw "IPv6 DNS baseline add failed with rc=$($dnsAdd.ExitCode)"
+                  }
+              }
+
+              Write-Output "PHASE03_WPAD_RESTORE_DNSV6_MODE=static"
           }
 
           Start-Sleep -Seconds 2
