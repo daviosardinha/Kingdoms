@@ -474,6 +474,30 @@ for token in (
 if 'vagrant winrm' in nat:
     raise SystemExit('provisioning NAT health regressed to Vagrant/WinRM transport')
 
+for token in (
+    r'ip=\$(\$addresses[0])',
+    r'gateway=\$(\$gateway[0])',
+    r'"\$(\$ipif.Dhcp)"',
+    r'alias=\$(\$adapter.Name)',
+    r'status=\$(\$adapter.Status)',
+):
+    if token not in nat:
+        raise SystemExit(
+            f'provisioning NAT PowerShell subexpression is not Bash-safe: {token}'
+        )
+
+for forbidden in (
+    r'\$($addresses[0])',
+    r'\$($gateway[0])',
+    r'\$($ipif.Dhcp)',
+    r'\$($adapter.Name)',
+    r'\$($adapter.Status)',
+):
+    if forbidden in nat:
+        raise SystemExit(
+            f'provisioning NAT PowerShell contains Bash-expandable variable: {forbidden}'
+        )
+
 runtime = Path('scripts/validate-network-segmentation-runtime.sh').read_text()
 for token in (
     'declare -A INVENTORY_ALIAS=',
