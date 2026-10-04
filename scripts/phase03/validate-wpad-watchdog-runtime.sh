@@ -164,6 +164,11 @@ sudo journalctl -u "$WATCHDOG_UNIT.service" --since "$SINCE" --no-pager |
 grep -Fq 'PHASE03_WPAD_WATCHDOG_ROLLBACK_COMPLETE=True' "$LOG_DIR/watchdog-journal.log" ||
   fail 'watchdog journal does not contain the successful rollback marker'
 
+if grep -Eqi 'Permission denied|Bad file descriptor|could not (open|acquire).*lifecycle lock' "$LOG_DIR/watchdog-journal.log"; then
+  fail 'watchdog completed cleanup but lifecycle locking was not valid'
+fi
+echo 'PASS: watchdog acquired and used the lifecycle lock without descriptor/permission errors'
+
 echo
 echo '===== PROVE POST-WATCHDOG NEUTRAL STATE ====='
 bash scripts/phase03/assert-wpad-exercise-clean.sh |
