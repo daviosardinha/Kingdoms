@@ -427,6 +427,71 @@ pass "exercise readiness uses VMware Guest Operations without runtime NAT hot-pl
 python3 - <<'PY'
 from pathlib import Path
 
+lab = Path('scripts/lab-mode.sh').read_text()
+prov_start = lab.index('configure_windows_nat_provisioning() {')
+prov_end = lab.index('prove_isolated_guest_ready() (', prov_start)
+prov = lab[prov_start:prov_end]
+
+for token in (
+    'wait_provisioning_nat_ready "${vm}"',
+    'READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"',
+    'READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"',
+):
+    if token not in prov:
+        raise SystemExit(f'installed provisioning readiness split missing: {token}')
+
+for forbidden in (
+    'READINESS_TRANSPORT=vagrant',
+    'vagrant_powershell_capture',
+):
+    if forbidden in prov:
+        raise SystemExit(f'installed provisioning regressed to Vagrant AD transport: {forbidden}')
+
+nat_start = lab.index('management_mac_for_vm() {')
+nat_end = lab.index('ensure_child_dc_time_ready() {', nat_start)
+nat = lab[nat_start:nat_end]
+for token in (
+    'PROVISIONING_NAT_TIMEOUT_SECONDS=180',
+    'ethernet0\\.(address|generatedAddress)',
+    'Get-NetAdapter -IncludeHidden',
+    'Get-NetIPInterface',
+    'Get-NetIPAddress',
+    'Get-NetRoute',
+    'KINGDOMS_PROVISIONING_NAT_READY|',
+    'KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=link',
+    'KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=address',
+    'KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=gateway',
+    'repair_attempts < 2',
+    'Disable-NetAdapter',
+    'Enable-NetAdapter',
+    'RenewDHCPLease',
+):
+    if token not in nat:
+        raise SystemExit(f'provisioning NAT health contract missing: {token}')
+
+if 'vagrant winrm' in nat:
+    raise SystemExit('provisioning NAT health regressed to Vagrant/WinRM transport')
+
+runtime = Path('scripts/validate-network-segmentation-runtime.sh').read_text()
+for token in (
+    'declare -A INVENTORY_ALIAS=',
+    'provisioning_ps() {',
+    'ANSIBLE_CONFIG="${ANSIBLE_CFG}"',
+    '-i "${INVENTORY_DATA}"',
+    '-i "${INVENTORY_PROVIDER}"',
+    'section "3. WINDOWS PROVISIONING NAT ADDRESS DISCOVERY"',
+):
+    if token not in runtime:
+        raise SystemExit(f'runtime validator segmented control path missing: {token}')
+
+if 'vagrant_ps() {' in runtime:
+    raise SystemExit('runtime validator regressed to Vagrant forwarded WinRM helper')
+PY
+pass "installed provisioning separates NAT health from AD readiness"
+
+python3 - <<'PY'
+from pathlib import Path
+
 text = Path('goad/provider/vagrant/vmware_kingdoms.py').read_text()
 start = text.index('    def _ensure_installed_child_dc_time(')
 end = text.index('    def _wait_installed_ad_ready(', start)
