@@ -433,6 +433,7 @@ prov_end = lab.index('prove_isolated_guest_ready() (', prov_start)
 prov = lab[prov_start:prov_end]
 
 for token in (
+    'ensure_vm_nat_state "${vm}" FALSE connect',
     'wait_provisioning_nat_ready "${vm}"',
     'READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"',
     'READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"',
@@ -441,6 +442,7 @@ for token in (
         raise SystemExit(f'installed provisioning readiness split missing: {token}')
 
 for forbidden in (
+    'ensure_vm_nat_state "${vm}" TRUE connect',
     'READINESS_TRANSPORT=vagrant',
     'vagrant_powershell_capture',
 ):
@@ -513,6 +515,19 @@ for token in (
 if 'vagrant_ps() {' in runtime:
     raise SystemExit('runtime validator regressed to Vagrant forwarded WinRM helper')
 PY
+mode_start = lab.index('enter_provisioning_mode() {')
+mode_end = lab.index('main() {', mode_start)
+mode = lab[mode_start:mode_end]
+for token in (
+    'verify_persistent_state FALSE',
+    'Windows NAT adapters: persistent OFF + runtime connected',
+):
+    if token not in mode:
+        raise SystemExit(f'installed provisioning persistent fail-closed contract missing: {token}')
+if 'verify_persistent_state TRUE' in mode:
+    raise SystemExit('installed provisioning must not persist management NAT across power cycles')
+
+pass_message = None
 pass "installed provisioning separates NAT health from AD readiness"
 
 python3 - <<'PY'
