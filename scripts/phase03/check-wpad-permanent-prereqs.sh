@@ -8,6 +8,7 @@ WS01_IP="${WS01_IP:-10.4.10.31}"
 DC_IP="${DC_IP:-10.4.10.11}"
 BASELINE="${BASELINE:-$HOME/.config/kingdoms/phase03-wpad-baseline.json}"
 PLAYBOOK="$ROOT/ansible/phase03-wpad-baseline.yml"
+BASELINE_GUARD="$ROOT/scripts/phase03/validate-wpad-baseline.py"
 DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
 PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
 
@@ -83,14 +84,39 @@ echo
 echo '===== CAPTURE EXACT WS01 BASELINE ====='
 ANSIBLE_PLAYBOOK="$(find_ansible_playbook || true)"
 [[ -n "$ANSIBLE_PLAYBOOK" ]] || { echo "FAIL: ansible-playbook not found" >&2; exit 1; }
+[[ -x "$BASELINE_GUARD" || -f "$BASELINE_GUARD" ]] || { echo "FAIL: WPAD baseline guard missing: $BASELINE_GUARD" >&2; exit 1; }
 
+BASELINE_DIR="$(dirname "$BASELINE")"
+mkdir -p "$BASELINE_DIR"
+chmod 700 "$BASELINE_DIR"
+
+CANDIDATE="$(mktemp "$BASELINE_DIR/phase03-wpad-baseline.candidate.XXXXXX.json")"
+chmod 600 "$CANDIDATE"
+
+cleanup_candidate() {
+  rm -f "$CANDIDATE"
+}
+trap cleanup_candidate EXIT
+
+PHASE03_WPAD_BASELINE_DEST="$CANDIDATE" \
 ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg" "$ANSIBLE_PLAYBOOK" \
   -i "$DATA_INVENTORY" \
   -i "$PROVIDER_INVENTORY" \
   "$PLAYBOOK"
 
-[[ -f "$BASELINE" ]] || { echo "FAIL: WPAD baseline missing: $BASELINE" >&2; exit 1; }
-[[ "$(stat -Lc '%a' "$BASELINE")" == "600" ]] || { echo "FAIL: WPAD baseline must be mode 600" >&2; exit 1; }
+[[ -f "$CANDIDATE" ]] || { echo "FAIL: WPAD baseline candidate missing: $CANDIDATE" >&2; exit 1; }
+[[ "$(stat -Lc '%a' "$CANDIDATE")" == "600" ]] || { echo "FAIL: WPAD baseline candidate must be mode 600" >&2; exit 1; }
+
+echo
+echo '===== VALIDATE BASELINE CANDIDATE ====='
+python3 "$BASELINE_GUARD" \
+  "$CANDIDATE" \
+  --target-ip "$WS01_IP" \
+  --attacker-v6 "$ATTACKER_V6"
+
+mv -f "$CANDIDATE" "$BASELINE"
+chmod 600 "$BASELINE"
+trap - EXIT
 
 python3 - "$BASELINE" <<'PY'
 import json,sys
@@ -107,7 +133,6 @@ for item in d['IPv6DnsServers']:
     print('BASELINE_DNSV6=' + item)
 print('PHASE03_WPAD_BASELINE_VALID=True')
 PY
-
 echo
 echo '===== FINAL REPOSITORY STATE ====='
 git status --short --branch
