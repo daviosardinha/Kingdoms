@@ -31,11 +31,12 @@ class WpadRestoreSourceTests(unittest.TestCase):
         for token in (
             "phase03_wpad_baseline.InterfaceAlias",
             "phase03_wpad_baseline.InterfaceIndex",
-            "phase03_wpad_baseline.IPv6Addresses",
             "phase03_wpad_baseline.IPv6DnsServers",
-            "Remove-NetIPAddress",
+            "ipconfig.exe",
+            "'/release6'",
             "Set-DnsClientServerAddress",
             "-ResetServerAddresses",
+            "PHASE03_WPAD_RESTORE_RELEASE6_RC=",
             "PHASE03_WPAD_RESTORE_MUTATION_COMPLETE=True",
         ):
             self.assertIn(token, self.playbook)
@@ -47,6 +48,7 @@ class WpadRestoreSourceTests(unittest.TestCase):
             "Enable-NetAdapter",
             "Set-NetIPAddress",
             "New-NetIPAddress",
+            "Remove-NetIPAddress",
             "Remove-NetRoute",
             "New-NetRoute",
             "vmrun",
