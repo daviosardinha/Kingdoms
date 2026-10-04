@@ -1196,7 +1196,7 @@ guestops_provisioning_nat_check() (
     [[ "$(get_start_connected "${vmx}")" == "TRUE" ]] ||
         fail "${vm}: provisioning NAT check requires persistent NAT to be TRUE"
     is_running "${vmx}" ||
-        fail "${vm}: provisioning NAT sheck requires the VM to be running"
+        fail "${vm}: provisioning NAT check requires the VM to be running"
 
     output="$(provisioning_nat_probe "${vm}" "${AD_READINESS_PROBE_TIMEOUT_SECONDS}")" || {
         printf '%s\n' "${output}" >&2
@@ -1213,7 +1213,7 @@ guestops_provisioning_nat_check() (
     [[ "${marker}" == KINGDOMS_PROVISIONING_NAT_READY\|* ]] ||
         fail "${vm}: provisioning NAT is not ready: ${marker:-no marker}"
 
-    echo "[+] ${vm} provisioning NAT sheck passed"
+    echo "[+] ${vm} provisioning NAT check passed"
 )
 
 ensure_child_dc_time_ready() {
