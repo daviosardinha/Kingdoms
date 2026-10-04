@@ -151,7 +151,7 @@ class LabModeAdReadinessTests(unittest.TestCase):
         self.assertLess(first_pin, persist)
 
         powered_off = ensure.index(
-            'VM is powered off; starting it for provisioning readiness'
+            'VM is powered off; starting it for runtime management readiness'
         )
         second_pin = ensure.index(
             'pin_vmware_management_nic_identity "${vmx}"',
