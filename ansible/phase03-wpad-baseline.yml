@@ -2,6 +2,12 @@
 - name: Capture exact WS01 IPv6 and DNS baseline for Phase 03 WPAD
   hosts: ws01
   gather_facts: false
+  vars:
+    phase03_wpad_baseline_dest: >-
+      {{
+        lookup('env','PHASE03_WPAD_BASELINE_DEST')
+        | default(lookup('env','HOME') + '/.config/kingdoms/phase03-wpad-baseline.json', true)
+      }}
   tasks:
     - name: Capture NORTH-facing adapter IPv6 and DNS state
       ansible.windows.win_powershell:
@@ -64,7 +70,7 @@
 
     - name: Save exact WPAD baseline locally
       ansible.builtin.copy:
-        dest: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-wpad-baseline.json"
+        dest: "{{ phase03_wpad_baseline_dest }}"
         content: "{{ wpad_baseline.result | to_nice_json }}\n"
         mode: '0600'
       delegate_to: localhost
@@ -77,5 +83,5 @@
           - "PHASE03_WPAD_BASELINE_INTERFACE_INDEX={{ wpad_baseline.result.InterfaceIndex }}"
           - "PHASE03_WPAD_BASELINE_IPV6_COUNT={{ wpad_baseline.result.IPv6Addresses | length }}"
           - "PHASE03_WPAD_BASELINE_DNSV6_COUNT={{ wpad_baseline.result.IPv6DnsServers | length }}"
-          - "PHASE03_WPAD_BASELINE_FILE={{ lookup('env','HOME') }}/.config/kingdoms/phase03-wpad-baseline.json"
+          - "PHASE03_WPAD_BASELINE_FILE={{ phase03_wpad_baseline_dest }}"
       changed_when: false
