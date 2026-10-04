@@ -15,7 +15,7 @@ class LabModeAdReadinessTests(unittest.TestCase):
     def setUp(self):
         self.text = LAB_MODE.read_text(encoding="utf-8")
 
-    def test_provisioning_restarts_dcs_before_members_and_waits_for_identity(self):
+    def test_provisioning_orders_dcs_before_members_and_waits_for_identity(self):
         text = self.text
 
         self.assertIn("configure_windows_nat_provisioning()", text)
@@ -72,31 +72,42 @@ class LabModeAdReadinessTests(unittest.TestCase):
         )
         self.assertLess(readiness, final_proof)
 
-    def test_provisioning_powers_on_cleanly_stopped_guests_before_readiness(self):
+    def test_installed_provisioning_is_runtime_connected_but_persistently_fail_closed(self):
         text = self.text
         ensure = text[text.index("ensure_vm_nat_state()"):
                       text.index("vagrant_powershell_ready()")]
 
         self.assertIn(
-            '[[ "${desired}" == "TRUE" && "${action}" == "connect" ]]',
+            '[[ "${action}" == "connect" ]]',
             ensure,
         )
-        self.assertIn("VM is powered off; starting it for provisioning readiness", ensure)
+        self.assertIn("VM is powered off; starting it for runtime management readiness", ensure)
         self.assertIn('vmrun -T ws start "${vmx}" nogui', ensure)
         self.assertIn('wait_started "${vmx}"', ensure)
-        self.assertIn("did not start for provisioning readiness", ensure)
+        self.assertIn("did not start for runtime management readiness", ensure)
         self.assertIn("runtime connect requested while VM is powered off", ensure)
 
         provisioning = text[text.index("configure_windows_nat_provisioning()"):
                             text.index("prove_isolated_guest_ready()")]
+        self.assertEqual(
+            provisioning.count('ensure_vm_nat_state "${vm}" FALSE connect'),
+            2,
+        )
+        self.assertNotIn('ensure_vm_nat_state "${vm}" TRUE connect', provisioning)
+        self.assertIn("persistently fail-closed", provisioning)
         self.assertLess(
-            provisioning.index('ensure_vm_nat_state "${vm}" TRUE connect'),
+            provisioning.index('ensure_vm_nat_state "${vm}" FALSE connect'),
             provisioning.index('wait_domain_controller_ready "${vm}"'),
         )
         self.assertLess(
-            provisioning.rindex('ensure_vm_nat_state "${vm}" TRUE connect'),
+            provisioning.rindex('ensure_vm_nat_state "${vm}" FALSE connect'),
             provisioning.index('wait_domain_member_ready "${vm}"'),
         )
+
+        mode = text[text.index("enter_provisioning_mode()"):text.index("main()")]
+        self.assertIn("verify_persistent_state FALSE", mode)
+        self.assertIn("persistent OFF + runtime connected", mode)
+        self.assertNotIn("verify_persistent_state TRUE", mode)
 
     def test_vmware_management_nic_is_pinned_before_direct_lifecycle_power_on(self):
         text = self.text
@@ -289,6 +300,8 @@ class LabModeAdReadinessTests(unittest.TestCase):
                   text.index("prove_isolated_guest_ready()")]
 
         self.assertEqual(fn.count('wait_provisioning_nat_ready "${vm}"'), 2)
+        self.assertEqual(fn.count('ensure_vm_nat_state "${vm}" FALSE connect'), 2)
+        self.assertNotIn('ensure_vm_nat_state "${vm}" TRUE connect', fn)
         self.assertIn('READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"', fn)
         self.assertIn('READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"', fn)
         self.assertNotIn('READINESS_TRANSPORT=vagrant', fn)
