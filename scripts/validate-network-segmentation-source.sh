@@ -447,11 +447,13 @@ for forbidden in (
     if forbidden in prov:
         raise SystemExit(f'installed provisioning regressed to Vagrant AD transport: {forbidden}')
 
+if 'readonly PROVISIONING_NAT_TIMEOUT_SECONDS=180' not in lab:
+    raise SystemExit('provisioning NAT timeout contract is missing')
+
 nat_start = lab.index('management_mac_for_vm() {')
 nat_end = lab.index('ensure_child_dc_time_ready() {', nat_start)
 nat = lab[nat_start:nat_end]
 for token in (
-    'PROVISIONING_NAT_TIMEOUT_SECONDS=180',
     'ethernet0\\.(address|generatedAddress)',
     'Get-NetAdapter -IncludeHidden',
     'Get-NetIPInterface',
