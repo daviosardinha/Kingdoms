@@ -742,6 +742,58 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         Log.success('GOAD Kingdoms: all instance VMs stopped and VMware state verified (no Vagrant NAT communicator)')
         return True
 
+    def reset(self):
+        """Restore the latest pushed snapshot without Vagrant restarting guests.
+
+        The generic Vagrant reset path uses ``snapshot pop --no-delete`` and then
+        GOAD calls ``start()``. Without ``--no-start``, Vagrant powers restored
+        guests on immediately and reapplies its normal NAT/communicator network
+        state before the Kingdoms segmented lifecycle regains control. That can
+        turn a clean exercise snapshot's management NIC back on and make the
+        subsequent exercise-mode restoration fail its own isolation invariant.
+
+        Keep the snapshot restore and guest start as two separate operations:
+        restore every VM while powered off, verify that Vagrant honored that
+        contract, then let the existing hardened ``start()`` path power the
+        installed range on in AD dependency order without Vagrant NAT discovery.
+        """
+        if self.lab_name != 'GOAD':
+            return super().reset()
+
+        if not getattr(self, '_last_bounded_vagrant_reaped', True):
+            Log.error(
+                'GOAD Kingdoms: previous Vagrant cleanup is incomplete; '
+                'refusing snapshot restore'
+            )
+            return False
+
+        Log.info(
+            'GOAD Kingdoms: restoring latest snapshot without auto-start; '
+            'segmented lifecycle will start the restored range afterward'
+        )
+        if not self._run_vagrant_bounded(
+            ['snapshot', 'pop', '--no-delete', '--no-start'],
+            timeout=900,
+        ):
+            Log.error('GOAD Kingdoms: snapshot restore failed')
+            return False
+
+        running = self._running_instance_vms()
+        if running is None:
+            return False
+        if running:
+            Log.error(
+                'GOAD Kingdoms: snapshot restore violated --no-start; '
+                'restored guests are already running: ' + ', '.join(running)
+            )
+            return False
+
+        Log.success(
+            'GOAD Kingdoms: snapshot restored with all guests powered off; '
+            'ready for hardened segmented start'
+        )
+        return True
+
     def install(self):
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
         if self.lab_name != 'GOAD':
