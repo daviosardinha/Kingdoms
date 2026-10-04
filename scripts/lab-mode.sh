@@ -997,11 +997,7 @@ POWERSHELL
 # Prove the deterministic parent PDC through DNS instead, then prove NTP reachability.
 \$parentPdcQuery = '_ldap._tcp.pdc._msdcs.${parent_domain}'
 \$parentPdcRecords = @(
-    Resolve-DnsName `
-        -Name \$parentPdcQuery `
-        -Server 127.0.0.1 `
-        -Type SRV `
-        -ErrorAction SilentlyContinue |
+    Resolve-DnsName -Name \$parentPdcQuery -Server 127.0.0.1 -Type SRV -ErrorAction SilentlyContinue |
         Where-Object { \$_.Type -eq 'SRV' }
 )
 
