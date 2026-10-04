@@ -564,8 +564,8 @@ last_marker_line "$output" \
             '/syncfromflags:domhier /update',
             'originalNtpProperty',
             'hadOriginalNtpServer',
-            'Set-ItemProperty -Path $parametersPath -Name NtpServer',
-            'Remove-ItemProperty -Path $parametersPath -Name NtpServer',
+            'Set-ItemProperty -Path \\$parametersPath -Name NtpServer',
+            'Remove-ItemProperty -Path \\$parametersPath -Name NtpServer',
             'mode=manual_bootstrap_restored',
             'domhier_restored=true',
         ):
