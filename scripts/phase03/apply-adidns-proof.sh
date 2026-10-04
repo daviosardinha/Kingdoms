@@ -19,6 +19,8 @@ UPDATE_FILE="$WORK/nsupdate-add.txt"
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== ADIDNS CONTROLLED MUTATION PREFLIGHT ====='
 
 [[ -f "$BASELINE" ]] || { echo "FAIL: baseline missing: $BASELINE" >&2; exit 1; }

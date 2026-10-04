@@ -19,6 +19,8 @@ find_ansible_playbook() {
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== SHADOW CREDENTIALS READ-ONLY PREFLIGHT ====='
 echo 'Target: WS01$'
 echo

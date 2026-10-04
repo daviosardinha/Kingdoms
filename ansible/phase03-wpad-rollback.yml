@@ -1,0 +1,168 @@
+---
+- name: Restore WS01 WPAD IPv6 and DNS state without reboot
+  hosts: ws01
+  gather_facts: false
+  vars:
+    phase03_wpad_baseline_path: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-wpad-baseline.json"
+    phase03_wpad_baseline: "{{ lookup('ansible.builtin.file', phase03_wpad_baseline_path) | from_json }}"
+  tasks:
+    - name: Remove only Phase 03 DHCPv6 state that differs from baseline
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+
+          $baseline = @'
+          {{ phase03_wpad_baseline | to_json }}
+          '@ | ConvertFrom-Json
+
+          if ([string]$baseline.Target -ne 'WS01' -or [string]$baseline.IPv4 -ne '10.4.10.31') {
+              throw 'WPAD baseline does not describe the expected WS01 target'
+          }
+
+          $baselineAlias = [string]$baseline.InterfaceAlias
+          $baselineIndex = [int]$baseline.InterfaceIndex
+
+          $cfg = Get-NetIPConfiguration |
+              Where-Object {
+                  $_.IPv4Address -and
+                  $_.IPv4Address.IPAddress -eq '10.4.10.31'
+              } |
+              Select-Object -First 1
+
+          if ($null -eq $cfg) {
+              throw 'Could not locate the WS01 NORTH-facing adapter carrying 10.4.10.31'
+          }
+
+          if ([int]$cfg.InterfaceIndex -ne $baselineIndex) {
+              throw "WS01 interface index changed from baseline $baselineIndex to $($cfg.InterfaceIndex)"
+          }
+
+          if ([string]$cfg.InterfaceAlias -ne $baselineAlias) {
+              throw "WS01 interface alias changed from baseline '$baselineAlias' to '$($cfg.InterfaceAlias)'"
+          }
+
+          $baselineIPv6 = @(
+              $baseline.IPv6Addresses |
+                  ForEach-Object { ([string]$_.Address) -replace '%\d+$','' } |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                  Sort-Object -Unique
+          )
+
+          $baselineDns = @(
+              $baseline.IPv6DnsServers |
+                  ForEach-Object { [string]$_ } |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                  Sort-Object -Unique
+          )
+
+          # The frozen NORTH baseline has no IPv6 DNS servers. Refuse to guess
+          # how an unexpected pre-existing IPv6 DNS configuration was sourced.
+          if ($baselineDns.Count -ne 0) {
+              throw 'Unexpected non-empty IPv6 DNS baseline. Refusing automatic rollback rather than overwriting pre-existing DNS state.'
+          }
+
+          function Get-CurrentIPv6 {
+              @(
+                  Get-NetIPAddress -InterfaceIndex $baselineIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+                      Sort-Object IPAddress
+              )
+          }
+
+          function Get-CurrentDns6 {
+              @(
+                  Get-DnsClientServerAddress -InterfaceIndex $baselineIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+                      ForEach-Object { $_.ServerAddresses } |
+                      Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                      ForEach-Object { [string]$_ } |
+                      Sort-Object -Unique
+              )
+          }
+
+          $beforeIPv6 = @(Get-CurrentIPv6)
+          $beforeIPv6Normalized = @(
+              $beforeIPv6 |
+                  ForEach-Object { ([string]$_.IPAddress) -replace '%\d+$','' } |
+                  Sort-Object -Unique
+          )
+          $beforeDns = @(Get-CurrentDns6)
+
+          $ipv6AlreadyMatches = (@(Compare-Object -ReferenceObject $baselineIPv6 -DifferenceObject $beforeIPv6Normalized).Count -eq 0)
+          $dnsAlreadyMatches = (@(Compare-Object -ReferenceObject $baselineDns -DifferenceObject $beforeDns).Count -eq 0)
+
+          Write-Output "PHASE03_WPAD_ROLLBACK_INTERFACE=$baselineAlias"
+          Write-Output "PHASE03_WPAD_ROLLBACK_ALREADY_IPV6_MATCH=$ipv6AlreadyMatches"
+          Write-Output "PHASE03_WPAD_ROLLBACK_ALREADY_DNSV6_MATCH=$dnsAlreadyMatches"
+
+          if (-not $ipv6AlreadyMatches -or -not $dnsAlreadyMatches) {
+              # mitm6 must already be stopped by the wrapper. Releasing DHCPv6
+              # here removes the lease-backed DNS information it supplied.
+              $releaseOutput = & ipconfig.exe /release6 "$baselineAlias" 2>&1
+              $releaseCode = $LASTEXITCODE
+              Write-Output "PHASE03_WPAD_RELEASE6_EXIT=$releaseCode"
+              $releaseOutput | ForEach-Object { Write-Output "PHASE03_WPAD_RELEASE6=$_"} 
+              Start-Sleep -Seconds 2
+
+              # Remove only non-baseline IPv6 addresses that are explicitly
+              # DHCP-originated. Never remove static or otherwise unexplained
+              # addresses automatically.
+              $afterRelease = @(Get-CurrentIPv6)
+              foreach ($entry in $afterRelease) {
+                  $normalized = ([string]$entry.IPAddress) -replace '%\d+$',''
+                  if ($baselineIPv6 -contains $normalized) {
+                      continue
+                  }
+
+                  $isDhcp = ([string]$entry.PrefixOrigin -eq 'Dhcp' -or [string]$entry.SuffixOrigin -eq 'Dhcp')
+                  if (-not $isDhcp) {
+                      throw "Unexpected non-baseline IPv6 address $normalized is not DHCP-originated. Refusing to remove it automatically."
+                  }
+
+                  Remove-NetIPAddress                       -InterfaceIndex $baselineIndex                       -AddressFamily IPv6                       -IPAddress ([string]$entry.IPAddress)                       -Confirm:$false                       -ErrorAction Stop
+                  $Ansible.Changed = $true
+                  Write-Output "PHASE03_WPAD_REMOVED_DHCPV6=$normalized"
+              }
+
+              # Restore IPv6 DNS to DHCP ownership only. This netsh context is
+              # IPv6-specific and therefore does not alter the existing IPv4
+              # DNS configuration on the NORTH adapter.
+              $currentDns = @(Get-CurrentDns6)
+              if ($currentDns.Count -ne 0) {
+                  $netshOutput = & netsh.exe interface ipv6 set dnsservers "name=$baselineAlias" source=dhcp 2>&1
+                  $netshCode = $LASTEXITCODE
+                  $netshOutput | ForEach-Object { Write-Output "PHASE03_WPAD_NETSH=$_"} 
+                  if ($netshCode -ne 0) {
+                      throw "Failed to reset IPv6 DNS ownership to DHCP. netsh exit code: $netshCode"
+                  }
+                  $Ansible.Changed = $true
+              }
+
+              Clear-DnsClientCache
+              Write-Output 'PHASE03_WPAD_DNS_CACHE_FLUSHED=True'
+              Start-Sleep -Seconds 2
+          }
+
+          $finalIPv6 = @(
+              Get-CurrentIPv6 |
+                  ForEach-Object { ([string]$_.IPAddress) -replace '%\d+$','' } |
+                  Sort-Object -Unique
+          )
+          $finalDns = @(Get-CurrentDns6)
+
+          $ipv6Match = (@(Compare-Object -ReferenceObject $baselineIPv6 -DifferenceObject $finalIPv6).Count -eq 0)
+          $dnsMatch = (@(Compare-Object -ReferenceObject $baselineDns -DifferenceObject $finalDns).Count -eq 0)
+
+          Write-Output "PHASE03_WPAD_ROLLBACK_IPV6_MATCH=$ipv6Match"
+          Write-Output "PHASE03_WPAD_ROLLBACK_DNSV6_MATCH=$dnsMatch"
+
+          if (-not $ipv6Match -or -not $dnsMatch) {
+              throw 'WS01 IPv6/DNS state still differs from the captured WPAD baseline after scoped rollback'
+          }
+
+          Write-Output 'PHASE03_WPAD_ROLLBACK_COMPLETE=True'
+      register: wpad_rollback
+
+    - name: Emit WPAD rollback markers
+      ansible.builtin.debug:
+        msg: "{{ wpad_rollback.output | default([]) }}"
+      changed_when: false

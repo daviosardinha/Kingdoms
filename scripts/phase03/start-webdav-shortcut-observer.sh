@@ -3,6 +3,10 @@
 # It records HTTP requests only and does not request or capture authentication.
 set -euo pipefail
 
+ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
+
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 WORK="${WORK:-$HOME/.config/kingdoms/phase03-webdav}"
 BIND="${BIND:-10.4.10.254}"
 PORT="${PORT:-80}"

@@ -19,6 +19,8 @@ UPDATE_FILE="$WORK/nsupdate-add.txt"
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 [[ -f "$BASELINE" ]] || { echo "FAIL: baseline missing: $BASELINE" >&2; exit 1; }
 python3 - "$BASELINE" <<'PY'
 import json,sys

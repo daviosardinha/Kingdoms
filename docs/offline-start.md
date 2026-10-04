@@ -40,10 +40,14 @@ without silently recreating or reprovisioning the router. Fresh instances with
 no recorded mode still use Vagrant provisioning and need locally available
 boxes plus package access for installation.
 
-The SSH helper uses the instance's Vagrant private key, or Vagrant's initial
-key if key insertion has not occurred. It pins the first management SSH host
-key in the instance's `management_known_hosts`; a changed key is rejected.
-Custom SSH identities are not automatically discovered.
+The installed router prefers a stable Kingdoms management key at
+`~/.config/kingdoms/router-management-ed25519`. During migration it can still
+try the instance's Vagrant private key and Vagrant's initial insecure key, but
+those identities are treated only as bootstrap/recovery paths. This avoids
+making the installed management plane depend on Vagrant's generated machine
+key remaining synchronized forever. The first management SSH host key remains
+pinned in the instance's `management_known_hosts`; a changed host key is
+rejected.
 
 The host-address timer now schedules from timer activation and repeats 15
 seconds after the helper finishes. Setup activates the service synchronously.

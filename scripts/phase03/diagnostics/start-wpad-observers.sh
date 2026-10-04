@@ -8,7 +8,11 @@ PCAP="${PCAP:-/tmp/kingdoms-wpad.pcap}"
 
 rm -f "$HTTP_LOG" /tmp/kingdoms-wpad-tcpdump.log
 sudo rm -f "$PCAP"
-test -f "$PACDIR/wpad.dat"
+[[ -f "$PACDIR/wpad.dat" ]] || {
+  echo "FAIL: harmless PAC file missing: $PACDIR/wpad.dat" >&2
+  echo 'Run scripts/phase03/diagnostics/wpad-preflight.sh first.' >&2
+  exit 1
+}
 
 sudo python3 -m http.server 80 --bind :: --directory "$PACDIR" >"$HTTP_LOG" 2>&1 &
 HTTP_PID=$!

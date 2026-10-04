@@ -27,6 +27,8 @@ find_ansible_playbook() {
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== ADIDNS READ-ONLY PREFLIGHT ====='
 echo "ZONE=$ZONE"
 echo "CANDIDATE=$CANDIDATE"

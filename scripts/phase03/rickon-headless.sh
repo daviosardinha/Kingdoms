@@ -5,6 +5,7 @@
 set -Eeuo pipefail
 umask 077
 
+readonly TARGET_FQDN='ws01.north.sevenkingdoms.local'
 readonly TARGET_IP='10.4.10.31'
 readonly EXPECTED_INTERFACE='vmnet10'
 readonly EXPECTED_SOURCE='10.4.10.254'
@@ -16,9 +17,13 @@ fail() { printf '[FAIL] %s\n' "$*" >&2; exit 1; }
 [[ "$(id -u)" -ne 0 ]] ||
   fail 'Run the Rickon victim session as the unprivileged Kali operator, never sudo.'
 
-for cmd in ip stat ss xvfb-run xfreerdp3; do
+for cmd in ip stat ss getent awk xvfb-run xfreerdp3; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing prerequisite: $cmd"
 done
+
+resolved_ip="$(getent ahostsv4 "$TARGET_FQDN" 2>/dev/null | awk 'NR==1{print $1}')"
+[[ "$resolved_ip" == "$TARGET_IP" ]] ||
+  fail "WS01 name resolution changed: expected $TARGET_FQDN -> $TARGET_IP, got ${resolved_ip:-none}."
 
 route="$(ip -4 route get "$TARGET_IP" 2>/dev/null)" ||
   fail 'Cannot find the NORTH route to WS01.'
@@ -54,7 +59,7 @@ RDP_CERT_SHA256="$(tr -d '[:space:]:-' < "$CERT_FILE" | tr '[:upper:]' '[:lower:
 printf '[INFO] Starting NORTH\\rickon.stark headless session to WS01 with pinned SHA-256 certificate.\n'
 
 {
-  printf '%s\n' "/v:$TARGET_IP" '/d:NORTH' '/u:rickon.stark'
+  printf '%s\n' "/v:$TARGET_FQDN" '/d:NORTH' '/u:rickon.stark'
   printf '/p:'; cat -- "$CREDENTIAL_FILE"
   printf '\n'
   printf '%s\n'     "/cert:fingerprint:sha256:$RDP_CERT_SHA256"     '/size:1280x800'     '/audio-mode:2'     '-clipboard'     '/log-level:ERROR'

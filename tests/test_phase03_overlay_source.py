@@ -121,6 +121,146 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, corpus)
 
+    def test_wpad_preflight_prepares_harmless_pac_and_managed_victim_session(self):
+        script = (DIAG / "wpad-preflight.sh").read_text()
+        self.assertIn('return "DIRECT";', script)
+        self.assertIn("wpad.dat", script)
+        self.assertIn("ensure-wpad-rickon-session.sh", script)
+        self.assertIn("no WS01 network-state mutation", script)
+
+    def test_wpad_victim_session_is_owned_and_cleaned_safely(self):
+        ensure = (DIAG / "ensure-wpad-rickon-session.sh").read_text()
+        cleanup = (DIAG / "cleanup-wpad-rickon-session.sh").read_text()
+
+        self.assertIn("kingdoms-phase03-rickon.service", ensure)
+        self.assertIn("check-rickon-prereqs.sh", ensure)
+        self.assertIn("validate-rickon-session.sh", ensure)
+        self.assertIn("ensured-by-wpad", ensure)
+        self.assertIn("remains owned by this WPAD exercise", ensure)
+        self.assertNotIn('rm -f -- "$MARKER"\n  bash scripts/phase03/validate-rickon-session.sh', ensure)
+        self.assertIn("PHASE03_WPAD_RICKON_ENSURED_BY_EXERCISE=True", ensure)
+
+        self.assertIn("ensured-by-wpad", cleanup)
+        self.assertIn("shared permanent Rickon", cleanup)
+        self.assertIn("systemctl --user start", cleanup)
+        self.assertNotIn("systemctl --user stop", cleanup)
+        self.assertIn("PHASE03_WPAD_RICKON_PRESERVED=True", cleanup)
+        self.assertNotIn("systemctl --user disable", cleanup)
+
+    def test_wpad_observer_fails_closed_if_pac_is_missing(self):
+        script = (DIAG / "start-wpad-observers.sh").read_text()
+        self.assertIn("harmless PAC file missing", script)
+        self.assertIn("wpad-preflight.sh", script)
+
+    def test_wpad_completion_always_rolls_back_after_validation(self):
+        script = (ROOT / "scripts" / "phase03" / "complete-wpad-exercise.sh").read_text()
+        self.assertIn("validate-wpad-chain.sh", script)
+        self.assertIn("rollback-wpad-runtime.sh", script)
+        self.assertIn("trap cleanup EXIT", script)
+        self.assertIn("trap 'exit 130' INT", script)
+        self.assertIn("trap 'exit 143' TERM", script)
+        self.assertIn("automatic WPAD rollback", script)
+        self.assertIn("cleanup-wpad-rickon-session.sh", script)
+        self.assertIn("AUTOMATIC WPAD VICTIM-SESSION CLEANUP", script)
+        self.assertIn("PHASE03_WPAD_EXERCISE_COMPLETE=True", script)
+        self.assertIn("Waiting for WPAD lifecycle lock", script)
+        self.assertIn("WPAD lifecycle lock acquired", script)
+        self.assertIn("PHASE03_WPAD_WATCHDOG_TIMER_CANCELLED=True", script)
+        self.assertIn("PHASE03_WPAD_WATCHDOG_DISARMED=True", script)
+        self.assertIn('systemctl stop --no-block "$WATCHDOG_UNIT.timer"', script)
+        self.assertIn('rm -f -- "$ACTIVE"', script)
+        result = subprocess.run(
+            ["bash", "-n", str(ROOT / "scripts" / "phase03" / "complete-wpad-exercise.sh")],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_wpad_atomic_launcher_arms_fifteen_minute_watchdog_only_after_readiness(self):
+        script = (ROOT / "scripts" / "phase03" / "start-wpad-exercise.sh").read_text()
+        self.assertIn("check-wpad-permanent-prereqs.sh", script)
+        self.assertIn("wpad-preflight.sh", script)
+        self.assertIn("start-mitm6-ws01.sh", script)
+        self.assertIn("start-wpad-observers.sh", script)
+        self.assertIn("start-mitm6-ws01.sh 9>&-", script)
+        self.assertIn("start-wpad-observers.sh 9>&-", script)
+        self.assertIn("flock -u 9", script)
+        self.assertIn("exec 9>&-", script)
+        self.assertIn('WPAD_WATCHDOG_DELAY:-15m', script)
+        self.assertIn("systemd-run", script)
+        self.assertIn("--collect", script)
+        self.assertIn("token_hex(16)", script)
+        self.assertIn("token=$TOKEN", script)
+        self.assertIn("kingdoms-phase03-wpad-watchdog", script)
+        self.assertIn("PHASE03_WPAD_EXERCISE_ARMED=True", script)
+        self.assertLess(script.index("start-wpad-observers.sh"), script.index("systemd-run"))
+        self.assertIn("cleanup_on_error", script)
+
+    def test_wpad_watchdog_is_privileged_scoped_and_marker_gated(self):
+        script = (ROOT / "scripts" / "phase03" / "watchdog-wpad-exercise-root.sh").read_text()
+        self.assertIn("flock", script)
+        self.assertIn("if [[ ! -f \"$ACTIVE\" ]]", script)
+        self.assertIn('grep -Fxq "token=$TOKEN" "$ACTIVE"', script)
+        self.assertIn("stale WPAD watchdog generation", script)
+        self.assertIn("stop-wpad-runtime.sh", script)
+        self.assertIn("WPAD_SKIP_LOCAL_STOP=1", script)
+        self.assertIn("runuser -u", script)
+        self.assertIn("cleanup-wpad-rickon-session.sh", script)
+        self.assertIn("PHASE03_WPAD_WATCHDOG_ROLLBACK_COMPLETE=True", script)
+        self.assertIn('rm -f -- "$ACTIVE"', script)
+
+    def test_wpad_transition_guard_is_applied_to_downstream_exercises(self):
+        guard = (ROOT / "scripts" / "phase03" / "assert-wpad-exercise-clean.sh"
+                ).read_text()
+        self.assertIn("phase03-wpad-active", guard)
+        self.assertIn("complete-wpad-exercise.sh", guard)
+
+        downstream = [
+            "check-http-ldaps-readonly-relay.sh",
+            "start-http-ldaps-readonly-relay.sh",
+            "check-ldap-readonly-relay.sh",
+            "start-ldap-readonly-relay.sh",
+            "check-rbcd-prereqs.sh",
+            "start-rbcd-stage1-add-computer.sh",
+            "check-shadow-prereqs.sh",
+            "start-shadow-relay.sh",
+            "check-adidns-prereqs.sh",
+            "apply-adidns-proof.sh",
+            "check-webdav-shortcut-prereqs.sh",
+            "start-webdav-shortcut-observer.sh",
+            "apply-webdav-dns-support.sh",
+            "prepare-webdav-client-runtime.sh",
+            "apply-webdav-shortcut-proof.sh",
+            "arm-webdav-shortcut-interaction.sh",
+        ]
+        for name in downstream:
+            with self.subTest(name=name):
+                text = (ROOT / "scripts" / "phase03" / name).read_text()
+                self.assertIn("assert-wpad-exercise-clean.sh", text)
+
+    def test_wpad_rickon_readiness_waits_for_windows_session_before_arming(self):
+        script = (DIAG / "ensure-wpad-rickon-session.sh").read_text()
+        self.assertIn("wait_for_healthy_session", script)
+        self.assertIn("seq 1 12", script)
+        self.assertIn("sleep 5", script)
+        self.assertIn("within 60 seconds", script)
+
+    def test_rickon_failure_diagnostic_is_sanitized_and_auth_only(self):
+        script = (DIAG / "diagnose-rickon-session.sh").read_text()
+        self.assertIn("journalctl --user -u", script)
+        self.assertIn("PHASE03_RICKON_AUTH_ONLY", script)
+        self.assertIn("/auth-only", script)
+        self.assertIn("/args-from:stdin", script)
+        self.assertIn("[REDACTED]", script)
+        self.assertIn("skipping parallel auth-only probe", script)
+        self.assertNotIn('cat "$CREDENTIAL_FILE"\n', script)
+
+    def test_rickon_quser_no_user_state_is_clean_negative_evidence(self):
+        playbook = (ROOT / "ansible" / "phase03-validate-rickon-session.yml").read_text()
+        self.assertIn("No User exists", playbook)
+        self.assertIn("PHASE03_RICKON_ACTIVE=FALSE", playbook)
+        self.assertIn("PHASE03_QUSER=No interactive users", playbook)
+
     def test_wpad_observer_handles_privileged_capture_file(self):
         script = (DIAG / "start-wpad-observers.sh").read_text()
         self.assertIn('sudo rm -f "$PCAP"', script)
@@ -143,7 +283,16 @@ class Phase03OverlaySourceTests(unittest.TestCase):
         self.assertIn("ipconfig.exe /renew6", playbook)
         self.assertIn("Get-DnsClientServerAddress", playbook)
         self.assertIn("kingdoms-mitm6.log", shell)
-        self.assertIn("validate-rickon-session.sh", shell)
+        self.assertIn("WPAD HTTP observer log missing", shell)
+        self.assertIn("WPAD packet capture is not running", shell)
+        self.assertIn("WPAD_WAIT_SECONDS:-360", shell)
+        self.assertIn("WPAD_POLL_SECONDS:-10", shell)
+        self.assertIn("still waiting for Windows WPAD discovery", shell)
+        self.assertIn("PHASE03_WPAD_AUTODISCOVERY_OBSERVED=True", shell)
+        self.assertIn('dns.qry.name contains \\"wpad\\"', shell)
+        self.assertIn('http.request.uri == \\"/wpad.dat\\"', shell)
+        self.assertNotIn("Waiting 8 seconds", shell)
+        self.assertNotIn("validate-rickon-session.sh", shell)
 
     def test_wpad_chain_validator_requires_same_capture_sequence(self):
         script = (ROOT / "scripts" / "phase03" / "validate-wpad-chain.sh").read_text()
@@ -215,6 +364,50 @@ class Phase03OverlaySourceTests(unittest.TestCase):
         self.assertIn("python3 -m json.tool", wrapper)
         for forbidden in ("Set-AD", "New-ADComputer", "Remove-ADComputer"):
             self.assertNotIn(forbidden, playbook)
+
+    def test_headless_rdp_runtime_restore_is_guarded_and_scoped(self):
+        wrapper = (ROOT / "scripts" / "restore-headless-rdp-runtime.sh").read_text()
+        playbook = (ROOT / "ansible" / "restore-headless-rdp-runtime.yml").read_text()
+
+        self.assertIn("--confirm", wrapper)
+        self.assertIn("verify-test-source.sh", wrapper)
+        self.assertIn("restore-headless-rdp-runtime.yml", wrapper)
+        self.assertIn("sync-ws01-rdp-pin.sh", wrapper)
+        self.assertIn("systemctl --user start", wrapper)
+        self.assertIn("KINGDOMS_HEADLESS_RDP_RUNTIME_RESTORED=True", wrapper)
+
+        self.assertIn("hosts: dc02", playbook)
+        self.assertIn("connect_bot", playbook)
+        self.assertIn("NORTH\\robb.stark", playbook)
+        self.assertIn("robb.stark", playbook)
+        self.assertIn("NTAccount", playbook)
+        self.assertIn("SecurityIdentifier", playbook)
+        self.assertIn("KINGDOMS_CONNECT_BOT_PRINCIPAL_CHECK=PASS", playbook)
+        self.assertIn("Disable-ScheduledTask", playbook)
+        self.assertIn("Name='mstsc.exe'", playbook)
+        self.assertIn("KINGDOMS_HEADLESS_RDP_LEGACY_CLEAN=True", playbook)
+        for forbidden in (
+            "Remote Desktop Users",
+            "SeRemoteInteractiveLogonRight",
+            "Set-AD",
+            "New-AD",
+            "Set-NetFirewall",
+        ):
+            self.assertNotIn(forbidden, playbook)
+
+        result = subprocess.run(
+            ["bash", "-n", str(ROOT / "scripts" / "restore-headless-rdp-runtime.sh")],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_final_regression_forwards_instance_context_to_phase03_runtime(self):
+        script = (ROOT / "scripts" / "validate-phase03-final-regression.sh").read_text()
+        self.assertIn('INSTANCE="$INSTANCE"', script)
+        self.assertIn('PROVIDER="$PROVIDER"', script)
+        self.assertIn('GOAD_PROVIDER_DIR="$PROVIDER"', script)
+        self.assertIn("bash scripts/validate-phase03-runtime.sh", script)
 
     def test_all_phase03_shell_scripts_parse(self):
         phase03 = ROOT / "scripts" / "phase03"
@@ -661,6 +854,60 @@ class Phase03OverlaySourceTests(unittest.TestCase):
         for tool in ("mitm6", "impacket-ntlmrelayx", "tcpdump", "tshark", "nc"):
             with self.subTest(tool=tool):
                 self.assertIn(tool, wrapper)
+
+    def test_wpad_deterministic_rollback_is_scoped_and_reboot_free(self):
+        wrapper = ROOT / "scripts" / "phase03" / "rollback-wpad-runtime.sh"
+        playbook = ROOT / "ansible" / "phase03-wpad-rollback.yml"
+
+        self.assertTrue(wrapper.is_file(), wrapper)
+        self.assertTrue(playbook.is_file(), playbook)
+
+        shell = wrapper.read_text()
+        yml = playbook.read_text()
+
+        self.assertIn("stop-wpad-runtime.sh", shell)
+        self.assertIn("verify-wpad-reset.sh", shell)
+        self.assertLess(
+            shell.index("===== STOP TEMPORARY MITM6 / WPAD RUNTIME ====="),
+            shell.index("===== RESTORE WS01 IPV6 / DNS STATE ====="),
+        )
+        self.assertLess(
+            shell.index("===== RESTORE WS01 IPV6 / DNS STATE ====="),
+            shell.index("===== VERIFY EXACT CAPTURED BASELINE ====="),
+        )
+        self.assertIn("mitm6 is still active", shell)
+        self.assertIn("PHASE03_WPAD_DETERMINISTIC_ROLLBACK_COMPLETE=True", shell)
+
+        self.assertIn("hosts: ws01", yml)
+        self.assertIn("phase03-wpad-baseline.json", yml)
+        self.assertIn("ipconfig.exe /release6", yml)
+        self.assertIn("PrefixOrigin", yml)
+        self.assertIn("SuffixOrigin", yml)
+        self.assertIn("Remove-NetIPAddress", yml)
+        self.assertIn("netsh.exe interface ipv6 set dnsservers", yml)
+        self.assertIn("source=dhcp", yml)
+        self.assertIn("Clear-DnsClientCache", yml)
+        self.assertIn("PHASE03_WPAD_ROLLBACK_COMPLETE=True", yml)
+        self.assertIn("Refusing automatic rollback", yml)
+
+        for forbidden in (
+            "Restart-Computer",
+            "shutdown.exe",
+            "Disable-NetAdapter",
+            "Enable-NetAdapter",
+            "Restart-NetAdapter",
+            "Set-DnsClientServerAddress",
+            "AddressFamily IPv4",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, yml)
+
+        result = subprocess.run(
+            ["bash", "-n", str(wrapper)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_wpad_runtime_capability_snapshot_is_read_only(self):
         script = (ROOT / "scripts" / "phase03" / "check-wpad-runtime-capabilities.sh").read_text()

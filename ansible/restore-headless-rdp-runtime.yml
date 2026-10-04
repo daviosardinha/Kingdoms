@@ -1,0 +1,79 @@
+---
+- name: Restore the validated Kingdoms headless RDP runtime contract
+  hosts: dc02
+  gather_facts: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Disable only the legacy Robb connect_bot task
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+
+          $task = Get-ScheduledTask -TaskName 'connect_bot' -TaskPath '\' -ErrorAction Stop
+          $principal = [string]$task.Principal.UserId
+
+          # Scheduled Task may persist the same domain identity as either
+          # 'robb.stark' or 'NORTH\robb.stark'. Do not trust the display form.
+          # Permit only those two representations, then compare resolved SIDs.
+          if ($principal -ieq 'robb.stark') {
+              $principalForResolution = 'NORTH\robb.stark'
+          }
+          elseif ($principal -ieq 'NORTH\robb.stark') {
+              $principalForResolution = $principal
+          }
+          else {
+              throw "Refusing to modify connect_bot: unexpected principal '$principal'"
+          }
+
+          try {
+              $expectedSid = [System.Security.Principal.NTAccount]::new(
+                  'NORTH\robb.stark'
+              ).Translate([System.Security.Principal.SecurityIdentifier]).Value
+              $actualSid = [System.Security.Principal.NTAccount]::new(
+                  $principalForResolution
+              ).Translate([System.Security.Principal.SecurityIdentifier]).Value
+          }
+          catch {
+              throw "Refusing to modify connect_bot: could not resolve principal '$principal': $($_.Exception.Message)"
+          }
+
+          if ($actualSid -ne $expectedSid) {
+              throw "Refusing to modify connect_bot: principal SID $actualSid does not match NORTH\robb.stark SID $expectedSid"
+          }
+
+          if ($task.State.ToString() -ne 'Disabled') {
+              Disable-ScheduledTask -TaskName 'connect_bot' -TaskPath '\' -ErrorAction Stop | Out-Null
+              $Ansible.Changed = $true
+          }
+
+          # The legacy task launches mstsc.exe as Robb from WINTERFELL Session 0.
+          # Remove only that exact legacy process identity after disabling the task.
+          foreach ($proc in @(Get-CimInstance Win32_Process -Filter "Name='mstsc.exe'" -ErrorAction SilentlyContinue)) {
+              $owner = Invoke-CimMethod -InputObject $proc -MethodName GetOwner -ErrorAction SilentlyContinue
+              if ($null -ne $owner -and
+                  $owner.Domain -ieq 'NORTH' -and
+                  $owner.User -ieq 'robb.stark') {
+                  Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+                  $Ansible.Changed = $true
+              }
+          }
+
+          $verify = Get-ScheduledTask -TaskName 'connect_bot' -TaskPath '\' -ErrorAction Stop
+          if ($verify.State.ToString() -ne 'Disabled') {
+              throw "connect_bot state is $($verify.State), expected Disabled"
+          }
+
+          Write-Output "KINGDOMS_CONNECT_BOT_PRINCIPAL_RAW=$principal"
+          Write-Output "KINGDOMS_CONNECT_BOT_PRINCIPAL_SID=$actualSid"
+          Write-Output "KINGDOMS_CONNECT_BOT_EXPECTED_SID=$expectedSid"
+          Write-Output 'KINGDOMS_CONNECT_BOT_PRINCIPAL_CHECK=PASS'
+          Write-Output 'KINGDOMS_CONNECT_BOT_STATE=Disabled'
+          Write-Output 'KINGDOMS_HEADLESS_RDP_LEGACY_CLEAN=True'
+      register: headless_restore
+
+    - name: Emit headless RDP restore markers
+      ansible.builtin.debug:
+        var: headless_restore.output
+      changed_when: false

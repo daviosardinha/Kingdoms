@@ -20,6 +20,8 @@ find_ansible_playbook() {
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== WEBDAV / SHORTCUT READ-ONLY PREFLIGHT ====='
 
 if pgrep -af '(^|[ /])(impacket-ntlmrelayx|ntlmrelayx[.]py|Responder[.]py|responder|mitm6)([ ]|$)' >/dev/null; then

@@ -12,6 +12,8 @@ CERTBASE="$WORK/ws01-shadow"
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== SHADOW CREDENTIALS RELAY PREFLIGHT ====='
 [[ -f "$BASELINE" ]] || { echo "FAIL: baseline missing: $BASELINE" >&2; exit 1; }
 [[ "$(stat -Lc '%a' "$BASELINE")" == '600' ]] || { echo 'FAIL: baseline must be mode 600' >&2; exit 1; }

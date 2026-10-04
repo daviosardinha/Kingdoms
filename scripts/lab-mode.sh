@@ -82,6 +82,17 @@ declare -A MEMBER_NETBIOS=(
     [GOAD-SRV03]="ESSOS"
     [GOAD-WS01]="NORTH"
 )
+# VMware Guest Operations use the committed post-Vagrant domain administrator
+# identities. WS01 intentionally reuses the NORTH credentials carried by srv02
+# instead of introducing another credential literal.
+declare -A GUESTOPS_INVENTORY_ALIAS=(
+    [GOAD-DC01]="dc01"
+    [GOAD-DC02]="dc02"
+    [GOAD-DC03]="dc03"
+    [GOAD-SRV02]="srv02"
+    [GOAD-SRV03]="srv03"
+    [GOAD-WS01]="srv02"
+)
 
 fail() {
     echo "[!] $*" >&2
@@ -178,6 +189,94 @@ wait_started() {
     return 1
 }
 
+pin_vmware_management_nic_identity() {
+    local vmx="$1"
+
+    # ethernet0 is the Vagrant/management NAT NIC. VMware-generated addresses
+    # are tied to VM identity and can be recomputed after lifecycle power
+    # operations. Once VMware has created the guest, freeze the already-chosen
+    # management MAC as a static VMX address so Windows keeps seeing the same
+    # device across provisioning/exercise transitions.
+    #
+    # Fresh installs are safe: the first generated MAC becomes the permanent
+    # management identity. Existing labs that have already drifted must first
+    # restore the MAC Windows currently owns before this helper is allowed to
+    # pin it; never invent a replacement identity here.
+    if is_running "${vmx}"; then
+        fail "refusing to pin VMware management NIC identity while VM is running: ${vmx}"
+    fi
+
+    python3 - "${vmx}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+def get(key):
+    match = re.search(
+        rf'(?im)^\s*{re.escape(key)}\s*=\s*"([^"]*)"',
+        text,
+    )
+    return match.group(1) if match else None
+
+def set_value(data, key, value):
+    pattern = rf'(?im)^\s*{re.escape(key)}\s*=.*$'
+    line = f'{key} = "{value}"'
+    if re.search(pattern, data):
+        return re.sub(pattern, line, data)
+    if not data.endswith("\n"):
+        data += "\n"
+    return data + line + "\n"
+
+def remove_key(data, key):
+    pattern = rf'(?im)^\s*{re.escape(key)}\s*=.*\n?'
+    return re.sub(pattern, "", data)
+
+address_type = (get("ethernet0.addresstype") or "").lower()
+static_address = get("ethernet0.address")
+generated_address = get("ethernet0.generatedAddress")
+
+if address_type == "static":
+    if not static_address:
+        raise SystemExit(
+            f"VMX ethernet0 is static but has no address: {path}"
+        )
+    pinned = static_address.lower()
+    updated = text
+elif address_type == "generated":
+    if not generated_address:
+        raise SystemExit(
+            f"VMX ethernet0 is generated but has no generatedAddress: {path}"
+        )
+    pinned = generated_address.lower()
+    updated = set_value(text, "ethernet0.addresstype", "static")
+    updated = set_value(updated, "ethernet0.address", pinned)
+    updated = remove_key(updated, "ethernet0.generatedAddress")
+    updated = remove_key(updated, "ethernet0.generatedAddressOffset")
+else:
+    raise SystemExit(
+        f"unsupported ethernet0.addressType={address_type!r}: {path}"
+    )
+
+# A generated VMware Workstation MAC uses the 00:0c:29 OUI. Once that exact
+# guest-known identity is converted to static, Workstation's reserved-OUI
+# validation must be disabled for this adapter or power-on may reject it.
+updated = set_value(updated, "ethernet0.checkMACAddress", "FALSE")
+
+# Keep the VM UUID stable as well, but the management MAC no longer depends on
+# VMware deriving an address from that UUID.
+updated = set_value(updated, "uuid.action", "keep")
+
+if updated != text:
+    path.write_text(updated)
+
+print(
+    f"KINGDOMS_VMWARE_MANAGEMENT_NIC_PINNED|ethernet0={pinned}|type=static"
+)
+PY
+}
 get_start_connected() {
     local vmx="$1"
     local line
@@ -282,6 +381,61 @@ apply_router_policy() {
     echo "[+] Router ${mode} policy active and persistent"
 }
 
+
+vmrun_named_device_action() {
+    local vm="$1"
+    local action="$2"
+    local attempts="${3:-15}"
+    local delay="${4:-2}"
+    local vmx command output rc attempt desired_pattern
+
+    vmx="$(vmx_for "${vm}")"
+
+    case "${action}" in
+        connect)
+            command='connectNamedDevice'
+            desired_pattern='already.*connected|already in desired state'
+            ;;
+        disconnect)
+            command='disconnectNamedDevice'
+            desired_pattern='already.*disconnected|not.*connected|already in desired state'
+            ;;
+        *)
+            fail "Unknown VMware named-device action for ${vm}: ${action}"
+            ;;
+    esac
+
+    for ((attempt=1; attempt<=attempts; attempt++)); do
+        output=""
+        if output="$(vmrun -T ws "${command}" "${vmx}" ethernet0 2>&1)"; then
+            rc=0
+        else
+            rc=$?
+        fi
+
+        if (( rc == 0 )); then
+            echo "        [+] ${vm} ethernet0 runtime ${action} request accepted (attempt ${attempt})"
+            return 0
+        fi
+
+        if grep -Eqi "${desired_pattern}" <<<"${output}"; then
+            echo "        [+] ${vm} ethernet0 already ${action}ed"
+            return 0
+        fi
+
+        if (( attempt == 1 || attempt % 5 == 0 )); then
+            echo "        [*] retrying ${vm} ethernet0 runtime ${action} (attempt ${attempt}/${attempts}); vmrun rc=${rc}" >&2
+            [[ -n "${output}" ]] && printf '            %s\n' "${output}" >&2
+        fi
+
+        (( attempt < attempts )) && sleep "${delay}"
+    done
+
+    echo "        [!] ${vm}: vmrun could not ${action} ethernet0 after ${attempts} attempts" >&2
+    [[ -n "${output:-}" ]] && printf '            last vmrun output: %s\n' "${output}" >&2
+    return 1
+}
+
 ensure_vm_nat_state() {
     local vm="$1"
     local desired="$2"
@@ -312,6 +466,9 @@ ensure_vm_nat_state() {
                 fail "${vm} did not stop cleanly."
         fi
 
+        pin_vmware_management_nic_identity "${vmx}" ||
+            fail "${vm}: could not preserve VMware management NIC identity"
+
         set_start_connected "${vmx}" "${desired}"
 
         current="$(get_start_connected "${vmx}")"
@@ -333,31 +490,399 @@ ensure_vm_nat_state() {
         echo
     fi
 
+    # Provisioning is an authenticated management state, not just a VMX flag.
+    # A clean/failsafe checkpoint may legitimately leave guests powered off.
+    # When provisioning requests persistent NAT ON + runtime connect, power the
+    # guest on before any WinRM/AD readiness check. Exercise/failsafe paths with
+    # desired=FALSE deliberately preserve an already powered-off guest.
+    if [[ "${desired}" == "TRUE" && "${action}" == "connect" ]] &&
+       ! is_running "${vmx}"; then
+        echo "        [*] VM is powered off; starting it for provisioning readiness"
+
+        pin_vmware_management_nic_identity "${vmx}" ||
+            fail "${vm}: could not preserve VMware management NIC identity"
+
+        vmrun -T ws start "${vmx}" nogui >/dev/null
+
+        wait_started "${vmx}" ||
+            fail "${vm} did not start for provisioning readiness."
+
+        sleep 2
+    fi
+
     if is_running "${vmx}"; then
-        case "${action}" in
-            connect)
-                vmrun -T ws \
-                    connectNamedDevice \
-                    "${vmx}" \
-                    ethernet0 >/dev/null 2>&1 || true
-                ;;
-
-            disconnect)
-                vmrun -T ws \
-                    disconnectNamedDevice \
-                    "${vmx}" \
-                    ethernet0 >/dev/null 2>&1 || true
-                ;;
-
-            *)
-                fail "Unknown VMware device action: ${action}"
-                ;;
-        esac
+        vmrun_named_device_action "${vm}" "${action}" 15 2 ||
+            fail "${vm}: could not reconcile ethernet0 runtime state to ${action}"
+    elif [[ "${desired}" == "TRUE" || "${action}" == "connect" ]]; then
+        fail "${vm}: runtime connect requested while VM is powered off"
     fi
 
     printf '        [+] ethernet0 startConnected=%s, runtime=%s\n' \
         "${desired}" \
         "${action}"
+}
+
+guestops_credential_value() {
+    local vm="$1"
+    local key="$2"
+    local alias="${GUESTOPS_INVENTORY_ALIAS[${vm}]:-}"
+    local inventory="${ROOT}/ad/GOAD/data/inventory_disable_vagrant"
+    local line value
+
+    [[ -n "${alias}" ]] ||
+        fail "No VMware Guest Operations inventory alias is defined for ${vm}"
+
+    [[ -f "${inventory}" ]] ||
+        fail "Post-Vagrant inventory is missing: ${inventory}"
+
+    line="$(
+        grep -E "^${alias}[[:space:]]" "${inventory}" |
+            head -n 1 || true
+    )"
+
+    [[ -n "${line}" ]] ||
+        fail "No post-Vagrant credential entry found for ${vm} (${alias})"
+
+    case "${key}" in
+        ansible_user)
+            value="$(
+                sed -nE 's/.*[[:space:]]ansible_user=([^[:space:]]+).*/\1/p' <<<"${line}"
+            )"
+            ;;
+        ansible_password)
+            value="$(
+                sed -nE 's/.*[[:space:]]ansible_password=([^[:space:]]+).*/\1/p' <<<"${line}"
+            )"
+            ;;
+        *)
+            fail "Unsupported Guest Operations credential key: ${key}"
+            ;;
+    esac
+
+    [[ -n "${value}" ]] ||
+        fail "Missing ${key} for ${vm} (${alias})"
+
+    printf '%s\n' "${value}"
+}
+
+guestops_error() {
+    local stage="$1" rc="$2" detail="${3:-No diagnostic returned by VMware Tools}"
+    local guest_user="${4:-}" guest_password="${5:-}"
+
+    # vmrun diagnostics can repeat arguments. Never include credentials in the
+    # captured readiness output, including passwords containing glob syntax.
+    [[ -z "${guest_password}" ]] || detail="${detail//"${guest_password}"/[REDACTED]}"
+    [[ -z "${guest_user}" ]] || detail="${detail//"${guest_user}"/[REDACTED]}"
+    detail="${detail//$'\r'/ }"
+    detail="${detail//$'\n'/ }"
+    detail="${detail//|/ }"
+    printf 'KINGDOMS_GUESTOPS_ERROR|stage=%s|rc=%s|detail=%s\n' \
+        "${stage}" "${rc}" "${detail:0:1500}"
+}
+
+vmware_guest_powershell_capture() {
+    local vm="$1"
+    local script="$2"
+    local timeout_seconds="$3"
+    local vmx guest_user guest_password wrapper wrapper_encoded
+    local guest_output guest_script host_output host_script guest_file
+    local upload_rc=1 run_rc=0 copy_rc=1 attempt
+    local list_output="" list_rc=0 upload_detail="" run_detail="" copy_detail=""
+    local started="${SECONDS}" remaining="${timeout_seconds}"
+
+    (( timeout_seconds > 0 )) || return 124
+
+    vmx="$(vmx_for "${vm}")" || return
+    if list_output="$(timeout --kill-after=1 "${remaining}" vmrun -T ws list 2>&1)"; then
+        :
+    else
+        list_rc=$?
+        guestops_error list "${list_rc}" "${list_output}"
+        (( SECONDS - started < timeout_seconds )) || return 124
+        return "${list_rc}"
+    fi
+    if ! tail -n +2 <<<"${list_output}" | grep -Fxq "${vmx}"; then
+        guestops_error state 125 "${vm} is not listed as running"
+        return 125
+    fi
+
+    guest_user="$(guestops_credential_value "${vm}" ansible_user)" || return
+    guest_password="$(guestops_credential_value "${vm}" ansible_password)" || return
+
+    guest_script="C:\\Windows\\Temp\\kingdoms-guestops-${vm}-$$-${RANDOM}.ps1"
+    guest_output="C:\\Windows\\Temp\\kingdoms-guestops-${vm}-$$-${RANDOM}.txt"
+    host_script="$(mktemp "/tmp/kingdoms-guestops-${vm}.script.XXXXXX")"
+    host_output="$(mktemp "/tmp/kingdoms-guestops-${vm}.output.XXXXXX")"
+    printf '%s\n' "${script}" >"${host_script}"
+
+    # Do not pass the readiness payload through vmrun argv. Large encoded
+    # repair scripts can exceed VMware Workstation's internal argument buffer
+    # and fail with "Buffer too small". Upload the script through Guest
+    # Operations and keep runProgramInGuest limited to a small fixed wrapper.
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    if (( remaining <= 0 )); then
+        rm -f "${host_script}" "${host_output}"
+        guestops_error prepare 124 "Probe deadline expired before guest script upload"
+        return 124
+    fi
+
+    if upload_detail="$(timeout --kill-after=1 "${remaining}" vmrun -T ws \
+        -gu "${guest_user}" \
+        -gp "${guest_password}" \
+        copyFileFromHostToGuest \
+        "${vmx}" \
+        "${host_script}" \
+        "${guest_script}" 2>&1)"; then
+        upload_rc=0
+    else
+        upload_rc=$?
+    fi
+
+    if (( upload_rc != 0 )); then
+        rm -f "${host_script}" "${host_output}"
+        guestops_error upload "${upload_rc}" "${upload_detail}" "${guest_user}" "${guest_password}"
+        (( SECONDS - started < timeout_seconds )) || return 124
+        return 126
+    fi
+
+    wrapper="$(cat <<POWERSHELL
+\$result = '${guest_output}'
+\$scriptPath = '${guest_script}'
+\$stdout = "\${result}.stdout"
+\$stderr = "\${result}.stderr"
+\$arguments = @(
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    \$scriptPath
+)
+try {
+    \$start = @{
+        FilePath = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+        ArgumentList = \$arguments
+        RedirectStandardOutput = \$stdout
+        RedirectStandardError = \$stderr
+        Wait = \$true
+        PassThru = \$true
+        ErrorAction = 'Stop'
+    }
+    \$child = Start-Process @start
+
+    \$parts = @()
+    if (Test-Path \$stdout) {
+        \$parts += Get-Content -Raw -Path \$stdout -ErrorAction SilentlyContinue
+    }
+    if (Test-Path \$stderr) {
+        \$parts += Get-Content -Raw -Path \$stderr -ErrorAction SilentlyContinue
+    }
+
+    [System.IO.File]::WriteAllText(
+        \$result,
+        ((\$parts | Where-Object { \$_ }) -join [Environment]::NewLine),
+        [System.Text.Encoding]::UTF8
+    )
+
+    exit \$child.ExitCode
+}
+catch {
+    [System.IO.File]::WriteAllText(
+        \$result,
+        "KINGDOMS_GUESTOPS_WRAPPER_ERROR|\$((\$_.Exception.Message -replace '[|\\r\\n]', ' ').Trim())",
+        [System.Text.Encoding]::UTF8
+    )
+    exit 1
+}
+finally {
+    Remove-Item -Force -ErrorAction SilentlyContinue \$stdout, \$stderr
+}
+POWERSHELL
+)"
+
+    wrapper_encoded="$(
+        printf '%s' "${wrapper}" |
+            iconv -f UTF-8 -t UTF-16LE |
+            base64 -w0
+    )"
+
+    remaining=$((timeout_seconds - (SECONDS - started)))
+    if (( remaining <= 0 )); then
+        rm -f "${host_script}" "${host_output}"
+        guestops_error prepare 124 "Probe deadline expired before guest execution"
+        return 124
+    fi
+
+    if run_detail="$(timeout --kill-after=1 "${remaining}" vmrun -T ws \
+        -gu "${guest_user}" \
+        -gp "${guest_password}" \
+        runProgramInGuest \
+        "${vmx}" \
+        'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' \
+        -NoProfile \
+        -NonInteractive \
+        -EncodedCommand "${wrapper_encoded}" 2>&1)"; then
+        run_rc=0
+    else
+        run_rc=$?
+    fi
+
+    for attempt in {1..5}; do
+        remaining=$((timeout_seconds - (SECONDS - started)))
+        (( remaining > 0 )) || break
+
+        if copy_detail="$(timeout --kill-after=1 "${remaining}" vmrun -T ws \
+            -gu "${guest_user}" \
+            -gp "${guest_password}" \
+            copyFileFromGuestToHost \
+            "${vmx}" \
+            "${guest_output}" \
+            "${host_output}" 2>&1)"; then
+            copy_rc=0
+            break
+        else
+            copy_rc=$?
+        fi
+
+        (( run_rc == 0 )) || break
+
+        remaining=$((timeout_seconds - (SECONDS - started)))
+        (( remaining > 0 )) || break
+        sleep 1
+    done
+
+    if (( copy_rc == 0 )); then
+        cat "${host_output}"
+    fi
+
+    # Guest cleanup is best effort within the same deadline. Remove both the
+    # uploaded script and its result; host-side temp files are always removed.
+    for guest_file in "${guest_output}" "${guest_script}"; do
+        remaining=$((timeout_seconds - (SECONDS - started)))
+        (( remaining > 0 )) || break
+        timeout --kill-after=1 "${remaining}" vmrun -T ws \
+            -gu "${guest_user}" \
+            -gp "${guest_password}" \
+            deleteFileInGuest \
+            "${vmx}" \
+            "${guest_file}" >/dev/null 2>&1 || true
+    done
+    rm -f "${host_script}" "${host_output}"
+
+    if (( run_rc != 0 )); then
+        guestops_error run "${run_rc}" "${run_detail}" "${guest_user}" "${guest_password}"
+        (( SECONDS - started < timeout_seconds )) || return 124
+        return "${run_rc}"
+    fi
+    if (( copy_rc != 0 )); then
+        guestops_error copy "${copy_rc}" "${copy_detail}" "${guest_user}" "${guest_password}"
+        (( SECONDS - started < timeout_seconds )) || return 124
+        return 126
+    fi
+    return "${run_rc}"
+}
+guestops_check() (
+    local vm="${1:-GOAD-DC02}" vmx output rc
+    [[ -n "${GUESTOPS_INVENTORY_ALIAS[${vm}]:-}" ]] ||
+        fail "No Guest Operations inventory alias is defined for ${vm}"
+    vmx="$(vmx_for "${vm}")" || exit
+    [[ "$(get_start_connected "${vmx}")" == "FALSE" ]] ||
+        fail "${vm}: GuestOps check requires persistent NAT to remain FALSE"
+
+    echo "[*] ${vm}: one GuestOps output-capture probe (15s budget)"
+    READINESS_TRANSPORT=guestops
+    if output="$(powershell_capture "${vm}" \
+        "Write-Output 'KINGDOMS_GUESTOPS_CAPTURE=PASS'" \
+        "${AD_READINESS_PROBE_TIMEOUT_SECONDS}")"; then
+        printf '%s\n' "${output}"
+        grep -Fq 'KINGDOMS_GUESTOPS_CAPTURE=PASS' <<<"${output}" ||
+            fail "${vm}: guest execution returned without the output-capture marker"
+        echo "[+] ${vm} GuestOps execution and output capture passed"
+    else
+        rc=$?
+        printf '%s\n' "${output}" >&2
+        fail "${vm}: GuestOps output-capture probe failed (rc=${rc})"
+    fi
+)
+
+
+guestops_time_check() (
+    local vm="${1:-GOAD-DC02}"
+    local domain="${DC_DOMAIN[${vm}]:-}"
+    local parent_server="${DC_TIME_PARENT_SERVER[${vm}]:-}"
+    local vmx output rc probe_script
+
+    [[ -n "${domain}" ]] ||
+        fail "${vm}: GuestOps time check requires a domain controller target"
+    [[ -n "${parent_server}" ]] ||
+        fail "${vm}: no child-domain parent time source is defined"
+
+    vmx="$(vmx_for "${vm}")" || exit
+    [[ "$(get_start_connected "${vmx}")" == "FALSE" ]] ||
+        fail "${vm}: GuestOps time check requires persistent NAT to remain FALSE"
+
+    probe_script="$(cat <<POWERSHELL
+\$ErrorActionPreference = 'Continue'
+
+\$source = (& w32tm.exe /query /source 2>\$null | Out-String).Trim().TrimEnd('.')
+\$sourceRc = \$LASTEXITCODE
+Write-Output "KINGDOMS_TIME_DIAG|stage=source|rc=\$sourceRc|source=\$source"
+
+if (\$sourceRc -ne 0 -or -not \$source -or \$source -ine '${parent_server}') {
+    \$sourceSafe = ((\$source -replace '[|\r\n]', ' ').Trim())
+    if (-not \$sourceSafe) { \$sourceSafe = '<none>' }
+    Write-Output "KINGDOMS_DC_TIME_NOT_READY|reason=source|source=\$sourceSafe|expected=${parent_server}"
+    exit 0
+}
+
+\$locator = @(& nltest.exe '/dsgetdc:${domain}' /timeserv /force 2>&1 | ForEach-Object { "\$_" })
+\$locatorRc = \$LASTEXITCODE
+Write-Output "KINGDOMS_TIME_DIAG|stage=locator|rc=\$locatorRc"
+if (\$locatorRc -ne 0) {
+    \$detail = ((\$locator -join ' ') -replace '[|\r\n]', ' ').Trim()
+    Write-Output "KINGDOMS_DC_TIME_NOT_READY|reason=advertising|rc=\$locatorRc|detail=\$detail"
+    exit 0
+}
+
+Write-Output "KINGDOMS_DC_TIME_READY|source=\$source|parent=${parent_server}"
+POWERSHELL
+)"
+
+    echo "[*] ${vm}: one exact child-domain time probe through GuestOps (15s budget)"
+    READINESS_TRANSPORT=guestops
+    output=""
+    if output="$(powershell_capture "${vm}" "${probe_script}" "${AD_READINESS_PROBE_TIMEOUT_SECONDS}")"; then
+        printf '%s\n' "${output}"
+        marker="$(
+            last_marker_line "${output}"                 'KINGDOMS_DC_TIME_READY|'                 'KINGDOMS_DC_TIME_NOT_READY|'
+        )"
+        if [[ -n "${marker}" ]]; then
+            echo "[+] ${vm} GuestOps child-time probe returned a readiness marker"
+        else
+            fail "${vm}: GuestOps child-time probe returned without a readiness marker"
+        fi
+    else
+        rc=$?
+        printf '%s\n' "${output}" >&2
+        fail "${vm}: GuestOps child-time probe failed (rc=${rc})"
+    fi
+)
+powershell_capture() {
+    local vm="$1"
+    local script="$2"
+    local timeout_seconds="$3"
+
+    case "${READINESS_TRANSPORT:-vagrant}" in
+        vagrant)
+            vagrant_powershell_capture "${vm}" "${script}" "${timeout_seconds}"
+            ;;
+        guestops)
+            vmware_guest_powershell_capture "${vm}" "${script}" "${timeout_seconds}"
+            ;;
+        *)
+            fail "Unknown readiness transport: ${READINESS_TRANSPORT}"
+            ;;
+    esac
 }
 
 vagrant_powershell_ready() {
@@ -401,6 +926,24 @@ vagrant_powershell_capture() {
             "powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}"
     ) 2>&1
 }
+last_marker_line() {
+    local text="$1"
+    shift
+    local line prefix
+    local marker=""
+
+    while IFS= read -r line; do
+        for prefix in "$@"; do
+            case "${line}" in
+                *"${prefix}"*)
+                    marker="${prefix}${line#*"${prefix}"}"
+                    ;;
+            esac
+        done
+    done <<<"${text}"
+
+    printf '%s\n' "${marker}"
+}
 
 ensure_child_dc_time_ready() {
     local vm="$1"
@@ -411,9 +954,14 @@ ensure_child_dc_time_ready() {
     local repair_script
     local output=""
     local marker=""
+    local capture_rc=0
+    local transport_marker=""
     local last_state="reason=transport"
     local consecutive_source_failures=0
+    local consecutive_transport_failures=0
     local repair_attempted=0
+    local repair_deferred=0
+    local repair_invocations=0
     [[ -n "${parent_domain}" && -n "${parent_server}" ]] || return 0
 
     probe_script="$(cat <<POWERSHELL
@@ -443,21 +991,38 @@ POWERSHELL
     repair_script="$(cat <<POWERSHELL
 \$ErrorActionPreference = 'Continue'
 
-# Prove that the authoritative parent-domain time source is discoverable.
-\$parentLocator = @(& nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force 2>&1 | ForEach-Object { "\$_" })
-\$parentLocatorRc = \$LASTEXITCODE
-if (\$parentLocatorRc -ne 0) {
-    \$detail = ((\$parentLocator -join ' ') -replace '[|\r\n]', ' ').Trim()
-    Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=parent_timeserv_locator|rc=\$parentLocatorRc|detail=\$detail"
+# Do not gate W32Time recovery on a generic nltest parent-domain lookup.
+# DsGetDcName can transiently return 1355 after lifecycle transitions even when
+# the routed parent path, DNS records and expected PDC are already healthy.
+# Prove the deterministic parent PDC through DNS instead, then prove NTP reachability.
+\$parentPdcQuery = '_ldap._tcp.pdc._msdcs.${parent_domain}'
+\$parentPdcRecords = @(
+    Resolve-DnsName -Name \$parentPdcQuery -Server 127.0.0.1 -Type SRV -ErrorAction SilentlyContinue |
+        Where-Object { \$_.Type -eq 'SRV' }
+)
+
+if (\$parentPdcRecords.Count -eq 0) {
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns|detail=no SRV answer for \$parentPdcQuery"
     exit 0
 }
 
+\$parentPdcTargets = @(
+    \$parentPdcRecords |
+        ForEach-Object { "\$($_.NameTarget)".TrimEnd('.') }
+)
+
+if (-not (\$parentPdcTargets | Where-Object { \$_ -ieq '${parent_server}' })) {
+    \$detail = ((\$parentPdcTargets -join ',') -replace '[|\r\n]', ' ').Trim()
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns|detail=expected ${parent_server}; got \$detail"
+    exit 0
+}
 # Prove UDP/123 reaches the expected forest-root PDC before changing W32Time.
+# A temporarily unavailable NTP path is also a prerequisite wait condition.
 \$strip = @(& w32tm.exe /stripchart /computer:${parent_server} /samples:2 /dataonly 2>&1 | ForEach-Object { "\$_" })
 \$stripRc = \$LASTEXITCODE
 if (\$stripRc -ne 0) {
     \$detail = ((\$strip -join ' ') -replace '[|\r\n]', ' ').Trim()
-    Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=parent_ntp_path|rc=\$stripRc|detail=\$detail"
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_ntp_path|rc=\$stripRc|detail=\$detail"
     exit 0
 }
 
@@ -490,8 +1055,9 @@ Start-Sleep -Seconds 2
 
 for (\$syncAttempt = 1; \$syncAttempt -le 12; \$syncAttempt++) {
     if (\$syncAttempt -eq 1 -or ((\$syncAttempt - 1) % 3) -eq 0) {
-        # Prime the parent-domain locator immediately before rediscovery. This
-        # avoids waiting for W32Time's default 15-minute peer-resolution backoff.
+        # Prime DC Locator best-effort immediately before rediscovery. A transient
+        # 1355 here is not a hard prerequisite: DNS already proved the expected
+        # forest-root PDC and stripchart proved the NTP path.
         & nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force | Out-Null
         & w32tm.exe /resync /rediscover /nowait | Out-Null
         \$lastResyncRc = \$LASTEXITCODE
@@ -537,14 +1103,21 @@ POWERSHELL
 
         output=""
         marker=""
+        transport_marker=""
+        capture_rc=0
 
-        if output="$(vagrant_powershell_capture "${vm}" "${probe_script}" "${probe_timeout}")"; then
-            marker="$(
-                printf '%s\n' "${output}" |
-                    grep -E 'KINGDOMS_DC_TIME_(READY|NOT_READY)\|' |
-                    tail -n 1 || true
-            )"
+        if output="$(powershell_capture "${vm}" "${probe_script}" "${probe_timeout}")"; then
+            capture_rc=0
+        else
+            capture_rc=$?
         fi
+
+        # Parse the guest result independently from the wrapper exit status.
+        # Each GuestOps result path is unique per invocation, so a marker copied
+        # from this probe is current evidence rather than stale output.
+        marker="$(
+            last_marker_line "${output}"                 'KINGDOMS_DC_TIME_READY|'                 'KINGDOMS_DC_TIME_NOT_READY|'
+        )"
 
         if [[ "${marker}" == KINGDOMS_DC_TIME_READY\|* ]]; then
             echo "        [+] ${vm} child-domain time hierarchy ready (${parent_server})"
@@ -552,9 +1125,31 @@ POWERSHELL
         fi
 
         if [[ "${marker}" == KINGDOMS_DC_TIME_NOT_READY\|* ]]; then
+            consecutive_transport_failures=0
             last_state="${marker#KINGDOMS_DC_TIME_NOT_READY|}"
         else
-            last_state="reason=transport"
+            transport_marker="$(
+                last_marker_line "${output}" 'KINGDOMS_GUESTOPS_ERROR|'
+            )"
+            consecutive_transport_failures=$((consecutive_transport_failures + 1))
+
+            if [[ -n "${transport_marker}" ]]; then
+                last_state="reason=transport|capture_rc=${capture_rc}|${transport_marker}"
+            elif (( capture_rc != 0 )); then
+                last_state="reason=transport|capture_rc=${capture_rc}|detail=no_guestops_marker"
+            else
+                last_state="reason=no_time_marker|capture_rc=0"
+            fi
+
+            if [[ "${READINESS_TRANSPORT:-vagrant}" == "guestops" ]] &&
+               (( consecutive_transport_failures >= 3 )); then
+                echo "        [!] ${vm} child-time GuestOps probe failed repeatedly; ${last_state}" >&2
+                if [[ -n "${output}" ]]; then
+                    echo "        [!] last GuestOps child-time output follows:" >&2
+                    printf '%s\n' "${output}" | tail -80 >&2
+                fi
+                fail "${vm} child-domain time probe transport failed 3 consecutive times after AD readiness"
+            fi
         fi
 
         if [[ "${last_state}" == reason=source\|* ]]; then
@@ -565,8 +1160,8 @@ POWERSHELL
 
         if (( repair_attempted == 0 && consecutive_source_failures >= 6 )); then
             echo "        [!] ${vm} AD is ready but child-domain time stayed off the parent hierarchy for ~30s"
-            echo "        [*] attempting one bounded child-PDC W32Time hierarchy recovery"
-            repair_attempted=1
+            echo "        [*] checking parent time prerequisites before bounded W32Time recovery"
+            repair_invocations=$((repair_invocations + 1))
 
             elapsed=$((SECONDS - started))
             remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
@@ -575,27 +1170,38 @@ POWERSHELL
             (( remaining < repair_timeout )) && repair_timeout="${remaining}"
 
             output=""
-            if output="$(vagrant_powershell_capture "${vm}" "${repair_script}" "${repair_timeout}")"; then
-                marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
-                )"
+            marker=""
+            transport_marker=""
+            capture_rc=0
 
-                if [[ "${marker}" == KINGDOMS_DC_TIME_REPAIRED\|* ]]; then
-                    echo "        [+] ${vm} child-domain time recovery completed: ${marker}"
-                elif [[ "${marker}" == KINGDOMS_DC_TIME_REPAIR_FAILED\|* ]]; then
-                    fail "${vm} child-domain time recovery failed: ${marker}"
-                else
-                    fail "${vm} child-domain time recovery returned without a terminal marker"
-                fi
+            if output="$(powershell_capture "${vm}" "${repair_script}" "${repair_timeout}")"; then
+                capture_rc=0
             else
-                marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
+                capture_rc=$?
+            fi
+
+            marker="$(
+                last_marker_line "${output}"                     'KINGDOMS_DC_TIME_REPAIRED|'                     'KINGDOMS_DC_TIME_REPAIR_DEFERRED|'                     'KINGDOMS_DC_TIME_REPAIR_FAILED|'
+            )"
+
+            if [[ "${marker}" == KINGDOMS_DC_TIME_REPAIRED\|* ]]; then
+                repair_attempted=1
+                echo "        [+] ${vm} child-domain time recovery completed: ${marker}"
+            elif [[ "${marker}" == KINGDOMS_DC_TIME_REPAIR_DEFERRED\|* ]]; then
+                repair_deferred=$((repair_deferred + 1))
+                last_state="reason=repair_deferred|${marker#KINGDOMS_DC_TIME_REPAIR_DEFERRED|}"
+                echo "        [*] ${vm} child-domain time repair deferred; parent prerequisite is not ready yet"
+                echo "            ${marker}"
+            elif [[ "${marker}" == KINGDOMS_DC_TIME_REPAIR_FAILED\|* ]]; then
+                repair_attempted=1
+                fail "${vm} child-domain time recovery failed after prerequisites were proven: ${marker}"
+            elif (( capture_rc != 0 )); then
+                transport_marker="$(
+                    last_marker_line "${output}" 'KINGDOMS_GUESTOPS_ERROR|'
                 )"
-                fail "${vm} child-domain time recovery transport failed within remaining readiness budget: ${marker:-no marker}"
+                fail "${vm} child-domain time recovery transport failed (rc=${capture_rc}): ${transport_marker:-no GuestOps marker}"
+            else
+                fail "${vm} child-domain time recovery returned without a terminal marker"
             fi
 
             consecutive_source_failures=0
@@ -616,7 +1222,7 @@ POWERSHELL
             sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
         fi
     done
-    fail "${vm} child-domain time hierarchy did not converge within 300s; ${last_state}; repair_attempted=${repair_attempted}"
+    fail "${vm} child-domain time hierarchy did not converge within 300s; ${last_state}; repair_attempted=${repair_attempted}; repair_deferred=${repair_deferred}; repair_invocations=${repair_invocations}"
 }
 
 wait_domain_controller_ready() {
@@ -625,6 +1231,8 @@ wait_domain_controller_ready() {
     local fqdn="${DC_FQDN[${vm}]}"
     local script
     local basic_ready=0
+    local output=""
+    local last_state="reason=transport"
 
     script="$(cat <<POWERSHELL
 \$ErrorActionPreference = 'Stop'
@@ -678,16 +1286,30 @@ POWERSHELL
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
 
-        if vagrant_powershell_ready "${vm}" "${script}" "${probe_timeout}"; then
-            basic_ready=1
-            break
+        output=""
+        if output="$(powershell_capture "${vm}" "${script}" "${probe_timeout}")"; then
+            if grep -Fq 'KINGDOMS_DC_RUNTIME_READY' <<<"${output}"; then
+                basic_ready=1
+                break
+            fi
+            last_state="reason=guest_probe_no_ready_marker"
+        else
+            if [[ -n "${output}" ]]; then
+                last_state="reason=guest_probe_failure"
+            else
+                last_state="reason=transport"
+            fi
         fi
 
         elapsed=$((SECONDS - started))
         remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
         (( remaining < 0 )) && remaining=0
         if (( elapsed >= next_report )); then
-            echo "        [*] waiting for ${vm} AD runtime readiness (${elapsed}s elapsed, ${remaining}s remaining)"
+            echo "        [*] waiting for ${vm} AD runtime readiness (${elapsed}s elapsed, ${remaining}s remaining); ${last_state}"
+            if [[ "${READINESS_TRANSPORT:-vagrant}" == "vagrant" ]]; then
+                echo "        [*] re-requesting ${vm} ethernet0 runtime connection as a bounded VMware transport self-heal"
+                vmrun_named_device_action "${vm}" connect 3 2 || true
+            fi
             next_report=$((next_report + 30))
         fi
 
@@ -698,8 +1320,14 @@ POWERSHELL
             sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
         fi
     done
-    (( basic_ready == 1 )) ||
-        fail "${vm} did not regain AD/DC Locator readiness for ${domain} within 300s"
+    if (( basic_ready != 1 )); then
+        echo "        [!] ${vm} AD readiness timed out; last_state=${last_state}" >&2
+        if [[ -n "${output}" ]]; then
+            echo "        [!] last PowerShell readiness output follows:" >&2
+            printf '%s\n' "${output}" | tail -80 >&2
+        fi
+        fail "${vm} did not regain AD/DC Locator readiness for ${domain} within 300s; ${last_state}"
+    fi
 
     ensure_child_dc_time_ready "${vm}"
 
@@ -913,7 +1541,7 @@ POWERSHELL
         output=""
         marker=""
 
-        if output="$(vagrant_powershell_capture "${vm}" "${script}" "${probe_timeout}")"; then
+        if output="$(powershell_capture "${vm}" "${script}" "${probe_timeout}")"; then
             marker="$(
                 printf '%s\n' "${output}" |
                     grep -E 'KINGDOMS_MEMBER_(RUNTIME_READY|NOT_READY)\|' |
@@ -954,7 +1582,7 @@ POWERSHELL
             (( remaining < repair_timeout )) && repair_timeout="${remaining}"
 
             output=""
-            if output="$(vagrant_powershell_capture "${vm}" "${repair_script}" "${repair_timeout}")"; then
+            if output="$(powershell_capture "${vm}" "${repair_script}" "${repair_timeout}")"; then
                 marker="$(
                     printf '%s\n' "${output}" |
                         grep -E 'KINGDOMS_MEMBER_TIME_(REPAIRED|REPAIR_FAILED)\|' |
@@ -1055,15 +1683,13 @@ prove_isolated_guest_ready() (
     [[ "${persistent}" == "FALSE" ]] ||
         fail "${vm}: exercise readiness probe requires persistent NAT to remain FALSE"
 
-    echo "        [*] temporarily connecting runtime NAT for authenticated readiness"
+    is_running "${vmx}" ||
+        fail "${vm}: authenticated exercise-readiness probe requires the VM to be powered on"
 
-    vmrun -T ws connectNamedDevice "${vmx}" ethernet0 >/dev/null 2>&1 ||
-        fail "${vm}: could not temporarily connect runtime NAT for readiness"
+    echo "        [*] proving authenticated readiness through VMware Guest Operations"
+    echo "            ethernet0 remains persistently OFF and runtime disconnected"
 
-    cleanup_runtime_nat() {
-        vmrun -T ws disconnectNamedDevice "${vmx}" ethernet0 >/dev/null 2>&1 || true
-    }
-    trap cleanup_runtime_nat EXIT
+    READINESS_TRANSPORT=guestops
 
     case "${kind}" in
         member)
@@ -1077,23 +1703,19 @@ prove_isolated_guest_ready() (
             ;;
     esac
 
-    cleanup_runtime_nat
-    trap - EXIT
-
     persistent="$(get_start_connected "${vmx}")"
     [[ "${persistent}" == "FALSE" ]] ||
         fail "${vm}: readiness probe changed persistent NAT isolation"
 
-    echo "        [+] ${vm} authenticated post-reboot readiness proven; runtime NAT disconnected"
+    echo "        [+] ${vm} authenticated post-reboot readiness proven through VMware Guest Operations"
 )
-
 configure_windows_nat_exercise() {
     local vm
 
     # Members reboot first while their DCs are still healthy. Every restarted
-    # guest keeps ethernet0.startConnected=FALSE. The management NIC is then
-    # connected only long enough to prove authenticated Windows/domain
-    # readiness through Vagrant WinRM and is immediately disconnected again.
+    # guest keeps ethernet0.startConnected=FALSE. Authenticated Windows/domain
+    # readiness is proven through VMware Guest Operations with the management
+    # NIC still disconnected.
     for vm in "${DOMAIN_MEMBERS[@]}"; do
         ensure_vm_nat_state "${vm}" FALSE disconnect
         prove_isolated_guest_ready "${vm}" member
@@ -1145,6 +1767,9 @@ show_status() {
     echo "GOAD_NOMAD LAB MODE"
     echo "============================================================"
 
+    local router_status=0
+    local router_output=''
+
     echo
     printf 'Provider: %s\n' "${PROVIDER}"
 
@@ -1162,12 +1787,17 @@ show_status() {
     echo
     echo "=== ROUTER FORWARD POLICY ==="
 
-    (
+    if router_output="$(
         cd "${PROVIDER}"
-
         GOAD_PROVIDER_DIR="${PROVIDER}" bash "${ROOT}/scripts/router-ssh.sh" \
-            'sudo nft list chain inet goad_nomad forward'
-    )
+            'sudo nft list chain inet goad_nomad forward' 2>&1
+    )"; then
+        printf '%s\n' "${router_output}"
+    else
+        echo "[UNAVAILABLE] router management/policy query failed"
+        printf '%s\n' "${router_output}"
+        router_status=1
+    fi
 
     echo
     echo "=== WINDOWS VM NETWORK STATE ==="
@@ -1192,6 +1822,8 @@ show_status() {
             '^ethernet(0|1)\.(connectionType|vnet|present)' \
             "${vmx}" || true
     done
+
+    return "${router_status}"
 }
 
 enter_exercise_mode() {
@@ -1239,6 +1871,96 @@ enter_exercise_mode() {
     echo "    Router forwarding: deny-by-default"
 }
 
+enter_exercise_failsafe() {
+    echo "============================================================"
+    echo "ENTERING GOAD_NOMAD FAIL-CLOSED EXERCISE RECOVERY"
+    echo "============================================================"
+
+    sudo -v
+    verify_windows_layout
+
+    # Mark the deployment degraded before touching state. Only a fully verified
+    # router + host isolation contract may promote this marker back to exercise.
+    set_state recovery-required
+
+    echo
+    echo "[*] Removing host provisioning routes first"
+    sudo bash "${ROUTES}" disable
+
+    echo
+    echo "[*] Restoring persistent Windows NAT isolation without claiming guest readiness"
+
+    local vm
+    local failed=0
+    local router_output=''
+
+    for vm in "${DOMAIN_MEMBERS[@]}" "${EXERCISE_DOMAIN_CONTROLLERS[@]}"; do
+        if ! ( ensure_vm_nat_state "${vm}" FALSE disconnect ); then
+            echo "        [!] failsafe NAT isolation failed for ${vm}" >&2
+            failed=1
+        fi
+    done
+
+    if ! ( verify_persistent_state FALSE ); then
+        failed=1
+    fi
+
+    if (( failed != 0 )); then
+        fail "Fail-closed recovery could not prove host routes/NAT isolation; mode remains recovery-required."
+    fi
+
+    echo
+    echo "[+] Host-side provisioning paths are isolated."
+    echo "[*] Applying and verifying router exercise policy"
+
+    if ! apply_router_policy exercise; then
+        echo "[!] Router exercise policy could not be applied." >&2
+        fail "Host isolation is proven, but router policy is unverified; mode remains recovery-required."
+    fi
+
+    if ! router_output="$(
+        cd "${PROVIDER}"
+        GOAD_PROVIDER_DIR="${PROVIDER}" bash "${ROOT}/scripts/router-ssh.sh" \
+            'sudo nft list chain inet goad_nomad forward' 2>&1
+    )"; then
+        printf '%s\n' "${router_output}" >&2
+        fail "Host isolation is proven, but router policy verification failed; mode remains recovery-required."
+    fi
+
+    printf '%s\n' "${router_output}" | grep -Fq 'policy drop;' ||
+        fail "Router is reachable but deny-by-default policy is not active; mode remains recovery-required."
+
+    set_state exercise
+
+    echo
+    echo "[+] FAIL-CLOSED network isolation restored and router policy verified."
+    echo "    IMPORTANT: this path does not claim AD/domain readiness."
+    echo "    Run the normal exercise lifecycle/readiness validation before continuing the lab."
+}
+
+guestops_readiness_check() (
+    local vm="${1:-GOAD-DC02}"
+    local kind=""
+
+    if [[ -n "${DC_DOMAIN[${vm}]:-}" ]]; then
+        kind="dc"
+    elif [[ -n "${MEMBER_DOMAIN[${vm}]:-}" ]]; then
+        kind="member"
+    else
+        fail "Unknown Windows VM for GuestOps readiness check: ${vm}"
+    fi
+
+    echo "============================================================"
+    echo "TARGETED VMWARE GUESTOPS READINESS"
+    echo "============================================================"
+    echo "VM:   ${vm}"
+    echo "Kind: ${kind}"
+
+    prove_isolated_guest_ready "${vm}" "${kind}"
+
+    echo
+    echo "[+] ${vm} targeted GuestOps readiness passed"
+)
 enter_provisioning_mode() {
     echo "============================================================"
     echo "ENTERING GOAD_NOMAD PROVISIONING MODE"
@@ -1281,6 +2003,7 @@ main() {
     require_command timeout
     require_command iconv
     require_command base64
+    require_command mktemp
 
     [[ -f "${ROUTES}" ]] ||
         fail "${ROUTES} is missing."
@@ -1295,6 +2018,10 @@ main() {
             enter_exercise_mode
             ;;
 
+        exercise-failsafe)
+            enter_exercise_failsafe
+            ;;
+
         provisioning)
             enter_provisioning_mode
             ;;
@@ -1303,8 +2030,20 @@ main() {
             show_status
             ;;
 
+        guestops-check)
+            guestops_check "${2:-GOAD-DC02}"
+            ;;
+
+        guestops-readiness-check)
+            guestops_readiness_check "${2:-GOAD-DC02}"
+            ;;
+
+        guestops-time-check)
+            guestops_time_check "${2:-GOAD-DC02}"
+            ;;
+
         *)
-            echo "Usage: $0 {exercise|provisioning|status}" >&2
+            echo "Usage: $0 {exercise|exercise-failsafe|provisioning|status|guestops-check [VM]|guestops-readiness-check [VM]|guestops-time-check [VM]}" >&2
             exit 2
             ;;
     esac

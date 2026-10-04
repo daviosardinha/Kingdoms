@@ -18,6 +18,8 @@ find_ntlmrelayx() {
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== HTTP -> LDAPS READ-ONLY RELAY PREFLIGHT ====='
 
 bash scripts/verify-test-source.sh || {

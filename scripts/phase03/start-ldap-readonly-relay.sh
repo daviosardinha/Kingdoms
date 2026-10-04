@@ -18,6 +18,8 @@ find_ntlmrelayx() {
 
 cd "$ROOT" || exit 1
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 bash "$ROOT/scripts/phase03/check-ldap-readonly-relay.sh" || exit 1
 
 NTLMRELAYX="$(find_ntlmrelayx || true)"

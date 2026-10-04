@@ -23,6 +23,8 @@ find_ntlmrelayx() {
 
 cd "$ROOT" || exit 1
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== SOURCE ====='
 if bash scripts/verify-test-source.sh; then
   pass 'Git source gate passed'

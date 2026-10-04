@@ -20,6 +20,8 @@ find_ansible_playbook() {
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 [[ -f "$BASELINE" ]] || { echo "FAIL: WebDAV baseline missing: $BASELINE" >&2; exit 1; }
 [[ "$(stat -Lc '%a' "$BASELINE")" == "600" ]] || { echo 'FAIL: baseline must be mode 600' >&2; exit 1; }
 

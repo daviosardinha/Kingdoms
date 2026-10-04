@@ -9,9 +9,15 @@
           $ErrorActionPreference = 'Stop'
           $Ansible.Changed = $false
 
-          $lines = & quser.exe 2>&1
+          $lines = @(& quser.exe 2>&1)
           if ($LASTEXITCODE -ne 0) {
-              throw "quser failed with exit code $($LASTEXITCODE): $($lines -join ' | ')"
+              $joined = ($lines -join ' | ')
+              if ($joined -match '(?i)No User exists') {
+                  Write-Output 'PHASE03_RICKON_ACTIVE=FALSE'
+                  Write-Output 'PHASE03_QUSER=No interactive users'
+                  exit 0
+              }
+              throw "quser failed with exit code $($LASTEXITCODE): $joined"
           }
 
           $match = $lines | Where-Object {

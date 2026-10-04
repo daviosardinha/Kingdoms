@@ -125,11 +125,19 @@ HOSTADDR_SERVICE=service
             bindir = root / 'bin'
             bindir.mkdir()
             (bindir / 'ip').write_text('#!/bin/bash\necho "1: vmnet99 inet ${TEST_ADDRESS}/24"\n')
-            (bindir / 'ssh').write_text('#!/bin/bash\nprintf "%s\\n" "$@"\ncat\n')
+            (bindir / 'ssh').write_text(
+                '#!/bin/bash\n'
+                'args="$*"\n'
+                'if [[ -n "${TEST_REJECT_KEY:-}" && "$args" == *"${TEST_REJECT_KEY}"* ]]; then exit 255; fi\n'
+                'printf "%s\\n" "$@"\n'
+                'if [[ " $args " != *" -n "* ]]; then cat; fi\n'
+            )
             for file in bindir.iterdir():
                 file.chmod(0o755)
             env = {**os.environ, 'GOAD_PROVIDER_DIR': str(root / 'provider'),
-                   'VAGRANT_HOME': str(root / 'vagrant'), 'PATH': str(bindir) + ':' + os.environ['PATH'],
+                   'VAGRANT_HOME': str(root / 'vagrant'),
+                   'XDG_CONFIG_HOME': str(root / 'config'),
+                   'PATH': str(bindir) + ':' + os.environ['PATH'],
                    'TEST_ADDRESS': '10.4.99.254'}
             command = ['bash', str(ROOT / 'scripts/router-ssh.sh'), 'sudo nft list ruleset']
             result = subprocess.run(command, env=env, input='stdin preserved', capture_output=True, text=True)
@@ -148,6 +156,36 @@ HOSTADDR_SERVICE=service
             result = subprocess.run(command, env=env, input='', capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(str(fallback), result.stdout)
+
+            # A stale per-instance key must not make management unrecoverable
+            # when the router still accepts the standard Vagrant identity.
+            (state / 'private_key').write_text('stale instance key')
+            env['TEST_REJECT_KEY'] = str(state / 'private_key')
+            result = subprocess.run(
+                command,
+                env=env,
+                input='stdin preserved',
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(str(fallback), result.stdout)
+            self.assertIn('recovered with fallback Vagrant key', result.stderr)
+            self.assertIn('stdin preserved', result.stdout)
+
+            stable = root / 'config/kingdoms/router-management-ed25519'
+            stable.parent.mkdir(parents=True)
+            stable.write_text('stable test fixture')
+            env.pop('TEST_REJECT_KEY', None)
+            result = subprocess.run(
+                command,
+                env=env,
+                input='',
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(str(stable), result.stdout)
 
 
 class Compatibility(unittest.TestCase):

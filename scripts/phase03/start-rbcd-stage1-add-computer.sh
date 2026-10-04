@@ -26,6 +26,8 @@ find_ntlmrelayx() {
 
 cd "$ROOT" || exit 1
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== RBCD STAGE 1 PREFLIGHT ====='
 test -f "$BASELINE" || { echo "FAIL: baseline missing: $BASELINE" >&2; exit 1; }
 

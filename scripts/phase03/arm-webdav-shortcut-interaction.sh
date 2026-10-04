@@ -24,6 +24,8 @@ find_ansible_playbook() {
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 if ! sudo ss -H -lntp 2>/dev/null | grep -Eq ':80[[:space:]]'; then
   echo 'FAIL: WebDAV observer is not listening on TCP/80'
   exit 1

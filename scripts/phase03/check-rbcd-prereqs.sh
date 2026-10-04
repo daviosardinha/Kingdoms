@@ -24,6 +24,8 @@ find_ansible_playbook() {
 
 cd "$ROOT" || exit 1
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 echo '===== RBCD READ-ONLY PREFLIGHT ====='
 echo 'Target: WS01$'
 echo 'Candidate computer reserved for later proof: PHASE03RBCD$'

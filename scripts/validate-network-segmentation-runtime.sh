@@ -189,9 +189,14 @@ cleanup() {
     if [[ -n "${PROVIDER}" && -d "${PROVIDER}" && "${FINAL_EXERCISE}" -ne 1 ]]; then
         echo
         echo "[CLEANUP] Returning GOAD_NOMAD to exercise mode..."
-        GOAD_PROVIDER_DIR="${PROVIDER}" \
-            bash "${ROOT}/scripts/lab-mode.sh" exercise || \
-            echo "[CLEANUP] WARNING: automatic exercise-mode recovery failed" >&2
+        if ! GOAD_PROVIDER_DIR="${PROVIDER}" \
+            bash "${ROOT}/scripts/lab-mode.sh" exercise; then
+            echo "[CLEANUP] WARNING: normal exercise-mode recovery failed" >&2
+            echo "[CLEANUP] Attempting network-isolation recovery..." >&2
+            GOAD_PROVIDER_DIR="${PROVIDER}" \
+                bash "${ROOT}/scripts/lab-mode.sh" exercise-failsafe || \
+                echo "[CLEANUP] WARNING: network-isolation recovery also failed" >&2
+        fi
     fi
 
     # set -e can terminate the validator on an unexpected command error before

@@ -97,7 +97,11 @@ python_regression() {
 }
 
 phase03_runtime() {
-  bash scripts/validate-phase03-runtime.sh
+  env \
+    INSTANCE="$INSTANCE" \
+    PROVIDER="$PROVIDER" \
+    GOAD_PROVIDER_DIR="$PROVIDER" \
+    bash scripts/validate-phase03-runtime.sh
 }
 
 phase02_runtime() {

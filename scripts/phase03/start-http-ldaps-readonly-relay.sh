@@ -40,6 +40,8 @@ show_log() {
 
 cd "$ROOT"
 
+bash "$ROOT/scripts/phase03/assert-wpad-exercise-clean.sh"
+
 bash "$ROOT/scripts/phase03/check-http-ldaps-readonly-relay.sh"
 
 NTLMRELAYX="$(find_ntlmrelayx)"

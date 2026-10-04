@@ -11,6 +11,7 @@ UNIT = ROOT / "ops" / "systemd" / "kingdoms-phase03-rickon.service"
 CERT_READ = ROOT / "scripts" / "phase03" / "read-ws01-rdp-cert.sh"
 CERT_PLAYBOOK = ROOT / "ansible" / "phase03-read-ws01-rdp-cert.yml"
 CERT_PROBE = ROOT / "scripts" / "phase03" / "probe-ws01-rdp-cert.py"
+CERT_SYNC = ROOT / "scripts" / "phase03" / "sync-ws01-rdp-pin.sh"
 SESSION_VALIDATE = ROOT / "scripts" / "phase03" / "validate-rickon-session.sh"
 SESSION_PLAYBOOK = ROOT / "ansible" / "phase03-validate-rickon-session.yml"
 RESTART_TEST = ROOT / "scripts" / "phase03" / "test-rickon-restart.sh"
@@ -18,9 +19,9 @@ RESTART_TEST = ROOT / "scripts" / "phase03" / "test-rickon-restart.sh"
 
 class Phase03RickonHeadlessTests(unittest.TestCase):
     def test_required_files_exist_and_parse(self):
-        for path in (RUNNER, CHECK, INSTALL, UNIT, CERT_READ, CERT_PLAYBOOK, CERT_PROBE, SESSION_VALIDATE, SESSION_PLAYBOOK, RESTART_TEST):
+        for path in (RUNNER, CHECK, INSTALL, UNIT, CERT_READ, CERT_PLAYBOOK, CERT_PROBE, CERT_SYNC, SESSION_VALIDATE, SESSION_PLAYBOOK, RESTART_TEST):
             self.assertTrue(path.is_file(), path)
-        for path in (RUNNER, CHECK, INSTALL, CERT_READ, SESSION_VALIDATE, RESTART_TEST):
+        for path in (RUNNER, CHECK, INSTALL, CERT_READ, CERT_SYNC, SESSION_VALIDATE, RESTART_TEST):
             result = subprocess.run(
                 ["bash", "-n", str(path)],
                 capture_output=True,
@@ -31,6 +32,7 @@ class Phase03RickonHeadlessTests(unittest.TestCase):
     def test_runner_scope_and_identity(self):
         text = RUNNER.read_text()
         for expected in (
+            "TARGET_FQDN='ws01.north.sevenkingdoms.local'",
             "TARGET_IP='10.4.10.31'",
             "EXPECTED_INTERFACE='vmnet10'",
             "EXPECTED_SOURCE='10.4.10.254'",
@@ -50,6 +52,8 @@ class Phase03RickonHeadlessTests(unittest.TestCase):
         self.assertIn("refusing a duplicate victim session", text)
         self.assertIn("state established", text)
         self.assertIn("^[0-9a-f]{64}$", text)
+        self.assertIn("/v:$TARGET_FQDN", text)
+        self.assertIn("getent ahostsv4", text)
         self.assertNotIn("/cert:ignore", text)
         self.assertNotIn("/p:Winter", text)
 
@@ -78,6 +82,16 @@ class Phase03RickonHeadlessTests(unittest.TestCase):
         self.assertIn("RDP_SHA256=", text)
         self.assertIn("changed_when: false", text)
         self.assertIn("ws01_rdp_cert.output", text)
+
+    def test_certificate_pin_sync_requires_management_and_network_agreement(self):
+        text = CERT_SYNC.read_text()
+        self.assertIn("read-ws01-rdp-cert.sh", text)
+        self.assertIn("probe-ws01-rdp-cert.py", text)
+        self.assertIn("management_sha", text)
+        self.assertIn("network_sha", text)
+        self.assertIn("management_sha\" != \"$network_sha", text)
+        self.assertIn("PHASE03_WS01_RDP_PIN_SYNC_COMPLETE=True", text)
+        self.assertNotIn("/cert:ignore", text)
 
     def test_network_certificate_probe_is_non_authenticating(self):
         text = CERT_PROBE.read_text()
