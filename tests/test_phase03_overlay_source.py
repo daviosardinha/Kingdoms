@@ -241,6 +241,8 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             "phase03-wpad-drift-check.yml",
             "PHASE03_WPAD_DRIFT=True",
             "PHASE03_WPAD_WATCHDOG_ROLLBACK_COMPLETE=True",
+            "Bad file descriptor",
+            "watchdog acquired and used the lifecycle lock",
             "assert-wpad-exercise-clean.sh",
             "verify-wpad-reset.sh",
             "kingdoms-phase03-rickon.service",
@@ -255,6 +257,35 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_wpad_lifecycle_lock_is_state_scoped_and_fail_closed(self):
+        start = (ROOT / "scripts" / "phase03" / "start-wpad-exercise.sh").read_text()
+        complete = (ROOT / "scripts" / "phase03" / "complete-wpad-exercise.sh").read_text()
+        watchdog = (ROOT / "scripts" / "phase03" / "watchdog-wpad-exercise-root.sh").read_text()
+
+        self.assertIn('LOCK="${WPAD_LOCK_FILE:-$STATE_DIR/phase03-wpad.lock}"', start)
+        self.assertIn('LOCK="${WPAD_LOCK_FILE:-$STATE_DIR/phase03-wpad.lock}"', complete)
+        self.assertNotIn("/tmp/kingdoms-phase03-wpad.lock", start)
+        self.assertNotIn("/tmp/kingdoms-phase03-wpad.lock", complete)
+
+        self.assertIn("could not open WPAD lifecycle lock", start)
+        self.assertIn("could not acquire WPAD lifecycle lock", start)
+        self.assertIn("could not open WPAD lifecycle lock", complete)
+        self.assertIn("could not acquire WPAD lifecycle lock", complete)
+        self.assertIn("WPAD watchdog could not open lifecycle lock", watchdog)
+        self.assertIn("WPAD watchdog could not acquire lifecycle lock", watchdog)
+
+        for path in (
+            ROOT / "scripts" / "phase03" / "start-wpad-exercise.sh",
+            ROOT / "scripts" / "phase03" / "complete-wpad-exercise.sh",
+            ROOT / "scripts" / "phase03" / "watchdog-wpad-exercise-root.sh",
+        ):
+            result = subprocess.run(
+                ["bash", "-n", str(path)],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_wpad_transition_guard_is_applied_to_downstream_exercises(self):
         guard = (ROOT / "scripts" / "phase03" / "assert-wpad-exercise-clean.sh"
