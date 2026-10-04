@@ -209,6 +209,53 @@ class Phase03OverlaySourceTests(unittest.TestCase):
         self.assertIn("PHASE03_WPAD_WATCHDOG_ROLLBACK_COMPLETE=True", script)
         self.assertIn('rm -f -- "$ACTIVE"', script)
 
+    def test_wpad_baseline_capture_refuses_contaminated_state(self):
+        script = (ROOT / "scripts" / "phase03" / "check-wpad-permanent-prereqs.sh").read_text()
+        self.assertIn("PHASE03_WPAD_BASELINE_CLEAN=True", script)
+        self.assertIn("baseline already contains IPv6 DNS state", script)
+        self.assertIn("baseline already contains DHCP-originated IPv6 state", script)
+        self.assertIn("PrefixOrigin", script)
+        self.assertIn("SuffixOrigin", script)
+
+    def test_wpad_drift_probe_is_read_only(self):
+        playbook = (ROOT / "ansible" / "phase03-wpad-drift-check.yml").read_text()
+        self.assertIn("PHASE03_WPAD_DRIFT_IPV6", playbook)
+        self.assertIn("PHASE03_WPAD_DRIFT_DNSV6", playbook)
+        self.assertIn("PHASE03_WPAD_DRIFT=$drift", playbook)
+        self.assertIn("$Ansible.Changed = $false", playbook)
+        for forbidden in (
+            "Remove-NetIPAddress",
+            "Set-DnsClientServerAddress",
+            "netsh.exe",
+            "ipconfig.exe",
+            "Restart-Computer",
+        ):
+            self.assertNotIn(forbidden, playbook)
+
+    def test_wpad_live_watchdog_acceptance_proves_real_drift_and_recovery(self):
+        script = (ROOT / "scripts" / "phase03" / "validate-wpad-watchdog-runtime.sh").read_text()
+        for token in (
+            "WPAD_WATCHDOG_VALIDATION_DELAY:-120s",
+            "start-wpad-exercise.sh",
+            "phase03-trigger-ws01-renew6.yml",
+            "phase03-wpad-drift-check.yml",
+            "PHASE03_WPAD_DRIFT=True",
+            "PHASE03_WPAD_WATCHDOG_ROLLBACK_COMPLETE=True",
+            "assert-wpad-exercise-clean.sh",
+            "verify-wpad-reset.sh",
+            "kingdoms-phase03-rickon.service",
+            "PHASE03_WPAD_WATCHDOG_LIVE_ACCEPTANCE=True",
+        ):
+            self.assertIn(token, script)
+        self.assertIn("complete-wpad-exercise.sh", script)
+        self.assertIn("validation aborted while WPAD was armed", script)
+        result = subprocess.run(
+            ["bash", "-n", str(ROOT / "scripts" / "phase03" / "validate-wpad-watchdog-runtime.sh")],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_wpad_transition_guard_is_applied_to_downstream_exercises(self):
         guard = (ROOT / "scripts" / "phase03" / "assert-wpad-exercise-clean.sh"
                 ).read_text()
