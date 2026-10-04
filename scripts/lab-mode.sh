@@ -1021,13 +1021,18 @@ if (\$stripRc -ne 0) {
 Write-Output "KINGDOMS_DC_TIME_REPAIR_EVIDENCE|stage=parent_ntp_path|server=${parent_server}|rc=0"
 
 \$parametersPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters'
-\$originalNtpServer = (Get-ItemProperty -Path \$parametersPath -Name NtpServer -ErrorAction SilentlyContinue).NtpServer
+\$originalNtpProperty = Get-ItemProperty -Path \$parametersPath -Name NtpServer -ErrorAction SilentlyContinue
+\$hadOriginalNtpServer = (\$null -ne \$originalNtpProperty)
+\$originalNtpServer = if (\$hadOriginalNtpServer) { \$originalNtpProperty.NtpServer } else { \$null }
 
 function Restore-DomainHierarchy {
     & w32tm.exe /config /syncfromflags:domhier /update | Out-Null
     \$restoreConfigRc = \$LASTEXITCODE
-    if (\$null -ne \$originalNtpServer) {
+    if (\$hadOriginalNtpServer) {
         Set-ItemProperty -Path \$parametersPath -Name NtpServer -Value \$originalNtpServer -ErrorAction SilentlyContinue
+    }
+    else {
+        Remove-ItemProperty -Path \$parametersPath -Name NtpServer -ErrorAction SilentlyContinue
     }
     try {
         Restart-Service W32Time -Force -ErrorAction Stop
