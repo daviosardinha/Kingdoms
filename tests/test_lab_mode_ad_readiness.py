@@ -283,6 +283,59 @@ class LabModeAdReadinessTests(unittest.TestCase):
         self.assertIn("=== WINDOWS VM NETWORK STATE ===", fn)
         self.assertIn('return "${router_status}"', fn)
 
+    def test_installed_provisioning_separates_nat_health_from_ad_readiness(self):
+        text = self.text
+        fn = text[text.index("configure_windows_nat_provisioning()"):
+                  text.index("prove_isolated_guest_ready()")]
+
+        self.assertEqual(fn.count('wait_provisioning_nat_ready "${vm}"'), 2)
+        self.assertIn('READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"', fn)
+        self.assertIn('READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"', fn)
+        self.assertNotIn('READINESS_TRANSPORT=vagrant', fn)
+        self.assertNotIn('vagrant_powershell_capture', fn)
+        self.assertLess(
+            fn.index('wait_provisioning_nat_ready "${vm}"'),
+            fn.index('READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"'),
+        )
+
+    def test_provisioning_nat_health_is_guestops_mac_dhcp_gateway_aware(self):
+        text = self.text
+        start = text.index("management_mac_for_vm()")
+        end = text.index("ensure_child_dc_time_ready()", start)
+        fn = text[start:end]
+
+        for token in (
+            "PROVISIONING_NAT_TIMEOUT_SECONDS=180",
+            "ethernet0\\.(address|generatedAddress)",
+            "Get-NetAdapter -IncludeHidden",
+            "Get-NetIPInterface",
+            "Get-NetIPAddress",
+            "Get-NetRoute",
+            "KINGDOMS_PROVISIONING_NAT_READY|",
+            "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=link",
+            "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=address",
+            "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=gateway",
+            "vmware_guest_powershell_capture",
+            "repair_attempts < 2",
+            "Disable-NetAdapter",
+            "Enable-NetAdapter",
+            "RenewDHCPLease",
+        ):
+            self.assertIn(token, fn)
+
+        self.assertNotIn("vagrant winrm", fn)
+        self.assertNotIn("Reset-ComputerMachinePassword", fn)
+        self.assertNotIn("netsh", fn)
+
+    def test_domain_preflight_uses_guestops_not_vagrant_forwarded_winrm(self):
+        text = self.text
+        fn = text[text.index("preflight_domain_health()"):
+                  text.index("preflight_exercise_time_dependencies()")]
+
+        self.assertIn('READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"', fn)
+        self.assertIn('READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"', fn)
+        self.assertNotIn("vagrant_powershell", fn)
+
     def test_targeted_guestops_readiness_command_uses_dependency_closure(self):
         text = self.text
         fn = text[text.index("guestops_readiness_check()"):
