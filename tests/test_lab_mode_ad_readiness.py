@@ -519,14 +519,23 @@ last_marker_line "$output" \
         self.assertNotIn("grep -E 'KINGDOMS_DC_TIME_", fn)
         self.assertNotIn("grep -F 'KINGDOMS_GUESTOPS_ERROR|'", fn)
 
-    def test_child_dc_time_repair_defers_until_parent_timeserv_is_ready(self):
+    def test_child_dc_time_repair_uses_deterministic_parent_dns_and_ntp_prereqs(self):
         text = self.text
         fn = text[text.index("ensure_child_dc_time_ready()"):
                   text.index("wait_domain_controller_ready()")]
 
-        self.assertIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_domain_locator", fn)
-        self.assertIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_timeserv_locator", fn)
+        self.assertIn("_ldap._tcp.pdc._msdcs.${parent_domain}", fn)
+        self.assertIn("Resolve-DnsName", fn)
+        self.assertIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns", fn)
         self.assertIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_ntp_path", fn)
+        self.assertNotIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_domain_locator", fn)
+        self.assertNotIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_timeserv_locator", fn)
+
+        # DC Locator is still primed during rediscovery, but a transient 1355 is
+        # no longer a hard prerequisite before W32Time recovery is attempted.
+        self.assertIn("Prime DC Locator best-effort", fn)
+        self.assertIn("nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force", fn)
+
         for marker in (
             "KINGDOMS_DC_TIME_REPAIRED|",
             "KINGDOMS_DC_TIME_REPAIR_DEFERRED|",
@@ -537,7 +546,6 @@ last_marker_line "$output" \
         self.assertIn("repair_invocations=$((repair_invocations + 1))", fn)
         self.assertIn("parent prerequisite is not ready yet", fn)
         self.assertIn("recovery failed after prerequisites were proven", fn)
-
     def test_child_dc_time_repair_is_bounded_and_never_rewrites_trust(self):
         text = self.text
         fn = text[text.index("ensure_child_dc_time_ready()"):
