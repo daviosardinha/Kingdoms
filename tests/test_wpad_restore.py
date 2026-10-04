@@ -34,8 +34,8 @@ class WpadRestoreSourceTests(unittest.TestCase):
             "phase03_wpad_baseline.IPv6DnsServers",
             "ipconfig.exe",
             "'/release6'",
-            "Set-DnsClientServerAddress",
-            "-ResetServerAddresses",
+            "netsh.exe",
+            "'interface','ipv6','set','dnsservers'",
             "PHASE03_WPAD_RESTORE_RELEASE6_RC=",
             "PHASE03_WPAD_RESTORE_MUTATION_COMPLETE=True",
         ):
@@ -49,6 +49,7 @@ class WpadRestoreSourceTests(unittest.TestCase):
             "Set-NetIPAddress",
             "New-NetIPAddress",
             "Remove-NetIPAddress",
+            "Set-DnsClientServerAddress",
             "Remove-NetRoute",
             "New-NetRoute",
             "vmrun",
