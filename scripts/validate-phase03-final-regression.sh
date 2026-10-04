@@ -176,8 +176,23 @@ phase03_residual_state() {
   echo '===== PHASE 03 NETWORK / CALLBACK RESET ====='
 
   bash scripts/phase03/verify-wpad-reset.sh || rc=1
+  bash scripts/phase03/assert-wpad-exercise-clean.sh || rc=1
   bash scripts/phase03/verify-http-ldaps-callback-clean.sh || rc=1
   bash scripts/phase03/check-http-ldaps-readonly-relay.sh || rc=1
+
+  echo
+  echo '===== PHASE 03 WPAD WATCHDOG NEUTRALITY ====='
+
+  local watchdog_unit='kingdoms-phase03-wpad-watchdog'
+  local unit
+  for unit in "$watchdog_unit.timer" "$watchdog_unit.service"; do
+    if systemctl is-active --quiet "$unit" 2>/dev/null; then
+      echo "FAIL: WPAD watchdog unit remains active: $unit" >&2
+      rc=1
+    else
+      echo "PASS: WPAD watchdog unit is inactive: $unit"
+    fi
+  done
 
   echo
   echo '===== PHASE 03 LOCAL RUNTIME ====='
