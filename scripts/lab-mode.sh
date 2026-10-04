@@ -2407,12 +2407,16 @@ main() {
             guestops_readiness_check "${2:-GOAD-DC02}"
             ;;
 
+        guestops-provisioning-nat-check)
+            guestops_provisioning_nat_check "${2:-GOAD-DC02}"
+            ;;
+
         guestops-time-check)
             guestops_time_check "${2:-GOAD-DC02}"
             ;;
 
         *)
-            echo "Usage: $0 {exercise|exercise-failsafe|provisioning|status|guestops-check [VM]|guestops-readiness-check [VM]|guestops-time-check [VM]}" >&2
+            echo "Usage: $0 {exercise|exercise-failsafe|provisioning|status|guestops-check [VM]|guestops-readiness-check [VM]|guestops-provisioning-nat-check [VM]|guestops-time-check [VM]}" >&2
             exit 2
             ;;
     esac
