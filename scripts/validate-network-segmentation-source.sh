@@ -375,6 +375,52 @@ for function in (
 
 if "grep -E 'KINGDOMS_DC_TIME_" in text:
     raise SystemExit('child-time marker parsing regressed to regex matching')
+
+child_start = text.index('ensure_child_dc_time_ready() {')
+child_end = text.index('wait_domain_controller_ready() {', child_start)
+child = text[child_start:child_end]
+
+for token in (
+    "Resolve-DnsName -Name '${parent_server}'",
+    '-Type A -DnsOnly',
+    'KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_server_dns',
+    'KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_ntp_path',
+    'function Restore-DomainHierarchy',
+    '"/manualpeerlist:${parent_server},0x8"',
+    '/syncfromflags:manual /update',
+    '/syncfromflags:domhier /update',
+    'Remove-ItemProperty -Path $parametersPath -Name NtpServer',
+    'mode=manual_bootstrap_restored',
+    'domhier_restored=true',
+):
+    if token not in child:
+        raise SystemExit(f'child-time deterministic recovery contract missing: {token}')
+
+for forbidden in (
+    '_ldap._tcp.pdc._msdcs',
+    'stage=parent_pdc_dns',
+    'stage=parent_domain_locator',
+    'stage=parent_timeserv_locator',
+    'Reset-ComputerMachinePassword',
+    '/sc_reset:',
+    'netdom resetpwd',
+):
+    if forbidden in child:
+        raise SystemExit(f'child-time recovery contains forbidden/stale behavior: {forbidden}')
+
+target_start = text.index('guestops_readiness_check() (')
+target_end = text.index('enter_provisioning_mode() {', target_start)
+target = text[target_start:target_end]
+for token in (
+    'dependencies=(GOAD-DC01)',
+    'dependencies=(GOAD-DC01 GOAD-DC02)',
+    'dependencies=(GOAD-DC03)',
+    'vmx_for GOAD-ROUTER',
+    'GOAD-ROUTER must be running',
+    'prove_isolated_guest_ready "${dependency}" dc',
+):
+    if token not in target:
+        raise SystemExit(f'targeted GuestOps dependency closure missing: {token}')
 PY
 pass "exercise readiness uses VMware Guest Operations without runtime NAT hot-plug"
 
