@@ -283,13 +283,19 @@ class LabModeAdReadinessTests(unittest.TestCase):
         self.assertIn("=== WINDOWS VM NETWORK STATE ===", fn)
         self.assertIn('return "${router_status}"', fn)
 
-    def test_targeted_guestops_readiness_command_uses_isolated_readiness_contract(self):
+    def test_targeted_guestops_readiness_command_uses_dependency_closure(self):
         text = self.text
         fn = text[text.index("guestops_readiness_check()"):
                   text.index("enter_provisioning_mode()")]
 
         self.assertIn('kind="dc"', fn)
         self.assertIn('kind="member"', fn)
+        self.assertIn('dependencies=(GOAD-DC01)', fn)
+        self.assertIn('dependencies=(GOAD-DC01 GOAD-DC02)', fn)
+        self.assertIn('dependencies=(GOAD-DC03)', fn)
+        self.assertIn('vmx_for GOAD-ROUTER', fn)
+        self.assertIn('GOAD-ROUTER must be running', fn)
+        self.assertIn('prove_isolated_guest_ready "${dependency}" dc', fn)
         self.assertIn('prove_isolated_guest_ready "${vm}" "${kind}"', fn)
         self.assertIn("targeted GuestOps readiness passed", fn)
 
@@ -519,22 +525,23 @@ last_marker_line "$output" \
         self.assertNotIn("grep -E 'KINGDOMS_DC_TIME_", fn)
         self.assertNotIn("grep -F 'KINGDOMS_GUESTOPS_ERROR|'", fn)
 
-    def test_child_dc_time_repair_uses_deterministic_parent_dns_and_ntp_prereqs(self):
+    def test_child_dc_time_repair_uses_direct_parent_dns_and_ntp_prereqs(self):
         text = self.text
         fn = text[text.index("ensure_child_dc_time_ready()"):
                   text.index("wait_domain_controller_ready()")]
 
-        self.assertIn("_ldap._tcp.pdc._msdcs.${parent_domain}", fn)
-        self.assertIn("Resolve-DnsName", fn)
-        self.assertIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns", fn)
+        self.assertIn("Resolve-DnsName -Name '${parent_server}'", fn)
+        self.assertIn("-Type A -DnsOnly", fn)
+        self.assertIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_server_dns", fn)
         self.assertIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_ntp_path", fn)
-        self.assertNotIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_domain_locator", fn)
-        self.assertNotIn("KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_timeserv_locator", fn)
+        self.assertNotIn("_ldap._tcp.pdc._msdcs", fn)
+        self.assertNotIn("stage=parent_pdc_dns", fn)
+        self.assertNotIn("stage=parent_domain_locator", fn)
+        self.assertNotIn("stage=parent_timeserv_locator", fn)
 
-        # DC Locator is still primed during rediscovery, but a transient 1355 is
-        # no longer a hard prerequisite before W32Time recovery is attempted.
-        self.assertIn("Prime DC Locator best-effort", fn)
+        # DC Locator remains best-effort input to rediscovery, never a hard gate.
         self.assertIn("nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force", fn)
+        self.assertIn("diagnostic input, not a hard prerequisite", fn)
 
         for marker in (
             "KINGDOMS_DC_TIME_REPAIRED|",
@@ -544,16 +551,35 @@ last_marker_line "$output" \
             self.assertIn(marker, fn)
         self.assertIn("repair_deferred=$((repair_deferred + 1))", fn)
         self.assertIn("repair_invocations=$((repair_invocations + 1))", fn)
-        self.assertIn("parent prerequisite is not ready yet", fn)
-        self.assertIn("recovery failed after prerequisites were proven", fn)
-    def test_child_dc_time_repair_is_bounded_and_never_rewrites_trust(self):
+
+    def test_child_dc_time_manual_bootstrap_is_bounded_and_restores_domhier(self):
         text = self.text
         fn = text[text.index("ensure_child_dc_time_ready()"):
                   text.index("wait_domain_controller_ready()")]
 
-        self.assertIn("repair_attempted == 0", fn)
-        self.assertIn("consecutive_source_failures >= 6", fn)
-        self.assertIn("syncAttempt -le 12", fn)
+        for token in (
+            'function Restore-DomainHierarchy',
+            '"/manualpeerlist:${parent_server},0x8"',
+            '/syncfromflags:manual /update',
+            '/syncfromflags:domhier /update',
+            'originalNtpProperty',
+            'hadOriginalNtpServer',
+            'Set-ItemProperty -Path $parametersPath -Name NtpServer',
+            'Remove-ItemProperty -Path $parametersPath -Name NtpServer',
+            'mode=manual_bootstrap_restored',
+            'domhier_restored=true',
+        ):
+            self.assertIn(token, fn)
+
+        self.assertIn("syncAttempt -le 3", fn)
+        self.assertIn("bootstrapAttempt -le 3", fn)
+        self.assertIn("restoreAttempt -le 4", fn)
+
+        manual = fn.index('"/manualpeerlist:${parent_server},0x8"')
+        restore = fn.index("Restore-DomainHierarchy", manual)
+        terminal = fn.index("KINGDOMS_DC_TIME_REPAIR_FAILED|stage=manual_bootstrap_sync", manual)
+        self.assertLess(manual, restore)
+        self.assertLess(restore, terminal)
 
         for forbidden in (
             "Reset-ComputerMachinePassword",
@@ -561,7 +587,6 @@ last_marker_line "$output" \
             "netdom resetpwd",
         ):
             self.assertNotIn(forbidden, fn)
-
     def test_member_readiness_proves_trust_account_lookup_and_domain_time(self):
         text = self.text
 
