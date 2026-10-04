@@ -1,3 +1,4 @@
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -49,12 +50,19 @@ class WpadRestoreSourceTests(unittest.TestCase):
             "Set-NetIPAddress",
             "New-NetIPAddress",
             "Remove-NetIPAddress",
-            "Set-DnsClientServerAddress",
             "Remove-NetRoute",
             "New-NetRoute",
             "vmrun",
         ):
             self.assertNotIn(forbidden, self.playbook)
+
+        self.assertIsNone(
+            re.search(
+                r"(?m)^\\s*Set-DnsClientServerAddress\\b",
+                self.playbook,
+            ),
+            "restore playbook must not invoke Set-DnsClientServerAddress",
+        )
 
     def test_restore_refuses_to_run_while_mitm6_is_active(self):
         self.assertIn("mitm6 is still active; stop the WPAD attack runtime before restoring WS01", self.script)
