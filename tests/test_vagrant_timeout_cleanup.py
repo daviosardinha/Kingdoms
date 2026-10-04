@@ -326,7 +326,8 @@ class KingdomsSnapshotResetTests(unittest.TestCase):
         self.provider._running_instance_vms.assert_not_called()
 
 
-class LiveProcessCleanupTests(unittest.TestCase):    def test_vm_monitor_in_inherited_group_survives_real_controller_cleanup(self):
+class LiveProcessCleanupTests(unittest.TestCase):
+    def test_vm_monitor_in_inherited_group_survives_real_controller_cleanup(self):
         try:
             import psutil
         except ImportError:
