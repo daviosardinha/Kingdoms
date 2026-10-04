@@ -7,6 +7,8 @@
 set -Eeuo pipefail
 
 ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
+IFACE="${IFACE:-vmnet10}"
+WS01_IP="${WS01_IP:-10.4.10.31}"
 ATTEMPTS="${WPAD_RESTORE_ATTEMPTS:-2}"
 RESTORE_TIMEOUT_SECONDS="${WPAD_RESTORE_TIMEOUT_SECONDS:-60}"
 VERIFY_TIMEOUT_SECONDS="${WPAD_VERIFY_TIMEOUT_SECONDS:-45}"
@@ -16,6 +18,7 @@ DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
 PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
 RESTORE_PLAYBOOK="$ROOT/ansible/phase03-wpad-restore-baseline.yml"
 VERIFY_SCRIPT="$ROOT/scripts/phase03/verify-wpad-reset.sh"
+BASELINE_GUARD="$ROOT/scripts/phase03/validate-wpad-baseline.py"
 BASELINE="${BASELINE:-$HOME/.config/kingdoms/phase03-wpad-baseline.json}"
 
 find_ansible_playbook() {
@@ -42,6 +45,7 @@ cd "$ROOT"
 
 [[ -f "$BASELINE" ]] || fail "captured WPAD baseline is missing: $BASELINE"
 [[ -f "$RESTORE_PLAYBOOK" ]] || fail "WPAD restore playbook is missing: $RESTORE_PLAYBOOK"
+[[ -f "$BASELINE_GUARD" ]] || fail "WPAD baseline guard is missing: $BASELINE_GUARD"
 
 if pgrep -af '(^|[ /])mitm6([ ]|$)' >/dev/null; then
   fail 'mitm6 is still active; stop the WPAD attack runtime before restoring WS01'
@@ -50,6 +54,17 @@ fi
 ANSIBLE_PLAYBOOK="$(find_ansible_playbook || true)"
 [[ -n "$ANSIBLE_PLAYBOOK" ]] || fail 'ansible-playbook not found'
 
+ATTACKER_V6="$(ip -6 -o addr show dev "$IFACE" scope link | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+[[ -n "$ATTACKER_V6" ]] || fail "$IFACE has no IPv6 link-local address"
+
+echo '===== VALIDATE TRUSTED BASELINE ====='
+python3 "$BASELINE_GUARD" \
+  "$BASELINE" \
+  --target-ip "$WS01_IP" \
+  --attacker-v6 "$ATTACKER_V6" || \
+  fail 'captured WPAD baseline is unsafe; refusing rollback'
+
+echo
 echo '===== PHASE 03 WPAD BASELINE RESTORE ====='
 echo "Attempts:        $ATTEMPTS"
 echo "Restore timeout: ${RESTORE_TIMEOUT_SECONDS}s"
