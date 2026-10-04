@@ -94,17 +94,40 @@ ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg" "$ANSIBLE_PLAYBOOK" \
 
 python3 - "$BASELINE" <<'PY'
 import json,sys
+
 d=json.load(open(sys.argv[1],encoding='utf-8'))
-assert d['Target']=='WS01'
-assert d['IPv4']=='10.4.10.31'
+if d.get('Target') != 'WS01' or d.get('IPv4') != '10.4.10.31':
+    raise SystemExit('FAIL: WPAD baseline does not describe WS01 / 10.4.10.31')
+
+dns6 = [str(item) for item in d.get('IPv6DnsServers', []) if str(item).strip()]
+dhcp6 = [
+    str(item.get('Address', ''))
+    for item in d.get('IPv6Addresses', [])
+    if str(item.get('PrefixOrigin', '')).lower() == 'dhcp'
+    or str(item.get('SuffixOrigin', '')).lower() == 'dhcp'
+]
+
+if dns6:
+    raise SystemExit(
+        'FAIL: WS01 baseline already contains IPv6 DNS state; '
+        'refusing to arm WPAD from a potentially contaminated baseline: '
+        + ','.join(dns6)
+    )
+
+if dhcp6:
+    raise SystemExit(
+        'FAIL: WS01 baseline already contains DHCP-originated IPv6 state; '
+        'refusing to arm WPAD from a potentially contaminated baseline: '
+        + ','.join(dhcp6)
+    )
+
 print(f"INTERFACE={d['InterfaceAlias']}")
 print(f"INTERFACE_INDEX={d['InterfaceIndex']}")
 print(f"IPV6_COUNT={len(d['IPv6Addresses'])}")
 print(f"DNSV6_COUNT={len(d['IPv6DnsServers'])}")
 for item in d['IPv6Addresses']:
     print('BASELINE_IPV6=' + item['Address'])
-for item in d['IPv6DnsServers']:
-    print('BASELINE_DNSV6=' + item)
+print('PHASE03_WPAD_BASELINE_CLEAN=True')
 print('PHASE03_WPAD_BASELINE_VALID=True')
 PY
 
