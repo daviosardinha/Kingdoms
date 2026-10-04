@@ -389,7 +389,7 @@ for token in (
     '"/manualpeerlist:${parent_server},0x8"',
     '/syncfromflags:manual /update',
     '/syncfromflags:domhier /update',
-    'Remove-ItemProperty -Path $parametersPath -Name NtpServer',
+    'Remove-ItemProperty -Path \\$parametersPath -Name NtpServer',
     'mode=manual_bootstrap_restored',
     'domhier_restored=true',
 ):
