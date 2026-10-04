@@ -491,14 +491,13 @@ ensure_vm_nat_state() {
         echo
     fi
 
-    # Provisioning is an authenticated management state, not just a VMX flag.
-    # A clean/failsafe checkpoint may legitimately leave guests powered off.
-    # When provisioning requests persistent NAT ON + runtime connect, power the
-    # guest on before any WinRM/AD readiness check. Exercise/failsafe paths with
-    # desired=FALSE deliberately preserve an already powered-off guest.
-    if [[ "${desired}" == "TRUE" && "${action}" == "connect" ]] &&
+    # A runtime connect request requires a running VM even when the persistent
+    # fail-closed contract deliberately keeps ethernet0.startConnected=FALSE.
+    # Normal Windows guest reboots do not power-cycle the VMware process, so
+    # runtime-connected NAT remains available throughout installed provisioning.
+    if [[ "${action}" == "connect" ]] &&
        ! is_running "${vmx}"; then
-        echo "        [*] VM is powered off; starting it for provisioning readiness"
+        echo "        [*] VM is powered off; starting it for runtime management readiness"
 
         pin_vmware_management_nic_identity "${vmx}" ||
             fail "${vm}: could not preserve VMware management NIC identity"
@@ -506,7 +505,7 @@ ensure_vm_nat_state() {
         vmrun -T ws start "${vmx}" nogui >/dev/null
 
         wait_started "${vmx}" ||
-            fail "${vm} did not start for provisioning readiness."
+            fail "${vm} did not start for runtime management readiness."
 
         sleep 2
     fi
@@ -1193,8 +1192,8 @@ guestops_provisioning_nat_check() (
     local vmx output marker
 
     vmx="$(vmx_for "${vm}")"
-    [[ "$(get_start_connected "${vmx}")" == "TRUE" ]] ||
-        fail "${vm}: provisioning NAT check requires persistent NAT to be TRUE"
+    [[ "$(get_start_connected "${vmx}")" == "FALSE" ]] ||
+        fail "${vm}: provisioning NAT check requires persistent NAT to remain FALSE"
     is_running "${vmx}" ||
         fail "${vm}: provisioning NAT check requires the VM to be running"
 
@@ -1992,19 +1991,18 @@ preflight_exercise_time_dependencies() {
 configure_windows_nat_provisioning() {
     local vm
 
-    # Provisioning has two independent contracts:
-    #   1. ethernet0 must provide a real DHCP-backed VMware NAT path;
-    #   2. Windows/AD identity must be healthy.
-    # The segmented Ansible inventory does not use Vagrant forwarded WinRM.
-    # Prove NAT from inside the guest and prove AD through Guest Operations.
+    # Installed provisioning is runtime-connected but persistently fail-closed.
+    # Keeping startConnected=FALSE avoids power-cycling healthy guests merely to
+    # expose NAT, while a VMware power cycle still drops management NAT by
+    # default. Normal Windows guest reboots keep the VM process and runtime NIC.
     for vm in "${DOMAIN_CONTROLLERS[@]}"; do
-        ensure_vm_nat_state "${vm}" TRUE connect
+        ensure_vm_nat_state "${vm}" FALSE connect
         wait_provisioning_nat_ready "${vm}"
         READINESS_TRANSPORT=guestops wait_domain_controller_ready "${vm}"
     done
 
     for vm in "${DOMAIN_MEMBERS[@]}"; do
-        ensure_vm_nat_state "${vm}" TRUE connect
+        ensure_vm_nat_state "${vm}" FALSE connect
         wait_provisioning_nat_ready "${vm}"
         READINESS_TRANSPORT=guestops wait_domain_member_ready "${vm}"
     done
@@ -2347,7 +2345,7 @@ enter_provisioning_mode() {
 
     configure_windows_nat_provisioning
 
-    verify_persistent_state TRUE
+    verify_persistent_state FALSE
 
     echo
     apply_router_policy provisioning
@@ -2359,7 +2357,7 @@ enter_provisioning_mode() {
 
     echo
     echo "[+] GOAD_NOMAD is now in PROVISIONING mode."
-    echo "    Windows NAT adapters: persistent ON + connected"
+    echo "    Windows NAT adapters: persistent OFF + runtime connected"
     echo "    Protected-zone host routes: enabled"
     echo "    Router forwarding: temporarily permissive"
 }
