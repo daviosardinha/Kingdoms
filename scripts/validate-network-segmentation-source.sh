@@ -424,6 +424,46 @@ for token in (
 PY
 pass "exercise readiness uses VMware Guest Operations without runtime NAT hot-plug"
 
+python3 - <<'PY'
+from pathlib import Path
+
+text = Path('goad/provider/vagrant/vmware_kingdoms.py').read_text()
+start = text.index('    def _ensure_installed_child_dc_time(')
+end = text.index('    def _wait_installed_ad_ready(', start)
+repair = text[start:end]
+
+for token in (
+    "Resolve-DnsName -Name $expected -Server 127.0.0.1 -Type A -DnsOnly",
+    'w32tm.exe /stripchart /computer:$expected',
+    'function Restore-DomainHierarchy',
+    '"/manualpeerlist:$expected,0x8"',
+    '/syncfromflags:manual /update',
+    '/syncfromflags:domhier /update',
+    'Remove-ItemProperty -Path $parametersPath -Name NtpServer',
+    'KINGDOMS_CHILD_DC_TIME_READY|mode=manual_bootstrap_restored',
+):
+    if token not in repair:
+        raise SystemExit(f'installed-start child-DC time recovery missing: {token}')
+
+for forbidden in (
+    'Reset-ComputerMachinePassword',
+    '/sc_reset:',
+    'netdom resetpwd',
+):
+    if forbidden in repair:
+        raise SystemExit(f'installed-start child-DC time recovery rewrites trust: {forbidden}')
+
+start_fn = text[text.index('    def _start_existing_instance('):]
+winrm = start_fn.index('self._wait_lab_winrm_ready(')
+child_time = start_fn.index('self._ensure_installed_child_dc_time(', winrm)
+ad_ready = start_fn.index('self._wait_installed_ad_ready(', child_time)
+if not (winrm < child_time < ad_ready):
+    raise SystemExit(
+        'installed-start child-DC time recovery must run after WinRM and before AD validation'
+    )
+PY
+pass "installed start actively recovers DC02 time before validation"
+
 grep -Fq 'policy drop;' ad/GOAD/providers/vmware/router/nftables/exercise.nft ||
     fail "exercise policy is not deny-by-default"
 grep -Fq '10.4.10.22 ip daddr 10.4.30.23 tcp dport 1433' ad/GOAD/providers/vmware/router/nftables/exercise.nft ||
