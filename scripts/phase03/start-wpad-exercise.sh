@@ -64,7 +64,11 @@ echo '===== ARM 15-MINUTE SAFETY ROLLBACK ====='
 sudo systemctl stop "$WATCHDOG_UNIT.timer" "$WATCHDOG_UNIT.service" >/dev/null 2>&1 || true
 sudo systemctl reset-failed "$WATCHDOG_UNIT.timer" "$WATCHDOG_UNIT.service" >/dev/null 2>&1 || true
 
-sudo systemd-run   --unit="$WATCHDOG_UNIT"   --on-active="$WATCHDOG_DELAY"   --timer-property=AccuracySec=1s   --collect   --property=Type=oneshot   /usr/bin/bash "$ROOT/scripts/phase03/watchdog-wpad-exercise-root.sh"   "$(id -un)" "$HOME" "$ROOT" "$ACTIVE" "$LOCK"
+sudo systemd-run \
+  --unit="$WATCHDOG_UNIT" --on-active="$WATCHDOG_DELAY" \
+  --timer-property=AccuracySec=1s --collect --property=Type=oneshot \
+  /usr/bin/bash "$ROOT/scripts/phase03/watchdog-wpad-exercise-root.sh" \
+  "$(id -un)" "$HOME" "$ROOT" "$ACTIVE" "$LOCK" "$TOKEN"
 
 sudo systemctl is-active --quiet "$WATCHDOG_UNIT.timer" || {
   echo 'FAIL: WPAD safety watchdog timer did not arm' >&2
