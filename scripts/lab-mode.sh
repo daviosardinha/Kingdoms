@@ -991,33 +991,26 @@ POWERSHELL
     repair_script="$(cat <<POWERSHELL
 \$ErrorActionPreference = 'Continue'
 
-# Do not gate W32Time recovery on a generic nltest parent-domain lookup.
-# DsGetDcName can transiently return 1355 after lifecycle transitions even when
-# the routed parent path, DNS records and expected PDC are already healthy.
-# Prove the deterministic parent PDC through DNS instead, then prove NTP reachability.
-\$parentPdcQuery = '_ldap._tcp.pdc._msdcs.${parent_domain}'
-\$parentPdcRecords = @(
-    Resolve-DnsName -Name \$parentPdcQuery -Server 127.0.0.1 -Type SRV -ErrorAction SilentlyContinue |
-        Where-Object { \$_.Type -eq 'SRV' }
+# The parent PDC is already an explicit lifecycle contract. Prove that exact
+# hostname through WINTERFELL local DNS instead of gating recovery on a generic
+# DsGetDcName lookup that can transiently return 1355 after lifecycle changes.
+\$parentAddressRecords = @(
+    Resolve-DnsName -Name '${parent_server}' -Server 127.0.0.1 -Type A -DnsOnly -ErrorAction SilentlyContinue |
+        Where-Object { \$_.IPAddress }
 )
-
-if (\$parentPdcRecords.Count -eq 0) {
-    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns|detail=no SRV answer for \$parentPdcQuery"
+if (\$parentAddressRecords.Count -eq 0) {
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_server_dns|detail=${parent_server} did not resolve through local DNS"
     exit 0
 }
 
-\$parentPdcTargets = @(
-    \$parentPdcRecords |
-        ForEach-Object { "\$($_.NameTarget)".TrimEnd('.') }
+\$parentAddresses = @(
+    \$parentAddressRecords |
+        ForEach-Object { "\$($_.IPAddress)" } |
+        Where-Object { \$_ }
 )
+Write-Output "KINGDOMS_DC_TIME_REPAIR_EVIDENCE|stage=parent_server_dns|server=${parent_server}|addresses=\$((\$parentAddresses -join ','))"
 
-if (-not (\$parentPdcTargets | Where-Object { \$_ -ieq '${parent_server}' })) {
-    \$detail = ((\$parentPdcTargets -join ',') -replace '[|\r\n]', ' ').Trim()
-    Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_pdc_dns|detail=expected ${parent_server}; got \$detail"
-    exit 0
-}
-# Prove UDP/123 reaches the expected forest-root PDC before changing W32Time.
-# A temporarily unavailable NTP path is also a prerequisite wait condition.
+# Prove NTP reaches the exact expected forest-root PDC before changing W32Time.
 \$strip = @(& w32tm.exe /stripchart /computer:${parent_server} /samples:2 /dataonly 2>&1 | ForEach-Object { "\$_" })
 \$stripRc = \$LASTEXITCODE
 if (\$stripRc -ne 0) {
@@ -1025,7 +1018,37 @@ if (\$stripRc -ne 0) {
     Write-Output "KINGDOMS_DC_TIME_REPAIR_DEFERRED|stage=parent_ntp_path|rc=\$stripRc|detail=\$detail"
     exit 0
 }
+Write-Output "KINGDOMS_DC_TIME_REPAIR_EVIDENCE|stage=parent_ntp_path|server=${parent_server}|rc=0"
 
+\$parametersPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters'
+\$originalNtpServer = (Get-ItemProperty -Path \$parametersPath -Name NtpServer -ErrorAction SilentlyContinue).NtpServer
+
+function Restore-DomainHierarchy {
+    & w32tm.exe /config /syncfromflags:domhier /update | Out-Null
+    \$restoreConfigRc = \$LASTEXITCODE
+    if (\$null -ne \$originalNtpServer) {
+        Set-ItemProperty -Path \$parametersPath -Name NtpServer -Value \$originalNtpServer -ErrorAction SilentlyContinue
+    }
+    try {
+        Restart-Service W32Time -Force -ErrorAction Stop
+    }
+    catch {
+        return 1
+    }
+    return \$restoreConfigRc
+}
+
+function Current-TimeSource {
+    return ((& w32tm.exe /query /source 2>\$null | Out-String).Trim().TrimEnd('.'))
+}
+
+function Child-Timeserv-Advertises {
+    \$advertise = @(& nltest.exe '/dsgetdc:${domain}' /timeserv /force 2>&1 | ForEach-Object { "\$_" })
+    return (\$LASTEXITCODE -eq 0)
+}
+
+# First use the normal AD time hierarchy. DC Locator is primed best-effort only;
+# it is diagnostic input, not a hard prerequisite.
 & w32tm.exe /config /syncfromflags:domhier /update | Out-Null
 \$configRc = \$LASTEXITCODE
 if (\$configRc -ne 0) {
@@ -1035,11 +1058,6 @@ if (\$configRc -ne 0) {
 
 try {
     Restart-Service W32Time -Force -ErrorAction Stop
-    \$service = Get-Service W32Time -ErrorAction Stop
-    \$service.WaitForStatus(
-        [System.ServiceProcess.ServiceControllerStatus]::Running,
-        [TimeSpan]::FromSeconds(10)
-    )
 }
 catch {
     \$detail = ((\$_.Exception.Message -replace '[|\r\n]', ' ').Trim())
@@ -1048,41 +1066,82 @@ catch {
 }
 
 Start-Sleep -Seconds 2
-
-\$source = ''
-\$sourceRc = -1
 \$lastResyncRc = -1
+\$source = ''
 
-for (\$syncAttempt = 1; \$syncAttempt -le 12; \$syncAttempt++) {
-    if (\$syncAttempt -eq 1 -or ((\$syncAttempt - 1) % 3) -eq 0) {
-        # Prime DC Locator best-effort immediately before rediscovery. A transient
-        # 1355 here is not a hard prerequisite: DNS already proved the expected
-        # forest-root PDC and stripchart proved the NTP path.
-        & nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force | Out-Null
-        & w32tm.exe /resync /rediscover /nowait | Out-Null
-        \$lastResyncRc = \$LASTEXITCODE
-    }
-
+for (\$syncAttempt = 1; \$syncAttempt -le 3; \$syncAttempt++) {
+    & nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force | Out-Null
+    & w32tm.exe /resync /rediscover /nowait | Out-Null
+    \$lastResyncRc = \$LASTEXITCODE
     Start-Sleep -Seconds 5
+    \$source = Current-TimeSource
+    if (\$source -ieq '${parent_server}' -and (Child-Timeserv-Advertises)) {
+        Write-Output "KINGDOMS_DC_TIME_REPAIRED|mode=domhier|source=\$source|sync_attempt=\$syncAttempt"
+        exit 0
+    }
+}
 
-    \$source = (& w32tm.exe /query /source 2>\$null | Out-String).Trim().TrimEnd('.')
-    \$sourceRc = \$LASTEXITCODE
+# Domain hierarchy can remain behind a transient negative DC-Locator cache even
+# while DNS and UDP/123 to the known parent PDC are healthy. Bootstrap time
+# directly from that PDC, then restore NT5DS/domain-hierarchy mode before exit.
+Write-Output "KINGDOMS_DC_TIME_REPAIR_EVIDENCE|stage=manual_bootstrap|server=${parent_server}"
+& w32tm.exe /config "/manualpeerlist:${parent_server},0x8" /syncfromflags:manual /update | Out-Null
+\$manualConfigRc = \$LASTEXITCODE
+if (\$manualConfigRc -ne 0) {
+    Restore-DomainHierarchy | Out-Null
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=manual_bootstrap_config|rc=\$manualConfigRc"
+    exit 0
+}
 
-    if (\$sourceRc -eq 0 -and \$source -ieq '${parent_server}') {
-        # Once synchronized, wait until Netlogon exposes this child PDC as a
-        # TIMESERV so local-domain members can discover it deterministically.
-        \$advertise = @(& nltest.exe '/dsgetdc:${domain}' /timeserv /force 2>&1 | ForEach-Object { "\$_" })
-        \$advertiseRc = \$LASTEXITCODE
-        if (\$advertiseRc -eq 0) {
-            Write-Output "KINGDOMS_DC_TIME_REPAIRED|source=\$source|sync_attempt=\$syncAttempt"
-            exit 0
-        }
+try {
+    Restart-Service W32Time -Force -ErrorAction Stop
+}
+catch {
+    Restore-DomainHierarchy | Out-Null
+    \$detail = ((\$_.Exception.Message -replace '[|\r\n]', ' ').Trim())
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=manual_bootstrap_service|detail=\$detail"
+    exit 0
+}
+
+\$manualSource = ''
+for (\$bootstrapAttempt = 1; \$bootstrapAttempt -le 3; \$bootstrapAttempt++) {
+    & w32tm.exe /resync /nowait | Out-Null
+    \$lastResyncRc = \$LASTEXITCODE
+    Start-Sleep -Seconds 5
+    \$manualSource = Current-TimeSource
+    if (\$manualSource -ieq '${parent_server}') {
+        break
+    }
+}
+
+if (\$manualSource -ine '${parent_server}') {
+    \$restoreRc = Restore-DomainHierarchy
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=manual_bootstrap_sync|resync_rc=\$lastResyncRc|source=\$manualSource|restore_rc=\$restoreRc|expected=${parent_server}"
+    exit 0
+}
+
+\$restoreRc = Restore-DomainHierarchy
+if (\$restoreRc -ne 0) {
+    Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=restore_domhier|rc=\$restoreRc"
+    exit 0
+}
+
+Start-Sleep -Seconds 2
+for (\$restoreAttempt = 1; \$restoreAttempt -le 4; \$restoreAttempt++) {
+    & nltest.exe '/dsgetdc:${parent_domain}' /timeserv /force | Out-Null
+    & w32tm.exe /resync /rediscover /nowait | Out-Null
+    \$lastResyncRc = \$LASTEXITCODE
+    Start-Sleep -Seconds 5
+    \$source = Current-TimeSource
+    if (\$source -ieq '${parent_server}' -and (Child-Timeserv-Advertises)) {
+        Write-Output "KINGDOMS_DC_TIME_REPAIRED|mode=manual_bootstrap_restored|source=\$source|restore_attempt=\$restoreAttempt"
+        exit 0
     }
 }
 
 \$sourceSafe = ((\$source -replace '[|\r\n]', ' ').Trim())
 if (-not \$sourceSafe) { \$sourceSafe = '<none>' }
-Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=sync_or_advertising|resync_rc=\$lastResyncRc|source_rc=\$sourceRc|source=\$sourceSafe|expected=${parent_server}"
+Write-Output "KINGDOMS_DC_TIME_REPAIR_FAILED|stage=sync_or_advertising|resync_rc=\$lastResyncRc|source=\$sourceSafe|expected=${parent_server}|domhier_restored=true"
 exit 0
 POWERSHELL
 )"
