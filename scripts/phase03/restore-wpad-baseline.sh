@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Restore the exact pre-WPAD WS01 IPv6/DNS baseline.
 #
-# The DHCPv6 renewal playbook can outlive the guest-side ipconfig /renew6
-# operation. Therefore the renewal command's exit status is diagnostic only:
-# exact baseline verification is the success criterion.
+# Rollback is state-driven: mutate only the NORTH-facing IPv6/DNS values that
+# differ from the captured baseline, then require the existing exact verifier
+# to pass. No reboot, adapter reset, IPv4 change, or lab lifecycle transition.
 set -Eeuo pipefail
 
 ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
-ATTEMPTS="${WPAD_RESTORE_ATTEMPTS:-3}"
-RENEW_TIMEOUT_SECONDS="${WPAD_RENEW_TIMEOUT_SECONDS:-45}"
+ATTEMPTS="${WPAD_RESTORE_ATTEMPTS:-2}"
+RESTORE_TIMEOUT_SECONDS="${WPAD_RESTORE_TIMEOUT_SECONDS:-60}"
 VERIFY_TIMEOUT_SECONDS="${WPAD_VERIFY_TIMEOUT_SECONDS:-45}"
-SETTLE_SECONDS="${WPAD_RESTORE_SETTLE_SECONDS:-5}"
+SETTLE_SECONDS="${WPAD_RESTORE_SETTLE_SECONDS:-3}"
 
 DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
 PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
-RENEW_PLAYBOOK="$ROOT/ansible/phase03-trigger-ws01-renew6.yml"
+RESTORE_PLAYBOOK="$ROOT/ansible/phase03-wpad-restore-baseline.yml"
 VERIFY_SCRIPT="$ROOT/scripts/phase03/verify-wpad-reset.sh"
 BASELINE="${BASELINE:-$HOME/.config/kingdoms/phase03-wpad-baseline.json}"
 
@@ -41,6 +41,7 @@ fail() {
 cd "$ROOT"
 
 [[ -f "$BASELINE" ]] || fail "captured WPAD baseline is missing: $BASELINE"
+[[ -f "$RESTORE_PLAYBOOK" ]] || fail "WPAD restore playbook is missing: $RESTORE_PLAYBOOK"
 
 if pgrep -af '(^|[ /])mitm6([ ]|$)' >/dev/null; then
   fail 'mitm6 is still active; stop the WPAD attack runtime before restoring WS01'
@@ -50,9 +51,9 @@ ANSIBLE_PLAYBOOK="$(find_ansible_playbook || true)"
 [[ -n "$ANSIBLE_PLAYBOOK" ]] || fail 'ansible-playbook not found'
 
 echo '===== PHASE 03 WPAD BASELINE RESTORE ====='
-echo "Attempts:       $ATTEMPTS"
-echo "Renew timeout:  ${RENEW_TIMEOUT_SECONDS}s"
-echo "Verify timeout: ${VERIFY_TIMEOUT_SECONDS}s"
+echo "Attempts:        $ATTEMPTS"
+echo "Restore timeout: ${RESTORE_TIMEOUT_SECONDS}s"
+echo "Verify timeout:  ${VERIFY_TIMEOUT_SECONDS}s"
 
 echo
 echo '===== CURRENT BASELINE STATE ====='
@@ -64,28 +65,28 @@ fi
 
 for ((attempt=1; attempt<=ATTEMPTS; attempt++)); do
   echo
-  echo "===== RESTORE ATTEMPT $attempt/$ATTEMPTS ====="
-  echo '[*] requesting scoped WS01 DHCPv6 renewal'
+  echo "===== EXACT RESTORE ATTEMPT $attempt/$ATTEMPTS ====="
+  echo '[*] restoring only NORTH-facing IPv6/DNS differences from captured baseline'
 
   set +e
   ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg" \
-  timeout --kill-after=5 "$RENEW_TIMEOUT_SECONDS" \
+  timeout --kill-after=5 "$RESTORE_TIMEOUT_SECONDS" \
     "$ANSIBLE_PLAYBOOK" \
       -i "$DATA_INVENTORY" \
       -i "$PROVIDER_INVENTORY" \
-      "$RENEW_PLAYBOOK"
-  renew_rc=$?
+      "$RESTORE_PLAYBOOK"
+  restore_rc=$?
   set -e
 
-  case "$renew_rc" in
+  case "$restore_rc" in
     0)
-      echo '[+] renewal playbook returned normally'
+      echo '[+] exact baseline mutation returned normally'
       ;;
     124|137)
-      echo "[INFO] renewal control path exceeded its bounded wait (rc=$renew_rc); verifying guest state directly"
+      echo "[WARN] exact baseline mutation exceeded its bounded wait (rc=$restore_rc); verifying guest state directly"
       ;;
     *)
-      echo "[WARN] renewal playbook returned rc=$renew_rc; exact baseline verification remains authoritative"
+      echo "[WARN] exact baseline mutation returned rc=$restore_rc; exact verification remains authoritative"
       ;;
   esac
 
@@ -99,8 +100,8 @@ for ((attempt=1; attempt<=ATTEMPTS; attempt++)); do
   fi
 
   if (( attempt < ATTEMPTS )); then
-    echo '[INFO] WS01 has not converged yet; another bounded renewal will be attempted'
+    echo '[INFO] exact baseline has not converged yet; retrying the scoped restore once'
   fi
 done
 
-fail "WS01 did not return to the captured WPAD baseline after $ATTEMPTS bounded restore attempts"
+fail "WS01 did not return to the captured WPAD baseline after $ATTEMPTS exact restore attempts"
