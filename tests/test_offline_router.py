@@ -445,7 +445,7 @@ class InstalledWindows(unittest.TestCase):
         ).read_text(encoding='utf-8')
         fn = text[
             text.index('    def _ensure_installed_member_time_policy('):
-            text.index('    def _wait_installed_ad_ready(')
+            text.index('    def _ensure_installed_child_dc_time(')
         ]
 
         for token in (
