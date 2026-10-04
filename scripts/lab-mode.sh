@@ -2005,6 +2005,8 @@ enter_exercise_failsafe() {
 guestops_readiness_check() (
     local vm="${1:-GOAD-DC02}"
     local kind=""
+    local router_vmx dependency dependency_vmx
+    local -a dependencies=()
 
     if [[ -n "${DC_DOMAIN[${vm}]:-}" ]]; then
         kind="dc"
@@ -2014,11 +2016,40 @@ guestops_readiness_check() (
         fail "Unknown Windows VM for GuestOps readiness check: ${vm}"
     fi
 
+    # Targeted diagnostics must include the same AD dependency closure as the
+    # installed lifecycle. Otherwise DC02 can spend five minutes failing parent
+    # discovery simply because the router or KINGSLANDING was never proven.
+    case "${vm}" in
+        GOAD-DC02)
+            dependencies=(GOAD-DC01)
+            ;;
+        GOAD-SRV02|GOAD-WS01)
+            dependencies=(GOAD-DC01 GOAD-DC02)
+            ;;
+        GOAD-SRV03)
+            dependencies=(GOAD-DC03)
+            ;;
+    esac
+
+    if [[ "${vm}" == "GOAD-DC02" || "${vm}" == "GOAD-SRV02" || "${vm}" == "GOAD-WS01" ]]; then
+        router_vmx="$(vmx_for GOAD-ROUTER)" || exit
+        is_running "${router_vmx}" ||
+            fail "${vm}: GOAD-ROUTER must be running before NORTH dependency readiness can be proven"
+    fi
+
     echo "============================================================"
     echo "TARGETED VMWARE GUESTOPS READINESS"
     echo "============================================================"
     echo "VM:   ${vm}"
     echo "Kind: ${kind}"
+
+    for dependency in "${dependencies[@]}"; do
+        dependency_vmx="$(vmx_for "${dependency}")" || exit
+        is_running "${dependency_vmx}" ||
+            fail "${vm}: dependency ${dependency} is not running"
+        echo "        [*] proving dependency ${dependency} before ${vm}"
+        prove_isolated_guest_ready "${dependency}" dc
+    done
 
     prove_isolated_guest_ready "${vm}" "${kind}"
 
