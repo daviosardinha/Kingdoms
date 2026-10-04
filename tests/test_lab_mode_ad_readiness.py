@@ -707,7 +707,7 @@ set -eu
 operation=""
 for arg in "$@"; do
     case "$arg" in
-        list|runProgramInGuest|copyFileFromGuestToHost|deleteFileInGuest)
+        list|copyFileFromHostToGuest|runProgramInGuest|copyFileFromGuestToHost|deleteFileInGuest)
             operation="$arg" ;;
     esac
 done
@@ -722,6 +722,11 @@ fi
 case "$operation" in
     list)
         printf 'Total running VMs: 1\n%s\n' "$TEST_VMX" ;;
+    copyFileFromHostToGuest)
+        # The production transport uploads the PowerShell payload before
+        # execution. The fake runner does not execute that file, but recording
+        # this operation is enough to exercise ordering/deadline semantics.
+        : ;;
     runProgramInGuest)
         sleep "$TEST_RUN_DELAY"
         printf '%s\n' "$TEST_OUTPUT" > "$TEST_GUEST_RESULT"
@@ -794,7 +799,8 @@ fi
                 else:
                     self.assertEqual(result.stdout, "fixture guest output\n")
                 self.assertEqual(calls, [
-                    "list", "runProgramInGuest", "copyFileFromGuestToHost",
+                    "list", "copyFileFromHostToGuest", "runProgramInGuest",
+                    "copyFileFromGuestToHost", "deleteFileInGuest",
                     "deleteFileInGuest",
                 ])
                 self.assertFalse(guest_result_exists)
@@ -802,6 +808,7 @@ fi
     def test_stalled_tools_calls_share_one_probe_deadline(self):
         for stall, run_delay, budget, expected_rc in (
             ("list", 0, 1, 124),
+            ("copyFileFromHostToGuest", 0, 1, 124),
             ("runProgramInGuest", 0, 1, 124),
             # Leave headroom for Bash's integer SECONDS clock so the delayed
             # launch reliably reaches the operation this case intends to stall.
@@ -819,13 +826,16 @@ fi
                     self.assertEqual(result.stdout, "fixture guest output\n")
                 else:
                     expected_stage = {
-                        "list": "list", "runProgramInGuest": "run",
+                        "list": "list",
+                        "copyFileFromHostToGuest": "upload",
+                        "runProgramInGuest": "run",
                         "copyFileFromGuestToHost": "copy",
                     }[stall]
                     self.assertIn(f"KINGDOMS_GUESTOPS_ERROR|stage={expected_stage}|", result.stdout)
 
     def test_guestops_errors_identify_failed_stage_and_redact_credentials(self):
-        for operation, stage in (("runProgramInGuest", "run"),
+        for operation, stage in (("copyFileFromHostToGuest", "upload"),
+                                 ("runProgramInGuest", "run"),
                                  ("copyFileFromGuestToHost", "copy")):
             with self.subTest(operation=operation):
                 result, elapsed, calls, _ = self.run_fixture(failure=operation, budget=1)
@@ -835,7 +845,10 @@ fi
                 self.assertNotIn("NORTH\\fixture-admin", result.stdout + result.stderr)
                 self.assertNotIn("fixture*[a]\\secret&", result.stdout + result.stderr)
                 self.assertLess(elapsed, 2.5)
-                if stage == "run":
+                if stage == "upload":
+                    self.assertNotIn("runProgramInGuest", calls)
+                    self.assertNotIn("copyFileFromGuestToHost", calls)
+                elif stage == "run":
                     self.assertEqual(calls.count("copyFileFromGuestToHost"), 1)
 
     def test_missing_credentials_stop_before_guest_execution(self):
@@ -849,7 +862,8 @@ fi
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("GuestOps execution and output capture passed", result.stdout)
         self.assertEqual(calls, [
-            "list", "runProgramInGuest", "copyFileFromGuestToHost", "deleteFileInGuest",
+            "list", "copyFileFromHostToGuest", "runProgramInGuest",
+            "copyFileFromGuestToHost", "deleteFileInGuest", "deleteFileInGuest",
         ])
 
 
