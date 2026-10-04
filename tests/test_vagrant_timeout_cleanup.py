@@ -300,24 +300,40 @@ class KingdomsSnapshotResetTests(unittest.TestCase):
         self.provider._last_bounded_vagrant_reaped = True
         self.provider._run_vagrant_bounded = Mock(return_value=True)
         self.provider._running_instance_vms = Mock(return_value=[])
+        self.provider.get_runtime_mode = Mock(return_value='exercise')
+        self.provider.stop = Mock(return_value=True)
+        self.provider._restore_exercise_nic_contract_offline = Mock(return_value=True)
 
-    def test_reset_restores_snapshot_without_starting_guests(self):
+    def test_reset_restores_snapshot_and_reasserts_exercise_contract(self):
         self.assertTrue(self.provider.reset())
 
         self.provider._run_vagrant_bounded.assert_called_once_with(
             ['snapshot', 'pop', '--no-delete', '--no-start'],
             timeout=900,
         )
-        self.provider._running_instance_vms.assert_called_once_with()
+        self.provider.stop.assert_not_called()
+        self.provider._restore_exercise_nic_contract_offline.assert_called_once_with()
 
-    def test_reset_fails_if_vagrant_started_any_restored_guest(self):
+    def test_reset_recovers_when_vmware_ignores_no_start(self):
+        self.provider._running_instance_vms.return_value = [
+            'GOAD-DC01', 'GOAD-DC02', 'GOAD-WS01'
+        ]
+
+        self.assertTrue(self.provider.reset())
+        self.provider.stop.assert_called_once_with()
+        self.provider._restore_exercise_nic_contract_offline.assert_called_once_with()
+        self.log.warning.assert_any_call(
+            'GOAD Kingdoms: VMware provider auto-started restored guests '
+            'despite --no-start; stopping them before exercise NIC '
+            'normalization: GOAD-DC01, GOAD-DC02, GOAD-WS01'
+        )
+
+    def test_reset_fails_closed_when_autostarted_guests_cannot_stop(self):
         self.provider._running_instance_vms.return_value = ['GOAD-DC01']
+        self.provider.stop.return_value = False
 
         self.assertFalse(self.provider.reset())
-        self.log.error.assert_any_call(
-            'GOAD Kingdoms: snapshot restore violated --no-start; '
-            'restored guests are already running: GOAD-DC01'
-        )
+        self.provider._restore_exercise_nic_contract_offline.assert_not_called()
 
     def test_reset_does_not_claim_success_when_snapshot_restore_fails(self):
         self.provider._run_vagrant_bounded.return_value = False
@@ -325,6 +341,44 @@ class KingdomsSnapshotResetTests(unittest.TestCase):
         self.assertFalse(self.provider.reset())
         self.provider._running_instance_vms.assert_not_called()
 
+    def test_provisioning_reset_does_not_force_exercise_nic_contract(self):
+        self.provider.get_runtime_mode.return_value = 'provisioning'
+        self.provider._running_instance_vms.return_value = ['GOAD-DC01']
+
+        self.assertTrue(self.provider.reset())
+        self.provider.stop.assert_not_called()
+        self.provider._restore_exercise_nic_contract_offline.assert_not_called()
+
+    def test_offline_exercise_contract_rewrites_only_management_start_state(self):
+        self.provider._restore_exercise_nic_contract_offline = (
+            type(self.provider)._restore_exercise_nic_contract_offline.__get__(
+                self.provider, type(self.provider)
+            )
+        )
+        self.provider._running_instance_vms.return_value = []
+        self.provider.goad_nomad_windows = ['GOAD-DC01', 'GOAD-WS01']
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = {}
+            for machine in self.provider.goad_nomad_windows:
+                vmx = root / f'{machine}.vmx'
+                vmx.write_text(
+                    'ethernet0.connectionType = "nat"\n'
+                    'ethernet0.startConnected = "TRUE"\n'
+                    'ethernet1.connectionType = "custom"\n'
+                    'ethernet1.startConnected = "TRUE"\n'
+                )
+                paths[machine] = str(vmx)
+
+            self.provider._vmx_path = Mock(side_effect=lambda machine: paths[machine])
+
+            self.assertTrue(self.provider._restore_exercise_nic_contract_offline())
+
+            for vmx in paths.values():
+                text = Path(vmx).read_text()
+                self.assertIn('ethernet0.startConnected = "FALSE"', text)
+                self.assertIn('ethernet1.startConnected = "TRUE"', text)
 
 class LiveProcessCleanupTests(unittest.TestCase):
     def test_vm_monitor_in_inherited_group_survives_real_controller_cleanup(self):
