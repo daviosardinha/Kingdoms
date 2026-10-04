@@ -1,0 +1,87 @@
+---
+- name: Restore exact WS01 WPAD network baseline
+  hosts: ws01
+  gather_facts: false
+  vars:
+    phase03_wpad_baseline_path: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-wpad-baseline.json"
+    phase03_wpad_baseline: "{{ lookup('ansible.builtin.file', phase03_wpad_baseline_path) | from_json }}"
+  tasks:
+    - name: Restore NORTH-facing IPv6 and DNS state from captured baseline
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+
+          $baselineAlias = '{{ phase03_wpad_baseline.InterfaceAlias }}'
+          $baselineIndex = [int]'{{ phase03_wpad_baseline.InterfaceIndex }}'
+
+          $cfg = Get-NetIPConfiguration -InterfaceIndex $baselineIndex -ErrorAction Stop
+          if ([string]$cfg.InterfaceAlias -ne $baselineAlias) {
+              throw "WPAD baseline interface identity changed: expected $baselineAlias/$baselineIndex, got $($cfg.InterfaceAlias)/$($cfg.InterfaceIndex)"
+          }
+
+          $baselineIPv6 = @(
+              '{{ phase03_wpad_baseline.IPv6Addresses | map(attribute='Address') | join('|||') }}'.Split('|||') |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                  ForEach-Object { ([string]$_) -replace '%\d+$','' } |
+                  Sort-Object -Unique
+          )
+
+          $baselineDns = @(
+              '{{ phase03_wpad_baseline.IPv6DnsServers | join('|||') }}'.Split('|||') |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                  Sort-Object -Unique
+          )
+
+          $currentIPv6 = @(
+              Get-NetIPAddress -InterfaceIndex $baselineIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+                  ForEach-Object {
+                      [pscustomobject]@{
+                          Address = ([string]$_.IPAddress) -replace '%\d+$',''
+                          PrefixLength = [int]$_.PrefixLength
+                      }
+                  }
+          )
+
+          $removed = @()
+          foreach ($entry in $currentIPv6) {
+              if ($baselineIPv6 -notcontains $entry.Address) {
+                  Remove-NetIPAddress                       -InterfaceIndex $baselineIndex                       -AddressFamily IPv6                       -IPAddress $entry.Address                       -Confirm:$false                       -ErrorAction Stop
+                  $removed += $entry.Address
+                  $Ansible.Changed = $true
+              }
+          }
+
+          $currentDns = @(
+              Get-DnsClientServerAddress                   -InterfaceIndex $baselineIndex                   -AddressFamily IPv6                   -ErrorAction SilentlyContinue |
+                  ForEach-Object { $_.ServerAddresses } |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                  Sort-Object -Unique
+          )
+
+          $dnsDiff = @(Compare-Object -ReferenceObject $baselineDns -DifferenceObject $currentDns)
+          if ($dnsDiff.Count -ne 0) {
+              if ($baselineDns.Count -eq 0) {
+                  Set-DnsClientServerAddress                       -InterfaceIndex $baselineIndex                       -ResetServerAddresses                       -ErrorAction Stop
+              }
+              else {
+                  Set-DnsClientServerAddress                       -InterfaceIndex $baselineIndex                       -ServerAddresses $baselineDns                       -ErrorAction Stop
+              }
+              $Ansible.Changed = $true
+          }
+
+          Start-Sleep -Seconds 2
+
+          Write-Output "PHASE03_WPAD_RESTORE_INTERFACE=$baselineAlias"
+          Write-Output "PHASE03_WPAD_RESTORE_REMOVED_IPV6_COUNT=$($removed.Count)"
+          foreach ($addr in $removed) {
+              Write-Output "PHASE03_WPAD_RESTORE_REMOVED_IPV6=$addr"
+          }
+          Write-Output "PHASE03_WPAD_RESTORE_BASELINE_DNSV6_COUNT=$($baselineDns.Count)"
+          Write-Output "PHASE03_WPAD_RESTORE_MUTATION_COMPLETE=True"
+      register: restore
+
+    - name: Emit WPAD restore mutation markers
+      ansible.builtin.debug:
+        msg: "{{ restore.output | default([]) }}"
+      changed_when: false
