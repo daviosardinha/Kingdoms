@@ -1,0 +1,63 @@
+---
+- name: Observe whether WS01 WPAD network state differs from the captured baseline
+  hosts: ws01
+  gather_facts: false
+  vars:
+    phase03_wpad_baseline_path: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-wpad-baseline.json"
+    phase03_wpad_baseline: "{{ lookup('ansible.builtin.file', phase03_wpad_baseline_path) | from_json }}"
+  tasks:
+    - name: Compare current IPv6 and DNS state without modifying WS01
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+
+          $baselineIndex = [int]'{{ phase03_wpad_baseline.InterfaceIndex }}'
+
+          $baselineIPv6 = @(
+              '{{ phase03_wpad_baseline.IPv6Addresses | map(attribute='Address') | join('|||') }}'.Split('|||') |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                  ForEach-Object { ([string]$_) -replace '%\d+$','' } |
+                  Sort-Object -Unique
+          )
+
+          $baselineDns = @(
+              '{{ phase03_wpad_baseline.IPv6DnsServers | join('|||') }}'.Split('|||') |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                  Sort-Object -Unique
+          )
+
+          $currentIPv6 = @(
+              Get-NetIPAddress -InterfaceIndex $baselineIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+                  ForEach-Object { ([string]$_.IPAddress) -replace '%\d+$','' } |
+                  Sort-Object -Unique
+          )
+
+          $currentDns = @(
+              Get-DnsClientServerAddress -InterfaceIndex $baselineIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+                  ForEach-Object { $_.ServerAddresses } |
+                  Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                  ForEach-Object { [string]$_ } |
+                  Sort-Object -Unique
+          )
+
+          $ipv6Drift = (@(Compare-Object -ReferenceObject $baselineIPv6 -DifferenceObject $currentIPv6).Count -ne 0)
+          $dnsDrift = (@(Compare-Object -ReferenceObject $baselineDns -DifferenceObject $currentDns).Count -ne 0)
+          $drift = ($ipv6Drift -or $dnsDrift)
+
+          Write-Output "PHASE03_WPAD_DRIFT_IPV6=$ipv6Drift"
+          Write-Output "PHASE03_WPAD_DRIFT_DNSV6=$dnsDrift"
+          Write-Output "PHASE03_WPAD_DRIFT=$drift"
+
+          foreach ($addr in $currentIPv6) {
+              Write-Output "CURRENT_IPV6=$addr"
+          }
+          foreach ($server in $currentDns) {
+              Write-Output "CURRENT_DNSV6=$server"
+          }
+      register: wpad_drift
+
+    - name: Emit WPAD drift markers
+      ansible.builtin.debug:
+        msg: "{{ wpad_drift.output | default([]) }}"
+      changed_when: false
