@@ -1033,11 +1033,11 @@ if (\$addresses.Count -eq 0) {
 }
 
 if (\$gateway.Count -eq 0 -or -not \$gateway[0] -or \$gateway[0] -eq '0.0.0.0') {
-    Write-Output "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=gateway|alias=\$aliasSafe|ip=\$($addresses[0])|mac=\$expectedMac"
+    Write-Output "KINGDOMS_PROVISIONING_NAT_NOT_READY|reason=gateway|alias=\$aliasSafe|ip=\$(\$addresses[0])|mac=\$expectedMac"
     exit 0
 }
 
-Write-Output "KINGDOMS_PROVISIONING_NAT_READY|alias=\$aliasSafe|ip=\$($addresses[0])|gateway=\$($gateway[0])|mac=\$expectedMac"
+Write-Output "KINGDOMS_PROVISIONING_NAT_READY|alias=\$aliasSafe|ip=\$(\$addresses[0])|gateway=\$(\$gateway[0])|mac=\$expectedMac"
 POWERSHELL
 )"
 
@@ -1071,8 +1071,8 @@ if (-not \$adapter) {
 \$ipif = Get-NetIPInterface -InterfaceIndex \$ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Select-Object -First 1
 
-if (-not \$ipif -or "\$($ipif.Dhcp)" -ne 'Enabled') {
-    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_FAILED|reason=dhcp_disabled|alias=\$($adapter.Name)|mac=\$expectedMac"
+if (-not \$ipif -or "\$(\$ipif.Dhcp)" -ne 'Enabled') {
+    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_FAILED|reason=dhcp_disabled|alias=\$(\$adapter.Name)|mac=\$expectedMac"
     exit 0
 }
 
@@ -1097,7 +1097,7 @@ try {
         }
     }
 
-    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_ATTEMPTED|alias=\$($adapter.Name)|status=\$($adapter.Status)|mac=\$expectedMac"
+    Write-Output "KINGDOMS_PROVISIONING_NAT_REPAIR_ATTEMPTED|alias=\$(\$adapter.Name)|status=\$(\$adapter.Status)|mac=\$expectedMac"
 }
 catch {
     \$detail = ((\$_.Exception.Message -replace '[|\r\n]', ' ').Trim())
