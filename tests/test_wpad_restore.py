@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class WpadRestoreSourceTests(unittest.TestCase):
     def setUp(self):
         self.script = (ROOT / "scripts" / "phase03" / "restore-wpad-baseline.sh").read_text()
+        self.playbook = (ROOT / "ansible" / "phase03-wpad-restore-baseline.yml").read_text()
 
     def test_restore_is_bounded_and_uses_exact_baseline_as_success_oracle(self):
         for token in (
@@ -25,6 +26,32 @@ class WpadRestoreSourceTests(unittest.TestCase):
         self.assertIn('124|137)', self.script)
         self.assertIn('if timeout --kill-after=5 "$VERIFY_TIMEOUT_SECONDS" bash "$VERIFY_SCRIPT"; then', self.script)
         self.assertNotIn('phase03-trigger-ws01-renew6.yml', self.script)
+
+    def test_restore_playbook_is_scoped_to_captured_ipv6_and_dns_state(self):
+        for token in (
+            "phase03_wpad_baseline.InterfaceAlias",
+            "phase03_wpad_baseline.InterfaceIndex",
+            "phase03_wpad_baseline.IPv6Addresses",
+            "phase03_wpad_baseline.IPv6DnsServers",
+            "Remove-NetIPAddress",
+            "Set-DnsClientServerAddress",
+            "-ResetServerAddresses",
+            "PHASE03_WPAD_RESTORE_MUTATION_COMPLETE=True",
+        ):
+            self.assertIn(token, self.playbook)
+
+        for forbidden in (
+            "Restart-Computer",
+            "shutdown.exe",
+            "Disable-NetAdapter",
+            "Enable-NetAdapter",
+            "Set-NetIPAddress",
+            "New-NetIPAddress",
+            "Remove-NetRoute",
+            "New-NetRoute",
+            "vmrun",
+        ):
+            self.assertNotIn(forbidden, self.playbook)
 
     def test_restore_refuses_to_run_while_mitm6_is_active(self):
         self.assertIn("mitm6 is still active; stop the WPAD attack runtime before restoring WS01", self.script)
