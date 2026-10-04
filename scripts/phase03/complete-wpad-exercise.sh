@@ -9,15 +9,23 @@ VALIDATOR="$ROOT/scripts/phase03/validate-wpad-chain.sh"
 ROLLBACK="$ROOT/scripts/phase03/rollback-wpad-runtime.sh"
 VICTIM_CLEANUP="$ROOT/scripts/phase03/diagnostics/cleanup-wpad-rickon-session.sh"
 STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-ACTIVE="${WPAD_ACTIVE_MARKER:-$STATE_HOME/kingdoms/phase03-wpad-active}"
-LOCK="${WPAD_LOCK_FILE:-/tmp/kingdoms-phase03-wpad.lock}"
+STATE_DIR="$STATE_HOME/kingdoms"
+ACTIVE="${WPAD_ACTIVE_MARKER:-$STATE_DIR/phase03-wpad-active}"
+LOCK="${WPAD_LOCK_FILE:-$STATE_DIR/phase03-wpad.lock}"
 WATCHDOG_UNIT='kingdoms-phase03-wpad-watchdog'
 
 cd "$ROOT" || exit 1
+install -d -m 700 "$STATE_DIR"
 
-exec 9>"$LOCK"
+if ! exec 9>"$LOCK"; then
+  echo "FAIL: could not open WPAD lifecycle lock: $LOCK" >&2
+  exit 1
+fi
 echo 'Waiting for WPAD lifecycle lock...'
-flock 9
+if ! flock 9; then
+  echo "FAIL: could not acquire WPAD lifecycle lock: $LOCK" >&2
+  exit 1
+fi
 echo 'WPAD lifecycle lock acquired'
 
 [[ -x "$VALIDATOR" || -f "$VALIDATOR" ]] || {
