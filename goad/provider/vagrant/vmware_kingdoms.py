@@ -672,6 +672,34 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         )
         return True
 
+
+    def _validated_kingdoms_legacy_plan(self, action, machine=None):
+        """Resolve operation order from the *installed* Kingdoms instance.
+
+        This does not approve Course 1 runtime activation. The established
+        six-guest controller is the only supported consumer until the separate
+        install, router, SQL and network-mode release gates are accepted.
+        Reject an unexpected provider roster or host-address mapping before
+        the caller invokes any VMware, Vagrant or routing mutation.
+        """
+        from goad.course1_bound_lifecycle import plan_bound_instance
+        from goad.course1_runtime_contract import FULL, ProfileNotReady
+
+        if tuple(self.goad_nomad_windows) != FULL.windows:
+            Log.error(
+                'Kingdoms: unsupported instance Windows roster; '
+                'reduced lifecycle activation is not yet approved'
+            )
+            return None
+        if dict(self.management_hosts) != dict(FULL.management_hosts):
+            Log.error('Kingdoms: installed management endpoints differ from validated reference roster')
+            return None
+        try:
+            return plan_bound_instance(self.path, action, machine)
+        except (ProfileNotReady, OSError, UnicodeError) as exc:
+            Log.error(f'Kingdoms: installed lifecycle plan rejected: {exc}')
+            return None
+
     def start_vm(self, vm_name):
         """Start one installed guest, plus its router dependency when needed."""
         if self.lab_name != 'GOAD':
@@ -711,6 +739,9 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             return super().stop()
         if not self._require_full_goad_instance_binding():
             return False
+        stop_plan = self._validated_kingdoms_legacy_plan("stop")
+        if stop_plan is None:
+            return False
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
             Log.error('GOAD Kingdoms: an earlier Vagrant controller was not reaped; refusing concurrent VM changes')
             return False
@@ -723,7 +754,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
         Log.info('GOAD Kingdoms: local shutdown; Windows members first, domain controllers next, router last')
         # The canonical roster lists DCs before member servers/workstations.
-        for machine in reversed(self.goad_nomad_windows):
+        for machine in stop_plan.phases[0].machines:
             if machine in running:
                 self._stop_machine_via_vmware(machine)
 
@@ -828,6 +859,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         if self.lab_name != 'GOAD':
             return super().reset()
         if not self._require_full_goad_instance_binding():
+            return False
+        if self._validated_kingdoms_legacy_plan("reset") is None:
             return False
 
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
@@ -1205,6 +1238,9 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         must be proven before members are started, and every member must regain
         its authenticated domain/time relationship before start succeeds.
         """
+        start_plan = self._validated_kingdoms_legacy_plan("start", vm_name)
+        if start_plan is None:
+            return False
         if self.get_runtime_mode() not in ('exercise', 'provisioning'):
             Log.error('GOAD Kingdoms: no recorded installed mode; complete installation before using start')
             return False
@@ -1226,21 +1262,9 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         if vm_name == 'GOAD-ROUTER':
             return True
 
-        # Keep the proven full-GOAD startup sequence from the shared roster
-        # contract. The Course 1 four-VM roster remains PREVIEW-ONLY: it cannot
-        # be selected by this provider until its full lifecycle is ready.
-        from goad.course1_runtime_contract import FULL, ProfileNotReady
-        if tuple(self.goad_nomad_windows) != FULL.windows:
-            Log.error(
-                'GOAD Kingdoms: unsupported instance Windows roster; '
-                'reduced lifecycle activation is not yet approved'
-            )
-            return False
-        try:
-            start_order = list(FULL.requested_start(vm_name))
-        except ProfileNotReady as exc:
-            Log.error(f'GOAD Kingdoms: startup plan rejected: {exc}')
-            return False
+        # The installed-instance binding and exact reference-roster checks were
+        # completed before any router, inventory or guest operation above.
+        start_order = list(start_plan.phases[1].machines)
 
         # Use the router's management NIC to establish routes before checking
         # protected-zone Windows addresses. Windows NAT settings remain untouched.

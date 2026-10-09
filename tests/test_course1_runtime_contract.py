@@ -30,12 +30,12 @@ class Course1RuntimeContractTests(unittest.TestCase):
             ("GOAD-DC03", "GOAD-SRV03"),
         )
 
-    def test_provider_uses_only_legacy_planner(self):
+    def test_provider_uses_only_bound_legacy_planner(self):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1]
                   / "goad/provider/vagrant/vmware_kingdoms.py").read_text(
                       encoding="utf-8")
-        self.assertIn("FULL.requested_start(vm_name)", source)
+        self.assertIn("start_order = list(start_plan.phases[1].machines)", source)
         self.assertIn("tuple(self.goad_nomad_windows) != FULL.windows", source)
         self.assertIn("reduced lifecycle activation is not yet approved", source)
 
