@@ -53,6 +53,12 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   one-route parent domain helper, instance-bound management SSH, profile-scoped
   helper selection in the shared Kingdoms provider. GOAD helpers untouched.
   NORTH provider remains blocked from mutating router/host routes.
+- [x] Patched shared VMware Vagrant template for NORTH: retain the Kingdoms
+  box-update suppression, bounded halt, VMware Tools/WinRM guest-IP handling,
+  and stage Windows remediation scripts from the NORTH instance workspace.
+  The GOAD reference template rendering keeps its original paths unchanged.
+- [ ] Prove NORTH instance-local Vagrant script resolution with Kali 274-test
+  validation, then complete profile-aware mode/AD and provisioner lifecycle.
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.
