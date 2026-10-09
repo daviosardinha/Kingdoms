@@ -160,7 +160,7 @@ class KingdomsNorthModeSourceTests(unittest.TestCase):
         script = (ROOT / "scripts/lab-mode.sh").read_text()
         self.assertIn('NORTH requires explicit GOAD_PROVIDER_DIR; no auto-discovery', script)
         self.assertIn('NORTH provider is not bound to', script)
-        self.assertIn('PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}"', script)
+        self.assertIn('PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"', script)
         self.assertIn('python3 -m goad.course1_instance_binding --check-provider "${PROVIDER}"', script)
         from goad.provider.vagrant.vmware_nomad import GoadNomadVmwareProvider
         from types import SimpleNamespace
