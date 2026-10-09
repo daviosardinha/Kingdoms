@@ -98,6 +98,7 @@ python3 -m unittest \
     tests.test_course1_reduced_profile \
     tests.test_course1_runtime_contract \
     tests.test_kingdoms_vmware_profile \
+    tests.test_kingdoms_north_mode_source \
     tests.test_kingdoms_foundation \
     tests.test_course1_lab_registry \
     tests.test_course1_instance_binding \
@@ -131,6 +132,8 @@ for shell_file in \
     scripts/course1/maintain-vmware-networks.sh \
     scripts/course1/manage-north-hostaddrs.sh \
     scripts/course1/kingdoms-north-vmnet-hostaddrs \
+    scripts/course1/provisioning-routes.sh \
+    scripts/course1/router-ssh.sh \
     scripts/lab-mode.sh \
     scripts/verify-test-source.sh; do
     bash -n "${shell_file}" || fail "Bash syntax invalid: ${shell_file}"

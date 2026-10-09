@@ -60,6 +60,12 @@ class GoadNomadVmwareProvider(VmwareProvider):
         return os.path.dirname(os.path.dirname(script))
 
     def _script(self, name):
+        # Preserve the reference helpers; isolate NORTH's router and routes.
+        if self.lab_name == 'NORTH':
+            name = {
+                'router-ssh.sh': 'course1/router-ssh.sh',
+                'provisioning-routes.sh': 'course1/provisioning-routes.sh',
+            }.get(name, name)
         script = GoadPath.get_script_file(name)
         if not os.path.isfile(script):
             Log.error(f'GOAD_NOMAD helper not found: {script}')
@@ -131,7 +137,9 @@ class GoadNomadVmwareProvider(VmwareProvider):
 
     def _router_policy_path(self, mode):
         return os.path.join(
-            GoadPath.get_lab_provider_path('GOAD', 'vmware'),
+            GoadPath.get_lab_provider_path(
+                self.lab_name if self.lab_name == 'NORTH' else 'GOAD', 'vmware'
+            ),
             'router',
             'nftables',
             f'{mode}.nft',
@@ -147,6 +155,11 @@ class GoadNomadVmwareProvider(VmwareProvider):
         therefore applies only the router policy; the full mode controller takes
         ownership again once all Windows guests exist.
         """
+        binding = self.kingdoms_vmware_binding
+        if self.lab_name == 'NORTH' and (
+                binding is None or not binding.segmented_install_enabled):
+            Log.error('NORTH router policy changes blocked until runtime acceptance')
+            return False
         policy = self._router_policy_path(mode)
         if not os.path.isfile(policy):
             Log.error(f'GOAD_NOMAD router policy not found: {policy}')
@@ -187,6 +200,11 @@ class GoadNomadVmwareProvider(VmwareProvider):
         return True
 
     def _enable_provisioning_routes(self):
+        binding = self.kingdoms_vmware_binding
+        if self.lab_name == 'NORTH' and (
+                binding is None or not binding.segmented_install_enabled):
+            Log.error('NORTH routes blocked until runtime acceptance')
+            return False
         route_script = self._script('provisioning-routes.sh')
         if route_script is None:
             return False

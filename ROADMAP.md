@@ -49,9 +49,13 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   addresses remain exactly as validated; NORTH's four guests and vmnet11/12/13
   are now separate source-controlled runtime identities, with six focused
   regressions. NORTH's *segmented install* permission remains **false**.
-- [ ] Finish profile-aware router/mode, NAT, host routing, AD readiness and
-  inventory synchronization on the existing Kingdoms provider before allowing
-  the NORTH installer to mutate VMs.
+- [x] Source: NORTH isolated provision/exercise nftables policies, strict
+  one-route parent domain helper, instance-bound management SSH, profile-scoped
+  helper selection in the shared Kingdoms provider. GOAD helpers untouched.
+  NORTH provider remains blocked from mutating router/host routes.
+- [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
+  Windows/AD readiness and post-Vagrant inventory synchronization. Only then
+  can the existing Kingdoms `install` lifecycle be enabled for NORTH.
 - [ ] Confirm native `./goad.sh` install/start/stop/provisioning/exercise
   on a disposable NORTH instance, including rollback, AD, SQL and Phase 03.
 - [ ] Release NORTH provider only AFTER actual runtime checks pass; until then

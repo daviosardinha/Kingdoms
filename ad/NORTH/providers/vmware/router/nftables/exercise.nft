@@ -1,0 +1,14 @@
+#!/usr/sbin/nft -f
+flush ruleset
+table inet kingdoms_north {
+  chain input { type filter hook input priority 0; policy accept; }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state established,related counter accept
+    # Cross-zone AD: parent and child DCs only; dynamic RPC required.
+    ip saddr 10.41.10.11 ip daddr 10.41.20.10 counter accept
+    ip saddr 10.41.20.10 ip daddr 10.41.10.11 counter accept
+    counter
+  }
+  chain output { type filter hook output priority 0; policy accept; }
+}
