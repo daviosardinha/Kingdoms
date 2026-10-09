@@ -268,15 +268,39 @@ def host_survey() -> dict:
     }
 
 
+def compact_report(report: dict) -> dict:
+    """Operational summary: full snapshot remains available without --summary."""
+    return {
+        "kind": report["kind"],
+        "status": report["status"],
+        "coverage": report["coverage"],
+        "reference_vmnets": report["reference_vmnets"],
+        "observed_vmnets": report["observed_vmnets"],
+        "host_vmnet_interfaces": [
+            {"interface": row["interface"], "ipv4": row["ipv4"]}
+            for row in report["host_interfaces"]
+            if row["interface"].startswith("vmnet")
+        ],
+        "ipv4_route_records": len(report["ipv4_routes"]),
+        "running_vm_count": report["running_vm_count"],
+        "running_vmx_readable": sum(vm["readable"] for vm in report["running_vms"]),
+        "warnings": report["warnings"],
+        "candidate_allocation_authorized": False,
+        "deployment_authorized": False,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true",
                         help="perform host read-only survey; no guest or host mutation")
+    parser.add_argument("--summary", action="store_true",
+                        help="print compact status rather than full guest/routes inventory")
     args = parser.parse_args()
     if not args.check:
         parser.error("--check is mandatory")
     report = host_survey()
-    print(json.dumps(report, indent=2))
+    print(json.dumps(compact_report(report) if args.summary else report, indent=2))
     if report["status"] != "OBSERVED_SNAPSHOT":
         parser.exit(2, "[INCOMPLETE] Host identity survey is partial; no allocation authorized\n")
     print("[PASS] Read-only host snapshot collected; no allocation authorized")

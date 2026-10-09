@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REFERENCE_VAGRANT = ROOT / "ad/GOAD/providers/vmware/Vagrantfile"
 REFERENCE_ROUTER = ROOT / "ad/GOAD/providers/vmware/router/provision.sh"
 
-ZONES = ("NORTH", "SEVENKINGDOMS", "ESSOS_TRANSITION", "MANAGEMENT")
+ZONES = ("NORTH", "SEVENKINGDOMS", "MANAGEMENT")
 MACHINE_ZONE = {
     "GOAD-DC01": "SEVENKINGDOMS",
     "GOAD-DC02": "NORTH",
@@ -137,12 +137,15 @@ def validate_proposal(proposal: object) -> dict:
     zones = proposal.get("zones")
     machines = proposal.get("machines")
     router_macs = proposal.get("router_macs")
+    host_addresses = proposal.get("host_addresses")
     require(isinstance(zones, dict) and set(zones) == set(ZONES),
-            "exactly four distinct router/network zones are required")
+            "exactly three distinct router/network zones are required")
     require(isinstance(machines, dict) and set(machines) == set(COURSE1.windows),
             "proposal must name exactly the four Course 1 Windows guests")
     require(isinstance(router_macs, dict) and set(router_macs) == set(ZONES),
-            "router requires a MAC for every zone, including transitional ESSOS")
+            "router requires a MAC for NORTH, SEVENKINGDOMS and MANAGEMENT")
+    require(isinstance(host_addresses, dict) and set(host_addresses) == {"NORTH", "MANAGEMENT"},
+            "NORTH attacker and MANAGEMENT host-side endpoints are mandatory")
     require(set(MACHINE_ZONE) == set(COURSE1.windows),
             "machine/zone mapping not synchronized with Kingdoms roster")
 
@@ -190,6 +193,16 @@ def validate_proposal(proposal: object) -> dict:
                 "proposed guest MAC collides with another or reference guest")
         all_macs.add(mac)
 
+    host_ips: set[ipaddress.IPv4Address] = set()
+    for zone in ("NORTH", "MANAGEMENT"):
+        host_ip = _address(host_addresses[zone])
+        net = cidrs[zone]
+        require(host_ip in net and host_ip not in (net.network_address, net.broadcast_address)
+                and host_ip != gateways[zone] and host_ip not in guest_ips
+                and host_ip not in host_ips,
+                "invalid host-side NORTH attacker or MANAGEMENT interface")
+        host_ips.add(host_ip)
+
     for zone in ZONES:
         mac = _mac(router_macs[zone])
         require(mac not in reference.macs and mac not in all_macs,
@@ -204,6 +217,7 @@ def validate_proposal(proposal: object) -> dict:
         "zones": list(ZONES),
         "unique_vmnets": len(vmnets),
         "unique_macs": len(all_macs),
+        "host_side_interfaces": len(host_ips),
         "reference_conflicts": 0,
         "host_networks_surveyed": False,
         "deployment_authorized": False,

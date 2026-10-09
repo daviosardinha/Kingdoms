@@ -1,0 +1,52 @@
+{
+  "profile": "course1-fall-of-the-north",
+  "state": "PROPOSED_NOT_DEPLOYABLE",
+  "zones": {
+    "NORTH": {
+      "vmnet": "vmnet41",
+      "subnet": "10.41.10.0/24",
+      "gateway": "10.41.10.1"
+    },
+    "SEVENKINGDOMS": {
+      "vmnet": "vmnet42",
+      "subnet": "10.41.20.0/24",
+      "gateway": "10.41.20.1"
+    },
+    "MANAGEMENT": {
+      "vmnet": "vmnet49",
+      "subnet": "10.41.99.0/24",
+      "gateway": "10.41.99.1"
+    }
+  },
+  "host_addresses": {
+    "NORTH": "10.41.10.254",
+    "MANAGEMENT": "10.41.99.254"
+  },
+  "machines": {
+    "GOAD-DC01": {
+      "zone": "SEVENKINGDOMS",
+      "ip": "10.41.20.10",
+      "mac": "02:44:20:00:00:10"
+    },
+    "GOAD-DC02": {
+      "zone": "NORTH",
+      "ip": "10.41.10.11",
+      "mac": "02:44:10:00:00:11"
+    },
+    "GOAD-SRV02": {
+      "zone": "NORTH",
+      "ip": "10.41.10.22",
+      "mac": "02:44:10:00:00:22"
+    },
+    "GOAD-WS01": {
+      "zone": "NORTH",
+      "ip": "10.41.10.31",
+      "mac": "02:44:10:00:00:31"
+    }
+  },
+  "router_macs": {
+    "NORTH": "02:44:10:00:01:01",
+    "SEVENKINGDOMS": "02:44:20:00:01:01",
+    "MANAGEMENT": "02:44:99:00:01:01"
+  }
+}

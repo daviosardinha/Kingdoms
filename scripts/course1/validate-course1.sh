@@ -27,7 +27,8 @@ Runs the complete offline Course 1 gate:
   7. Negative gate: reduced preview MUST be rejected by installed-instance binding
   8. Negative same-host cohosting gate: shared vmnets/MACs/IPs must be detected
   9. Optional read-only reference-instance startup/stop/reset planning
- 10. Optional read-only VMware host survey (no network/VM changes)
+ 10. Optional compact read-only VMware host survey (no network/VM changes)
+ 11. Optional three-zone proposal comparison with observed host identities
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
@@ -95,6 +96,7 @@ python3 -m unittest \
     tests.test_course1_bound_lifecycle \
     tests.test_course1_source_gate \
     tests.test_course1_network_plan \
+    tests.test_course1_host_fit \
     tests.test_course1_host_survey \
     tests.test_lab_mode_ad_readiness
 
@@ -141,6 +143,10 @@ echo "[PASS] Four-VM preview cannot be activated as installed instance"
 step "08 - Negative same-host network collision gate"
 python3 -m goad.course1_network_plan --assert-preview-unsafe "${PREVIEW}"
 
+step "08b - Nondeployable three-zone candidate source contract"
+python3 -m goad.course1_host_fit \
+    --check-proposal docs/course1-network-candidate.example.json
+
 if [[ -n "${REFERENCE_PROVIDER}" ]]; then
     step "09 - Optional installed reference read-only binding"
     [[ -d "${REFERENCE_PROVIDER}" ]] ||
@@ -155,7 +161,10 @@ fi
 
 if [[ "${SURVEY_HOST}" -eq 1 ]]; then
     step "10 - Read-only live VMware host survey"
-    python3 -m goad.course1_host_survey --check
+    python3 -m goad.course1_host_survey --check --summary
+    step "11 - Compare nondeployable proposal to observed host"
+    python3 -m goad.course1_host_fit \
+        --check-proposal docs/course1-network-candidate.example.json --inspect-host
 fi
 
 step "COMPLETE"

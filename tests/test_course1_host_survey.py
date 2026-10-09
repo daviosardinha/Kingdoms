@@ -173,6 +173,16 @@ class Course1HostSurveyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             survey.parse_ip_addresses("{}")
 
+    def test_compact_summary_does_not_include_vmx_adapter_inventory(self):
+        report = self.run_mocked()
+        compact = survey.compact_report(report)
+        self.assertEqual(compact["running_vm_count"], 1)
+        self.assertEqual(compact["running_vmx_readable"], 1)
+        self.assertIn("vmnet77", compact["observed_vmnets"])
+        self.assertNotIn("running_vms", compact)
+        self.assertNotIn("ipv4_routes", compact)
+        self.assertFalse(compact["deployment_authorized"])
+
     def test_no_destructive_host_commands(self):
         code = (survey.__file__ and Path(survey.__file__).read_text(encoding="utf-8"))
         self.assertIn('["vmrun", "-T", "ws", "list"]', code)

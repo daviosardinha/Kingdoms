@@ -44,3 +44,25 @@ reference lab must not be modified.
 After this survey, we will design the explicit four-VM router/Vagrant/Ansible
 address mapping, audit its effect on NORTH attack traffic, and only then
 introduce a disposable deployment and separate live regression gates.
+
+## Course 1 three-network observational fit
+
+After reviewing the operator's full snapshot at `68f54bc`, the proposed Course 1
+topology excludes ESSOS entirely and uses **only** NORTH, SEVENKINGDOMS and
+MANAGEMENT. The checked-in `docs/course1-network-candidate.example.json`
+is **non-deployable example input**, not an allocation of actual vmnets or MACs.
+It models NORTH and MANAGEMENT host-side `.254` interfaces, a management
+router gateway, a parent DC and three NORTH hosts.
+
+`goad.course1_host_fit` checks both the proposal's static identity contract
+and a fresh read-only host survey. It rejects observed vmnet collisions, IPv4
+subnet overlaps in interface addresses/routes/VMware configuration, and MAC
+collisions in running VMX files. Even a clean result is only
+`NO_OBSERVED_CONFLICTS_NOT_PROVEN_AVAILABLE`; powered-off or unregistered
+VMs and VMware limitations still require separate verification. The candidate
+**cannot** be deployed or used to enable Course 1 activation.
+
+`validate-course1.sh --survey-host` now prints a compact host survey followed
+by the non-authorizing fit summary, while continuing to run the full offline
+regression suite. Use `python3 -m goad.course1_host_survey --check` separately
+if the detailed route/VMX inventory is required.

@@ -16,16 +16,20 @@ the router-only MANAGEMENT subnet.
 ## Non-deployable proposal rules
 
 - Exactly four Windows guests and one router.
-- NORTH, SEVENKINGDOMS, MANAGEMENT, and an ESSOS_TRANSITION adapter zone.
+- Exactly three router segments: NORTH, SEVENKINGDOMS, and MANAGEMENT.
 - Each zone uses a unique vmnet, non-overlapping /24 subnet, and valid gateway.
 - Every guest/router MAC is unicast, unique, and different from reference MACs.
 - Parent DC remains in SEVENKINGDOMS; child DC, SRV02 and WS01 remain in NORTH.
 - No reference vmnet or reference IPv4 subnet may be reused.
 - The manifest state must be PROPOSED_NOT_DEPLOYABLE.
 
-ESSOS_TRANSITION exists only because the legacy router has a third lab NIC.
-It does not add an ESSOS AD domain or an ESSOS Windows guest to Course 1.
-Removing that NIC needs a separate router PCI/slot regression.
+The proposed Course 1 router has exactly three lab adapters plus its temporary
+provisioning NAT adapter. No ESSOS guest, forest, trust, NIC or vmnet is permitted
+in this new topology. The existing six-Windows-VM Kingdoms reference router
+remains unchanged with ESSOS. Before deployment, the new router adapter/PCI
+layout and provisioning script must be independently rendered and tested.
+The proposal also requires two host-side addresses: NORTH attacker NIC and
+MANAGEMENT plane, each inside its own subnet and free of guest/gateway collisions.
 
 A proposal can be checked offline with:
 
