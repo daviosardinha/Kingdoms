@@ -32,6 +32,7 @@ Runs the complete offline Course 1 gate:
  11. Optional proposal comparison with running and registered VM identities
  12. Staged four-host Ansible + read-only topology dependency audit
  13. Immutable candidate integrity + future instance layout; Vagrant blocked
+ 14. Optional exact additive vmnet maintenance plan; no host writes
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
@@ -107,6 +108,7 @@ python3 -m unittest \
     tests.test_course1_dependency_audit \
     tests.test_course1_host_survey \
     tests.test_course1_vmware_registry \
+    tests.test_course1_vmnet_maintenance \
     tests.test_lab_mode_ad_readiness
 
 step "03 - Bash syntax regression"
@@ -205,6 +207,10 @@ if [[ "${SURVEY_HOST}" -eq 1 ]]; then
     step "11 - Compare candidate to running + registered powered-off guests"
     python3 -m goad.course1_host_fit \
         --check-proposal docs/course1-network-candidate.example.json \
+        --snapshot "${HOST_SNAPSHOT}"
+    step "12 - Exact additive VMware network maintenance plan (read-only)"
+    python3 -m goad.course1_vmnet_maintenance \
+        --proposal docs/course1-network-candidate.example.json \
         --snapshot "${HOST_SNAPSHOT}"
 fi
 
