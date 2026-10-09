@@ -24,7 +24,8 @@ Runs the complete offline Course 1 gate:
   5. Static lifecycle matrix for both reference and reduced profiles
   6. Ephemeral credential-protected preview: source-integrity verification
   7. Negative gate: reduced preview MUST be rejected by installed-instance binding
-  8. Optional read-only reference-instance startup/stop/reset planning
+  8. Negative same-host cohosting gate: shared vmnets/MACs/IPs must be detected
+  9. Optional read-only reference-instance startup/stop/reset planning
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
@@ -85,6 +86,7 @@ python3 -m unittest \
     tests.test_course1_lifecycle_plan \
     tests.test_course1_bound_lifecycle \
     tests.test_course1_source_gate \
+    tests.test_course1_network_plan \
     tests.test_lab_mode_ad_readiness
 
 step "03 - Bash syntax regression"
@@ -127,8 +129,11 @@ if [[ ${binding_status} -eq 0 ||
 fi
 echo "[PASS] Four-VM preview cannot be activated as installed instance"
 
+step "08 - Negative same-host network collision gate"
+python3 -m goad.course1_network_plan --assert-preview-unsafe "${PREVIEW}"
+
 if [[ -n "${REFERENCE_PROVIDER}" ]]; then
-    step "08 - Optional installed reference read-only binding"
+    step "09 - Optional installed reference read-only binding"
     [[ -d "${REFERENCE_PROVIDER}" ]] ||
         fail "reference provider directory does not exist"
     for action in start stop reset provisioning exercise; do
