@@ -86,6 +86,28 @@ class NorthNativeRecipeTests(unittest.TestCase):
             self.assertIn(gateway, text)
         self.assertNotIn("goad-nomad-vmnet-hostaddrs", text)
 
+    def test_native_instance_assets_are_staged_inside_its_own_workspace(self):
+        import tempfile
+        from goad.instance import LabInstance
+        with tempfile.TemporaryDirectory(prefix="kingdoms-north-assets-") as tmp:
+            instance = object.__new__(LabInstance)
+            instance.lab_name = "NORTH"
+            instance.instance_path = tmp
+            instance._stage_north_vmware_assets()
+            expected = (
+                "router/provision.sh",
+                "vagrant/fix_ip.ps1",
+                "vagrant/ConfigureRemotingForAnsible.ps1",
+                "vagrant/Install-WMF3Hotfix.ps1",
+            )
+            for item in expected:
+                self.assertTrue((Path(tmp) / item).is_file())
+            windows = (Path(tmp) / "vagrant" / "fix_ip.ps1").read_text()
+            self.assertIn("10.41.0.0", windows)
+            self.assertNotIn("10.4.0.0", windows)
+            # Idempotent staging never changes already staged files.
+            instance._stage_north_vmware_assets()
+
     def test_install_guard_remains_until_lifecycle_verified(self):
         from goad.course_catalog import refuse_course_mutation
         self.assertTrue(refuse_course_mutation("NORTH", "install"))

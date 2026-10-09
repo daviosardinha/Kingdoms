@@ -274,6 +274,55 @@ class LabInstance:
                 tf_file.write(tf_content)
                 Log.success(f'Instance terraform file created : {Utils.get_relative_path(instance_tf_file)}')
 
+    def _stage_north_vmware_assets(self):
+        """Stage only this instance's NORTH router and Windows Vagrant scripts.
+
+        The shared Kingdoms LabInstance builder remains the sole owner of
+        instance creation. This is profile-specific asset staging, not a new
+        installer or authority to bypass NORTH's release guard.
+        """
+        from pathlib import Path
+        from goad.course1_vmware_candidate import render_candidate
+        from goad.course1_network_plan import validate_proposal
+        from goad.kingdoms_foundation import validate_foundation
+
+        validate_foundation()
+        project = Path(GoadPath.get_project_path())
+        plan_path = project / "docs/course1-network-candidate.example.json"
+        proposal = json.loads(plan_path.read_text(encoding="utf-8"))
+        validate_proposal(proposal)
+        candidate = render_candidate(proposal)
+
+        router_source = (
+            project / "ad/NORTH/providers/vmware/router/provision.sh"
+        )
+        if not router_source.is_file() or router_source.is_symlink():
+            raise ValueError("NORTH router provision source missing or unsafe")
+        assets = {
+            "router/provision.sh": router_source.read_text(encoding="utf-8"),
+            "vagrant/fix_ip.ps1": candidate["vagrant/fix_ip.ps1"],
+            "vagrant/ConfigureRemotingForAnsible.ps1":
+                candidate["vagrant/ConfigureRemotingForAnsible.ps1"],
+            "vagrant/Install-WMF3Hotfix.ps1":
+                candidate["vagrant/Install-WMF3Hotfix.ps1"],
+        }
+        destination_root = Path(self.instance_path)
+        if not destination_root.is_dir() or destination_root.is_symlink():
+            raise ValueError("NORTH instance directory is unsafe")
+        for relative, content in assets.items():
+            target = destination_root / relative
+            parent = target.parent
+            if parent.is_symlink():
+                raise ValueError(f"NORTH asset parent must not be a symlink: {parent}")
+            parent.mkdir(mode=0o700, exist_ok=True)
+            if target.exists() or target.is_symlink():
+                if (target.is_symlink() or not target.is_file()
+                        or target.read_text(encoding="utf-8") != content):
+                    raise ValueError(f"NORTH instance asset mismatch: {relative}")
+                continue
+            target.write_text(content, encoding="utf-8")
+            target.chmod(0o700 if relative.endswith(".sh") else 0o600)
+
     def _create_provider_dir(self):
         # create provider dir
         # workspace/provider
@@ -286,6 +335,8 @@ class LabInstance:
         Log.info('Create instance providing files')
         if self.is_vagrant():
             self._create_vagrantfile()
+            if self.lab_name == 'NORTH' and self.provider_name == VMWARE:
+                self._stage_north_vmware_assets()
         if self.provider_name == VMWARE_ESXI:
             self._create_esxi_env()
         if self.is_ludus():

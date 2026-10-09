@@ -39,9 +39,11 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
 - [x] Four Windows machines + Debian router; parent/child domain only,
   no ESSOS forest trust or vmnet30; isolated vmnet11/12/13 MACs and IPs.
 - [x] Added the native recipe source regression to the Course 1 suite.
-- [ ] Adapt `LabInstance` to stage the NORTH router/Windows provisioners
-  into its **own** workspace without overriding the reference or creating
-  a separate installer.
+- [x] Adapt the existing `LabInstance` source to stage NORTH's router
+  and Windows Vagrant assets into its **own** workspace with guarded,
+  idempotent writes (source-only; not yet activated).
+- [ ] Validate this path during disposable `NORTH` instance creation after
+  profile-specific lifecycle readiness, before lifting install guards.
 - [ ] Reuse existing Kingdoms VMware provisioner with profile-driven
   guest roster, per-instance router, NAT, host routing, AD readiness and
   post-Vagrant inventory sync. Remove hardcoded six-guest assumptions.
