@@ -17,6 +17,7 @@ import subprocess
 from pathlib import Path
 
 from goad.course1_network_plan import reference_contract
+from goad.course1_vmware_registry import inspect_workstation_library
 
 NETWORKING = Path("/etc/vmware/networking")
 VMWARE_ROOT = Path("/etc/vmware")
@@ -240,9 +241,17 @@ def host_survey() -> dict:
     elif vmrun_error:
         warnings.append(vmrun_error)
 
+    library = inspect_workstation_library(running_guest_summary, reference.macs)
+    if library["library_status"] == "INCOMPLETE":
+        warnings.append("registered VMware library has missing/unreadable VMX identities")
+    elif library["library_status"] == "UNREADABLE":
+        warnings.append("registered VMware library cannot be inspected")
+    elif library["library_status"] == "NOT_FOUND":
+        warnings.append("registered VMware library not found; powered-off visibility unavailable")
+
     names = set(config_ids) | filesystem_ids
     names |= {r["interface"] for r in interfaces if KNOWN_VMNET.fullmatch(r["interface"])}
-    for vm in running:
+    for vm in [*running, *library["registered_vms"]]:
         names |= {a["vnet"] for a in vm["adapters"] if "vnet" in a}
 
     # 100% of four key visibility sources must succeed before calling this a
@@ -261,6 +270,7 @@ def host_survey() -> dict:
         "ipv4_routes": routes,
         "running_vm_count": len(running),
         "running_vms": running,
+        "registered_inventory": library,
         "warnings": warnings,
         "no_changes_performed": True,
         "candidate_allocation_authorized": False,
@@ -284,6 +294,12 @@ def compact_report(report: dict) -> dict:
         "ipv4_route_records": len(report["ipv4_routes"]),
         "running_vm_count": report["running_vm_count"],
         "running_vmx_readable": sum(vm["readable"] for vm in report["running_vms"]),
+        "registered_inventory_status": report["registered_inventory"]["library_status"],
+        "registered_vm_count": report["registered_inventory"]["registered_vm_count"],
+        "registered_vmx_readable": sum(
+            vm["readable"] for vm in report["registered_inventory"]["registered_vms"]
+        ),
+        "registered_inventory_complete": report["registered_inventory"]["complete"],
         "warnings": report["warnings"],
         "candidate_allocation_authorized": False,
         "deployment_authorized": False,
@@ -294,6 +310,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true",
                         help="perform host read-only survey; no guest or host mutation")
+    parser.add_argument("--json-only", action="store_true",
+                        help="emit one JSON document to stdout for private snapshot reuse")
     parser.add_argument("--summary", action="store_true",
                         help="print compact status rather than full guest/routes inventory")
     args = parser.parse_args()
@@ -303,8 +321,9 @@ def main() -> None:
     print(json.dumps(compact_report(report) if args.summary else report, indent=2))
     if report["status"] != "OBSERVED_SNAPSHOT":
         parser.exit(2, "[INCOMPLETE] Host identity survey is partial; no allocation authorized\n")
-    print("[PASS] Read-only host snapshot collected; no allocation authorized")
-    print("[BLOCKED] Four-VM deployment remains disabled")
+    if not args.json_only:
+        print("[PASS] Read-only host snapshot collected; no allocation authorized")
+        print("[BLOCKED] Four-VM deployment remains disabled")
 
 
 if __name__ == "__main__":

@@ -141,7 +141,20 @@ class Course1HostSurveyTests(unittest.TestCase):
              patch.object(survey, "DEVICE_ROOT", root / "dev"), \
              patch.object(survey, "NETWORKING", root / "networking"), \
              patch.object(survey, "_query",
-                          side_effect=lambda cmd: outputs[tuple(cmd)]):
+                          side_effect=lambda cmd: outputs[tuple(cmd)]), \
+             patch.object(survey, "inspect_workstation_library",
+                          return_value={
+                              "library_status": "INSPECTED",
+                              "library_present": True,
+                              "complete": True,
+                              "invalid_entries": 0,
+                              "registered_vm_count": 1,
+                              "registered_vms": [{
+                                  "readable": True,
+                                  "adapters": [{"adapter": 1, "vnet": "vmnet78",
+                                                "address": "00:50:56:30:77:01"}],
+                              }],
+                          }):
             return survey.host_survey()
 
     def test_complete_survey_reports_observation_only(self):
@@ -149,6 +162,8 @@ class Course1HostSurveyTests(unittest.TestCase):
         self.assertEqual(report["status"], "OBSERVED_SNAPSHOT")
         self.assertIn("vmnet77", report["observed_vmnets"])
         self.assertIn("vmnet99", report["observed_vmnets"])
+        self.assertIn("vmnet78", report["observed_vmnets"])
+        self.assertEqual(report["registered_inventory"]["registered_vm_count"], 1)
         self.assertEqual(report["running_vm_count"], 1)
         self.assertTrue(report["running_vms"][0]["reference_mac_match"])
         self.assertFalse(report["deployment_authorized"])
@@ -178,6 +193,8 @@ class Course1HostSurveyTests(unittest.TestCase):
         compact = survey.compact_report(report)
         self.assertEqual(compact["running_vm_count"], 1)
         self.assertEqual(compact["running_vmx_readable"], 1)
+        self.assertEqual(compact["registered_vm_count"], 1)
+        self.assertTrue(compact["registered_inventory_complete"])
         self.assertIn("vmnet77", compact["observed_vmnets"])
         self.assertNotIn("running_vms", compact)
         self.assertNotIn("ipv4_routes", compact)

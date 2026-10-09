@@ -28,14 +28,15 @@ Runs the complete offline Course 1 gate:
   8. Negative same-host cohosting gate: shared vmnets/MACs/IPs must be detected
   9. Optional read-only reference-instance startup/stop/reset planning
      (stage 08c renders a private isolated three-NIC VMware/router preview)
- 10. Optional compact read-only VMware host survey (no network/VM changes)
- 11. Optional three-zone proposal comparison with observed host identities
+ 10. Optional single VMware host and registered VMX read-only survey
+ 11. Optional proposal comparison with running and registered VM identities
  12. Staged four-host Ansible + read-only topology dependency audit
  13. Immutable candidate integrity + future instance layout; Vagrant blocked
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
---survey-host queries ip address/routes, VMware network config and vmrun list.
+--survey-host queries ip address/routes, VMware network config, vmrun list,
+and ~/.vmware/inventory.vmls for registered (including powered-off) VMX identities.
 Incomplete visibility stops with nonzero; no vmnets are allocated.
 The temporary preview is automatically removed on success OR failure.
 USAGE
@@ -105,6 +106,7 @@ python3 -m unittest \
     tests.test_course1_isolated_native_artifacts \
     tests.test_course1_dependency_audit \
     tests.test_course1_host_survey \
+    tests.test_course1_vmware_registry \
     tests.test_lab_mode_ad_readiness
 
 step "03 - Bash syntax regression"
@@ -196,11 +198,14 @@ if [[ -n "${REFERENCE_PROVIDER}" ]]; then
 fi
 
 if [[ "${SURVEY_HOST}" -eq 1 ]]; then
-    step "10 - Read-only live VMware host survey"
-    python3 -m goad.course1_host_survey --check --summary
-    step "11 - Compare nondeployable proposal to observed host"
+    step "10 - Single read-only VMware host + registered-VM survey"
+    readonly HOST_SNAPSHOT="${PRIVATE_WORKDIR}/host-snapshot.json"
+    python3 -m goad.course1_host_survey --check --json-only > "${HOST_SNAPSHOT}"
+    [[ -s "${HOST_SNAPSHOT}" ]] || fail "VMware host survey did not return evidence"
+    step "11 - Compare candidate to running + registered powered-off guests"
     python3 -m goad.course1_host_fit \
-        --check-proposal docs/course1-network-candidate.example.json --inspect-host
+        --check-proposal docs/course1-network-candidate.example.json \
+        --snapshot "${HOST_SNAPSHOT}"
 fi
 
 step "COMPLETE"

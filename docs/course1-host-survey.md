@@ -17,7 +17,10 @@ The extra stage **never** edits networking or virtualization state. It reads:
 - configured VMware virtual networks from `/etc/vmware/networking`,
   discovered VMware vmnet devices/directories and active interface names;
 - running VMware VMX list via `vmrun -T ws list`;
-- *only* Ethernet network settings from listed VMX files.
+- Workstation's user-level `~/.vmware/inventory.vmls` registry, including
+  registered powered-off guests;
+- *only* Ethernet network settings from running **and registered** VMX files.
+  Neither the library file nor VMX files are modified.
 
 Sensitive VMX non-network settings are never printed. Full filesystem paths
 are not printed: each VM uses a short SHA256-derived identifier plus its
@@ -27,11 +30,19 @@ network configuration changes.
 
 ## Result semantics
 
-`OBSERVED_SNAPSHOT` means the four key visibility sources completed: Linux
-interface list, IPv4 route list, VMware networking configuration and vmrun
-inventory with readable running VMX network settings. It does **not** prove
-that an absent vmnet is free: VMware may have dormant or unregistered guests
-or reservations outside the surveyed data.
+`OBSERVED_SNAPSHOT` means the four base visibility sources completed:
+Linux interfaces, routes, VMware networking config and readable running VMX.
+It does **not** prove a vmnet is free. The new optional Workstation GUI library
+source is reported independently as `INSPECTED`, `NOT_FOUND`,
+`INCOMPLETE` or `UNREADABLE`.
+
+When `inventory.vmls` exists and is complete, the host-fit gate also rejects
+collisions in registered but powered-off VMs. If it contains missing or
+unreadable VMX entries, host-fit fails closed. When the library is absent,
+the survey reports that registered powered-off coverage is unavailable, **not**
+that zero powered-off VMs exist. Unregistered / unknown-location VMX files,
+other users' inventories and external providers are still not exhaustively
+inventoried. No status authorizes allocation.
 
 `INCOMPLETE` exits nonzero and provides a structured list of missing data.
 Do not interpret missing access or missing VMware binaries as free networks.
@@ -66,3 +77,18 @@ VMs and VMware limitations still require separate verification. The candidate
 by the non-authorizing fit summary, while continuing to run the full offline
 regression suite. Use `python3 -m goad.course1_host_survey --check` separately
 if the detailed route/VMX inventory is required.
+
+
+## One-snapshot acceptance (read-only)
+
+`validate-course1.sh --survey-host` now runs `ip` / VMware inspection exactly
+**once**, saves the complete JSON in a private ephemeral root (mode 0700,
+files created with umask 077), and passes that same snapshot to the proposal
+comparison. It outputs only a compact host summary plus collision report.
+
+The snapshot is automatically removed at the end of the command. This
+improves performance and avoids comparing a host-fit report with a separately
+collected, potentially changed running-VM list.
+
+Workstation inventory documentation:
+https://knowledge.broadcom.com/external/article?legacyId=57224

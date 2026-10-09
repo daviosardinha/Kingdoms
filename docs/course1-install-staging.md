@@ -58,3 +58,14 @@ Operator command:
 ```bash
 cd "$HOME/kingdoms-course1-src" && git pull --ff-only && bash scripts/course1/validate-course1.sh --survey-host
 ```
+
+
+## Registered/powered-off VMware inventory gate
+
+The same Course 1 validation command now inspects read-only Workstation
+library registrations (`~/.vmware/inventory.vmls`) as well as `vmrun` running
+VMX files. The planned Course 1 vmnet and manual MAC IDs must not overlap
+either source. An unreadable listed VMX is a failed collision gate, not
+evidence that the identifier is available. Missing library is called out as
+insufficient registered guest visibility; unrelated unregistered VMs remain
+outside coverage. No host/guest/network changes are attempted.

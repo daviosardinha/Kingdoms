@@ -40,6 +40,16 @@ def host_snapshot():
             {"destination": "fe80::/64", "interface": "wlan0"},
             {"destination": "default", "interface": "wlan0"},
         ],
+        "registered_inventory": {
+            "library_status": "INSPECTED",
+            "library_present": True,
+            "complete": True,
+            "invalid_entries": 0,
+            "registered_vm_count": 1,
+            "registered_vms": [{"readable": True, "adapters": [
+                {"adapter": 1, "vnet": "vmnet88", "address": "00:50:56:31:00:01"}
+            ]}],
+        },
         "running_vm_count": 1,
         "running_vms": [{"readable": True, "adapters": [
             {"adapter": 0, "generatedAddress": "00:0c:29:ad:be:ef"},
@@ -63,6 +73,9 @@ class Course1HostFitTests(unittest.TestCase):
         self.assertTrue(result["host_networks_surveyed"])
         self.assertEqual(result["unique_vmnets"], 3)
         self.assertEqual(result["running_vms_examined"], 1)
+        self.assertEqual(result["registered_vm_count"], 1)
+        self.assertTrue(result["registered_vmx_complete"])
+        self.assertFalse(result["unregistered_or_unscanned_vms_examined"])
         self.assertFalse(result["dormant_or_unregistered_vms_examined"])
         self.assertFalse(result["candidate_allocation_authorized"])
         self.assertFalse(result["deployment_authorized"])
@@ -89,6 +102,34 @@ class Course1HostFitTests(unittest.TestCase):
         self.reject(lambda p, s: s["running_vms"][0]["adapters"].append({
             "adapter": 2, "address": "00:50:56:3a:10:11"
         }))
+
+    def test_powered_off_registered_vmnet_collision_is_refused(self):
+        self.reject(lambda p, s: s["registered_inventory"]["registered_vms"]
+                    [0]["adapters"][0].__setitem__("vnet", "vmnet11"))
+
+    def test_powered_off_registered_mac_collision_is_refused(self):
+        self.reject(lambda p, s: s["registered_inventory"]["registered_vms"]
+                    [0]["adapters"][0].__setitem__("address", "00:50:56:3a:10:11"))
+
+    def test_missing_registered_vm_is_not_claimed_as_covered(self):
+        snap = host_snapshot()
+        snap["registered_inventory"] = {
+            "library_status": "NOT_FOUND", "library_present": False,
+            "complete": False, "registered_vm_count": 0,
+            "registered_vms": [], "invalid_entries": 0,
+        }
+        answer = fit.inspect_host_fit(proposal(), snap)
+        self.assertEqual(answer["registered_inventory_status"], "NOT_FOUND")
+        self.assertFalse(answer["registered_vmx_complete"])
+        self.assertFalse(answer["candidate_allocation_authorized"])
+
+    def test_unreadable_registered_inventory_refused(self):
+        self.reject(lambda p, s: s["registered_inventory"].__setitem__(
+            "library_status", "UNREADABLE"))
+
+    def test_missing_registered_vmx_refused(self):
+        self.reject(lambda p, s: s["registered_inventory"]["registered_vms"]
+                    [0].__setitem__("readable", False))
 
     def test_partial_survey_is_rejected(self):
         self.reject(lambda p, s: s.__setitem__("status", "INCOMPLETE"))

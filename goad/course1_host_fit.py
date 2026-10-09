@@ -10,7 +10,7 @@ import ipaddress
 import json
 from pathlib import Path
 
-from goad.course1_host_survey import host_survey
+from goad.course1_host_survey import host_survey, compact_report
 from goad.course1_network_plan import (
     ZONES, _mac, _network, require, validate_proposal,
 )
@@ -116,6 +116,44 @@ def inspect_host_fit(proposal: object, snapshot: object) -> dict:
                 if value is not None:
                     known_macs.add(_mac(value))
 
+    registered = snapshot.get("registered_inventory")
+    library_status = "NOT_SURVEYED"
+    registered_vm_count = 0
+    registered_complete = False
+    if registered is not None:
+        require(isinstance(registered, dict), "VMware registered inventory is malformed")
+        library_status = registered.get("library_status")
+        require(library_status in ("INSPECTED", "NOT_FOUND", "INCOMPLETE", "UNREADABLE"),
+                "VMware registered library status is unknown")
+        registered_vm_count = registered.get("registered_vm_count")
+        require(isinstance(registered_vm_count, int)
+                and isinstance(registered.get("registered_vms"), list)
+                and len(registered["registered_vms"]) == registered_vm_count,
+                "VMware registered library VMX list is inconsistent")
+        registered_complete = registered.get("complete") is True
+        require(library_status not in ("INCOMPLETE", "UNREADABLE"),
+                "VMware registered inventory incomplete; cannot exclude collisions")
+        if library_status == "INSPECTED":
+            require(registered_complete, "VMware registered inventory not complete")
+        else:
+            require(not registered_complete and registered_vm_count == 0,
+                    "missing VMware registered inventory cannot claim guest coverage")
+        for guest in registered["registered_vms"]:
+            require(isinstance(guest, dict) and guest.get("readable") is True
+                    and isinstance(guest.get("adapters"), list),
+                    "unreadable registered VMX network identity")
+            for adapter in guest["adapters"]:
+                require(isinstance(adapter, dict), "malformed registered VMX adapter")
+                candidate_vnet = adapter.get("vnet")
+                require(candidate_vnet is None
+                        or (isinstance(candidate_vnet, str)
+                            and candidate_vnet not in proposed_vmnets),
+                        "proposed vmnet collides with a registered VMware guest")
+                for field in ("address", "generatedAddress"):
+                    value = adapter.get(field)
+                    if value is not None:
+                        known_macs.add(_mac(value))
+
     desired_macs = {proposal["machines"][machine]["mac"].lower()
                     for machine in proposal["machines"]}
     desired_macs.update(mac.lower() for mac in proposal["router_macs"].values())
@@ -128,6 +166,10 @@ def inspect_host_fit(proposal: object, snapshot: object) -> dict:
         "host_snapshot_complete": True,
         "host_observed_vmnets": len(observed_vmnets),
         "running_vms_examined": len(running),
+        "registered_vm_count": registered_vm_count,
+        "registered_inventory_status": library_status,
+        "registered_vmx_complete": registered_complete,
+        "unregistered_or_unscanned_vms_examined": False,
         "dormant_or_unregistered_vms_examined": False,
         "host_networks_surveyed": True,
         "candidate_allocation_authorized": False,
@@ -139,13 +181,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check-proposal", type=Path, required=True,
                         help="JSON with nondeployable three-segment Course 1 proposal")
+    parser.add_argument("--snapshot", type=Path,
+                        help="existing private JSON file from a single read-only survey")
     parser.add_argument("--inspect-host", action="store_true",
                         help="read actual host snapshot without changing VMware or Linux")
     args = parser.parse_args()
     try:
         proposal = json.loads(args.check_proposal.read_text(encoding="utf-8"))
-        if args.inspect_host:
-            answer = inspect_host_fit(proposal, host_survey())
+        if args.snapshot is not None and args.inspect_host:
+            parser.error("--inspect-host and --snapshot are mutually exclusive")
+        if args.inspect_host or args.snapshot is not None:
+            observed = (host_survey() if args.snapshot is None else
+                        json.loads(args.snapshot.read_text(encoding="utf-8")))
+            print("[PASS] Read-only host observations (single snapshot)")
+            print(json.dumps(compact_report(observed), indent=2))
+            answer = inspect_host_fit(proposal, observed)
             print(json.dumps(answer, indent=2))
             print("[BLOCKED] Host observations are NOT an allocation or installation grant")
         else:
