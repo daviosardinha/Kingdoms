@@ -31,6 +31,25 @@ Work must follow this order. A lower-priority platform expansion must not displa
 
 The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
 
+## NORTH native recipe from patched Kingdoms installer — in progress
+
+- [x] Materialized `ad/NORTH/data/{config.json,inventory,inventory_disable_vagrant}`
+  and `ad/NORTH/providers/vmware/{Vagrantfile,inventory,router/provision.sh}`
+  from the **Kingdoms-patched reference**, not upstream GOAD.
+- [x] Four Windows machines + Debian router; parent/child domain only,
+  no ESSOS forest trust or vmnet30; isolated vmnet11/12/13 MACs and IPs.
+- [x] Added the native recipe source regression to the Course 1 suite.
+- [ ] Adapt `LabInstance` to stage the NORTH router/Windows provisioners
+  into its **own** workspace without overriding the reference or creating
+  a separate installer.
+- [ ] Reuse existing Kingdoms VMware provisioner with profile-driven
+  guest roster, per-instance router, NAT, host routing, AD readiness and
+  post-Vagrant inventory sync. Remove hardcoded six-guest assumptions.
+- [ ] Confirm native `./goad.sh` install/start/stop/provisioning/exercise
+  on a disposable NORTH instance, including rollback, AD, SQL and Phase 03.
+- [ ] Release NORTH provider only AFTER actual runtime checks pass; until then
+  `NORTH` stays visible but explicitly not installable.
+
 ## NORTH VMware host-address recovery (post-network allocation)
 
 - [x] Initial three-vmnet transaction completed on the operator's Kali host:

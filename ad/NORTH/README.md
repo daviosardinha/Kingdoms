@@ -4,11 +4,13 @@ Native Kingdoms lab namespace: `ad/NORTH`. The interactive `./goad.sh`
 command discovers the lab automatically through `ad/NORTH/providers/vmware`.
 The course title and runtime profile are defined in `course.json`.
 
-**Current status: PREVIEW ONLY / NOT INSTALLABLE**. The VMware provider for
-NORTH is deliberately a fail-closed placeholder, not a copy of the existing
-six-Windows-VM GOAD provider. NORTH uses four Windows VMs plus a three-NIC
-router, and later will use its own provisioner, lifecycle and per-instance
-networks. See `docs/course1-network-candidate.md`.
+**Current status: NATIVE RECIPE PRESENT / NOT INSTALLABLE**. The source tree
+now contains the real four-Windows-VM Vagrant machine recipe, pruned two-domain
+AD config, translated NORTH inventories and three-NIC router provision script.
+The VMware provider deliberately remains fail-closed until those files are
+wired into the existing patched Kingdoms instance creation, router mode,
+Windows/WinRM and Ansible lifecycle. There is no separate installer. See
+`docs/course1-network-candidate.md`.
 
 The Git feature checkout has no installed instance. Once NORTH is verified
 and merged, the operator uses the same `./goad.sh` in the primary Kingdoms

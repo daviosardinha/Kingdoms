@@ -117,6 +117,11 @@ python3 -m unittest \
     tests.test_course1_north_host_addresses \
     tests.test_lab_mode_ad_readiness
 
+step "02b - Native NORTH Vagrant/router source parsers"
+ruby -c ad/NORTH/providers/vmware/Vagrantfile
+bash -n ad/NORTH/providers/vmware/router/provision.sh
+echo "[PASS] Native NORTH recipe parses; release gate still enforced"
+
 step "03 - Bash syntax regression"
 # Bash -n parses only the first file; subsequent arguments are parameters.
 # Run a distinct syntax validation for each maintenance/lifecycle script.

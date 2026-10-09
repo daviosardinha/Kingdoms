@@ -60,3 +60,13 @@ with its own topology/runtime profile and provider(s), then validate
 that provider before marking it installable. Keep course identity
 independent of VMware/Ludus, ensuring one course can have multiple
 validated provider backends.
+
+## Materialized native source (2026-10-09)
+
+The NORTH directory now contains an actual five-guest VMware machine recipe,
+real AD configuration and Ansible inventories. This is the **source input**
+for the existing Kingdoms `LabInstance` and provider pipeline. The next
+engineering step is binding the validated Kingdoms lifecycle to this profile,
+not building another installer. Native source files alone **do not** authorize
+VM provisioning; the existing fail-closed NORTH provider remains active until
+profile-specific runtime acceptance.
