@@ -33,6 +33,7 @@ Runs the complete offline Course 1 gate:
  12. Staged four-host Ansible + read-only topology dependency audit
  13. Immutable candidate integrity + future instance layout; Vagrant blocked
  14. Optional exact additive vmnet maintenance plan; no host writes
+ 15. Mocked transactional VMware apply/rollback regressions (NO live changes)
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
@@ -109,10 +110,12 @@ python3 -m unittest \
     tests.test_course1_host_survey \
     tests.test_course1_vmware_registry \
     tests.test_course1_vmnet_maintenance \
+    tests.test_course1_vmnet_transaction \
     tests.test_lab_mode_ad_readiness
 
 step "03 - Bash syntax regression"
 bash -n scripts/course1/validate-course1.sh \
+        scripts/course1/maintain-vmware-networks.sh \
         scripts/lab-mode.sh scripts/verify-test-source.sh
 echo "[PASS] Bash syntax"
 
