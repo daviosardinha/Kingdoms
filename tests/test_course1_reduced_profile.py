@@ -1,5 +1,6 @@
 """Source-level gates for non-deployable Course 1 recipe preview."""
 import json
+import runpy
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,23 @@ class ReducedProfileTests(unittest.TestCase):
             inventory = (dest / "data/inventory").read_text()
             self.assertNotIn("\nsrv03", inventory)
             self.assertNotIn("\ndc03", inventory)
+            disabled = (dest / "data/inventory_disable_vagrant").read_text()
+            self.assertEqual(len([ln for ln in disabled.splitlines()
+                                  if ln.startswith("ws01 ansible_host=10.4.10.31 ")]), 1)
+            srv02 = next(ln for ln in disabled.splitlines()
+                         if ln.startswith("srv02 ansible_host="))
+            ws01 = next(ln for ln in disabled.splitlines()
+                        if ln.startswith("ws01 ansible_host="))
+            self.assertIn("dns_domain=dc02 dict_key=ws01", ws01)
+            self.assertEqual(srv02.split("ansible_user=", 1)[-1],
+                             ws01.split("ansible_user=", 1)[-1])
+            instance = (dest / "instance-preview/Vagrantfile").read_text()
+            self.assertIn('Vagrant.configure("2") do |config|', instance)
+            self.assertIn('config.vm.box_check_update = false', instance)
+            self.assertIn('config.vm.define box[:name]', instance)
+            self.assertEqual(instance.count(':name => "GOAD-'), 5)
+            self.assertNotIn('GOAD-SRV03', instance)
+            self.assertNotIn('GOAD-DC03', instance)
             no_overwrite = call("--output", dest, "--acknowledge-lab-credentials")
             self.assertNotEqual(no_overwrite.returncode, 0)
 
@@ -63,6 +81,24 @@ class ReducedProfileTests(unittest.TestCase):
                        "--acknowledge-lab-credentials")
         self.assertNotEqual(refused.returncode, 0)
         self.assertIn("outside the Git repository", refused.stderr)
+
+    def test_post_vagrant_ws01_uses_canonical_provider_ip(self):
+        functions = runpy.run_path(str(SCRIPT))
+        disabled = (SOURCE / "data/inventory_disable_vagrant").read_text()
+        provider = (SOURCE / "providers/vmware/inventory").read_text()
+        result = functions["build_post_vagrant_inventory"](disabled, provider)
+        self.assertEqual(sum(line.startswith("ws01 ansible_host=10.4.10.31 ")
+                             for line in result.splitlines()), 1)
+
+    def test_changed_ws01_provider_endpoint_is_rejected(self):
+        functions = runpy.run_path(str(SCRIPT))
+        disabled = (SOURCE / "data/inventory_disable_vagrant").read_text()
+        provider = (SOURCE / "providers/vmware/inventory").read_text()
+        changed = provider.replace("ws01 ansible_host=10.4.10.31",
+                                   "ws01 ansible_host=10.4.10.99")
+        self.assertNotEqual(provider, changed)
+        with self.assertRaisesRegex(ValueError, "Unexpected canonical WS01 address"):
+            functions["build_post_vagrant_inventory"](disabled, changed)
 
     def test_source_unmodified_by_check(self):
         paths = [SOURCE / "data/config.json",

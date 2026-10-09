@@ -13,6 +13,8 @@ import os
 import re
 from pathlib import Path
 
+from jinja2 import Environment, StrictUndefined
+
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "ad" / "GOAD"
 WINDOWS = ("GOAD-DC01", "GOAD-DC02", "GOAD-SRV02", "GOAD-WS01")
@@ -64,6 +66,72 @@ def prune_inventory(content: str) -> str:
             continue
         result.append(line)
     return "\n".join(result).rstrip() + "\n"
+
+
+def build_post_vagrant_inventory(content: str, provider_inventory: str) -> str:
+    """Supply WS01's explicit management endpoint after Vagrant is disabled.
+
+    The canonical full GOAD source omits WS01 in [default]; legacy startup
+    invents it dynamically. A new Course 1 instance must not depend on that
+    hidden repair path. The NORTH credentials are inherited from SRV02, just
+    as in VmwareProvider._sync_goad_nomad_inventories, without embedding a new
+    password in version control.
+    """
+    rows = content.splitlines()
+    group = ""
+    found_srv02 = []
+    found_ws01 = []
+    for index, line in enumerate(rows):
+        entry = line.strip()
+        if entry.startswith("[") and entry.endswith("]"):
+            group = entry.strip("[]")
+            continue
+        if group == "default":
+            if re.match(r"^srv02\s+ansible_host=", entry):
+                found_srv02.append((index, line))
+            if re.match(r"^ws01\s+ansible_host=", entry):
+                found_ws01.append((index, line))
+    require(len(found_srv02) == 1, "Expected exactly one NORTH srv02 post-Vagrant management row")
+    require(not found_ws01, "Post-Vagrant WS01 row unexpectedly already exists; inspect source")
+    original = found_srv02[0][1]
+    provider_rows = re.findall(
+        r"(?m)^ws01\s+ansible_host=(\S+)\s+dns_domain=dc02\s+dict_key=ws01\b.*$",
+        provider_inventory,
+    )
+    require(len(provider_rows) == 1, "Expected one canonical WS01 provider management address")
+    ws01_ip = provider_rows[0]
+    require(ws01_ip == "10.4.10.31", "Unexpected canonical WS01 address; inspect topology")
+    match = re.fullmatch(
+        r"srv02\s+ansible_host=10\.4\.10\.22\s+dns_domain=dc02\s+dict_key=srv02(\s+.+)",
+        original.strip(),
+    )
+    require(match is not None, "Cannot derive WS01 credentials from canonical NORTH srv02 entry")
+    ws01_line = ("ws01 ansible_host=" + ws01_ip
+                 + " dns_domain=dc02 dict_key=ws01" + match.group(1))
+    rows.insert(found_srv02[0][0] + 1, ws01_line)
+    return "\n".join(rows).rstrip() + "\n"
+
+
+def render_instance_vagrantfile(recipe: str) -> str:
+    """Render the real VMware outer template; do NOT create an instance."""
+    template_file = ROOT / "template/provider/vmware/Vagrantfile"
+    rendered = Environment(undefined=StrictUndefined, autoescape=False).from_string(
+        template_file.read_text(encoding="utf-8")
+    ).render(
+        lab=recipe, lab_name="GOAD", provider_name="vmware",
+        ip_range="10.4.10", extensions="", use_provisioning_vm=False,
+    )
+    require(rendered.count('config.vm.define box[:name]') == 1,
+            "Rendered Vagrant instance lacks the VMware machine declaration loop")
+    require(rendered.count(':name => "GOAD-') == len(WINDOWS) + 1,
+            "Rendered Vagrantfile does not declare exactly 4 Windows machines plus router")
+    for forbidden_machine in ("GOAD-DC03", "GOAD-SRV03"):
+        require(forbidden_machine not in rendered, "ESSOS machine in rendered VMware instance")
+    require('config.vm.box_check_update = false' in rendered,
+            "Reduced VMware instance lost offline metadata gate")
+    require('v.enable_vmrun_ip_lookup = false' in rendered,
+            "Reduced VMware instance lost WinRM/Tools compatibility")
+    return rendered.rstrip() + "\n"
 
 
 def parsed_groups(inventory: str) -> dict[str, list[str]]:
@@ -134,9 +202,10 @@ def render() -> dict[str, str]:
     src = load_source()
     config = build_config(src["config"])
     inventory = prune_inventory(src["inventory"])
-    disabled = prune_inventory(src["disabled"])
     provider = prune_inventory(src["provider"])
+    disabled = build_post_vagrant_inventory(prune_inventory(src["disabled"]), provider)
     vagrant = build_vagrant(src["vagrant"])
+    rendered_vagrant = render_instance_vagrantfile(vagrant)
     groups = parsed_groups(inventory)
     require(groups["domain"] == list(HOSTS), "Domain roster mismatch")
     for section, members in {
@@ -152,7 +221,10 @@ def render() -> dict[str, str]:
         require(groups[section] == members,
                 f"Unexpected [{section}] host list: {groups[section]}")
     require(groups["domain"] == parsed_groups(disabled)["domain"],
-            "Post-Vagrant inventory doesn't match Course 1")
+            "Post-Vagrant domain roster doesn't match Course 1")
+    post_hosts = parsed_groups(disabled).get("default", [])
+    require(post_hosts == list(HOSTS),
+            "Post-Vagrant inventory must include management endpoints for all four Windows guests")
     provider_hosts = [x.split(maxsplit=1)[0] for x in provider.splitlines()
                       if x and not x.lstrip().startswith((";", "#", "["))]
     require(provider_hosts == list(HOSTS), "Provider inventory doesn't match Course 1")
@@ -165,6 +237,7 @@ def render() -> dict[str, str]:
         "data/inventory_disable_vagrant": disabled,
         "providers/vmware/inventory": provider,
         "providers/vmware/Vagrantfile": vagrant,
+        "instance-preview/Vagrantfile": rendered_vagrant,
         "manifest.json": json.dumps({
             "profile": "course1-fall-of-the-north",
             "state": "PREVIEW_ONLY_NOT_INSTALLABLE",

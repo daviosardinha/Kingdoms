@@ -21,8 +21,13 @@ Run from the repository:
 
     python3 scripts/course1/generate-profile.py --check
 
-The command validates GOAD config, inventory groups, Vagrant declarations
-entirely in memory. It never starts VMs or creates a deployment.
+The command validates GOAD config, inventory groups, Vagrant declarations,
+and the **actual rendered instance Vagrantfile** entirely in memory. It never
+starts VMs or creates a deployment. It also requires a management-host entry
+for every reduced guest in the post-Vagrant inventory. Specifically, it
+derives WS01's administrator management identity from the validated NORTH
+SRV02 entry, matching the existing full-lab runtime behavior without storing
+new credentials in this source branch.
 
 To create a PRIVATE candidate recipe outside Git:
 
@@ -31,6 +36,12 @@ To create a PRIVATE candidate recipe outside Git:
 Generated recipe contains existing fixture passwords. Keep it private, do
 not commit the output. File modes are 0600 inside a 0700 directory.
 Existing output is never overwritten.
+
+The preview includes data/inventory_disable_vagrant with an explicit WS01
+management entry, providers/vmware/Vagrantfile with the five Ruby box entries,
+and instance-preview/Vagrantfile rendered through the same Jinja2 outer
+VMware template used by GOAD. **Do not execute** Vagrant against these files
+or move them into the installed workspace: runtime activation is blocked.
 
 Run tests:
 
