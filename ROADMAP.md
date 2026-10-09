@@ -86,6 +86,15 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   NORTH requires explicit provider binding and remains rejected by the existing
   preview/instance safety gate. `--describe-profile` provides safe regression
   evidence for both profiles without touching any VM or host network.
+- [x] The **real shared VMware provider** now verifies generated NORTH
+  `provider/Vagrantfile`, guest IP/MAC/vmnet surface, both Ansible inventories,
+  instance-local PowerShell scripts and router provision script against the
+  native **patched Kingdoms** source. It refuses any drift or foreign assets
+  before privileged/VM actions; never copies the six-guest GOAD inventory.
+- [x] Explicit NORTH preview rejection now covers direct VMware provider
+  install, start/stop, per-VM start/stop, reset, snapshot and destroy, not
+  only `./goad.sh` console. The future shared segmented provider dispatch and
+  host-address/router service selection use NORTH's own vmnet11/12/13 paths.
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.

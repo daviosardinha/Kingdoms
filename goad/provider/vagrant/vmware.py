@@ -339,6 +339,19 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
             Log.error(f'GOAD Kingdoms: blocked non-legacy instance binding: {exc}')
             return False
 
+    def _verify_north_instance_sources(self):
+        """Read-only gate for the actual NORTH LabInstance-generated assets."""
+        from goad.north_native_instance import inspect_north_instance_assets
+        from goad.course1_runtime_contract import ProfileNotReady
+        try:
+            inspected = inspect_north_instance_assets(self.path)
+        except (ProfileNotReady, OSError, UnicodeError, ValueError) as exc:
+            Log.error(f'Kingdoms NORTH: instance source verification failed: {exc}')
+            return False
+        Log.success('Kingdoms NORTH: native instance source verified '
+                    '(not runtime authorization)')
+        return inspected['status'] == 'NATIVE_INSTANCE_SOURCE_VERIFIED'
+
     def _sync_goad_nomad_vagrantfile_compatibility(self):
         """Backfill current segmented VMware settings into existing instances.
 
@@ -348,6 +361,11 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         small and idempotent so old workspaces gain the same provider settings
         before the next Windows ``vagrant up``.
         """
+        if self.lab_name == 'NORTH':
+            # NORTH is built from the patched Kingdoms template. Never rewrite
+            # it using the reference six-guest WS01 compatibility migration.
+            return self._verify_north_instance_sources()
+
         if not self._require_full_goad_instance_binding():
             return False
         vagrantfile = os.path.join(str(self.path), 'Vagrantfile')
@@ -463,6 +481,11 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         those generated files without asking the operator to edit the test
         checkout or workspace manually.
         """
+        if self.lab_name == 'NORTH':
+            # Native NORTH inventories must match its own canonical source,
+            # never be overwritten by the GOAD reference inventory.
+            return self._verify_north_instance_sources()
+
         if not self._require_full_goad_instance_binding():
             return False
         instance_path = os.path.dirname(str(self.path))
@@ -495,7 +518,63 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         # Reuse the already-established NORTH administrator connection rather
         # than publishing another credential literal for WS01. The generated
         # runtime inventory remains deterministic and source-derived.
-        srv02_match = re.search(r'(?m)^srv02 ansible_host=.*$', disabled_text)
+        srv02_match = re.search(r'(?m)^srv02 ansible_host=.*
+    def install(self):
+        """Bring up VMware guests and prepare GOAD_NOMAD local provisioning reachability."""
+        if self.lab_name != 'GOAD':
+            return super().install()
+
+        if not self._sync_goad_nomad_inventories():
+            return False
+
+        if not self._sync_goad_nomad_vagrantfile_compatibility():
+            return False
+
+        # Bring up the router independently so a Windows guest failure cannot
+        # prevent creation of the routing plane. Linux keeps the normal SSH path.
+        Log.info('GOAD_NOMAD: bringing up segmented router')
+        if not self.command.run_vagrant(['up', 'GOAD-ROUTER'], self.path):
+            Log.error('GOAD_NOMAD: failed to bring up GOAD-ROUTER')
+            return False
+
+        # Windows VMware boxes can expose working forwarded WinRM while VMware
+        # Tools are absent. In that state vagrant-vmware-desktop cannot discover
+        # the guest IP and aborts with the well-known guest-communication error.
+        # Handle each Windows guest independently, repair Tools when necessary,
+        # and retry the Vagrant bring-up instead of aborting the complete lab.
+        for machine in self.goad_nomad_windows:
+            Log.info(f'GOAD_NOMAD: bringing up {machine}')
+            first_up = self.command.run_vagrant(['up', machine], self.path)
+
+            if not self._ensure_vmware_tools(machine):
+                return False
+
+            if not first_up:
+                Log.warning(f'GOAD_NOMAD: retrying {machine} after VMware Tools recovery')
+                if not self.command.run_vagrant(['up', machine], self.path):
+                    Log.error(f'GOAD_NOMAD: {machine} still failed after VMware Tools recovery')
+                    return False
+
+        # The host has no vmnet20/vmnet30 adapters, so local Ansible must
+        # temporarily reach those protected networks through GOAD-ROUTER after
+        # Vagrant has brought the complete instance up.
+        route_script = GoadPath.get_script_file('provisioning-routes.sh')
+        if not os.path.isfile(route_script):
+            Log.error(f'GOAD_NOMAD provisioning route helper not found: {route_script}')
+            return False
+
+        Log.info('GOAD_NOMAD: enabling temporary host routes for local Ansible provisioning')
+        # Repository script files are not guaranteed to carry an executable bit
+        # after clone/archive operations. Invoke the helper through bash instead
+        # of executing it directly so the install path is mode-independent.
+        route_result = subprocess.run(['sudo', 'bash', route_script, 'enable'], check=False)
+        if route_result.returncode != 0:
+            Log.error('GOAD_NOMAD: failed to enable temporary provisioning routes')
+            return False
+
+        Log.warning('GOAD_NOMAD: provisioning routes are temporary and must be removed before exercise mode')
+        return True
+, disabled_text)
         if srv02_match is None:
             Log.error(
                 'GOAD_NOMAD: cannot derive the WS01 post-Vagrant inventory '

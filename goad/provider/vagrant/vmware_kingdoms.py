@@ -20,6 +20,41 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
     policy is added here so M2 changes do not casually rewrite the M1 core.
     """
 
+    def _north_runtime_allowed(self):
+        """Keep direct provider calls fail-closed until course release."""
+        if self.lab_name != 'NORTH':
+            return True
+        binding = getattr(self, 'kingdoms_vmware_binding', None)
+        if binding is None or not binding.segmented_install_enabled:
+            Log.error('Kingdoms NORTH: VM lifecycle not released; no guest operation authorized')
+            return False
+        return True
+
+    def start(self, vm_name=None):
+        if not self._north_runtime_allowed():
+            return False
+        return super().start(vm_name=vm_name)
+
+    def snapshot(self):
+        if not self._north_runtime_allowed():
+            return False
+        return super().snapshot()
+
+    def destroy(self):
+        if not self._north_runtime_allowed():
+            return False
+        return super().destroy()
+
+    def destroy_non_interactive(self):
+        if not self._north_runtime_allowed():
+            return False
+        return super().destroy_non_interactive()
+
+    def destroy_vm(self, vm_name):
+        if not self._north_runtime_allowed():
+            return False
+        return super().destroy_vm(vm_name)
+
     def _require_cached_sudo(self):
         """Require an already-authenticated sudo timestamp without prompting.
 
@@ -702,6 +737,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def start_vm(self, vm_name):
         """Start one installed guest, plus its router dependency when needed."""
+        if not self._north_runtime_allowed():
+            return False
         if self.lab_name != 'GOAD':
             return super().start_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -712,6 +749,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def stop_vm(self, vm_name):
         """Stop one instance guest locally; preserve routing for live Windows."""
+        if not self._north_runtime_allowed():
+            return False
         if self.lab_name != 'GOAD':
             return super().stop_vm(vm_name)
         if not self._require_full_goad_instance_binding():
@@ -735,6 +774,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def stop(self):
         """Shut down members, then DCs, then the router without Vagrant NAT."""
+        if not self._north_runtime_allowed():
+            return False
         if self.lab_name != 'GOAD':
             return super().stop()
         if not self._require_full_goad_instance_binding():
@@ -856,6 +897,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         Windows VM is powered off, and only then return control to GOAD's
         existing hardened ``start()`` path.
         """
+        if not self._north_runtime_allowed():
+            return False
         if self.lab_name != 'GOAD':
             return super().reset()
         if not self._require_full_goad_instance_binding():
@@ -917,7 +960,9 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def install(self):
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
-        if self.lab_name != 'GOAD':
+        if not self._north_runtime_allowed():
+            return False
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().install()
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
             Log.error('GOAD Kingdoms: previous Vagrant cleanup is incomplete; refusing guest bring-up')
@@ -985,7 +1030,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         # The host has no vmnet20/vmnet30 adapters, so local Ansible must
         # temporarily reach those protected networks through GOAD-ROUTER after
         # Vagrant has brought the complete instance up.
-        route_script = GoadPath.get_script_file('provisioning-routes.sh')
+        route_script = self._script('provisioning-routes.sh')
         if not os.path.isfile(route_script):
             Log.error(f'GOAD_NOMAD provisioning route helper not found: {route_script}')
             return False
@@ -1374,19 +1419,31 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
 
             # VMware can recreate the host interfaces during power-on. Repair
             # synchronously, then validate before using the router's .1 address.
+            is_north = self.lab_name == 'NORTH'
+            host_service = (
+                'kingdoms-north-vmnet-hostaddrs.service' if is_north
+                else 'goad-nomad-vmnet-hostaddrs.service'
+            )
             repair = subprocess.run(
-                ['sudo', '-n', 'systemctl', 'restart',
-                 'goad-nomad-vmnet-hostaddrs.service'],
+                ['sudo', '-n', 'systemctl', 'restart', host_service],
                 check=False, timeout=50,
             )
-            checker = self._script('check-vmware-networks.sh')
+            checker = self._script(
+                'course1/kingdoms-north-vmnet-hostaddrs' if is_north
+                else 'check-vmware-networks.sh'
+            )
             ssh = self._script('router-ssh.sh')
             if repair.returncode != 0 or checker is None or ssh is None:
                 return False
-            if subprocess.run(['bash', checker], check=False, timeout=30).returncode != 0:
+            check_args = ['bash', checker] + (['status'] if is_north else [])
+            if subprocess.run(check_args, check=False, timeout=30).returncode != 0:
                 return False
 
-            Log.info('GOAD Kingdoms: waiting for router management SSH at 10.4.99.1:22')
+            management_ip = (
+                self.kingdoms_vmware_binding.router_management if is_north
+                else '10.4.99.1'
+            )
+            Log.info(f'GOAD Kingdoms: waiting for router management SSH at {management_ip}:22')
             deadline = time.monotonic() + 180
             while time.monotonic() < deadline:
                 try:
@@ -1416,6 +1473,12 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         return False
 
     def prepare_install(self):
+        if not self._north_runtime_allowed():
+            return False
+        if self.lab_name == 'NORTH' and not self._verify_north_instance_sources():
+            # An exact native source binding is required BEFORE any host,
+            # router, sudo or VM mutation is even considered.
+            return False
         # This method is the first provider hook executed by the hardened
         # install/start/ws01 paths, before GOAD-ROUTER or any Windows guest is
         # powered on. Bind the instance BEFORE any host/network/sudo transition.
@@ -1441,7 +1504,7 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         """
         profile = getattr(self, '_kingdoms_install_profile', None)
         return (
-            self.lab_name == 'GOAD'
+            self.is_goad_nomad_segmented()
             and self.get_runtime_mode() == 'unknown'
             and isinstance(profile, dict)
             and profile.get('provider_success') is True
@@ -1485,6 +1548,8 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         # This covers long-running starts where the sudo timestamp may have
         # expired since prepare_install() and prevents the compatibility mode
         # controller from ever becoming an interactive password prompt.
+        if not self._north_runtime_allowed():
+            return False
         if self.is_goad_nomad_segmented() and not self._require_cached_sudo():
             return False
         return super().set_runtime_mode(mode)

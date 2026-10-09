@@ -110,7 +110,8 @@ class KingdomsNorthModeSourceTests(unittest.TestCase):
                       source)
         self.assertIn("self.lab_name if self.lab_name == 'NORTH' else 'GOAD'", source)
         self.assertEqual(source.count("not binding.segmented_install_enabled"), 2)
-        self.assertIn("return self.lab_name == 'GOAD'", source)
+        self.assertIn("if self.lab_name == 'GOAD':", source)
+        self.assertIn("binding.segmented_install_enabled", source)
         # No route/policy call is executed by this test.
 
     def test_shared_mode_controller_north_profile_is_four_guest_and_scoped(self):

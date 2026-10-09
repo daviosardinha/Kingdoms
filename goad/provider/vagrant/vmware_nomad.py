@@ -53,7 +53,12 @@ class GoadNomadVmwareProvider(VmwareProvider):
             )
 
     def is_goad_nomad_segmented(self):
-        return self.lab_name == 'GOAD'
+        if self.lab_name == 'GOAD':
+            return True
+        if self.lab_name == 'NORTH':
+            binding = getattr(self, 'kingdoms_vmware_binding', None)
+            return binding is not None and binding.segmented_install_enabled
+        return False
 
     @staticmethod
     def _project_root_from_script(script):
@@ -306,7 +311,21 @@ class GoadNomadVmwareProvider(VmwareProvider):
         return True
 
     def prepare_install(self):
-        """Ensure the four GOAD_NOMAD VMware networks exist before Vagrant."""
+        """Validate the profile's host networks before any guest mutation."""
+        if self.lab_name == 'NORTH':
+            if not self.is_goad_nomad_segmented():
+                Log.error('Kingdoms NORTH: live VMware provider release is blocked')
+                return False
+            # NORTH host networks were allocated by a separate protected
+            # transaction. NEVER execute the reference VMware network setup.
+            checker = self._script('course1/kingdoms-north-vmnet-hostaddrs')
+            if checker is None:
+                return False
+            result = subprocess.run(['bash', checker, 'status'], check=False)
+            if result.returncode != 0:
+                Log.error('Kingdoms NORTH: host vmnet .254 network check failed')
+                return False
+            return True
         if not self.is_goad_nomad_segmented():
             return True
 

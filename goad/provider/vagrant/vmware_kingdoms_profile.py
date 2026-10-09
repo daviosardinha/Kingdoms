@@ -78,7 +78,9 @@ class ProfiledGoadKingdomsVmwareProvider(GoadKingdomsVmwareProvider):
         return 'Vagrant command'
 
     def install(self):
-        if self.lab_name != 'GOAD':
+        if not self._north_runtime_allowed():
+            return False
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().install()
 
         self._kingdoms_install_profile = new_install_profile(self.path)

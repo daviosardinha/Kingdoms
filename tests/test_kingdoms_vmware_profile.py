@@ -64,7 +64,8 @@ class NativeKingdomsVMwareProfileTests(unittest.TestCase):
         self.assertIn("self.management_hosts = dict(binding.roster.management_hosts)", source)
         # Until production lifecycle is ready, installing NORTH must remain
         # impossible in the native console.
-        self.assertIn("return self.lab_name == 'GOAD'", source)
+        self.assertIn("if self.lab_name == 'GOAD':", source)
+        self.assertIn("binding.segmented_install_enabled", source)
 
 
 if __name__ == "__main__":
