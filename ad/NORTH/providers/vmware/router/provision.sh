@@ -84,7 +84,7 @@ cat > /etc/nftables.conf <<'EOF'
 #!/usr/sbin/nft -f
 flush ruleset
 
-table inet goad_nomad {
+table inet kingdoms_north {
     chain input {
         type filter hook input priority 0;
         policy accept;

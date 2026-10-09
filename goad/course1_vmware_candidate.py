@@ -180,6 +180,9 @@ def _render_router_script(plan: dict) -> str:
     ).replace(
         "goad-router", "kingdoms-course1-router"
     )
+    script = script.replace("table inet goad_nomad", "table inet kingdoms_north")
+    require(script.count("table inet kingdoms_north") == 1,
+            "Course 1 router nftables table identity not isolated")
     script = script.replace(
         "# Router bootstrap starts in provisioning mode.",
         "# NONDEPLOYABLE Course 1 preview: forwarding starts DENIED."

@@ -19,6 +19,18 @@ class KingdomsNorthModeSourceTests(unittest.TestCase):
         for state in ("provisioning", "exercise"):
             self.assertTrue((NORTH / "nftables" / (state + ".nft")).is_file())
 
+    def test_native_router_bootstrap_matches_both_mode_policy_tables(self):
+        bootstrap = (NORTH / "provision.sh").read_text()
+        self.assertIn("table inet kingdoms_north", bootstrap)
+        self.assertNotIn("table inet goad_nomad", bootstrap)
+        for state in ("provisioning", "exercise"):
+            policy = (NORTH / "nftables" / (state + ".nft")).read_text()
+            self.assertIn("table inet kingdoms_north", policy)
+        from goad.course1_vmware_candidate import render_candidate
+        from tests.test_course1_network_plan import proposal
+        staged = render_candidate(proposal())["router/provision.sh"]
+        self.assertIn("table inet kingdoms_north", staged)
+
     def test_exercise_default_deny_with_only_parent_child_dc(self):
         data = (NORTH / "nftables/exercise.nft").read_text()
         self.assertIn("policy drop;", data)
