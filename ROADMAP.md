@@ -31,6 +31,20 @@ Work must follow this order. A lower-priority platform expansion must not displa
 
 The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
 
+## Single NORTH installation-readiness command
+
+- [x] One operator entrypoint: `bash scripts/course1/check-install-readiness.sh`.
+  Includes existing offline suite, native VMware Vagrant/Ansible syntax, network
+  and registered VMware VMX survey, reference host-address preservation,
+  native provider release guard and host memory/disk advisory.
+- [x] Only cache a passing **source** suite for the exact clean HEAD/upstream
+  SHA; **always re-survey live VMware/network state**. `--refresh` forces all
+  tests. Quiet terminal report, restricted detailed logs. Return 2 while the
+  installer/lifecycle remains BLOCKED; never fake a successful installation.
+- [ ] Complete profile-aware NORTH four-guest install/start/stop and NAT/AD
+  exercise transitions. After these work, extend this SAME readiness command
+  with verified live install checks; don't introduce more operator scripts.
+
 ## NORTH native recipe from patched Kingdoms installer — in progress
 
 - [x] Materialized `ad/NORTH/data/{config.json,inventory,inventory_disable_vagrant}`

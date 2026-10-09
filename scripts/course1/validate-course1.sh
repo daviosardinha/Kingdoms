@@ -118,6 +118,7 @@ python3 -m unittest \
     tests.test_course1_vmnet_transaction \
     tests.test_course1_north_host_addresses \
     tests.test_course1_native_recipe \
+    tests.test_course1_install_readiness_cli \
     tests.test_lab_mode_ad_readiness
 
 step "02b - Native NORTH Vagrant/router source parsers"
@@ -135,6 +136,7 @@ for shell_file in \
     scripts/course1/kingdoms-north-vmnet-hostaddrs \
     scripts/course1/provisioning-routes.sh \
     scripts/course1/router-ssh.sh \
+    scripts/course1/check-install-readiness.sh \
     scripts/lab-mode.sh \
     scripts/verify-test-source.sh; do
     bash -n "${shell_file}" || fail "Bash syntax invalid: ${shell_file}"
