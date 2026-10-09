@@ -68,7 +68,7 @@ class Course1HostFitTests(unittest.TestCase):
         self.assertFalse(result["deployment_authorized"])
 
     def test_observed_vmnet_is_rejected(self):
-        self.reject(lambda p, s: s["observed_vmnets"].append("vmnet41"))
+        self.reject(lambda p, s: s["observed_vmnets"].append("vmnet11"))
 
     def test_host_interface_subnet_overlap_is_rejected(self):
         self.reject(lambda p, s: s["host_interfaces"].append({
@@ -87,7 +87,7 @@ class Course1HostFitTests(unittest.TestCase):
 
     def test_running_mac_collision_is_rejected(self):
         self.reject(lambda p, s: s["running_vms"][0]["adapters"].append({
-            "adapter": 2, "address": "02:44:10:00:00:11"
+            "adapter": 2, "address": "00:50:56:3a:10:11"
         }))
 
     def test_partial_survey_is_rejected(self):

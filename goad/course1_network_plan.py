@@ -123,6 +123,18 @@ def _mac(value: object) -> str:
     return result
 
 
+def _vmware_static_mac(value: object) -> str:
+    # VMware Workstation static Ethernet addresses must be
+    # 00:50:56:XX:YY:ZZ, where XX is in the 00..3F range.
+    # Retain _mac for inspecting VMware-generated and third-party VMX MACs.
+    result = _mac(value)
+    parts = result.split(":")
+    require(parts[:3] == ["00", "50", "56"]
+            and int(parts[3], 16) <= 0x3F,
+            "VMware Workstation static MAC must be 00:50:56:00..3F:YY:ZZ")
+    return result
+
+
 def validate_proposal(proposal: object) -> dict:
     """Validate isolated topology *intent*, NOT VMware vmnet allocation.
 
@@ -188,7 +200,7 @@ def validate_proposal(proposal: object) -> dict:
                 and ip != gateways[zone] and ip not in guest_ips,
                 "guest has duplicate, unusable or out-of-zone address")
         guest_ips.add(ip)
-        mac = _mac(data["mac"])
+        mac = _vmware_static_mac(data["mac"])
         require(mac not in reference.macs and mac not in all_macs,
                 "proposed guest MAC collides with another or reference guest")
         all_macs.add(mac)
@@ -204,7 +216,7 @@ def validate_proposal(proposal: object) -> dict:
         host_ips.add(host_ip)
 
     for zone in ZONES:
-        mac = _mac(router_macs[zone])
+        mac = _vmware_static_mac(router_macs[zone])
         require(mac not in reference.macs and mac not in all_macs,
                 "proposed router MAC collides with another or reference guest")
         all_macs.add(mac)

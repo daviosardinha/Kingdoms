@@ -7,7 +7,7 @@ three-segment proposal. This is not a deployment authorization.
 ## What changed in this batch
 
 The same consolidated gate now validates a **single isolated source artifact
-set** with eight files: four-Windows-VM Vagrant definition, rendered outer
+set** with eleven files: four-Windows-VM Vagrant definition, rendered outer
 Vagrantfile, deny-forward three-NIC Linux router bootstrap, source manifest,
 four-host Ansible provisioning inventory, four-host post-Vagrant WinRM
 inventory, VMware provider inventory and the parent/NORTH AD fixture config.
@@ -51,3 +51,20 @@ allocation; private generated artifacts are deleted after the run.
 
 Do not activate Course 1, merge draft PR #30, or modify the validated
 reference Kingdoms deployment until disposable runtime acceptance is green.
+
+## VMware static-MAC compatibility correction
+
+The example candidate now uses VMware Workstation's documented manual
+static Ethernet range `00:50:56:00..3F:YY:ZZ` instead of the unsupported
+`02:44` test MACs. It also proposes unallocated vmnet11/12/13 rather than
+vmnet41/42/49, for conventional Workstation naming. These identifiers are
+not reserved; dormant guests and host VMware configuration require separate
+collision/compatibility validation before deployment.
+
+VMware reference: https://knowledge.broadcom.com/external/article?legacyId=507
+
+The later Windows asset-closure batch adds the three private Vagrant
+PowerShell provisioning helpers to the same candidate. Relative Vagrant
+paths now resolve inside the candidate tree and its private `fix_ip.ps1`
+installs a 10.41.0.0/16 cross-zone route, rather than copying the reference
+10.4.0.0/16 route. The reference source remains unchanged.

@@ -19,28 +19,28 @@ def proposal():
         "profile": COURSE1.name,
         "state": "PROPOSED_NOT_DEPLOYABLE",
         "zones": {
-            "NORTH": {"vmnet": "vmnet41", "subnet": "10.41.10.0/24",
+            "NORTH": {"vmnet": "vmnet11", "subnet": "10.41.10.0/24",
                       "gateway": "10.41.10.1"},
-            "SEVENKINGDOMS": {"vmnet": "vmnet42", "subnet": "10.41.20.0/24",
+            "SEVENKINGDOMS": {"vmnet": "vmnet12", "subnet": "10.41.20.0/24",
                              "gateway": "10.41.20.1"},
-            "MANAGEMENT": {"vmnet": "vmnet49", "subnet": "10.41.99.0/24",
+            "MANAGEMENT": {"vmnet": "vmnet13", "subnet": "10.41.99.0/24",
                            "gateway": "10.41.99.1"},
         },
         "machines": {
             "GOAD-DC01": {"zone": "SEVENKINGDOMS", "ip": "10.41.20.10",
-                          "mac": "02:44:20:00:00:10"},
+                          "mac": "00:50:56:3a:20:10"},
             "GOAD-DC02": {"zone": "NORTH", "ip": "10.41.10.11",
-                          "mac": "02:44:10:00:00:11"},
+                          "mac": "00:50:56:3a:10:11"},
             "GOAD-SRV02": {"zone": "NORTH", "ip": "10.41.10.22",
-                           "mac": "02:44:10:00:00:22"},
+                           "mac": "00:50:56:3a:10:22"},
             "GOAD-WS01": {"zone": "NORTH", "ip": "10.41.10.31",
-                          "mac": "02:44:10:00:00:31"},
+                          "mac": "00:50:56:3a:10:31"},
         },
         "host_addresses": {"NORTH": "10.41.10.254", "MANAGEMENT": "10.41.99.254"},
         "router_macs": {
-            "NORTH": "02:44:10:00:01:01",
-            "SEVENKINGDOMS": "02:44:20:00:01:01",
-            "MANAGEMENT": "02:44:99:00:01:01",
+            "NORTH": "00:50:56:3b:10:01",
+            "SEVENKINGDOMS": "00:50:56:3b:20:01",
+            "MANAGEMENT": "00:50:56:3b:99:01",
         },
     }
 
@@ -83,7 +83,7 @@ class Course1NetworkPlanTests(unittest.TestCase):
         self.reject(lambda p: p["zones"]["NORTH"].__setitem__("vmnet", "vmnet10"))
 
     def test_duplicate_vmnet_rejected(self):
-        self.reject(lambda p: p["zones"]["NORTH"].__setitem__("vmnet", "vmnet42"))
+        self.reject(lambda p: p["zones"]["NORTH"].__setitem__("vmnet", "vmnet12"))
 
     def test_default_nat_vmnet_rejected(self):
         self.reject(lambda p: p["zones"]["NORTH"].__setitem__("vmnet", "vmnet8"))
@@ -100,7 +100,15 @@ class Course1NetworkPlanTests(unittest.TestCase):
 
     def test_duplicate_guest_mac_rejected(self):
         self.reject(lambda p: p["machines"]["GOAD-WS01"].__setitem__(
-            "mac", "02:44:10:00:00:22"))
+            "mac", "00:50:56:3a:10:22"))
+
+    def test_unsupported_locally_administered_static_mac_rejected(self):
+        self.reject(lambda p: p["machines"]["GOAD-WS01"].__setitem__(
+            "mac", "02:44:10:00:00:31"))
+
+    def test_vmware_reserved_mac_upper_range_rejected(self):
+        self.reject(lambda p: p["router_macs"].__setitem__(
+            "NORTH", "00:50:56:40:00:01"))
 
     def test_reference_guest_mac_rejected(self):
         self.reject(lambda p: p["machines"]["GOAD-WS01"].__setitem__(
@@ -108,7 +116,7 @@ class Course1NetworkPlanTests(unittest.TestCase):
 
     def test_router_mac_reuses_guest_rejected(self):
         self.reject(lambda p: p["router_macs"].__setitem__(
-            "NORTH", "02:44:10:00:00:11"))
+            "NORTH", "00:50:56:3a:10:11"))
 
     def test_missing_attacker_host_address_rejected(self):
         self.reject(lambda p: p["host_addresses"].pop("NORTH"))

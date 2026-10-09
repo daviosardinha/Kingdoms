@@ -15,9 +15,13 @@ The distinct candidate artifacts are:
 - `providers/vmware/Vagrantfile`: four original Windows guest definitions
   with proposed NORTH/parent addresses, plus GOAD-ROUTER with exactly
   three explicit non-NAT lab adapters.
-- `instance-preview/Vagrantfile`: outer Vagrant template syntax. **Not**
-  complete: the current relative Windows provisioning script paths still
-  assume the reference workspace source layout.
+- `instance-preview/Vagrantfile`: outer Vagrant template with the three
+  Windows provisioning paths rebased into the self-contained private bundle.
+  This is still NOT a deployable instance; VMware runtime is unverified.
+- `vagrant/fix_ip.ps1`, `vagrant/Install-WMF3Hotfix.ps1` and
+  `vagrant/ConfigureRemotingForAnsible.ps1`: privately staged Windows helpers.
+  The candidate-only fix_ip.ps1 installs `10.41.0.0/16` through the course
+  router, replacing the reference script's `10.4.0.0/16` persistent route.
 - `router/provision.sh`: a new router bootstrap adapted from the original
   reference script, with NORTH, SEVENKINGDOMS and MANAGEMENT only. No ESSOS
   NIC, address, MAC or bootstrap printout. The custom NICs use proposed
@@ -44,10 +48,11 @@ candidate into its own private ephemeral directory, checks `ruby -c`,
 It still verifies the OLD reduced recipe is blocked from startup, and deletes
 the generated private candidate on normal exit/failure.
 
-Do **not** execute `vagrant up` against either preview. On VMware
-Workstation the proposed locally administered `02:44:...` MAC syntax has not
-yet been proven compatible with the provider's manual MAC requirements.
-`vmnet41`, `vmnet42` and `vmnet49` are unallocated example names.
+Do **not** execute `vagrant up` against either preview. The proposal
+now uses VMware-format `00:50:56:3A/3B:XX:XX` manual MACs, which pass a
+static syntax/range check; actual VMware provider and runtime behavior are
+still unproven.
+`vmnet11`, `vmnet12` and `vmnet13` are unallocated example names.
 No host availability check proves that dormant/unregistered VMs are absent.
 
 ### Engineering release gates
@@ -57,3 +62,14 @@ dedicated host vmnet allocation/route selection without disturbing reference,
 profile-specific Ansible/AD/DNS/WinRM settings, router management/SSH,
 transactional lab-mode + NAT rollback, KINGDOMS2 SQL and all Phase 03 and
 Course 1 attack regressions. This commit is *not* a deployment.
+
+## VMware static-MAC compatibility correction
+
+The example candidate now uses VMware Workstation's documented manual
+static Ethernet range `00:50:56:00..3F:YY:ZZ` instead of the unsupported
+`02:44` test MACs. It also proposes unallocated vmnet11/12/13 rather than
+vmnet41/42/49, for conventional Workstation naming. These identifiers are
+not reserved; dormant guests and host VMware configuration require separate
+collision/compatibility validation before deployment.
+
+VMware reference: https://knowledge.broadcom.com/external/article?legacyId=507

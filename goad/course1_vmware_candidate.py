@@ -209,6 +209,38 @@ def _render_router_script(plan: dict) -> str:
     return script
 
 
+WINDOWS_PROVISIONING_ASSETS = (
+    "Install-WMF3Hotfix.ps1",
+    "ConfigureRemotingForAnsible.ps1",
+    "fix_ip.ps1",
+)
+
+
+def _render_vagrant_assets(plan: dict) -> dict[str, str]:
+    # Copy the three exact provisioners into a private, self-contained source
+    # bundle. NEVER rewrite the canonical Windows source in the live reference.
+    win = {}
+    for name in WINDOWS_PROVISIONING_ASSETS:
+        content = (PROJECT / "vagrant" / name).read_text(encoding="utf-8")
+        if name == "fix_ip.ps1":
+            # The existing script installs a persistent cross-zone 10.4/16
+            # route. Course 1's NORTH/SEVENKINGDOMS networks share 10.41/16.
+            north = ipaddress.ip_network(plan["zones"]["NORTH"]["subnet"])
+            parent = ipaddress.ip_network(plan["zones"]["SEVENKINGDOMS"]["subnet"])
+            require(north.supernet(new_prefix=16) == parent.supernet(new_prefix=16),
+                    "Windows provisioner cannot represent disjoint cross-zone routes")
+            route = str(north.supernet(new_prefix=16))
+            network_address = str(north.supernet(new_prefix=16).network_address)
+            require(route == "10.41.0.0/16" and content.count("10.4.0.0") == 6,
+                    "Windows provisioner contract changed; review routing before rendering")
+            content = content.replace("10.4.0.0", network_address)
+            content = content.replace("GOAD_NOMAD", "KINGDOMS_COURSE1")
+            require(route in content and "10.4." not in content,
+                    "legacy Windows static route escaped Course 1 translation")
+        win["vagrant/" + name] = content
+    return win
+
+
 def _render_outer_template(recipe: str) -> str:
     spec = importlib.util.spec_from_file_location("course1_reference_generator",
                                                    GENERATOR_PATH)
@@ -219,6 +251,12 @@ def _render_outer_template(recipe: str) -> str:
     outer = module.render_instance_vagrantfile(recipe)
     require("10.4.30.12" in outer,
             "reference template WinRM example moved; review before rendering")
+    require(outer.count("../../../vagrant/") == 4,
+            "canonical Windows provisioning relative paths changed")
+    outer = outer.replace("../../../vagrant/", "../vagrant/")
+    require("../../../vagrant/" not in outer
+            and outer.count("../vagrant/") == 4,
+            "Course 1 private Windows provisioner paths did not rebase")
     return outer.replace("10.4.30.12", "an isolated guest address")
 
 
@@ -228,6 +266,7 @@ def render_candidate(plan: dict) -> dict[str, str]:
     reduced_source = _generator_render()
     reference = reduced_source["providers/vmware/Vagrantfile"]
     staged_inventories = render_candidate_inventories(reduced_source, plan)
+    windows_assets = _render_vagrant_assets(plan)
     blocks = {}
     for match in BOX_RX.finditer(reference):
         original = match.group(0).rstrip()
@@ -266,11 +305,15 @@ def render_candidate(plan: dict) -> dict[str, str]:
                             "instance-preview/Vagrantfile", "router/provision.sh",
                             "data/config.json", "data/inventory",
                             "data/inventory_disable_vagrant",
-                            "providers/vmware/inventory"],
+                            "providers/vmware/inventory",
+                            "vagrant/Install-WMF3Hotfix.ps1",
+                            "vagrant/ConfigureRemotingForAnsible.ps1",
+                            "vagrant/fix_ip.ps1"],
         "deployment_authorized": False,
         "incomplete": [
             "host vmnet allocation and VMware manual MAC compatibility unverified",
             "router three-NIC PCI/udev/SSH runtime unverified",
+            "isolated Windows provisioner rebased but VMX/WinRM live execution unverified",
             "Ansible playbook and Phase 03 hardcoded address dependencies still require profile-aware migration",
             "instance binding/install/start/mode/reset not authorized",
             "SQL KINGDOMS2 and Phase 03 runtime regressions pending",
@@ -278,6 +321,7 @@ def render_candidate(plan: dict) -> dict[str, str]:
     }
     return {
         **staged_inventories,
+        **windows_assets,
         "providers/vmware/Vagrantfile": recipe,
         "instance-preview/Vagrantfile": vagrant,
         "router/provision.sh": script,

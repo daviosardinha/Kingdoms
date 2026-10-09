@@ -42,18 +42,18 @@ class VmwareCandidateTests(unittest.TestCase):
             self.assertIn(f':ip => "{expected}"', vagrant)
         self.assertEqual(vagrant.count(':lab_gateway => "10.41.10.1"'), 3)
         self.assertIn(':lab_gateway => "10.41.20.1"', vagrant)
-        self.assertEqual(vagrant.count('vmnet41'), 4)  # 3 NORTH + router
-        self.assertEqual(vagrant.count('vmnet42'), 2)
-        self.assertEqual(vagrant.count('vmnet49'), 1)
+        self.assertEqual(vagrant.count('vmnet11'), 4)  # 3 NORTH + router
+        self.assertEqual(vagrant.count('vmnet12'), 2)
+        self.assertEqual(vagrant.count('vmnet13'), 1)
 
     def test_router_has_exactly_three_explicit_nics_and_no_essos(self):
         data = self.render()["providers/vmware/Vagrantfile"]
         router = data.split(':name => "GOAD-ROUTER"', 1)[1]
         self.assertIn('"ethernet3.pcislotnumber" => "1184"', router)
         self.assertNotIn('"ethernet4.pcislotnumber"', router)
-        self.assertIn(':slot => 1, :vnet => "vmnet41"', router)
-        self.assertIn(':slot => 2, :vnet => "vmnet42"', router)
-        self.assertIn(':slot => 3, :vnet => "vmnet49"', router)
+        self.assertIn(':slot => 1, :vnet => "vmnet11"', router)
+        self.assertIn(':slot => 2, :vnet => "vmnet12"', router)
+        self.assertIn(':slot => 3, :vnet => "vmnet13"', router)
         self.assertNotIn(':slot => 4', router)
         self.assertIn('"../router/provision.sh"', router)
 
@@ -61,8 +61,8 @@ class VmwareCandidateTests(unittest.TestCase):
         content = self.render()["router/provision.sh"]
         for ip in ("10.41.10.1", "10.41.20.1", "10.41.99.1"):
             self.assertIn(ip, content)
-        for mac in ("02:44:10:00:01:01", "02:44:20:00:01:01",
-                    "02:44:99:00:01:01"):
+        for mac in ("00:50:56:3b:10:01", "00:50:56:3b:20:01",
+                    "00:50:56:3b:99:01"):
             self.assertIn(mac, content)
         self.assertEqual(content.count('configure_lab_interface "'), 3)
         self.assertIn("kingdoms-course1-router", content)
@@ -104,7 +104,10 @@ class VmwareCandidateTests(unittest.TestCase):
                          {"providers/vmware/Vagrantfile", "instance-preview/Vagrantfile",
                           "router/provision.sh", "manifest.json",
                           "data/config.json", "data/inventory",
-                          "data/inventory_disable_vagrant", "providers/vmware/inventory"})
+                          "data/inventory_disable_vagrant", "providers/vmware/inventory",
+                          "vagrant/Install-WMF3Hotfix.ps1",
+                          "vagrant/ConfigureRemotingForAnsible.ps1",
+                          "vagrant/fix_ip.ps1"})
         manifest = json.loads(artifacts["manifest.json"])
         self.assertEqual(manifest["state"], "PREVIEW_ONLY_NOT_INSTALLABLE")
         self.assertEqual(manifest["zones"], ["NORTH", "SEVENKINGDOMS", "MANAGEMENT"])
@@ -126,8 +129,8 @@ class VmwareCandidateTests(unittest.TestCase):
                 self.assertNotIn("vmnet10", content)
         provider = artifacts["providers/vmware/inventory"]
         self.assertIn("lab_gateway=10.41.10.1", provider)
-        self.assertIn("vmnet41", provider)
-        self.assertIn("vmnet42", provider)
+        self.assertIn("vmnet11", provider)
+        self.assertIn("vmnet12", provider)
 
     def test_course1_ad_config_still_has_only_two_domains(self):
         config = json.loads(self.render()["data/config.json"])
@@ -154,6 +157,37 @@ class VmwareCandidateTests(unittest.TestCase):
         ].replace("10.4.20.10", "10.4.20.200")
         with self.assertRaises(ProfileNotReady):
             render_candidate_inventories(source, load_plan())
+
+    def test_private_windows_provisioner_paths_resolve_inside_bundle(self):
+        artifacts = self.render()
+        outer = artifacts["instance-preview/Vagrantfile"]
+        expected = (
+            "Install-WMF3Hotfix.ps1",
+            "ConfigureRemotingForAnsible.ps1",
+            "fix_ip.ps1",
+        )
+        self.assertNotIn("../../../vagrant/", outer)
+        for name in expected:
+            with self.subTest(name=name):
+                self.assertIn(f'../vagrant/{name}', outer)
+                self.assertIn("vagrant/" + name, artifacts)
+        manifest = json.loads(artifacts["manifest.json"])
+        self.assertEqual(set(manifest["generated_files"]),
+                         set(artifacts) - {"manifest.json"})
+
+    def test_windows_route_targets_isolated_parent_and_north(self):
+        powershell = self.render()["vagrant/fix_ip.ps1"]
+        self.assertIn("10.41.0.0/16", powershell)
+        self.assertIn("route.exe -p ADD 10.41.0.0", powershell)
+        self.assertIn('route.exe PRINT 10.41.0.0', powershell)
+        self.assertNotIn("10.4.0.0", powershell)
+
+    def test_canonical_windows_provisioner_is_unchanged(self):
+        reference = ROOT / "vagrant/fix_ip.ps1"
+        before = reference.read_bytes()
+        self.render()
+        self.assertEqual(before, reference.read_bytes())
+        self.assertIn(b"10.4.0.0", before)
 
     def test_candidate_mutated_into_reference_ip_is_rejected(self):
         plan = load_plan()
@@ -198,7 +232,7 @@ class VmwareCandidateTests(unittest.TestCase):
             for path in out.rglob("*"):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode),
                                  0o700 if path.is_dir() else 0o600)
-            self.assertEqual(len([p for p in out.rglob("*") if p.is_file()]), 8)
+            self.assertEqual(len([p for p in out.rglob("*") if p.is_file()]), 11)
             self.assertFalse(json.loads(
                 (out / "manifest.json").read_text())["deployment_authorized"])
             second = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
