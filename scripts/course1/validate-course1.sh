@@ -9,12 +9,13 @@ umask 077
 export PYTHONDONTWRITEBYTECODE=1
 
 REFERENCE_PROVIDER=""
+SURVEY_HOST=0
 PRIVATE_WORKDIR=""
 
 usage() {
     cat <<'USAGE'
 Usage:
-  bash scripts/course1/validate-course1.sh [--reference-provider ABSOLUTE_PATH]
+  bash scripts/course1/validate-course1.sh [--reference-provider ABSOLUTE_PATH] [--survey-host]
 
 Runs the complete offline Course 1 gate:
   1. Clean, pinned, upstream-matched Kingdoms Git source
@@ -26,9 +27,12 @@ Runs the complete offline Course 1 gate:
   7. Negative gate: reduced preview MUST be rejected by installed-instance binding
   8. Negative same-host cohosting gate: shared vmnets/MACs/IPs must be detected
   9. Optional read-only reference-instance startup/stop/reset planning
+ 10. Optional read-only VMware host survey (no network/VM changes)
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
+--survey-host queries ip address/routes, VMware network config and vmrun list.
+Incomplete visibility stops with nonzero; no vmnets are allocated.
 The temporary preview is automatically removed on success OR failure.
 USAGE
 }
@@ -51,6 +55,10 @@ trap 'exit 143' TERM
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --survey-host)
+            SURVEY_HOST=1
+            shift
+            ;;
         --reference-provider)
             [[ $# -ge 2 && -n "$2" && "$2" == /* ]] ||
                 fail "--reference-provider requires an existing absolute directory"
@@ -87,6 +95,7 @@ python3 -m unittest \
     tests.test_course1_bound_lifecycle \
     tests.test_course1_source_gate \
     tests.test_course1_network_plan \
+    tests.test_course1_host_survey \
     tests.test_lab_mode_ad_readiness
 
 step "03 - Bash syntax regression"
@@ -142,6 +151,11 @@ if [[ -n "${REFERENCE_PROVIDER}" ]]; then
             --action "${action}" >/dev/null
     done
     echo "[PASS] Installed six-VM instance is bound to five static plans"
+fi
+
+if [[ "${SURVEY_HOST}" -eq 1 ]]; then
+    step "10 - Read-only live VMware host survey"
+    python3 -m goad.course1_host_survey --check
 fi
 
 step "COMPLETE"
