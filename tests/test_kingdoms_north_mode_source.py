@@ -162,11 +162,31 @@ class KingdomsNorthModeSourceTests(unittest.TestCase):
         self.assertIn('NORTH provider is not bound to', script)
         self.assertIn('PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"', script)
         self.assertIn('python3 -m goad.course1_instance_binding --check-provider "${PROVIDER}"', script)
-        from goad.provider.vagrant.vmware_nomad import GoadNomadVmwareProvider
+        # Exercise the real method without importing the VMware runtime:
+        # a full import requires pywinrm, which is intentionally optional
+        # for this source-only offline validation suite.
+        import ast
         from types import SimpleNamespace
+        provider_source = ROOT / "goad/provider/vagrant/vmware_nomad.py"
+        tree = ast.parse(provider_source.read_text(encoding="utf-8"))
+        provider_class = next(
+            node for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "GoadNomadVmwareProvider"
+        )
+        method = next(
+            node for node in provider_class.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_provider_env"
+        )
+        namespace = {}
+        exec(
+            compile(ast.Module(body=[method], type_ignores=[]),
+                    str(provider_source), "exec"),
+            {"os": os}, namespace,
+        )
         for lab in ("GOAD", "NORTH"):
-            env = GoadNomadVmwareProvider._provider_env(
-                SimpleNamespace(path="/tmp/mock-instance/provider", lab_name=lab))
+            env = namespace["_provider_env"](
+                SimpleNamespace(path="/tmp/mock-instance/provider", lab_name=lab)
+            )
             self.assertEqual(env["KINGDOMS_VMWARE_LAB"], lab)
             self.assertEqual(env["GOAD_PROVIDER_DIR"], "/tmp/mock-instance/provider")
 
