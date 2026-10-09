@@ -43,7 +43,7 @@ class KingdomsFoundationTests(unittest.TestCase):
             for feature, marker in rules:
                 with self.subTest(path=path, feature=feature):
                     self.assertIn(marker, sources[path])
-                    altered = sources[path].replace(marker, "REMOVED_" + feature, 1)
+                    altered = sources[path].replace(marker, "REMOVED_" + feature)
                     self.assertNotEqual(altered, sources[path])
 
                     def modified_reader(key):

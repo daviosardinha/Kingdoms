@@ -16,6 +16,33 @@ from goad.settings import Settings
 
 
 class NorthNativeLabTests(unittest.TestCase):
+    def test_north_discovery_does_not_import_runtime_credential_stacks(self):
+        # A fresh Python interpreter must be able to discover an unreleased
+        # course without importing its live WinRM or ansible-runner clients.
+        # This is the bug reported on Kali Python 3.14 (no winrm package).
+        import subprocess
+        import sys
+        script = """
+import builtins
+original = builtins.__import__
+def deny_credential_clients(name, *args, **kwargs):
+    if name.split('.')[0] in ('winrm', 'ansible_runner'):
+        raise RuntimeError('preview discovery imported live client: ' + name)
+    return original(name, *args, **kwargs)
+builtins.__import__ = deny_credential_clients
+from goad.labs import Lab
+from goad.provider.course_preview import PreviewCourseProvider
+lab = Lab('NORTH', None)
+assert isinstance(lab.get_provider('vmware'), PreviewCourseProvider)
+assert lab.get_first_provider_name() == 'vmware'
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True, text=True, check=False, timeout=20
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_north_metadata_matches_course_one(self):
         m = course_manifest("NORTH")
         self.assertEqual(m["lab"], "NORTH")
@@ -110,8 +137,20 @@ class NorthNativeLabTests(unittest.TestCase):
     def test_goa_d_legacy_cannot_be_reinterpreted_as_course_one(self):
         self.assertIsNone(course_manifest("GOAD"))
         self.assertFalse(refuse_course_mutation("GOAD", "start"))
-        # The GOAD provider path stays a different provider implementation.
-        existing = ProviderFactory.get_provider("vmware", "GOAD", None)
+        # Prove legacy dispatch still chooses the actual Kingdoms VMware
+        # implementation WITHOUT importing live WinRM/VMware dependencies.
+        import sys
+        from types import ModuleType
+        name = "goad.provider.vagrant.vmware_kingdoms_profile"
+        mock_module = ModuleType(name)
+        class LegacyKingdomsProvider:
+            def __init__(self, lab_name):
+                self.lab_name = lab_name
+        mock_module.ProfiledGoadKingdomsVmwareProvider = LegacyKingdomsProvider
+        with patch.dict(sys.modules, {name: mock_module}):
+            existing = ProviderFactory.get_provider("vmware", "GOAD", None)
+        self.assertIsInstance(existing, LegacyKingdomsProvider)
+        self.assertEqual(existing.lab_name, "GOAD")
         self.assertNotIsInstance(existing, PreviewCourseProvider)
 
     def test_future_course_only_requires_native_manifest_and_provider_folder(self):
