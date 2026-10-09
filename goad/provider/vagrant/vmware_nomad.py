@@ -6,6 +6,7 @@ import time
 import winrm
 
 from goad.goadpath import GoadPath
+from goad.kingdoms_vmware_profile import binding_for
 from goad.log import Log
 from goad.provider.vagrant.vmware import VmwareProvider
 
@@ -33,6 +34,23 @@ class GoadNomadVmwareProvider(VmwareProvider):
         'GOAD-SRV03': '10.4.30.23',
         'GOAD-WS01': '10.4.10.31',
     }
+
+    def __init__(self, lab_name):
+        super().__init__(lab_name)
+        # Data-only instance binding: the patched Kingdoms provider is shared.
+        # GOAD receives byte-for-byte equivalent 6-guest/4-zone values.
+        # NORTH can be selected as a separate profile, but is NOT installable
+        # until its router/exercise lifecycle is proved independently.
+        binding = binding_for(lab_name)
+        self.kingdoms_vmware_binding = binding
+        if binding is not None:
+            self.goad_nomad_windows = list(binding.roster.windows)
+            self.management_hosts = dict(binding.roster.management_hosts)
+            self.network_zones = binding.zones
+            self.network_scope = (
+                "10.4.0.0/16 (segmented)" if lab_name == "GOAD"
+                else "10.41.0.0/16 (segmented)"
+            )
 
     def is_goad_nomad_segmented(self):
         return self.lab_name == 'GOAD'

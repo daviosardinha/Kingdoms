@@ -44,9 +44,14 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   idempotent writes (source-only; not yet activated).
 - [ ] Validate this path during disposable `NORTH` instance creation after
   profile-specific lifecycle readiness, before lifting install guards.
-- [ ] Reuse existing Kingdoms VMware provisioner with profile-driven
-  guest roster, per-instance router, NAT, host routing, AD readiness and
-  post-Vagrant inventory sync. Remove hardcoded six-guest assumptions.
+- [x] Introduced native VMware lab bindings in the existing patched
+  `GoadNomadVmwareProvider` constructor: GOAD's six guests, four segments and
+  addresses remain exactly as validated; NORTH's four guests and vmnet11/12/13
+  are now separate source-controlled runtime identities, with six focused
+  regressions. NORTH's *segmented install* permission remains **false**.
+- [ ] Finish profile-aware router/mode, NAT, host routing, AD readiness and
+  inventory synchronization on the existing Kingdoms provider before allowing
+  the NORTH installer to mutate VMs.
 - [ ] Confirm native `./goad.sh` install/start/stop/provisioning/exercise
   on a disposable NORTH instance, including rollback, AD, SQL and Phase 03.
 - [ ] Release NORTH provider only AFTER actual runtime checks pass; until then
