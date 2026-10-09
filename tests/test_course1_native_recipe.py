@@ -18,6 +18,10 @@ VM = NORTH / "providers" / "vmware"
 
 
 class NorthNativeRecipeTests(unittest.TestCase):
+    def test_consolidated_validation_runner_includes_this_module(self):
+        validator = (ROOT / "scripts/course1/validate-course1.sh").read_text()
+        self.assertIn("tests.test_course1_native_recipe", validator)
+
     def test_native_lab_is_selected_through_standard_kingdoms_paths(self):
         from goad.goadpath import GoadPath
         self.assertEqual(

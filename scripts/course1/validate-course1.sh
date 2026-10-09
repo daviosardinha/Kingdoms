@@ -117,6 +117,7 @@ python3 -m unittest \
     tests.test_course1_vmnet_maintenance \
     tests.test_course1_vmnet_transaction \
     tests.test_course1_north_host_addresses \
+    tests.test_course1_native_recipe \
     tests.test_lab_mode_ad_readiness
 
 step "02b - Native NORTH Vagrant/router source parsers"
@@ -138,7 +139,7 @@ for shell_file in \
     scripts/verify-test-source.sh; do
     bash -n "${shell_file}" || fail "Bash syntax invalid: ${shell_file}"
 done
-echo "[PASS] Bash syntax (all four scripts checked independently)"
+echo "[PASS] Bash syntax (all listed scripts checked independently)"
 
 step "04 - Generated recipe and native Ruby/Ansible parsing"
 python3 scripts/course1/generate-profile.py --check
