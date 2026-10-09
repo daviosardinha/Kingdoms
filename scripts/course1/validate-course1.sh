@@ -27,6 +27,7 @@ Runs the complete offline Course 1 gate:
   7. Negative gate: reduced preview MUST be rejected by installed-instance binding
   8. Negative same-host cohosting gate: shared vmnets/MACs/IPs must be detected
   9. Optional read-only reference-instance startup/stop/reset planning
+     (stage 08c renders a private isolated three-NIC VMware/router preview)
  10. Optional compact read-only VMware host survey (no network/VM changes)
  11. Optional three-zone proposal comparison with observed host identities
 
@@ -97,6 +98,7 @@ python3 -m unittest \
     tests.test_course1_source_gate \
     tests.test_course1_network_plan \
     tests.test_course1_host_fit \
+    tests.test_course1_vmware_candidate \
     tests.test_course1_host_survey \
     tests.test_lab_mode_ad_readiness
 
@@ -146,6 +148,21 @@ python3 -m goad.course1_network_plan --assert-preview-unsafe "${PREVIEW}"
 step "08b - Nondeployable three-zone candidate source contract"
 python3 -m goad.course1_host_fit \
     --check-proposal docs/course1-network-candidate.example.json
+
+step "08c - Render isolated three-NIC VMware/router candidate (preview only)"
+readonly CANDIDATE="${PRIVATE_WORKDIR}/isolated-vmware"
+python3 -m goad.course1_vmware_candidate \
+    --proposal docs/course1-network-candidate.example.json \
+    --output "${CANDIDATE}"
+bash -n "${CANDIDATE}/router/provision.sh"
+ruby -c "${CANDIDATE}/instance-preview/Vagrantfile"
+if grep -Eiq '(GOAD-DC03|GOAD-SRV03|ESSOS|vmnet30|10\.4\.)' \
+    "${CANDIDATE}/instance-preview/Vagrantfile" \
+    "${CANDIDATE}/router/provision.sh"; then
+    fail "Course 1 isolated VMware/router preview retained reference network identities"
+fi
+echo "[PASS] Three custom router NICs; new Vagrant/router syntax; no ESSOS"
+echo "[BLOCKED] Isolated VMware preview remains noninstallable"
 
 if [[ -n "${REFERENCE_PROVIDER}" ]]; then
     step "09 - Optional installed reference read-only binding"
