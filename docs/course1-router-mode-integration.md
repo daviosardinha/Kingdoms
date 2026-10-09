@@ -30,3 +30,24 @@ The reference Kingdoms networking, original installed workspace and
 `main` checkout must remain untouched. Source/loop regression tests cover
 shell parsing, single-parent-route identity, policy boundaries, SSH wrong-
 instance refusal and preservation of the existing GOAD dispatch.
+
+## Reusing the existing lifecycle controller
+
+The common `scripts/lab-mode.sh` now supports an explicit
+`KINGDOMS_VMWARE_LAB` identity propagated from the provider's
+`_provider_env()`. Default/reference GOAD still has six Windows guests,
+three DCs, two domain members plus WS01 and four network zones. NORTH
+selects two DCs, CASTELBLACK, WS01 and the three independent networks.
+Both share the existing patched NT5DS/directory readiness and reversible
+Windows NAT transition functions—this is not a forked mode controller.
+
+The read-only `--describe-profile` argument exposes the selected rosters and
+helper paths for regression tests. NORTH always requires an explicit Vagrant
+instance provider; it refuses auto-discovery and mismatched vmnet identities,
+and the existing read-only `course1_instance_binding` continues rejecting all
+reduced instances before any runtime mutation. This has NOT authorized NORTH
+install, provisioning or exercise mode.
+
+Remaining work includes an approved per-instance NORTH binding, safe provider
+install/start/stop routing, actual WinRM/AD readiness and full guest runtime
+acceptance. Do not use the common controller to operate an unreleased NORTH lab.

@@ -75,6 +75,7 @@ class GoadNomadVmwareProvider(VmwareProvider):
     def _provider_env(self):
         env = os.environ.copy()
         env['GOAD_PROVIDER_DIR'] = str(self.path)
+        env['KINGDOMS_VMWARE_LAB'] = self.lab_name
         return env
 
     def _run_vagrant_bounded(self, args, timeout):

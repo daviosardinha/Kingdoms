@@ -113,6 +113,63 @@ class KingdomsNorthModeSourceTests(unittest.TestCase):
         self.assertIn("return self.lab_name == 'GOAD'", source)
         # No route/policy call is executed by this test.
 
+    def test_shared_mode_controller_north_profile_is_four_guest_and_scoped(self):
+        import subprocess
+        controller = ROOT / "scripts/lab-mode.sh"
+        result = subprocess.run(
+            ["bash", str(controller), "--describe-profile"],
+            env={**os.environ, "KINGDOMS_VMWARE_LAB": "NORTH"},
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("windows=GOAD-DC01 GOAD-DC02 GOAD-SRV02 GOAD-WS01", result.stdout)
+        self.assertIn("domain_controllers=GOAD-DC01 GOAD-DC02", result.stdout)
+        self.assertIn("members=GOAD-SRV02 GOAD-WS01", result.stdout)
+        self.assertIn("/scripts/course1/provisioning-routes.sh", result.stdout)
+        self.assertIn("/scripts/course1/router-ssh.sh", result.stdout)
+        self.assertIn("/ad/NORTH/providers/vmware/router/nftables", result.stdout)
+        self.assertIn("nftables_table=kingdoms_north", result.stdout)
+        self.assertIn("deployment_authorized=false", result.stdout)
+        self.assertNotIn("GOAD-DC03", result.stdout)
+        self.assertNotIn("GOAD-SRV03", result.stdout)
+
+    def test_shared_mode_controller_reference_profile_remains_six_guest(self):
+        controller = ROOT / "scripts/lab-mode.sh"
+        result = subprocess.run(
+            ["bash", str(controller), "--describe-profile"],
+            env={**os.environ, "KINGDOMS_VMWARE_LAB": "GOAD"},
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("windows=GOAD-DC01 GOAD-DC02 GOAD-DC03 GOAD-SRV02 GOAD-SRV03 GOAD-WS01", result.stdout)
+        self.assertIn("nftables_table=goad_nomad", result.stdout)
+        self.assertIn("/scripts/provisioning-routes.sh", result.stdout)
+        self.assertIn("/scripts/router-ssh.sh", result.stdout)
+        self.assertNotIn("/scripts/course1/router-ssh.sh", result.stdout)
+
+    def test_shared_mode_controller_rejects_unknown_profile(self):
+        proc = subprocess.run(
+            ["bash", str(ROOT / "scripts/lab-mode.sh"), "--describe-profile"],
+            env={**os.environ, "KINGDOMS_VMWARE_LAB": "ESSOS"},
+            capture_output=True, text=True, check=False,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("Unsupported Kingdoms VMware profile", proc.stderr)
+
+    def test_north_mode_requires_explicit_provider_binding_before_operations(self):
+        script = (ROOT / "scripts/lab-mode.sh").read_text()
+        self.assertIn('NORTH requires explicit GOAD_PROVIDER_DIR; no auto-discovery', script)
+        self.assertIn('NORTH provider is not bound to', script)
+        self.assertIn('PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}"', script)
+        self.assertIn('python3 -m goad.course1_instance_binding --check-provider "${PROVIDER}"', script)
+        from goad.provider.vagrant.vmware_nomad import GoadNomadVmwareProvider
+        from types import SimpleNamespace
+        for lab in ("GOAD", "NORTH"):
+            env = GoadNomadVmwareProvider._provider_env(
+                SimpleNamespace(path="/tmp/mock-instance/provider", lab_name=lab))
+            self.assertEqual(env["KINGDOMS_VMWARE_LAB"], lab)
+            self.assertEqual(env["GOAD_PROVIDER_DIR"], "/tmp/mock-instance/provider")
+
     def test_reference_scripts_and_policies_still_exist(self):
         self.assertTrue((ROOT / "scripts/provisioning-routes.sh").is_file())
         self.assertTrue((ROOT / "scripts/router-ssh.sh").is_file())

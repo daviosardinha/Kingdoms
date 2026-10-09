@@ -80,6 +80,12 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   The GOAD reference template rendering keeps its original paths unchanged.
 - [ ] Prove NORTH instance-local Vagrant script resolution with Kali 274-test
   validation, then complete profile-aware mode/AD and provisioner lifecycle.
+- [x] Profile-aware source integration in the *existing* `scripts/lab-mode.sh`:
+  select GOAD six-guest versus NORTH four-guest Windows/AD/time identities,
+  profile-specific router policy, nftables table, host routes and router SSH.
+  NORTH requires explicit provider binding and remains rejected by the existing
+  preview/instance safety gate. `--describe-profile` provides safe regression
+  evidence for both profiles without touching any VM or host network.
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.

@@ -2,86 +2,136 @@
 set -euo pipefail
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly ROUTES="${ROOT}/scripts/provisioning-routes.sh"
-readonly POLICY_DIR="${ROOT}/ad/GOAD/providers/vmware/router/nftables"
+# Native Kingdoms profile. GOAD remains the reference default.
+readonly KINGDOMS_VMWARE_LAB="${KINGDOMS_VMWARE_LAB:-GOAD}"
+case "${KINGDOMS_VMWARE_LAB}" in
+    GOAD)
+        readonly ROUTES="${ROOT}/scripts/provisioning-routes.sh"
+        readonly POLICY_DIR="${ROOT}/ad/GOAD/providers/vmware/router/nftables"
+        readonly ROUTER_SSH="${ROOT}/scripts/router-ssh.sh"
+        readonly NFTABLES_FORWARD_TABLE="goad_nomad"
+        ;;
+    NORTH)
+        readonly ROUTES="${ROOT}/scripts/course1/provisioning-routes.sh"
+        readonly POLICY_DIR="${ROOT}/ad/NORTH/providers/vmware/router/nftables"
+        readonly ROUTER_SSH="${ROOT}/scripts/course1/router-ssh.sh"
+        readonly NFTABLES_FORWARD_TABLE="kingdoms_north"
+        ;;
+    *)
+        echo "[FAIL] Unsupported Kingdoms VMware profile: ${KINGDOMS_VMWARE_LAB}" >&2
+        exit 1
+        ;;
+esac
 
 readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
 readonly AD_REPAIR_TIMEOUT_SECONDS=90
 
-readonly DOMAIN_CONTROLLERS=(
-    GOAD-DC01
-    GOAD-DC02
-    GOAD-DC03
-)
+# Keep the same patched Kingdoms AD/NT5DS readiness and isolation controller;
+# only the selected instance's guest roster and network helper paths change.
+if [[ "${KINGDOMS_VMWARE_LAB}" == "NORTH" ]]; then
+    readonly DOMAIN_CONTROLLERS=( GOAD-DC01 GOAD-DC02 )
+    readonly EXERCISE_DOMAIN_CONTROLLERS=( GOAD-DC02 GOAD-DC01 )
+    readonly DOMAIN_MEMBERS=( GOAD-SRV02 GOAD-WS01 )
+    readonly WINDOWS_VMS=( GOAD-DC01 GOAD-DC02 GOAD-SRV02 GOAD-WS01 )
+    declare -A DC_DOMAIN=(
+        [GOAD-DC01]="sevenkingdoms.local"
+        [GOAD-DC02]="north.sevenkingdoms.local"
+    )
+    declare -A DC_FQDN=(
+        [GOAD-DC01]="kingslanding.sevenkingdoms.local"
+        [GOAD-DC02]="winterfell.north.sevenkingdoms.local"
+    )
+    declare -A DC_TIME_PARENT_DOMAIN=( [GOAD-DC02]="sevenkingdoms.local" )
+    declare -A DC_TIME_PARENT_SERVER=( [GOAD-DC02]="kingslanding.sevenkingdoms.local" )
+    declare -A MEMBER_DOMAIN=(
+        [GOAD-SRV02]="north.sevenkingdoms.local"
+        [GOAD-WS01]="north.sevenkingdoms.local"
+    )
+    declare -A MEMBER_DC=(
+        [GOAD-SRV02]="winterfell.north.sevenkingdoms.local"
+        [GOAD-WS01]="winterfell.north.sevenkingdoms.local"
+    )
+    declare -A MEMBER_NETBIOS=(
+        [GOAD-SRV02]="NORTH"
+        [GOAD-WS01]="NORTH"
+    )
+else
+    readonly DOMAIN_CONTROLLERS=(
+        GOAD-DC01
+        GOAD-DC02
+        GOAD-DC03
+    )
 
-# When entering exercise mode, restart the child DC before its parent so
-# WINTERFELL can initialize while KINGSLANDING is still fully online.
-readonly EXERCISE_DOMAIN_CONTROLLERS=(
-    GOAD-DC02
-    GOAD-DC03
-    GOAD-DC01
-)
+    # When entering exercise mode, restart the child DC before its parent so
+    # WINTERFELL can initialize while KINGSLANDING is still fully online.
+    readonly EXERCISE_DOMAIN_CONTROLLERS=(
+        GOAD-DC02
+        GOAD-DC03
+        GOAD-DC01
+    )
 
-readonly DOMAIN_MEMBERS=(
-    GOAD-SRV02
-    GOAD-SRV03
-    GOAD-WS01
-)
+    readonly DOMAIN_MEMBERS=(
+        GOAD-SRV02
+        GOAD-SRV03
+        GOAD-WS01
+    )
 
-# Keep the canonical six-machine list explicit. Several source/runtime
-# validators consume this as a compatibility contract, while the grouped arrays
-# above control AD-aware transition ordering.
-readonly WINDOWS_VMS=(
-    GOAD-DC01
-    GOAD-DC02
-    GOAD-DC03
-    GOAD-SRV02
-    GOAD-SRV03
-    GOAD-WS01
-)
+    # Keep the canonical six-machine list explicit. Several source/runtime
+    # validators consume this as a compatibility contract, while the grouped arrays
+    # above control AD-aware transition ordering.
+    readonly WINDOWS_VMS=(
+        GOAD-DC01
+        GOAD-DC02
+        GOAD-DC03
+        GOAD-SRV02
+        GOAD-SRV03
+        GOAD-WS01
+    )
 
-declare -A DC_DOMAIN=(
-    [GOAD-DC01]="sevenkingdoms.local"
-    [GOAD-DC02]="north.sevenkingdoms.local"
-    [GOAD-DC03]="essos.local"
-)
+    declare -A DC_DOMAIN=(
+        [GOAD-DC01]="sevenkingdoms.local"
+        [GOAD-DC02]="north.sevenkingdoms.local"
+        [GOAD-DC03]="essos.local"
+    )
 
-declare -A DC_FQDN=(
-    [GOAD-DC01]="kingslanding.sevenkingdoms.local"
-    [GOAD-DC02]="winterfell.north.sevenkingdoms.local"
-    [GOAD-DC03]="meereen.essos.local"
-)
+    declare -A DC_FQDN=(
+        [GOAD-DC01]="kingslanding.sevenkingdoms.local"
+        [GOAD-DC02]="winterfell.north.sevenkingdoms.local"
+        [GOAD-DC03]="meereen.essos.local"
+    )
 
-# Child-domain PDC emulators must follow the AD forest time hierarchy. NORTH's
-# PDC (WINTERFELL) therefore synchronizes from the forest-root PDC
-# (KINGSLANDING). Forest-root PDCs are intentionally not listed here.
-declare -A DC_TIME_PARENT_DOMAIN=(
-    [GOAD-DC02]="sevenkingdoms.local"
-)
+    # Child-domain PDC emulators must follow the AD forest time hierarchy. NORTH's
+    # PDC (WINTERFELL) therefore synchronizes from the forest-root PDC
+    # (KINGSLANDING). Forest-root PDCs are intentionally not listed here.
+    declare -A DC_TIME_PARENT_DOMAIN=(
+        [GOAD-DC02]="sevenkingdoms.local"
+    )
 
-declare -A DC_TIME_PARENT_SERVER=(
-    [GOAD-DC02]="kingslanding.sevenkingdoms.local"
-)
+    declare -A DC_TIME_PARENT_SERVER=(
+        [GOAD-DC02]="kingslanding.sevenkingdoms.local"
+    )
 
-declare -A MEMBER_DOMAIN=(
-    [GOAD-SRV02]="north.sevenkingdoms.local"
-    [GOAD-SRV03]="essos.local"
-    [GOAD-WS01]="north.sevenkingdoms.local"
-)
+    declare -A MEMBER_DOMAIN=(
+        [GOAD-SRV02]="north.sevenkingdoms.local"
+        [GOAD-SRV03]="essos.local"
+        [GOAD-WS01]="north.sevenkingdoms.local"
+    )
 
-declare -A MEMBER_DC=(
-    [GOAD-SRV02]="winterfell.north.sevenkingdoms.local"
-    [GOAD-SRV03]="meereen.essos.local"
-    [GOAD-WS01]="winterfell.north.sevenkingdoms.local"
-)
+    declare -A MEMBER_DC=(
+        [GOAD-SRV02]="winterfell.north.sevenkingdoms.local"
+        [GOAD-SRV03]="meereen.essos.local"
+        [GOAD-WS01]="winterfell.north.sevenkingdoms.local"
+    )
 
-declare -A MEMBER_NETBIOS=(
-    [GOAD-SRV02]="NORTH"
-    [GOAD-SRV03]="ESSOS"
-    [GOAD-WS01]="NORTH"
-)
+    declare -A MEMBER_NETBIOS=(
+        [GOAD-SRV02]="NORTH"
+        [GOAD-SRV03]="ESSOS"
+        [GOAD-WS01]="NORTH"
+    )
+
+fi
 
 fail() {
     echo "[!] $*" >&2
@@ -262,7 +312,7 @@ apply_router_policy() {
         cd "${PROVIDER}"
 
         cat "${policy}" |
-            GOAD_PROVIDER_DIR="${PROVIDER}" bash "${ROOT}/scripts/router-ssh.sh" '
+            GOAD_PROVIDER_DIR="${PROVIDER}" bash "${ROUTER_SSH}" '
                 set -e
 
                 cat > /tmp/goad-nomad-mode.nft
@@ -1165,8 +1215,8 @@ show_status() {
     (
         cd "${PROVIDER}"
 
-        GOAD_PROVIDER_DIR="${PROVIDER}" bash "${ROOT}/scripts/router-ssh.sh" \
-            'sudo nft list chain inet goad_nomad forward'
+        GOAD_PROVIDER_DIR="${PROVIDER}" bash "${ROUTER_SSH}" \
+            "sudo nft list chain inet ${NFTABLES_FORWARD_TABLE} forward"
     )
 
     echo
@@ -1274,6 +1324,20 @@ enter_provisioning_mode() {
 }
 
 main() {
+    # Offline contract view used by the consolidated Kingdoms regression suite.
+    # Does not enumerate, modify or power on guests; never grants deployment.
+    if [[ "${1:-}" == "--describe-profile" ]]; then
+        printf 'profile=%s\n' "${KINGDOMS_VMWARE_LAB}"
+        printf 'windows=%s\n' "${WINDOWS_VMS[*]}"
+        printf 'domain_controllers=%s\n' "${DOMAIN_CONTROLLERS[*]}"
+        printf 'members=%s\n' "${DOMAIN_MEMBERS[*]}"
+        printf 'routes=%s\n' "${ROUTES}"
+        printf 'router_ssh=%s\n' "${ROUTER_SSH}"
+        printf 'router_policy=%s\n' "${POLICY_DIR}"
+        printf 'nftables_table=%s\n' "${NFTABLES_FORWARD_TABLE}"
+        printf 'deployment_authorized=false\n'
+        return 0
+    fi
     require_command vmrun
     require_command vagrant
     require_command python3
@@ -1288,7 +1352,25 @@ main() {
     [[ -d "${POLICY_DIR}" ]] ||
         fail "${POLICY_DIR} is missing."
 
+    # NORTH always requires an explicit instance; never auto-select GOAD.
+    if [[ "${KINGDOMS_VMWARE_LAB}" == "NORTH" ]]; then
+        [[ -n "${GOAD_PROVIDER_DIR:-}" ]] ||
+            fail "NORTH requires explicit GOAD_PROVIDER_DIR; no auto-discovery"
+    fi
+
     resolve_provider
+
+    if [[ "${KINGDOMS_VMWARE_LAB}" == "NORTH" ]]; then
+        [[ -f "${PROVIDER}/Vagrantfile" && ! -L "${PROVIDER}/Vagrantfile" ]] ||
+            fail "NORTH provider Vagrantfile is missing or unsafe"
+        for vmnet in vmnet11 vmnet12 vmnet13; do
+            grep -Fq ":vnet => \"${vmnet}\"" "${PROVIDER}/Vagrantfile" ||
+                fail "NORTH provider is not bound to ${vmnet}"
+        done
+        if grep -Eq ':name => "(GOAD-DC03|GOAD-SRV03)"' "${PROVIDER}/Vagrantfile"; then
+            fail "NORTH provider unexpectedly includes ESSOS guests"
+        fi
+    fi
 
     # Never interpret a Course 1 four-VM preview as a legacy six-VM range.
     # This is read-only and executes before status/provisioning/exercise paths.
