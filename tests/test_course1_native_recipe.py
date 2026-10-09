@@ -108,6 +108,47 @@ class NorthNativeRecipeTests(unittest.TestCase):
             # Idempotent staging never changes already staged files.
             instance._stage_north_vmware_assets()
 
+    def test_actual_kingdoms_vagrant_builder_uses_north_local_winrm_assets(self):
+        import tempfile
+        from goad.instance import LabInstance
+        from goad.utils import VMWARE, PROVISIONING_LOCAL
+        with tempfile.TemporaryDirectory(prefix="kingdoms-north-vagrant-") as temp:
+            instance = object.__new__(LabInstance)
+            instance.lab_name = "NORTH"
+            instance.provider_name = VMWARE
+            instance.provisioner_name = PROVISIONING_LOCAL
+            instance.ip_range = "10.41.10"
+            instance.instance_path = temp
+            instance.instance_provider_path = str(Path(temp) / "provider")
+            instance.extensions = []
+            Path(instance.instance_provider_path).mkdir()
+            instance._create_vagrantfile()
+            instance._stage_north_vmware_assets()
+            content = (Path(instance.instance_provider_path) / "Vagrantfile").read_text()
+            self.assertEqual(content.count("../vagrant/"), 4)
+            self.assertNotIn("../../../vagrant/", content)
+            self.assertIn("config.vm.box_check_update = false", content)
+            self.assertIn("config.vm.graceful_halt_timeout = 120", content)
+            self.assertIn("v.enable_vmrun_ip_lookup = false", content)
+            for name in ("fix_ip.ps1", "ConfigureRemotingForAnsible.ps1",
+                         "Install-WMF3Hotfix.ps1"):
+                self.assertIn("../vagrant/" + name, content)
+                self.assertTrue((Path(temp) / "vagrant" / name).is_file())
+            for forbidden in ("GOAD-DC03", "GOAD-SRV03", "vmnet30"):
+                self.assertNotIn(forbidden, content)
+
+    def test_existing_reference_template_keeps_original_provisioning_paths(self):
+        from jinja2 import Environment, StrictUndefined
+        template = (ROOT / "template/provider/vmware/Vagrantfile").read_text()
+        rendered = Environment(undefined=StrictUndefined, autoescape=False).from_string(
+            template
+        ).render(lab="boxes = []", lab_name="GOAD", provider_name="vmware",
+                 ip_range="10.4.10", extensions="", use_provisioning_vm=False)
+        self.assertEqual(rendered.count("../../../vagrant/"), 4)
+        self.assertNotIn("../vagrant/Install-WMF3Hotfix.ps1", rendered.replace("../../../vagrant/", ""))
+        self.assertIn("config.vm.box_check_update = false", rendered)
+        self.assertIn("config.vm.graceful_halt_timeout = 120", rendered)
+
     def test_install_guard_remains_until_lifecycle_verified(self):
         from goad.course_catalog import refuse_course_mutation
         self.assertTrue(refuse_course_mutation("NORTH", "install"))
