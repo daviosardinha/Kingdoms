@@ -31,6 +31,13 @@ Work must follow this order. A lower-priority platform expansion must not displa
 
 The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
 
+- [x] Bind NORTH to the same patched Kingdoms Ansible install playbook list
+  (GOAD stages except ESSOS external-trust provisioning), including child AD,
+  WS01, time-backoff, health, Phase 01 and final LPE evidence. Phase 01 now loads
+  the selected Kingdoms lab data, preserving the original GOAD behavior.
+- [ ] Run NORTH's full four-guest provisioning on a disposable instance and
+  validate AD readiness and service configuration before releasing installation.
+
 ## Single NORTH installation-readiness command
 
 - [x] One operator entrypoint: `bash scripts/course1/check-install-readiness.sh`.

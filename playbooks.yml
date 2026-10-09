@@ -108,6 +108,32 @@ GOAD:
   - ws01-lpe-install.yml
   - kingdoms-health-final.yml
 
+# NORTH is the native two-domain Course 1 on the patched Kingdoms installer.
+# Follow the full Kingdoms Windows/AD/WS01 health and teaching stages; omit
+# external ESSOS trust setup. Parent/child AD remains configured in
+# ad-child_domain.yml, and Phase 01 now loads the selected lab's data.
+NORTH:
+  - build.yml
+  - ad-servers.yml
+  - ad-parent_domain.yml
+  - ad-child_domain.yml
+  - wait5m.yml
+  - ad-members.yml
+  - kingdoms-time-backoff.yml
+  - ad-data.yml
+  - ws01.yml
+  - ad-gmsa.yml
+  - laps.yml
+  - ad-relations.yml
+  - adcs.yml
+  - ad-acl.yml
+  - servers.yml
+  - security.yml
+  - kingdoms-health.yml
+  - vulnerabilities.yml
+  - phase01.yml
+  - ws01-lpe-install.yml
+  - kingdoms-health-final.yml
 default:
   - build.yml
   - ad-servers.yml
