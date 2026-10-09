@@ -286,7 +286,13 @@ def render_candidate(plan: dict) -> dict[str, str]:
     )
     require(recipe.count(":vmware_network_adapters") == 5,
             "expected four Windows NICs plus one router NIC bundle")
-    vagrant = _render_outer_template(recipe)
+    # The preview's Ruby is syntactically valid, but a direct Vagrant load
+    # must halt BEFORE any box or provisioning configuration is evaluated.
+    # Instance creation can only enable a separate, approved copy later.
+    vagrant = (
+        "raise 'KINGDOMS_COURSE1_PREVIEW_NOT_INSTALLABLE: deployment blocked'\n"
+        + _render_outer_template(recipe)
+    )
     script = _render_router_script(plan)
 
     reference_sensitive = (recipe, vagrant, script)

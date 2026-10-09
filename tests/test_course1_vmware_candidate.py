@@ -239,6 +239,16 @@ class VmwareCandidateTests(unittest.TestCase):
             self.assertNotEqual(second.returncode, 0)
             self.assertIn("refuses overwrite", second.stderr)
 
+    def test_vagrantfile_has_first_statement_activation_guard(self):
+        vagrant = self.render()["instance-preview/Vagrantfile"]
+        first_line = vagrant.splitlines()[0]
+        self.assertEqual(
+            first_line,
+            "raise 'KINGDOMS_COURSE1_PREVIEW_NOT_INSTALLABLE: deployment blocked'",
+        )
+        self.assertIn("config.vm.define box[:name]", vagrant)
+        self.assertIn("GOAD-ROUTER", vagrant)
+
     @unittest.skipUnless(shutil.which("ruby"), "ruby not installed")
     def test_generated_ruby_instance_syntax(self):
         text = self.render()["instance-preview/Vagrantfile"]

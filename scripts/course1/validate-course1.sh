@@ -31,6 +31,7 @@ Runs the complete offline Course 1 gate:
  10. Optional compact read-only VMware host survey (no network/VM changes)
  11. Optional three-zone proposal comparison with observed host identities
  12. Staged four-host Ansible + read-only topology dependency audit
+ 13. Immutable candidate integrity + future instance layout; Vagrant blocked
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
@@ -100,6 +101,7 @@ python3 -m unittest \
     tests.test_course1_network_plan \
     tests.test_course1_host_fit \
     tests.test_course1_vmware_candidate \
+    tests.test_course1_install_stage \
     tests.test_course1_isolated_native_artifacts \
     tests.test_course1_dependency_audit \
     tests.test_course1_host_survey \
@@ -173,7 +175,13 @@ python3 scripts/course1/check-isolated-artifacts.py \
 
 step "08e - Batch audit of hardcoded six-VM topology dependencies"
 python3 -m goad.course1_dependency_audit --check --limit 8
-echo "[BLOCKED] Isolated VMware/Ansible previews remain noninstallable"
+
+step "08f - Strict source integrity and future instance-layout plan"
+python3 -m goad.course1_install_stage \
+    --check-candidate "${CANDIDATE}" \
+    --proposal docs/course1-network-candidate.example.json \
+    --instance-id kingdoms-c1-regress01
+echo "[BLOCKED] Private VMware/Ansible candidate is verified but NOT installable"
 
 if [[ -n "${REFERENCE_PROVIDER}" ]]; then
     step "09 - Optional installed reference read-only binding"
