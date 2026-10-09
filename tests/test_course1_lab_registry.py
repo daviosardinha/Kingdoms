@@ -19,7 +19,7 @@ class NorthNativeLabTests(unittest.TestCase):
     def test_north_metadata_matches_course_one(self):
         m = course_manifest("NORTH")
         self.assertEqual(m["lab"], "NORTH")
-        self.assertEqual(m["kingdoms_foundation"], "kingdoms-vmware-foundation-v1")
+        self.assertEqual(m["kingdoms_foundation"], "kingdoms-foundation-v1")
         self.assertEqual(m["title"], "Fall of the North")
         self.assertEqual(m["runtime_profile"], "course1-fall-of-the-north")
         self.assertEqual(m["state"], "PREVIEW_ONLY_NOT_INSTALLABLE")
@@ -123,7 +123,7 @@ class NorthNativeLabTests(unittest.TestCase):
             (folder / "providers/vmware").mkdir(parents=True)
             (folder / "course.json").write_text(json.dumps({
                 "lab": "FUTURE", "title": "Future Campaign",
-                "kingdoms_foundation": "kingdoms-vmware-foundation-v1",
+                "kingdoms_foundation": "kingdoms-foundation-v1",
                 "runtime_profile": "course2", "state": "PREVIEW_ONLY_NOT_INSTALLABLE",
                 "providers": {"vmware": "preview"},
             }), encoding="utf-8")

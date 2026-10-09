@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-FOUNDATION_ID = "kingdoms-vmware-foundation-v1"
+FOUNDATION_ID = "kingdoms-foundation-v1"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 KINGDOMS_REFERENCE_RECIPE = Path("ad/GOAD")
 

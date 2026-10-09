@@ -37,7 +37,7 @@ Ansible or router behavior into any new course.
 
 1. **Select the Kingdoms foundation**: every native course
    \`ad/<LAB>/course.json\` must declare
-   \`"kingdoms_foundation": "kingdoms-vmware-foundation-v1"\`.
+   \`"kingdoms_foundation": "kingdoms-foundation-v1"\`.
    An absent/mismatched foundation fails closed.
 2. **Verify foundation protections**: the authoritative
    \`goad.kingdoms_foundation.validate_foundation()\` checks source sentinels
@@ -91,3 +91,13 @@ failure-injection and disposable runtime regressions remain mandatory.
 
 **NORTH remains PREVIEW_ONLY_NOT_INSTALLABLE.** No changes to the live
 reference guests/VMware networking are performed by this contract.
+
+## Provider-neutral contract versus VMware implementation
+
+`kingdoms-foundation-v1` is the shared **Kingdoms** course foundation ID,
+not a statement that all future courses must run on VMware. The current
+protective checks cover the mature VMware implementation in this repository;
+future Ludus and other providers must implement equivalent behaviors through
+the provider-neutral lifecycle, network and rollback contracts, with their own
+end-to-end release tests. A native course declares the common Kingdoms base
+and advertises only its independently accepted provider(s).

@@ -25,7 +25,7 @@ A console entry alone **must never** activate an incomplete lab.
 GOAD.** The legacy \`ad/GOAD\` folder still supplies some source data
 only because it is the tested, *Kingdoms-modified reference recipe*. New
 NORTH output must first pass \`goad.kingdoms_foundation\` verification,
-and its course manifest must bind to \`kingdoms-vmware-foundation-v1\`.
+and its course manifest must bind to \`kingdoms-foundation-v1\`.
 When the reusable Kingdoms base is extracted into a course-neutral home,
 the reference source linkage must be removed without losing any validated
 VMware, WinRM, AD, router, networking, isolation, logging or recovery fixes.
