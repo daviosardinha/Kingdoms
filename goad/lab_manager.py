@@ -3,6 +3,8 @@ from goad.instance import LabInstance
 from goad.labs import Labs
 from goad.provisioner.ansible.ansible import *
 from goad.settings import Settings
+from goad.course_catalog import refuse_course_mutation
+from goad.log import Log
 
 
 class LabManager(metaclass=SingletonMeta):
@@ -59,6 +61,12 @@ class LabManager(metaclass=SingletonMeta):
             self.current_instance.update_instance_folder()
 
     def create_instance(self):
+        if refuse_course_mutation(self.current_settings.lab_name, "create_instance"):
+            Log.error(
+                f'Kingdoms {self.current_settings.lab_name}: Course preview is not '
+                'installable. No instance directory or VM will be created.'
+            )
+            return False
         instance = LabInstance(None, self.current_settings.lab_name, self.config, self.current_settings.provider_name, self.current_settings.provisioner_name,
                                self.current_settings.ip_range, extensions=self.current_settings.extensions_name)
         result = instance.create_instance_folder()

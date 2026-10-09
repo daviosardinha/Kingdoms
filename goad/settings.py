@@ -1,6 +1,7 @@
 from goad.log import Log
 from goad.utils import *
 from goad.dependencies import Dependencies
+from goad.course_catalog import course_manifest
 
 
 class Settings:
@@ -36,7 +37,11 @@ class Settings:
         Log.info(f'Current Lab         : {self.lab_name}')
         Log.info(f'Current Provider    : {self.provider_name}')
         Log.info(f'Current Provisioner : {self.provisioner_name}')
-        if self.is_goad_nomad_segmented():
+        course = course_manifest(self.lab_name)
+        if course is not None:
+            Log.info(f'Course              : {course["title"]}')
+            Log.info('Deployment State    : PREVIEW ONLY (not installable)')
+        elif self.is_goad_nomad_segmented():
             Log.info(f'Current Network     : {self.GOAD_NOMAD_NETWORK_SCOPE}')
         elif self.provider_name != LUDUS:
             Log.info(f'Current IP range    : {self.ip_range}.X')
@@ -45,6 +50,9 @@ class Settings:
             Log.info(f' - {extension}')
 
     def inline(self):
+        course = course_manifest(self.lab_name)
+        if course is not None:
+            return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/PREVIEW'
         if self.is_goad_nomad_segmented():
             return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/10.4.0.0-16-segmented'
         if self.provider_name == LUDUS:

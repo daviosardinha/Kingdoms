@@ -31,6 +31,38 @@ Work must follow this order. A lower-priority platform expansion must not displa
 
 The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
 
+## Native Kingdoms lab catalog — one console for every course
+
+**Canonical operator entry point:** `./goad.sh` at the root of the
+**primary Kingdoms project**. Lab identities are native `ad/<LAB>` recipes
+and appear in the existing `labs` command. Their provider adapters and
+installed instances stay scoped to that selected lab; separate source
+checkouts are temporary developer working trees, not an operational UI.
+
+**Course 1 identity:** `NORTH` (course title: *Fall of the North*).
+`ad/NORTH/course.json` maps it to
+`course1-fall-of-the-north` and declares VMware `preview` only.
+`ad/NORTH/providers/vmware` participates in the existing lab directory
+discovery; the console displays `preview` rather than a misleading
+green supported-provider check. `unload` the loaded reference
+GOAD instance, then `labs` and `set_lab NORTH` to select the new
+lab. **NORTH install/create/provision/start/stop remain blocked** until
+the provider and per-instance lifecycle pass release acceptance.
+
+Once released, native `set_lab NORTH` → `install` creates an independent
+instance with exactly four Windows guests and its Debian router. A
+future Course 2 will get another named `ad/<LAB>/course.json` profile,
+its own provider recipe and isolated instances; no Course 2 has been
+named or deployed. Ludus is the subsequent provider for NORTH after
+VMware Course 1 release. Never present the older GOAD/ESSOS reference
+as a Course 2 release.
+
+**Merge contract:** the existing `main` checkout keeps the live
+`GOAD` reference lab until all changes are reviewed. Native NORTH
+registration currently lives only in draft PR #30. Do not synchronize
+the feature checkout's empty `workspace` over the existing main
+`workspace`; merging Git source does not migrate installed VM state.
+
 ## Delivery policy
 
 - Implement each checklist item in a separate issue and pull request.

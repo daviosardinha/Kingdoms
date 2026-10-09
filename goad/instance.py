@@ -7,6 +7,7 @@ from goad.log import Log
 from goad.exceptions import ProviderPathNotFound, JumpBoxInitFailed
 from goad.provisioner.provisioner_factory import ProvisionerFactory
 from goad.utils import *
+from goad.course_catalog import refuse_course_mutation
 
 
 class LabInstance:
@@ -351,6 +352,11 @@ class LabInstance:
         self.create_instance_folder(True)
 
     def create_instance_folder(self, force=False):
+        # This is the filesystem boundary. Protect direct invocation as well
+        # as every current and future interactive/non-interactive CLI path.
+        if refuse_course_mutation(self.lab_name, "create_instance_folder"):
+            Log.error(f'Kingdoms {self.lab_name}: instance creation is blocked (course preview)')
+            return False
         instance_exist = False
         if os.path.isdir(self.instance_path):
             instance_exist = True

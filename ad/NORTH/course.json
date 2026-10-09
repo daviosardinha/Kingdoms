@@ -1,0 +1,10 @@
+{
+  "lab": "NORTH",
+  "course": "course1",
+  "title": "Fall of the North",
+  "runtime_profile": "course1-fall-of-the-north",
+  "state": "PREVIEW_ONLY_NOT_INSTALLABLE",
+  "providers": {
+    "vmware": "preview"
+  }
+}
