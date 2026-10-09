@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# NORTH host-address repair, derived from patched Kingdoms behavior.
+# Owns ONLY vmnet11 and vmnet13, never the reference networks.
+set -Eeuo pipefail
+
+fail() { echo "[FAIL] NORTH host-address: $*" >&2; exit 1; }
+check_reference() {
+  local cidr iface item
+  for item in "vmnet10 10.4.10.254/24" "vmnet99 10.4.99.254/24"; do
+    read -r iface cidr <<< "$item"
+    ip link show "$iface" >/dev/null 2>&1 ||
+      fail "protected reference interface $iface is unavailable"
+    ip -4 -o addr show dev "$iface" | awk '{print $4}' | grep -Fxq "$cidr" ||
+      fail "protected reference address $cidr missing on $iface"
+  done
+}
+check_segments() {
+  local iface
+  for iface in vmnet11 vmnet13; do
+    ip link show "$iface" >/dev/null 2>&1 ||
+      fail "NORTH interface $iface unavailable"
+  done
+  if ip link show vmnet12 >/dev/null 2>&1; then
+    fail "SEVENKINGDOMS vmnet12 acquired a host adapter"
+  fi
+}
+address_list() {
+  ip -4 -o addr show dev "$1" | awk '{print $4}'
+}
+repair_one() {
+  local iface="$1" wanted="$2" initial="$3" found
+  found="$(address_list "$iface")"
+  if [[ "$found" == "$wanted" ]]; then return 0; fi
+  [[ -z "$found" || "$found" == "$initial" ]] ||
+    fail "$iface has unexpected address(es); refusing to overwrite"
+  ip link set "$iface" up
+  ip -4 addr flush dev "$iface"
+  ip -4 addr add "$wanted" dev "$iface"
+  [[ "$(address_list "$iface")" == "$wanted" ]] ||
+    fail "$iface did not retain $wanted"
+}
+status() {
+  local found iface wanted entry
+  check_reference
+  check_segments
+  for entry in "vmnet11 10.41.10.254/24" "vmnet13 10.41.99.254/24"; do
+    read -r iface wanted <<< "$entry"
+    found="$(address_list "$iface")"
+    [[ "$found" == "$wanted" ]] ||
+      fail "$iface expected $wanted but observed ${found:-no IPv4 address}"
+    echo "[PASS] $iface $wanted"
+  done
+  echo "[PASS] NORTH host addresses and protected reference networks intact"
+}
+case "${1:-status}" in
+  status)
+    [[ $# -eq 0 || $# -eq 1 ]] || fail "status has no arguments"
+    status ;;
+  repair)
+    [[ $# -eq 1 ]] || fail "repair takes no arguments"
+    [[ ${EUID} -eq 0 ]] || fail "repair requires root"
+    check_reference
+    check_segments
+    repair_one vmnet11 10.41.10.254/24 10.41.10.1/24
+    repair_one vmnet13 10.41.99.254/24 10.41.99.1/24
+    status ;;
+  *) fail "usage: $0 [status|repair]" ;;
+esac

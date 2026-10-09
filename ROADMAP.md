@@ -31,6 +31,32 @@ Work must follow this order. A lower-priority platform expansion must not displa
 
 The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
 
+## NORTH VMware host-address recovery (post-network allocation)
+
+- [x] Initial three-vmnet transaction completed on the operator's Kali host:
+  vmnet11 NORTH, vmnet12 SEVENKINGDOMS, vmnet13 MANAGEMENT.
+  Existing vmnet10/20/30/99 devices preserved. Reference guests stopped.
+  Recovery backup: \`c1-20261009T220236Z-8a928dcd\`.
+- [x] Investigated VMware host addresses: vmnet11/13 auto-assigned \`.1\`,
+  which conflicts with the future NORTH router gateways. Need \`.254\`
+  on the host, matching the proven Kingdoms reference design.
+- [x] Added a pre/post network allocation observational checker and a
+  separate NORTH-only host-address systemd service/timer, following the
+  already-patched Kingdoms reference behavior without editing its timer.
+- [ ] Verify the new source tests and post-allocation \`--survey-host\` gate
+  on Kali; confirm stage reports \`NORTH_HOST_ADDRESSES_PENDING\`.
+- [ ] During the approved maintenance window and with all VMware guests
+  stopped, install the isolated NORTH host-address helper and verify it
+  repairs only vmnet11/13 to \`.254\`, then reaches
+  \`NORTH_HOST_ADDRESSES_READY\`.
+- [ ] Verify reference networking, restart existing Kingdoms reference
+  guests through their established lifecycle and prove AD/domain readiness.
+- [ ] Only after reference recovery, continue NORTH disposable router/VM
+  provisioning and SQL/Phase 03 release acceptance.
+
+Plan: \`docs/course1-north-host-addresses.md\`.
+No NORTH install/start permission is implied.
+
 ## Mandatory Kingdoms foundation contract
 
 **Never use upstream GOAD as the source for NORTH or future courses.**

@@ -32,8 +32,9 @@ Runs the complete offline Course 1 gate:
  11. Optional proposal comparison with running and registered VM identities
  12. Staged four-host Ansible + read-only topology dependency audit
  13. Immutable candidate integrity + future instance layout; Vagrant blocked
- 14. Optional exact additive vmnet maintenance plan; no host writes
+ 14. Read-only VMware pre/post allocation stage detection; no host writes
  15. Mocked transactional VMware apply/rollback regressions (NO live changes)
+ 16. NORTH-only host-address helper/timer source and isolated status tests
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
@@ -113,6 +114,7 @@ python3 -m unittest \
     tests.test_course1_vmware_registry \
     tests.test_course1_vmnet_maintenance \
     tests.test_course1_vmnet_transaction \
+    tests.test_course1_north_host_addresses \
     tests.test_lab_mode_ad_readiness
 
 step "03 - Bash syntax regression"
@@ -121,6 +123,8 @@ step "03 - Bash syntax regression"
 for shell_file in \
     scripts/course1/validate-course1.sh \
     scripts/course1/maintain-vmware-networks.sh \
+    scripts/course1/manage-north-hostaddrs.sh \
+    scripts/course1/kingdoms-north-vmnet-hostaddrs \
     scripts/lab-mode.sh \
     scripts/verify-test-source.sh; do
     bash -n "${shell_file}" || fail "Bash syntax invalid: ${shell_file}"
@@ -215,14 +219,11 @@ if [[ "${SURVEY_HOST}" -eq 1 ]]; then
     readonly HOST_SNAPSHOT="${PRIVATE_WORKDIR}/host-snapshot.json"
     python3 -m goad.course1_host_survey --check --json-only > "${HOST_SNAPSHOT}"
     [[ -s "${HOST_SNAPSHOT}" ]] || fail "VMware host survey did not return evidence"
-    step "11 - Compare candidate to running + registered powered-off guests"
-    python3 -m goad.course1_host_fit \
-        --check-proposal docs/course1-network-candidate.example.json \
-        --snapshot "${HOST_SNAPSHOT}"
-    step "12 - Exact additive VMware network maintenance plan (read-only)"
-    python3 -m goad.course1_vmnet_maintenance \
+    step "11 - Pre/post allocation VMware evidence and registered VM collisions"
+    python3 -m goad.course1_vmnet_phase \
         --proposal docs/course1-network-candidate.example.json \
         --snapshot "${HOST_SNAPSHOT}"
+    echo "[BLOCKED] New NORTH .254 host address persistence and live runtime remain separate gates"
 fi
 
 step "COMPLETE"

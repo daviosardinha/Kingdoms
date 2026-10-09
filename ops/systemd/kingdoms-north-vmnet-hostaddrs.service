@@ -1,0 +1,9 @@
+[Unit]
+Description=Kingdoms NORTH VMware host adapter addresses (vmnet11/vmnet13)
+After=network.target vmware.service
+ConditionPathExists=/dev/vmnet11
+ConditionPathExists=/dev/vmnet13
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kingdoms-north-vmnet-hostaddrs repair
