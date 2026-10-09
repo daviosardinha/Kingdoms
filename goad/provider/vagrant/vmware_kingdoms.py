@@ -1220,35 +1220,21 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         if vm_name == 'GOAD-ROUTER':
             return True
 
-        # Explicit dependency closure for cold starts. DC02 depends on the
-        # forest-root PDC for time; NORTH members depend on DC02; SRV03 depends
-        # on the ESSOS DC. A single-guest start includes the same prerequisites.
-        dependencies = {
-            'GOAD-DC01': (),
-            'GOAD-DC02': ('GOAD-DC01',),
-            'GOAD-DC03': (),
-            'GOAD-SRV02': ('GOAD-DC01', 'GOAD-DC02'),
-            'GOAD-SRV03': ('GOAD-DC03',),
-            'GOAD-WS01': ('GOAD-DC01', 'GOAD-DC02'),
-        }
-        canonical_order = [
-            name for name in (
-                'GOAD-DC01',
-                'GOAD-DC02',
-                'GOAD-DC03',
-                'GOAD-SRV02',
-                'GOAD-WS01',
-                'GOAD-SRV03',
+        # Keep the proven full-GOAD startup sequence from the shared roster
+        # contract. The Course 1 four-VM roster remains PREVIEW-ONLY: it cannot
+        # be selected by this provider until its full lifecycle is ready.
+        from goad.course1_runtime_contract import FULL, ProfileNotReady
+        if tuple(self.goad_nomad_windows) != FULL.windows:
+            Log.error(
+                'GOAD Kingdoms: unsupported instance Windows roster; '
+                'reduced lifecycle activation is not yet approved'
             )
-            if name in vmxs
-        ]
-
-        if vm_name is None:
-            start_order = canonical_order
-        else:
-            required = set(dependencies.get(vm_name, ()))
-            required.add(vm_name)
-            start_order = [name for name in canonical_order if name in required]
+            return False
+        try:
+            start_order = list(FULL.requested_start(vm_name))
+        except ProfileNotReady as exc:
+            Log.error(f'GOAD Kingdoms: startup plan rejected: {exc}')
+            return False
 
         # Use the router's management NIC to establish routes before checking
         # protected-zone Windows addresses. Windows NAT settings remain untouched.

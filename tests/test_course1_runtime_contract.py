@@ -14,6 +14,31 @@ class Course1RuntimeContractTests(unittest.TestCase):
         self.assertIn("GOAD-DC03", FULL.windows)
         self.assertIn("GOAD-SRV03", FULL.windows)
 
+    def test_legacy_start_order_preserved_exactly(self):
+        self.assertEqual(
+            FULL.start_order,
+            ("GOAD-DC01", "GOAD-DC02", "GOAD-DC03",
+             "GOAD-SRV02", "GOAD-WS01", "GOAD-SRV03"),
+        )
+        self.assertEqual(FULL.windows, FULL_WINDOWS)
+        self.assertEqual(
+            FULL.requested_start("GOAD-SRV02"),
+            ("GOAD-DC01", "GOAD-DC02", "GOAD-SRV02"),
+        )
+        self.assertEqual(
+            FULL.requested_start("GOAD-SRV03"),
+            ("GOAD-DC03", "GOAD-SRV03"),
+        )
+
+    def test_provider_uses_only_legacy_planner(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1]
+                  / "goad/provider/vagrant/vmware_kingdoms.py").read_text(
+                      encoding="utf-8")
+        self.assertIn("FULL.requested_start(vm_name)", source)
+        self.assertIn("tuple(self.goad_nomad_windows) != FULL.windows", source)
+        self.assertIn("reduced lifecycle activation is not yet approved", source)
+
     def test_reduced_four_machine_roster(self):
         self.assertEqual(COURSE1.windows, COURSE1_WINDOWS)
         self.assertEqual(len(COURSE1.windows), 4)

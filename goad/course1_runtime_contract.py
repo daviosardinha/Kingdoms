@@ -76,7 +76,12 @@ class RuntimeRoster:
 FULL = RuntimeRoster(
     name="full-goad",
     windows=FULL_WINDOWS,
-    start_order=FULL_WINDOWS,
+    # Historical installed range starts WS01 before ESSOS SRV03. The
+    # canonical machine roster order is different and must stay unchanged.
+    start_order=(
+        "GOAD-DC01", "GOAD-DC02", "GOAD-DC03",
+        "GOAD-SRV02", "GOAD-WS01", "GOAD-SRV03",
+    ),
     dependencies={
         "GOAD-DC01": (),
         "GOAD-DC02": ("GOAD-DC01",),
