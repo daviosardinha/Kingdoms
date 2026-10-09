@@ -43,6 +43,7 @@ def load_source() -> dict[str, str]:
 
 def prune_inventory(content: str) -> str:
     result = []
+    group = ""
     for line in content.splitlines():
         stripped = line.strip()
         if (not stripped or stripped.startswith((";", "#"))):
@@ -52,7 +53,11 @@ def prune_inventory(content: str) -> str:
             result.append(line)
             continue
         if stripped.startswith("["):
+            group = stripped.strip("[]")
             result.append(line)
+            continue
+        # A parent-forest DC remains, but its ESSOS forest-trust play must not.
+        if group == "trust":
             continue
         hostname = stripped.split(maxsplit=1)[0]
         if hostname in UNWANTED:
