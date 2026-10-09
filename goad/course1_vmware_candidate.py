@@ -152,12 +152,23 @@ def _render_router_script(plan: dict) -> str:
                 "router gateway definition changed")
         script = script.replace(f'"{old_gateway}"',
                                 f'"{plan["zones"][zone]["gateway"]}"')
-        require(script.count(f'    {old_gateway}/24') == 1,
-                "router status gateway definition changed")
-        script = script.replace(
-            f'    {old_gateway}/24',
-            f'    {plan["zones"][zone]["gateway"]}/24'
+        # Status printf lines pad NORTH, SEVENKINGDOMS and MANAGEMENT
+        # differently. Match the zone label + old gateway without assuming
+        # any fixed number of padding spaces, and fail if the line is missing.
+        status_pattern = (
+            rf'^(printf[^\n]*"[ \t]+{re.escape(zone)}[ \t]+)'
+            rf'{re.escape(old_gateway)}(/24"[ \t]*)$'
         )
+        script, status_count = re.subn(
+            status_pattern,
+            lambda match: (
+                match.group(1) + plan["zones"][zone]["gateway"] + match.group(2)
+            ),
+            script,
+            flags=re.M,
+        )
+        require(status_count == 1,
+                "router status gateway definition changed")
 
     script = script.replace(
         "four custom adapters below",

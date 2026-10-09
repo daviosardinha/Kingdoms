@@ -68,6 +68,23 @@ class VmwareCandidateTests(unittest.TestCase):
         self.assertIn("kingdoms-course1-router", content)
         self.assertNotIn("goad-router", content)
 
+    def test_router_status_lines_handle_padded_zone_labels(self):
+        content = self.render()["router/provision.sh"]
+        expected = {
+            "NORTH": "10.41.10.1",
+            "SEVENKINGDOMS": "10.41.20.1",
+            "MANAGEMENT": "10.41.99.1",
+        }
+        status_lines = [line for line in content.splitlines()
+                        if line.startswith("printf ") and '/24"' in line]
+        self.assertEqual(len(status_lines), 3)
+        for zone, gateway in expected.items():
+            matches = [line for line in status_lines
+                       if f"    {zone} " in line]
+            with self.subTest(zone=zone):
+                self.assertEqual(len(matches), 1)
+                self.assertTrue(matches[0].endswith(f'{gateway}/24"'))
+
     def test_router_default_forward_is_deny(self):
         content = self.render()["router/provision.sh"]
         self.assertIn("type filter hook forward priority 0;\n        policy drop;", content)
