@@ -30,6 +30,7 @@ Runs the complete offline Course 1 gate:
      (stage 08c renders a private isolated three-NIC VMware/router preview)
  10. Optional compact read-only VMware host survey (no network/VM changes)
  11. Optional three-zone proposal comparison with observed host identities
+ 12. Staged four-host Ansible + read-only topology dependency audit
 
 --reference-provider must point at an EXISTING six-VM Kingdoms instance
 provider directory; it is inspected read-only and never operated on.
@@ -99,6 +100,8 @@ python3 -m unittest \
     tests.test_course1_network_plan \
     tests.test_course1_host_fit \
     tests.test_course1_vmware_candidate \
+    tests.test_course1_isolated_native_artifacts \
+    tests.test_course1_dependency_audit \
     tests.test_course1_host_survey \
     tests.test_lab_mode_ad_readiness
 
@@ -162,7 +165,15 @@ if grep -Eiq '(GOAD-DC03|GOAD-SRV03|ESSOS|vmnet30|10\.4\.)' \
     fail "Course 1 isolated VMware/router preview retained reference network identities"
 fi
 echo "[PASS] Three custom router NICs; new Vagrant/router syntax; no ESSOS"
-echo "[BLOCKED] Isolated VMware preview remains noninstallable"
+
+step "08d - Native isolated Ansible inventories + WinRM endpoint scope"
+python3 scripts/course1/check-isolated-artifacts.py \
+    --candidate "${CANDIDATE}" \
+    --proposal docs/course1-network-candidate.example.json
+
+step "08e - Batch audit of hardcoded six-VM topology dependencies"
+python3 -m goad.course1_dependency_audit --check --limit 8
+echo "[BLOCKED] Isolated VMware/Ansible previews remain noninstallable"
 
 if [[ -n "${REFERENCE_PROVIDER}" ]]; then
     step "09 - Optional installed reference read-only binding"

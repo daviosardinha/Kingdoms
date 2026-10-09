@@ -15,6 +15,7 @@ import os
 import re
 from pathlib import Path
 
+from goad.course1_inventory_candidate import render_candidate_inventories
 from goad.course1_network_plan import (
     REFERENCE_ROUTER, ZONES, require, validate_proposal,
 )
@@ -224,7 +225,9 @@ def _render_outer_template(recipe: str) -> str:
 def render_candidate(plan: dict) -> dict[str, str]:
     """Generate a self-contained Vagrant/router source candidate in memory."""
     validate_proposal(plan)
-    reference = _generator_render()["providers/vmware/Vagrantfile"]
+    reduced_source = _generator_render()
+    reference = reduced_source["providers/vmware/Vagrantfile"]
+    staged_inventories = render_candidate_inventories(reduced_source, plan)
     blocks = {}
     for match in BOX_RX.finditer(reference):
         original = match.group(0).rstrip()
@@ -260,17 +263,21 @@ def render_candidate(plan: dict) -> dict[str, str]:
         "router": ROUTER,
         "zones": list(ZONES),
         "generated_files": ["providers/vmware/Vagrantfile",
-                            "instance-preview/Vagrantfile", "router/provision.sh"],
+                            "instance-preview/Vagrantfile", "router/provision.sh",
+                            "data/config.json", "data/inventory",
+                            "data/inventory_disable_vagrant",
+                            "providers/vmware/inventory"],
         "deployment_authorized": False,
         "incomplete": [
             "host vmnet allocation and VMware manual MAC compatibility unverified",
             "router three-NIC PCI/udev/SSH runtime unverified",
-            "Course 1 Ansible/AD/WinRM address translation not implemented",
+            "Ansible playbook and Phase 03 hardcoded address dependencies still require profile-aware migration",
             "instance binding/install/start/mode/reset not authorized",
             "SQL KINGDOMS2 and Phase 03 runtime regressions pending",
         ],
     }
     return {
+        **staged_inventories,
         "providers/vmware/Vagrantfile": recipe,
         "instance-preview/Vagrantfile": vagrant,
         "router/provision.sh": script,

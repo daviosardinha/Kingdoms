@@ -102,12 +102,58 @@ class VmwareCandidateTests(unittest.TestCase):
         artifacts = self.render()
         self.assertEqual(set(artifacts),
                          {"providers/vmware/Vagrantfile", "instance-preview/Vagrantfile",
-                          "router/provision.sh", "manifest.json"})
+                          "router/provision.sh", "manifest.json",
+                          "data/config.json", "data/inventory",
+                          "data/inventory_disable_vagrant", "providers/vmware/inventory"})
         manifest = json.loads(artifacts["manifest.json"])
         self.assertEqual(manifest["state"], "PREVIEW_ONLY_NOT_INSTALLABLE")
         self.assertEqual(manifest["zones"], ["NORTH", "SEVENKINGDOMS", "MANAGEMENT"])
         self.assertFalse(manifest["deployment_authorized"])
-        self.assertNotIn("data/config.json", artifacts)
+        self.assertIn("data/config.json", artifacts)
+        self.assertNotIn("10.4.10.11", artifacts["providers/vmware/inventory"])
+
+    def test_translated_inventory_addresses_and_gateway(self):
+        artifacts = self.render()
+        for name in ("data/inventory_disable_vagrant", "providers/vmware/inventory"):
+            with self.subTest(filename=name):
+                content = artifacts[name]
+                for host, ip in (("dc01", "10.41.20.10"),
+                                 ("dc02", "10.41.10.11"),
+                                 ("srv02", "10.41.10.22"),
+                                 ("ws01", "10.41.10.31")):
+                    self.assertIn(f"{host} ansible_host={ip}", content)
+                self.assertNotIn("10.4.", content)
+                self.assertNotIn("vmnet10", content)
+        provider = artifacts["providers/vmware/inventory"]
+        self.assertIn("lab_gateway=10.41.10.1", provider)
+        self.assertIn("vmnet41", provider)
+        self.assertIn("vmnet42", provider)
+
+    def test_course1_ad_config_still_has_only_two_domains(self):
+        config = json.loads(self.render()["data/config.json"])
+        self.assertEqual(set(config["lab"]["domains"]),
+                         {"sevenkingdoms.local", "north.sevenkingdoms.local"})
+        self.assertEqual(set(config["lab"]["hosts"]), {"dc01", "dc02", "srv02", "ws01"})
+
+    def test_missing_host_in_inventory_fails_closed(self):
+        from goad.course1_inventory_candidate import render_candidate_inventories
+        from goad.course1_source_gate import _generator_render
+        source = _generator_render()
+        source["providers/vmware/inventory"] = source[
+            "providers/vmware/inventory"
+        ].replace("ws01 ansible_host=", "unknown ansible_host=")
+        with self.assertRaises(ProfileNotReady):
+            render_candidate_inventories(source, load_plan())
+
+    def test_wrong_source_management_ip_fails_closed(self):
+        from goad.course1_inventory_candidate import render_candidate_inventories
+        from goad.course1_source_gate import _generator_render
+        source = _generator_render()
+        source["data/inventory_disable_vagrant"] = source[
+            "data/inventory_disable_vagrant"
+        ].replace("10.4.20.10", "10.4.20.200")
+        with self.assertRaises(ProfileNotReady):
+            render_candidate_inventories(source, load_plan())
 
     def test_candidate_mutated_into_reference_ip_is_rejected(self):
         plan = load_plan()
@@ -152,7 +198,7 @@ class VmwareCandidateTests(unittest.TestCase):
             for path in out.rglob("*"):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode),
                                  0o700 if path.is_dir() else 0o600)
-            self.assertEqual(len([p for p in out.rglob("*") if p.is_file()]), 4)
+            self.assertEqual(len([p for p in out.rglob("*") if p.is_file()]), 8)
             self.assertFalse(json.loads(
                 (out / "manifest.json").read_text())["deployment_authorized"])
             second = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
