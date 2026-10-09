@@ -43,3 +43,25 @@ The production instance manager, VMware controller and network-mode scripts
 still do not consume this stage. The separate release requirements remain:
 profile-aware installation/Ansible selection, isolated networking and MACs,
 runtime reset, KINGDOMS2 SQL, fresh NORTH/parent AD, and Phase 03/00–09 parity.
+
+## One-command complete offline acceptance
+
+The standard operator workflow is now `git pull --ff-only && bash
+scripts/course1/validate-course1.sh`. The runner checks the Git source
+identity and all Course 1 unit/source contracts, the existing network-mode
+AD readiness source test, shell syntax, rendered Vagrant Ruby syntax,
+three native Ansible inventories, all static lifecycle matrix plans,
+and a credential-restricted temporary preview. It then verifies the
+four-VM preview **cannot** pass the installed-instance authorization
+gate. The private preview is deleted with an exit trap even on errors.
+
+Use `--reference-provider /absolute/path/to/existing/provider` to
+add the *read-only* existing Kingdoms reference-instance binding checks.
+The default does not scan or open any installed guest. The script never
+runs Vagrant up, `vmrun`, Ansible playbooks, or network-mode transitions.
+
+The previous three failing source-isolation tests were caused by the
+unit-test fixture building intermediate directories using the developer's
+umask rather than the generator's private `0o077` umask. The security
+gate itself has **not** been relaxed; test fixtures now set all of their
+own nested directories explicitly to `0700`.

@@ -28,6 +28,12 @@ class Course1SourceIsolationTests(unittest.TestCase):
             path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             path.write_text(data, encoding="utf-8")
             path.chmod(0o600)
+        # pathlib creates *intermediate* parents with the process umask,
+        # not the leaf mkdir(mode=...) value. The real generator uses
+        # umask(0o077); make this test fixture just as private, even on
+        # developer machines configured with a permissive umask.
+        for directory in (root, *(p for p in root.rglob("*") if p.is_dir())):
+            directory.chmod(0o700)
         return root
 
     def test_private_preview_has_four_windows_and_no_activation(self):
@@ -36,6 +42,16 @@ class Course1SourceIsolationTests(unittest.TestCase):
         self.assertEqual(parsed.windows, COURSE1.windows)
         self.assertEqual(parsed.file_count, 7)
         self.assertEqual(parsed.summary()["deployment_authorized"], False)
+
+    def test_fixture_directory_modes_are_private_with_umask_022(self):
+        previous = os.umask(0o022)
+        try:
+            stage = self.make_preview()
+        finally:
+            os.umask(previous)
+        for directory in (stage, *(p for p in stage.rglob("*") if p.is_dir())):
+            self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
+        self.assertEqual(inspect_source_preview(stage).profile, COURSE1.name)
 
     def test_read_only_check_preserves_every_byte(self):
         stage = self.make_preview()
