@@ -151,6 +151,16 @@ class VmwareNetworkTransactionTests(unittest.TestCase):
                 with self.assertRaises(ProfileNotReady):
                     tx._read_backup(value)
 
+    def test_maintenance_shell_syntax_parses_independently(self):
+        import subprocess
+        script = (Path(__file__).resolve().parents[1] /
+                  "scripts/course1/maintain-vmware-networks.sh")
+        result = subprocess.run(
+            ["bash", "-n", str(script)],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_static_assertion_requires_vmware_specific_confirmation(self):
         self.assertEqual(tx.CONFIRM,
                          "I_APPROVE_KINGDOMS_COURSE1_VMWARE_NETWORK_MAINTENANCE")

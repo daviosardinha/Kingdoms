@@ -58,7 +58,7 @@ if [[ "$action" == "rollback" ]]; then
   exit 0
 fi
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/kingdoms-course1-maint.XXXXXXXX)"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/kingdoms-course1-maint.XXXXXXXX")"
 cleanup() { rm -rf -- "$tmp_dir"; }
 trap cleanup EXIT
 trap 'exit 130' INT

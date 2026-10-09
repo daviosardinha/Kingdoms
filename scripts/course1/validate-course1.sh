@@ -114,10 +114,16 @@ python3 -m unittest \
     tests.test_lab_mode_ad_readiness
 
 step "03 - Bash syntax regression"
-bash -n scripts/course1/validate-course1.sh \
-        scripts/course1/maintain-vmware-networks.sh \
-        scripts/lab-mode.sh scripts/verify-test-source.sh
-echo "[PASS] Bash syntax"
+# Bash -n parses only the first file; subsequent arguments are parameters.
+# Run a distinct syntax validation for each maintenance/lifecycle script.
+for shell_file in \
+    scripts/course1/validate-course1.sh \
+    scripts/course1/maintain-vmware-networks.sh \
+    scripts/lab-mode.sh \
+    scripts/verify-test-source.sh; do
+    bash -n "${shell_file}" || fail "Bash syntax invalid: ${shell_file}"
+done
+echo "[PASS] Bash syntax (all four scripts checked independently)"
 
 step "04 - Generated recipe and native Ruby/Ansible parsing"
 python3 scripts/course1/generate-profile.py --check
