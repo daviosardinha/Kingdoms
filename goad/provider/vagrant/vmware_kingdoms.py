@@ -686,6 +686,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Stop one instance guest locally; preserve routing for live Windows."""
         if self.lab_name != 'GOAD':
             return super().stop_vm(vm_name)
+        if not self._require_full_goad_instance_binding():
+            return False
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
             Log.error(f'GOAD Kingdoms: unknown instance machine: {vm_name}')
             return False
@@ -707,6 +709,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Shut down members, then DCs, then the router without Vagrant NAT."""
         if self.lab_name != 'GOAD':
             return super().stop()
+        if not self._require_full_goad_instance_binding():
+            return False
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
             Log.error('GOAD Kingdoms: an earlier Vagrant controller was not reaped; refusing concurrent VM changes')
             return False
@@ -823,6 +827,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """
         if self.lab_name != 'GOAD':
             return super().reset()
+        if not self._require_full_goad_instance_binding():
+            return False
 
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
             Log.error(
@@ -1388,9 +1394,9 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
     def prepare_install(self):
         # This method is the first provider hook executed by the hardened
         # install/start/ws01 paths, before GOAD-ROUTER or any Windows guest is
-        # powered on. Refuse to create a duplicate-MAC condition before VMware
-        # has an opportunity to register the conflicting adapter. Require the
-        # operator to prime sudo before entering the lifecycle as well.
+        # powered on. Bind the instance BEFORE any host/network/sudo transition.
+        if not self._require_full_goad_instance_binding():
+            return False
         if not self._check_segmented_instance_conflicts():
             return False
         if not self._require_cached_sudo():

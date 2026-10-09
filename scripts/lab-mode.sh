@@ -1290,6 +1290,12 @@ main() {
 
     resolve_provider
 
+    # Never interpret a Course 1 four-VM preview as a legacy six-VM range.
+    # This is read-only and executes before status/provisioning/exercise paths.
+    PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+        python3 -m goad.course1_instance_binding --check-provider "${PROVIDER}" ||
+        fail "Refusing GOAD mode operation: instance profile binding is not approved"
+
     case "${1:-status}" in
         exercise)
             enter_exercise_mode
