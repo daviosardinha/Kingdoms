@@ -96,6 +96,7 @@ step "02 - Complete offline contract regression suite"
 python3 -m unittest \
     tests.test_course1_reduced_profile \
     tests.test_course1_runtime_contract \
+    tests.test_kingdoms_foundation \
     tests.test_course1_lab_registry \
     tests.test_course1_instance_binding \
     tests.test_course1_external_artifacts \

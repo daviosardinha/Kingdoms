@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 from goad.goadpath import GoadPath
+from goad.kingdoms_foundation import FOUNDATION_ID
 
 
 class CourseCatalogError(ValueError):
@@ -43,6 +44,10 @@ def course_manifest(lab_name: str) -> dict | None:
         raise CourseCatalogError("course title missing")
     if not isinstance(info.get("runtime_profile"), str) or not info["runtime_profile"].strip():
         raise CourseCatalogError("runtime profile missing")
+    if info.get("kingdoms_foundation") != FOUNDATION_ID:
+        raise CourseCatalogError(
+            "course must declare the current patched Kingdoms foundation"
+        )
     if info.get("state") != "PREVIEW_ONLY_NOT_INSTALLABLE":
         raise CourseCatalogError("course release state not explicitly approved")
     providers = info.get("providers")

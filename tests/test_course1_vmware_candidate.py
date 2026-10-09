@@ -110,6 +110,7 @@ class VmwareCandidateTests(unittest.TestCase):
                           "vagrant/fix_ip.ps1"})
         manifest = json.loads(artifacts["manifest.json"])
         self.assertEqual(manifest["state"], "PREVIEW_ONLY_NOT_INSTALLABLE")
+        self.assertEqual(manifest["kingdoms_foundation"], "kingdoms-vmware-foundation-v1")
         self.assertEqual(manifest["zones"], ["NORTH", "SEVENKINGDOMS", "MANAGEMENT"])
         self.assertFalse(manifest["deployment_authorized"])
         self.assertIn("data/config.json", artifacts)

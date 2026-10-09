@@ -31,6 +31,32 @@ Work must follow this order. A lower-priority platform expansion must not displa
 
 The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
 
+## Mandatory Kingdoms foundation contract
+
+**Never use upstream GOAD as the source for NORTH or future courses.**
+Every course inherits the validated, patched **Kingdoms** provisioning,
+AD readiness, VMware Tools/WinRM recovery, lifecycle, network isolation,
+collision protection, sudo authorization, rollback and logging foundations.
+Legacy folders/VM names (\`ad/GOAD\`, \`GOAD-DC01\`, \`goad.sh\`) exist for
+compatibility with the working reference, not to authorize upstream defaults.
+
+- [x] Declare a Kingdoms foundation identity for NORTH and future course
+  manifests; reject missing/mismatched identities.
+- [x] Verify the current patched Kingdoms source before rendering reduced
+  NORTH preview artifacts; add removal/failure regressions.
+- [ ] Extract a reusable, course-neutral Kingdoms base from the existing
+  patched reference **without losing behavior or changing the installed
+  reference**; replace transitional \`ad/GOAD\` source derivation.
+- [ ] Port the established source/runtime/integration regression gates
+  into the course-neutral provider lifecycle contract.
+- [ ] Prove NORTH clean install/start/stop/mode/reset/failure rollback,
+  dual-domain AD/SQL and Phase 03 offensive parity on a disposable instance
+  before marking its VMware provider available.
+- [ ] Ensure future Course 2+ lab recipes use that validated reusable
+  Kingdoms foundation rather than copied GOAD topology/config defaults.
+
+Full policy: \`docs/kingdoms-foundation.md\`.
+
 ## Native Kingdoms lab catalog — one console for every course
 
 **Canonical operator entry point:** `./goad.sh` at the root of the

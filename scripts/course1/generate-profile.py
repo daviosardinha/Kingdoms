@@ -11,12 +11,20 @@ import copy
 import json
 import os
 import re
+import sys
 from pathlib import Path
 
 from jinja2 import Environment, StrictUndefined
 
 ROOT = Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "ad" / "GOAD"
+# Direct script entry points must resolve the SAME in-repository Kingdoms
+# foundation used by -m imports. Never fall back to a separate GOAD checkout.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from goad.kingdoms_foundation import (
+    FOUNDATION_ID, reference_recipe, validate_foundation,
+)
+SOURCE = reference_recipe(ROOT)
 WINDOWS = ("GOAD-DC01", "GOAD-DC02", "GOAD-SRV02", "GOAD-WS01")
 HOSTS = ("dc01", "dc02", "srv02", "ws01")
 DOMAINS = ("sevenkingdoms.local", "north.sevenkingdoms.local")
@@ -33,6 +41,9 @@ def require(condition: bool, message: str) -> None:
 
 
 def load_source() -> dict[str, str]:
+    # Every derived course must retain the repaired Kingdoms controller and
+    # Vagrant/WinRM/networking foundations before accessing compatibility data.
+    validate_foundation(ROOT)
     files = {
         "config": SOURCE / "data" / "config.json",
         "inventory": SOURCE / "data" / "inventory",
@@ -240,6 +251,7 @@ def render() -> dict[str, str]:
         "instance-preview/Vagrantfile": rendered_vagrant,
         "manifest.json": json.dumps({
             "profile": "course1-fall-of-the-north",
+            "kingdoms_foundation": FOUNDATION_ID,
             "state": "PREVIEW_ONLY_NOT_INSTALLABLE",
             "windows_machines": list(WINDOWS),
             "router": "GOAD-ROUTER",

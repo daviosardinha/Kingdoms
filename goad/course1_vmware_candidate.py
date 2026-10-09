@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 from goad.course1_inventory_candidate import render_candidate_inventories
+from goad.kingdoms_foundation import FOUNDATION_ID
 from goad.course1_network_plan import (
     REFERENCE_ROUTER, ZONES, require, validate_proposal,
 )
@@ -301,6 +302,7 @@ def render_candidate(plan: dict) -> dict[str, str]:
     digest = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
     manifest = {
         "profile": COURSE1.name,
+        "kingdoms_foundation": FOUNDATION_ID,
         "state": "PREVIEW_ONLY_NOT_INSTALLABLE",
         "provider": "vmware",
         "source_proposal_sha256": digest,
