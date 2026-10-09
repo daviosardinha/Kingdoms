@@ -13,11 +13,23 @@ Work must follow this order. A lower-priority platform expansion must not displa
 | **P0** | Current Kingdoms VMware correctness and fail-closed isolation | Start immediately |
 | **P1** | Fresh-install bootstrap and dependency reliability | After P0 behavior is protected by regression tests |
 | **P2** | Automated validation and release gates | Develop alongside P0/P1; complete before provider expansion |
-| **P3** | Provider-neutral architecture and VirtualBox on Linux | Only after all P0 items and required P1/P2 gates are complete |
-| **P4** | Proxmox support | After the provider-neutral lifecycle is proven on VMware and VirtualBox |
-| **P5** | Windows host support | Last: only after P0–P4 foundations relevant to the selected provider are complete |
+| **P3** | Provider-neutral lifecycle contracts; VirtualBox follow-up deferred | Only after all P0 items and required P1/P2 gates are complete |
+| **P4** | Course 1 Ludus on Proxmox | After Course 1 VMware release and required provider-neutral contracts are validated; VirtualBox is not a prerequisite |
+| **P5** | Windows host and additional provider support | Later: after the relevant existing-provider foundations are complete |
 
 **Hard gate:** do not start Windows host implementation while any P0 item remains open. Windows design and research may be recorded, but implementation waits until the existing installation and isolation lifecycle is dependable.
+
+## Course rollout sequence — explicit provider priority
+
+**Active course target: Kingdoms Course 1 — Fall of the North.**
+
+1. **Now — VMware Workstation:** finish the isolated four-Windows-VM + router installer, per-instance network identities, KINGDOMS2 SQL, lifecycle, reset and Phase 03 attack parity. Complete the Course 1 walkthrough and VMware release acceptance.
+2. **Next — Ludus on Proxmox:** after VMware Course 1 is ready, port the *same validated course profile* into Ludus. Validate template provisioning, per-learner instance isolation, routed WireGuard access and the dedicated attacker Layer 2 path needed for NORTH poisoning/relay demonstrations. Do not declare Ludus supported before its own end-to-end acceptance.
+3. **Later — other providers/courses:** VirtualBox, direct Proxmox control, Windows hosts and future Course 2 profiles are separate backlog tracks. The existing six-Windows-VM reference environment must not automatically be renamed Course 2.
+
+**Architectural rule:** a Kingdoms course profile describes the domain topology, roles, exercises and required behavior; a provider adapter implements deployment, network attachment and lifecycle. Neither course identity nor installation authority may be inferred from Git branch, VM name or a CLI-only profile label. Bind both to a validated installed instance.
+
+The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
 
 ## Delivery policy
 
@@ -26,7 +38,7 @@ Work must follow this order. A lower-priority platform expansion must not displa
 - Require source validation, failure-path testing and a rollback plan before merge.
 - Preserve deny-by-default exercise isolation.
 - Treat a non-zero provider, provisioning, extension or isolation result as an installation failure.
-- Finish and validate each priority before promoting the next priority into active implementation.
+- Complete P0–P2 reliability gates before provider expansion. For P3→P4, validate the provider-neutral contracts first; VirtualBox-specific implementation is deferred until after the Ludus Course 1 rollout.
 
 ## P0 — Current installation correctness and isolation
 
@@ -73,9 +85,9 @@ These findings from the full-project audit have priority over every new platform
 - [ ] Add isolation assertions after both successful and failed provisioning.
 - [ ] Run a disposable release matrix before declaring a provider or platform supported.
 
-## P3 — Provider-neutral architecture and VirtualBox on Linux
+## P3 — Provider-neutral contracts (VirtualBox follow-up deferred)
 
-First extract provider-neutral lifecycle contracts for network preparation, runtime mode, adapter state, rollback and validation. Do not copy VMware-specific shell behavior into another provider.
+First extract provider-neutral lifecycle contracts for network preparation, runtime mode, adapter state, rollback and validation. Do not copy VMware-specific shell behavior into another provider. The **first two** contract checklist items are prerequisites for Ludus; the subsequent VirtualBox-specific items are future work, not Ludus release blockers.
 
 - [ ] Define provider-neutral provisioning and exercise mode interfaces.
 - [ ] Define provider-neutral transition state and rollback contracts.
@@ -85,7 +97,14 @@ First extract provider-neutral lifecycle contracts for network preparation, runt
 - [ ] Verify runtime adapter state through VirtualBox tooling.
 - [ ] Validate clean install, resume, start, stop, failure cleanup and segmentation.
 
-## P4 — Proxmox support
+## P4 — Ludus / Proxmox support (after VMware Course 1 release)
+
+Ludus is the **next Course 1 provider after VMware**. Prefer its native deployment lifecycle for the port; any separate direct-Proxmox Terraform implementation is independent follow-up work, not an assumption about Ludus.
+
+- [ ] Build an explicit Ludus Course 1 profile using the four Windows guests plus router, without an ESSOS domain or legacy ESSOS network.
+- [ ] Preserve per-instance isolation, course entitlements/identity boundaries and repeatable deployment/reset semantics.
+- [ ] Validate remote Kali over WireGuard, and provide a tested attacker Layer 2 path for LLMNR/NBT-NS/mDNS, IPv6 mitm6/WPAD and relay scenarios.
+- [ ] Run fresh AD, MSSQL, certificate services, Phase 03 and full Course 1 release regressions independently on Ludus.
 
 - [ ] Build reusable Windows and Debian router templates with Packer.
 - [ ] Model the four zones using dedicated or VLAN-aware Linux bridges.
@@ -95,11 +114,11 @@ First extract provider-neutral lifecycle contracts for network preparation, runt
 - [ ] Validate segmentation from both the provisioning system and guest networks.
 - [ ] Pass the complete provider release acceptance criteria.
 
-## P5 — Windows host support
+## P5 — Windows host and additional provider support
 
 Upstream GOAD supports Windows through WSL or native Python with a provisioning VM. Kingdoms needs an explicit Windows control-plane design rather than a direct port of Linux-only Bash and systemd behavior.
 
-Implementation starts only after the P0 reliability findings are closed and the relevant provider-neutral lifecycle is proven.
+Implementation starts only after the P0 reliability findings are closed and the relevant provider-neutral lifecycle is proven. VirtualBox-specific work remains deferred until after the Course 1 Ludus portability milestone.
 
 - [ ] Support Windows 11 hosts with VMware Workstation and VirtualBox.
 - [ ] Define and test WSL and native-Python control paths.
