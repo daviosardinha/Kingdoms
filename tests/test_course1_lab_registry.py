@@ -265,7 +265,7 @@ assert lab.get_first_provider_name() == 'vmware'
             ):
                 with self.subTest(generated=generated):
                     actual_bytes = (workspace / generated).read_bytes()
-                    self.assertTrue(actual_bytes.endswith(b"\\n"))
+                    self.assertTrue(actual_bytes.endswith(b"\n"))
                     self.assertEqual(actual_bytes, (project / canonical).read_bytes())
             plan = plan_bound_instance(workspace / "provider", "start",
                                        "GOAD-WS01", lab_name="NORTH")
