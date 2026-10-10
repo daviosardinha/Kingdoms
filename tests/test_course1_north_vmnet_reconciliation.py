@@ -18,6 +18,10 @@ HELPER = "/tmp/isolated-course1-north-hostaddr-check"
 
 
 class ParentProvider:
+    def prepare_install(self):
+        self.inherited_calls.append(("prepare",))
+        return True
+
     def _apply_router_policy(self, mode):
         self.inherited_calls.append(("policy", mode))
         return True
@@ -38,6 +42,7 @@ class NorthVmnetReconciliationTests(unittest.TestCase):
         wanted = {
             "_reconcile_north_host_addresses", "_apply_router_policy",
             "_enable_provisioning_routes", "_rollback_north_pre_guest_bootstrap",
+            "prepare_install",
         }
         klass.body = [
             node for node in klass.body
@@ -61,7 +66,35 @@ class NorthVmnetReconciliationTests(unittest.TestCase):
         provider._north_runtime_allowed = Mock(return_value=True)
         provider._require_cached_sudo = Mock(return_value=True)
         provider._script = Mock(return_value=HELPER)
+        provider._verify_north_instance_sources = Mock(return_value=True)
+        provider._require_full_goad_instance_binding = Mock(return_value=True)
+        provider._check_segmented_instance_conflicts = Mock(return_value=True)
         return provider
+
+    def test_preflight_reconciles_before_inherited_strict_host_check(self):
+        provider = self.provider()
+        provider._reconcile_north_host_addresses = Mock(return_value=True)
+        self.assertTrue(provider.prepare_install())
+        provider._reconcile_north_host_addresses.assert_called_once_with(
+            "instance-bound installation preflight"
+        )
+        self.assertEqual(provider.inherited_calls, [("prepare",)])
+
+    def test_preflight_refuses_drift_before_inherited_host_check(self):
+        provider = self.provider()
+        provider._reconcile_north_host_addresses = Mock(return_value=False)
+        self.assertFalse(provider.prepare_install())
+        self.assertEqual(provider.inherited_calls, [])
+        provider._require_full_goad_instance_binding.assert_called_once()
+
+    def test_preflight_refuses_foreign_source_before_any_repair(self):
+        provider = self.provider()
+        provider._verify_north_instance_sources.return_value = False
+        provider._reconcile_north_host_addresses = Mock(return_value=True)
+        self.assertFalse(provider.prepare_install())
+        provider._reconcile_north_host_addresses.assert_not_called()
+        provider._require_cached_sudo.assert_not_called()
+        self.assertEqual(provider.inherited_calls, [])
 
     def test_healthy_host_addresses_are_readonly_no_restart(self):
         provider = self.provider()
