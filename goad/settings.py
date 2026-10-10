@@ -70,6 +70,11 @@ class Settings:
         if self.lab_manager.is_lab_exist(lab_name):
             # set lab
             self.lab_name = lab_name
+            if lab_name == 'NORTH':
+                # NORTH is a statically addressed, isolated native Kingdoms
+                # recipe. It must never inherit GOAD or the generic default
+                # instance range when selected through the shared console.
+                self.ip_range = '10.41.10'
             if refresh:
                 self._refresh_provider()
         else:
@@ -148,6 +153,12 @@ class Settings:
         return self.provisioner_name
 
     def set_ip_range(self, ip_range):
+        if self.lab_name == 'NORTH' and ip_range != '10.41.10':
+            Log.error(
+                'Kingdoms NORTH has a fixed 10.41.10 instance range; '
+                'refusing a mismatched address request'
+            )
+            return self.ip_range
         error = False
         try:
             parts = ip_range.split('.')
