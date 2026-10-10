@@ -612,6 +612,69 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         self.assertIs(controller._kingdoms_install_profile(), profile)
         provider._north_runtime_allowed.assert_not_called()
 
+    def test_north_failed_ansible_closes_route_without_waiting_for_ad(self):
+        from goad.course_catalog import NORTH_PILOT_ENV, NORTH_PILOT_ID
+        controller, provider, profile = self.north_ansible_first_boot_harness()
+        provider.abort_north_failed_provisioning = Mock(return_value=True)
+        controller._run = Mock(return_value=False)
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+            self.assertFalse(controller.run())
+        provider.abort_north_failed_provisioning.assert_called_once()
+        self.assertEqual(profile["status"], "failed")
+        controller._emit_kingdoms_install_timing.assert_called_once()
+
+    def test_reference_failed_ansible_does_not_run_north_cleanup(self):
+        controller, provider, _ = self.north_ansible_first_boot_harness()
+        controller.lab_name = "GOAD"
+        provider.abort_north_failed_provisioning = Mock(return_value=True)
+        controller._run = Mock(return_value=False)
+        self.assertFalse(controller.run())
+        provider.abort_north_failed_provisioning.assert_not_called()
+
+    @staticmethod
+    def north_failed_provisioning_cleanup_harness():
+        """Compile production NORTH compensating action without VMware imports."""
+        source = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        module = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        cls = next(node for node in module.body
+                   if isinstance(node, ast.ClassDef)
+                   and node.name == "GoadKingdomsVmwareProvider")
+        method = next(node for node in cls.body
+                      if isinstance(node, ast.FunctionDef)
+                      and node.name == "abort_north_failed_provisioning")
+        cls.body = [method]
+        cls.bases = [ast.Name(id="object", ctx=ast.Load())]
+        cls.keywords = []
+        cls.decorator_list = []
+        module.body = [cls]
+        scope = {"Log": Mock()}
+        exec(compile(ast.fix_missing_locations(module), str(source), "exec"), scope)
+        provider = scope["GoadKingdomsVmwareProvider"]()
+        provider.lab_name = "NORTH"
+        provider._north_runtime_allowed = Mock(return_value=True)
+        provider._require_cached_sudo = Mock(return_value=True)
+        provider.get_runtime_mode = Mock(return_value="unknown")
+        provider._rollback_north_pre_guest_bootstrap = Mock(return_value=True)
+        return provider
+
+    def test_north_failed_provisioning_cleanup_is_pre_ad_and_bounded(self):
+        provider = self.north_failed_provisioning_cleanup_harness()
+        self.assertTrue(provider.abort_north_failed_provisioning())
+        provider._rollback_north_pre_guest_bootstrap.assert_called_once()
+        provider.get_runtime_mode.return_value = "provisioning"
+        self.assertTrue(provider.abort_north_failed_provisioning())
+        provider.get_runtime_mode.return_value = "exercise"
+        self.assertFalse(provider.abort_north_failed_provisioning())
+        provider._rollback_north_pre_guest_bootstrap.assert_has_calls([call(), call()])
+        self.assertEqual(provider._rollback_north_pre_guest_bootstrap.call_count, 2)
+
+    def test_north_failed_provisioning_cleanup_never_mutates_reference(self):
+        provider = self.north_failed_provisioning_cleanup_harness()
+        provider.lab_name = "GOAD"
+        self.assertFalse(provider.abort_north_failed_provisioning())
+        provider._rollback_north_pre_guest_bootstrap.assert_not_called()
+        provider._north_runtime_allowed.assert_not_called()
+
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
         method = src.split("    def _validated_kingdoms_legacy_plan(", 1)[1].split(
