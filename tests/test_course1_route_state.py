@@ -82,7 +82,7 @@ class NorthRouteStateTests(unittest.TestCase):
         self.assertIn(original_root, original)
         script = original.replace(original_root, 'require_root() { :; }')
         host_helper = root / "bin/north-host-addresses"
-        host_helper.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        host_helper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         host_helper.chmod(0o700)
         script = script.replace(
             "/usr/local/sbin/kingdoms-north-vmnet-hostaddrs", str(host_helper)
@@ -95,36 +95,36 @@ class NorthRouteStateTests(unittest.TestCase):
         )
         fake_ip = root / "bin/ip"
         fake_ip.write_text(
-            "#!/usr/bin/env python3\\n"
-            "import json, os, pathlib, sys\\n"
-            "state = pathlib.Path(os.environ['FAKE_NORTH_ROUTE_STATE'])\\n"
-            "args = sys.argv[1:]\\n"
-            "rows = json.loads(state.read_text())\\n"
-            "if args[:4] == ['-j', '-4', 'route', 'show']:\\n"
-            "    print(json.dumps(rows)); sys.exit(0)\\n"
-            "if args[:4] == ['-4', 'route', 'show', 'exact']:\\n"
-            "    for row in rows:\\n"
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            "state = pathlib.Path(os.environ['FAKE_NORTH_ROUTE_STATE'])\n"
+            "args = sys.argv[1:]\n"
+            "rows = json.loads(state.read_text())\n"
+            "if args[:4] == ['-j', '-4', 'route', 'show']:\n"
+            "    print(json.dumps(rows)); sys.exit(0)\n"
+            "if args[:4] == ['-4', 'route', 'show', 'exact']:\n"
+            "    for row in rows:\n"
             "        print(row['dst'] + ' via ' + row.get('gateway','')"
-            " + ' dev ' + row.get('dev',''))\\n"
-            "    sys.exit(0)\\n"
-            "if args[:4] == ['-4', '-o', 'addr', 'show']:\\n"
+            " + ' dev ' + row.get('dev',''))\n"
+            "    sys.exit(0)\n"
+            "if args[:4] == ['-4', '-o', 'addr', 'show']:\n"
             "    addr = {'vmnet11':'10.41.10.254/24',"
-            "'vmnet13':'10.41.99.254/24'}[args[-1]]\\n"
-            "    print('2: ' + args[-1] + ' inet ' + addr); sys.exit(0)\\n"
-            "if args[:3] == ['-4', 'route', 'add']:\\n"
-            "    if rows: sys.exit(2)\\n"
+            "'vmnet13':'10.41.99.254/24'}[args[-1]]\n"
+            "    print('2: ' + args[-1] + ' inet ' + addr); sys.exit(0)\n"
+            "if args[:3] == ['-4', 'route', 'add']:\n"
+            "    if rows: sys.exit(2)\n"
             "    state.write_text(json.dumps(["
             "{'dst':'10.41.20.0/24','gateway':'10.41.10.1',"
-            "'dev':'vmnet11','protocol':'boot','scope':'global'}]))\\n"
-            "    sys.exit(0)\\n"
-            "if args[:3] == ['-4', 'route', 'del']:\\n"
-            "    if not rows: sys.exit(2)\\n"
-            "    state.write_text('[]'); sys.exit(0)\\n"
-            "sys.exit(98)\\n", encoding="utf-8"
+            "'dev':'vmnet11','protocol':'boot','scope':'global'}]))\n"
+            "    sys.exit(0)\n"
+            "if args[:3] == ['-4', 'route', 'del']:\n"
+            "    if not rows: sys.exit(2)\n"
+            "    state.write_text('[]'); sys.exit(0)\n"
+            "sys.exit(98)\n", encoding="utf-8"
         )
         fake_ip.chmod(0o700)
         ping = root / "bin/ping"
-        ping.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+        ping.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         ping.chmod(0o700)
         env = dict(os.environ)
         env["PATH"] = str(root / "bin") + os.pathsep + env["PATH"]
