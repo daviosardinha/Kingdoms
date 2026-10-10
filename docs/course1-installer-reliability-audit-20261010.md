@@ -175,3 +175,44 @@ requires these safety modules exactly once. The new full-suite expected count
 is 376, subject to Kali execution. No VM/host runtime changes were made.
 An offline `validate-course1.sh` success does NOT certify the live host while
 vmnet11/13 remain at VMware's `.1` addresses.
+
+## Child-domain promotion collision evidence (2026-10-10)
+
+During the first live NORTH AD configuration, `KINGSLANDING` reports
+`sevenkingdoms.local` and `DomainRole=5` while NORTH's `WINTERFELL`
+remains `WORKGROUP`, `DomainRole=2`. Child-domain DNS-zone validation
+failed after `Install-ADDSDomain` was attempted and dc02 rebooted.
+
+A collected `C:\\Windows\\debug\\DCPromoUI.log` tail shows a
+`DsGetDcName` lookup for `north.sevenkingdoms.local` resolving
+`winterfell.north.sevenkingdoms.local` at **10.4.10.11**, the reference
+Kingdoms DC, not disposable NORTH's **10.41.10.11**. The log reports
+"the name north.sevenkingdoms.local is already in use" (exit code 31).
+The exact log entry's modification timestamp and applicability to the
+current PowerShell `Install-ADDSDomain` attempt are NOT YET PROVEN.
+
+**Likely root class:** DNS/DC Locator cross-instance discovery of an
+identically named forest/child domain during concurrent reference/NORTH
+provisioning. Different vmnets, MAC collision protection and per-instance
+Vagrant identities do not themselves guarantee forest/DNS isolation.
+The role points the child exercise NIC at parent `dc01` but only disables
+DNS *registration* on its provisioning NAT NIC; that does not prove Windows
+will never use that NIC's resolver or cached foreign DC Locator answers.
+
+**No runtime changes yet.** Before repairing, capture read-only evidence
+on NORTH dc02: DNS client servers by interface, current forced DC Locator
+result, authoritative SRV lookup explicitly against new parent DC01
+`10.41.20.10`, route to `10.4.10.11`, and DCPromoUI file modification
+time. Verify source of foreign discovery and parent forest identity.
+Prevent unwanted reference DC discovery, rather than deleting the reference
+domain, renaming course assets without a plan, or blindly retrying promotion.
+
+**Source correctness debt:** the shared child-domain role sets
+`$Ansible.Changed = $true` before proving `Install-ADDSDomain`
+succeeded, calls `-SkipPreChecks`, and checks child DNS-zone existence
+rather than AD promotion success after reboot. Follow-up correction must
+be **NORTH-scoped** or carefully preserve established GOAD behavior:
+reject unexpected AD/DC Locator endpoints, fail fast on promotion failure,
+verify actual post-reboot domain role/services before DNS-zone checks,
+and provide a negative test against reference `10.4.10.11`. Do not certify
+a cause or a fix until live observations confirm it.
