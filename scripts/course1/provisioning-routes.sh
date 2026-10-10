@@ -60,7 +60,12 @@ disable_routes() {
   echo "[PASS] NORTH parent provisioning route removed"
 }
 case "${1:-status}" in
-  status) echo "[INFO] NORTH route identity: $(route_state); observed: $(route_exact)" ;;
+  status)
+    state="$(route_state)" || fail "route status could not be verified"
+    echo "[INFO] NORTH route identity: $state; observed: $(route_exact)"
+    [[ "$state" != foreign ]] ||
+      fail "unexpected/foreign parent route; refusing installation retry"
+    ;;
   enable) [[ $# -eq 1 ]] || fail "usage: enable"; enable_routes ;;
   disable) [[ $# -eq 1 ]] || fail "usage: disable"; disable_routes ;;
   *) fail "usage: $0 {status|enable|disable}" ;;
