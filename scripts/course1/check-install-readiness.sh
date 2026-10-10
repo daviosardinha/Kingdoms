@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Single read-only NORTH readiness dashboard; never starts/stops/provisions guests.
 set -Eeuo pipefail
+# The regression suite always validates the preview-default guard; an explicit
+# runtime pilot authorization must never leak into a read-only source survey.
+unset KINGDOMS_NORTH_FIRST_INSTALL_PILOT
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
