@@ -1710,6 +1710,14 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
             return False
         if not self._require_cached_sudo():
             return False
+        # A previous failed Vagrant attempt may have left VMware's host .1
+        # address behind. Repair only NORTH's allowed .1/absent states AFTER
+        # validating the instance/VMX scope but BEFORE inherited preflight
+        # demands the canonical .254 addresses. Otherwise a safe retry is
+        # blocked before any later reconciliation can execute.
+        if self.lab_name == 'NORTH' and not self._reconcile_north_host_addresses(
+                'instance-bound installation preflight'):
+            return False
         return super().prepare_install()
 
     def _fresh_install_bootstrap_pending(self):
