@@ -351,7 +351,14 @@ class LabInstance:
         Log.info(f'Create lab provisioning file {inventory_file}')
         # create lab inventory
         lab_provider_path = GoadPath.get_lab_data_path(self.lab_name)
-        environment = Environment(loader=FileSystemLoader(lab_provider_path))
+        # NORTH requires byte-for-byte correspondence with the committed
+        # four-guest inventory. Jinja2 normally strips the final newline,
+        # which makes the freshly created instance fail its source binding.
+        # Preserve legacy GOAD rendering exactly as it was.
+        environment = Environment(
+            loader=FileSystemLoader(lab_provider_path),
+            keep_trailing_newline=(self.lab_name == 'NORTH'),
+        )
         # create inventory template
         inventory_template = environment.get_template(inventory_file)
         instance_inventory_content = inventory_template.render(
@@ -369,7 +376,14 @@ class LabInstance:
         Log.info('Create instance provisioning files')
         # create provisioning inventory
         lab_provider_path = GoadPath.get_lab_provider_path(self.lab_name, self.provider_name)
-        environment = Environment(loader=FileSystemLoader(lab_provider_path))
+        # NORTH requires byte-for-byte correspondence with the committed
+        # four-guest inventory. Jinja2 normally strips the final newline,
+        # which makes the freshly created instance fail its source binding.
+        # Preserve legacy GOAD rendering exactly as it was.
+        environment = Environment(
+            loader=FileSystemLoader(lab_provider_path),
+            keep_trailing_newline=(self.lab_name == 'NORTH'),
+        )
         # create inventory template
         inventory_template = environment.get_template("inventory")
         instance_inventory_content = inventory_template.render(
