@@ -1,0 +1,101 @@
+---
+# NORTH only. Never infer local DC readiness from remote Get-ADDomain:
+# the reference lab legitimately has the same child-domain DNS name.
+- name: Promote only the current NORTH WINTERFELL to the child domain
+  ansible.windows.win_powershell:
+    script: |
+      [CmdletBinding()]
+      param(
+        [String]$Password,
+        [String]$DomainAdmin,
+        [String]$ParentDomainName,
+        [String]$NewDomainNetbiosName,
+        [String]$ReplicationSourceDC,
+        [String]$NewDomainName,
+        [String]$DomSafePassword,
+        [String]$ExpectedChildDomain
+      )
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $computer = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+      if ([int]$computer.DomainRole -eq 5) {
+        if ($computer.Domain -ine $ExpectedChildDomain) {
+          throw "NORTH child promotion: local DC is in an unexpected domain"
+        }
+        Write-Output 'NORTH_CHILD_DC_ALREADY_PROMOTED'
+        return
+      }
+      if ([int]$computer.DomainRole -ne 2 -or $computer.PartOfDomain) {
+        throw "NORTH child promotion: local Windows state is not a clean standalone server"
+      }
+      $pass = ConvertTo-SecureString $Password -AsPlainText -Force
+      $credential = [pscredential]::new($DomainAdmin, $pass)
+      $safePassword = ConvertTo-SecureString $DomSafePassword -AsPlainText -Force
+      # No SkipPreChecks. Namespace collisions must terminate the task.
+      $promotion = @{
+        Credential = $credential
+        InstallDns = $true
+        NewDomainName = $NewDomainName
+        NewDomainNetbiosName = $NewDomainNetbiosName
+        ParentDomainName = $ParentDomainName
+        ReplicationSourceDC = $ReplicationSourceDC
+        DatabasePath = 'C:\Windows\NTDS'
+        SYSVOLPath = 'C:\Windows\SYSVOL'
+        LogPath = 'C:\Windows\Logs'
+        SafeModeAdministratorPassword = $safePassword
+        Force = $true
+        NoRebootOnCompletion = $true
+        ErrorAction = 'Stop'
+      }
+      Install-ADDSDomain @promotion
+      $Ansible.Changed = $true
+      Write-Output 'NORTH_CHILD_PROMOTION_RETURNED_SUCCESS'
+    parameters:
+      Password: "{{ parent_domain_password }}"
+      DomSafePassword: "{{ domain_password }}"
+      DomainAdmin: "{{ parent_domain_user }}"
+      ParentDomainName: "{{ parent_domain }}"
+      ReplicationSourceDC: "{{ source_dc }}"
+      NewDomainNetbiosName: "{{ netbios_name }}"
+      NewDomainName: "{{ domain.split('.')[0] }}"
+      ExpectedChildDomain: "{{ domain }}"
+  register: north_child_result
+
+- name: Reboot after verified NORTH ADDS promotion request
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+    post_reboot_delay: 100
+  when: north_child_result.changed
+
+- name: Verify local NORTH child-domain promotion before DNS-zone tasks
+  ansible.windows.win_powershell:
+    script: |
+      [CmdletBinding()]
+      param([String]$ExpectedChildDomain)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $computer = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+      if ([int]$computer.DomainRole -ne 5 -or
+          -not $computer.PartOfDomain -or
+          $computer.Domain -ine $ExpectedChildDomain) {
+        throw "NORTH child DC is not promoted locally: role=$($computer.DomainRole) domain=$($computer.Domain)"
+      }
+      foreach ($name in @('NTDS','Netlogon','ADWS')) {
+        $service = Get-Service -Name $name -ErrorAction Stop
+        if ($service.Status -ne 'Running') {
+          throw "NORTH child DC service $name is not running: $($service.Status)"
+        }
+      }
+      Import-Module ActiveDirectory -ErrorAction Stop
+      $domain = Get-ADDomain -Current LocalComputer -ErrorAction Stop
+      if ($domain.DNSRoot -ine $ExpectedChildDomain) {
+        throw "NORTH local AD domain mismatch"
+      }
+      Write-Output 'NORTH_CHILD_DC_PROMOTION_VERIFIED'
+    parameters:
+      ExpectedChildDomain: "{{ domain }}"
+  register: north_child_local
+  retries: 8
+  delay: 20
+  until: north_child_local is succeeded
+  changed_when: false
