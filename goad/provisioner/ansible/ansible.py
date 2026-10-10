@@ -213,6 +213,28 @@ class Ansible(Provisioner):
             raise
         finally:
             self._active_install_profile = previous
+            if self.lab_name == 'NORTH' and not result:
+                # Ansible can fail before DC01 has been promoted. Running the
+                # normal mode controller here repeats the 300s AD deadlock.
+                # Only close the current, authorized NORTH provider's host
+                # route and router forwarding. Keep the instance NOT READY.
+                abort = getattr(self.provider, 'abort_north_failed_provisioning', None)
+                if callable(abort):
+                    try:
+                        if not abort():
+                            Log.error(
+                                'Kingdoms NORTH: failed Ansible cleanup unverified; '
+                                'inspect networking before retry'
+                            )
+                    except Exception as exc:
+                        Log.error(
+                            f'Kingdoms NORTH: failed Ansible cleanup raised: {exc}'
+                        )
+                else:
+                    Log.error(
+                        'Kingdoms NORTH: no failure cleanup implementation; '
+                        'operator must inspect temporary routing'
+                    )
             profile['finished'] = time.monotonic()
             profile['ansible_elapsed'] = profile['finished'] - ansible_started
             profile['status'] = 'completed' if result else outcome
