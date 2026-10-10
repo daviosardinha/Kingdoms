@@ -73,6 +73,8 @@ class NorthCollisionTests(unittest.TestCase):
         snap["registered_inventory"]["registered_vm_count"] += 1
         result = inspect_north_guest_collisions(provider, proposal(), snap)
         self.assertEqual(result["owned_vmx_examined"], 1)
+        self.assertEqual(result["owned_guests_verified"], ["GOAD-DC02"])
+        self.assertIn("GOAD-ROUTER", result["owned_guests_unobserved"])
         snap["registered_inventory"]["registered_vms"][-1]["adapters"][0]["address"] = (
             "00:50:56:3b:fe:ff"
         )
@@ -129,6 +131,8 @@ class NorthCollisionTests(unittest.TestCase):
             result = inspect_network_phase(p, snap, instance_provider=provider)
         self.assertEqual(result["status"], "NORTH_HOST_ADDRESSES_READY")
         self.assertEqual(result["north_owned_vmx_verified"], 1)
+        self.assertEqual(result["north_owned_guests_verified"], ["GOAD-WS01"])
+        self.assertIn("GOAD-ROUTER", result["north_owned_guests_unobserved"])
         self.assertEqual(result["running_vm_count"], 2)
         self.assertEqual(result["registered_vm_count"], 1)
         self.assertFalse(result["deployment_authorized"])
