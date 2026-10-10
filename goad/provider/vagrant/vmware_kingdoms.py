@@ -1002,6 +1002,53 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         )
         return True
 
+    def _rollback_north_pre_guest_bootstrap(self):
+        """Undo NORTH-only pre-guest routing after a partial bootstrap failure.
+
+        Route removal is exact-match and refuses foreign routes. Attempt both
+        cleanup operations even when one fails; never report a partial rollback
+        as successful. This method is reachable only through the validated
+        NORTH install path, not by the legacy GOAD reference installer.
+        """
+        route = self._script('provisioning-routes.sh')
+        route_ok = False
+        if route is not None:
+            try:
+                removal = subprocess.run(
+                    ['sudo', '-n', 'bash', route, 'disable'],
+                    check=False, timeout=30,
+                )
+                route_ok = removal.returncode == 0
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                Log.error(f'Kingdoms NORTH: route rollback failed: {exc}')
+        if not route_ok:
+            Log.error('Kingdoms NORTH: temporary route cleanup unverified')
+        policy_ok = self._apply_router_policy('exercise')
+        if not policy_ok:
+            Log.error('Kingdoms NORTH: router exercise-policy rollback unverified')
+        return route_ok and policy_ok
+
+    def _prepare_north_pre_guest_network(self):
+        """Establish protected-zone reachability before NORTH Windows Vagrant up.
+
+        On fresh install Vagrant can select the protected-domain IP instead of
+        its forwarded NAT WinRM socket. The reference GOAD path is unchanged.
+        """
+        if self.lab_name != 'NORTH':
+            return True
+        if not self._north_runtime_allowed() or not self._verify_north_instance_sources():
+            return False
+        if not self._apply_router_policy('provisioning'):
+            Log.error('Kingdoms NORTH: provisioning router policy failed before Windows bring-up')
+            self._rollback_north_pre_guest_bootstrap()
+            return False
+        if not self._enable_provisioning_routes():
+            Log.error('Kingdoms NORTH: protected parent route failed before Windows bring-up')
+            self._rollback_north_pre_guest_bootstrap()
+            return False
+        Log.success('Kingdoms NORTH: routed provisioning plane ready before first Windows Vagrant up')
+        return True
+
     def install(self):
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
         if not self._north_runtime_allowed():
@@ -1035,6 +1082,12 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         Log.info('GOAD_NOMAD: bringing up segmented router')
         if not self._bring_up_router():
             Log.error('GOAD_NOMAD: failed to bring up GOAD-ROUTER')
+            return False
+
+        # The legacy GOAD install sequence remains unchanged. NORTH must route
+        # to its isolated parent network *before* Vagrant brings up Windows,
+        # because the VMware plugin may select the protected WinRM endpoint.
+        if self.lab_name == 'NORTH' and not self._prepare_north_pre_guest_network():
             return False
 
         # A fresh Windows box can fail its first VMware/Vagrant guest operation
