@@ -8,25 +8,32 @@ unset KINGDOMS_NORTH_FIRST_INSTALL_PILOT
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 umask 077
+fail() { echo "[FAIL] $*" >&2; exit 1; }
 REFRESH=0
-case "${1:-}" in
-  "") ;;
-  --refresh) REFRESH=1 ;;
+NORTH_INSTANCE_PROVIDER=""
+while [[ $# -gt 0 ]]; do
+case "$1" in
+  --refresh) REFRESH=1; shift ;;
+  --instance-provider)
+    [[ $# -ge 2 && "$2" == /* && -d "$2" && ! -L "$2" ]] ||
+      fail "--instance-provider requires an absolute existing NORTH provider directory"
+    NORTH_INSTANCE_PROVIDER="$2"
+    shift 2 ;;
   -h|--help)
     cat <<'USAGE'
-Usage: bash scripts/course1/check-install-readiness.sh [--refresh]
+Usage: bash scripts/course1/check-install-readiness.sh [--refresh] [--instance-provider ABSOLUTE_PATH]
 
 One NORTH installation-readiness command. Runs the full Kingdoms regression
 and host/network survey once per clean Git commit. Later checks reuse the
 passing source tests but resurvey real VMware host/network state each time.
---refresh forces the complete suite again. NEVER starts, stops or modifies VMs.
+--refresh forces the complete suite again. --instance-provider scopes the\nread-only survey to an existing, exact-source-bound NORTH installation.\nNEVER starts, stops or modifies VMs.
 Detailed restricted logs: ~/.local/state/kingdoms/course1
 USAGE
     exit 0 ;;
-  *) echo "[FAIL] Usage: $0 [--refresh]" >&2; exit 1 ;;
+  *) echo "[FAIL] Usage: $0 [--refresh] [--instance-provider ABSOLUTE_PATH]" >&2; exit 1 ;;
 esac
+done
 
-fail() { echo "[FAIL] $*" >&2; exit 1; }
 for binary in git python3; do
   command -v "$binary" >/dev/null || fail "missing $binary"
 done
@@ -63,7 +70,11 @@ fi
 
 if [[ "$CACHED" == 0 ]]; then
   echo '[INFO] Running complete source regression + live VMware survey once...'
-  if ! bash scripts/course1/validate-course1.sh --survey-host > "$LOG" 2>&1; then
+  validate_args=(--survey-host)
+  if [[ -n "$NORTH_INSTANCE_PROVIDER" ]]; then
+    validate_args+=(--north-instance-provider "$NORTH_INSTANCE_PROVIDER")
+  fi
+  if ! bash scripts/course1/validate-course1.sh "${validate_args[@]}" > "$LOG" 2>&1; then
     echo '[FAIL] Kingdoms validation failed; final details:' >&2
     tail -n 35 "$LOG" >&2
     exit 1
@@ -101,14 +112,14 @@ else
     tail -n 25 "$LOG" >&2
     exit 1
   fi
-  if ! python3 - "$SNAPSHOT" "$PHASE" >> "$LOG" 2>&1 <<'PY'
+  if ! python3 - "$SNAPSHOT" "$PHASE" "$NORTH_INSTANCE_PROVIDER" >> "$LOG" 2>&1 <<'PY'
 import json
 import sys
 from pathlib import Path
 from goad.course1_vmnet_phase import inspect_network_phase
 snapshot = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 plan = json.loads(Path("docs/course1-network-candidate.example.json").read_text(encoding="utf-8"))
-phase = inspect_network_phase(plan, snapshot)
+phase = inspect_network_phase(plan, snapshot, instance_provider=sys.argv[3] or None)
 Path(sys.argv[2]).write_text(json.dumps(phase), encoding="utf-8")
 if phase["status"] != "NORTH_HOST_ADDRESSES_READY":
     raise SystemExit("NORTH .254 host addresses not ready")
