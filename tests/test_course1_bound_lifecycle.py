@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, call
 
 from goad.course1_bound_lifecycle import plan_bound_instance
@@ -297,6 +298,97 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         provider._apply_router_policy.assert_not_called()
         provider._enable_provisioning_routes.assert_not_called()
         subprocess_mock.run.assert_not_called()
+
+    @staticmethod
+    def north_first_router_harness():
+        """Exercise real provider first-router boot path with no live VMware."""
+        source = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        module = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        provider_class = next(
+            node for node in module.body
+            if isinstance(node, ast.ClassDef) and node.name == "GoadKingdomsVmwareProvider"
+        )
+        router = next(
+            node for node in provider_class.body
+            if isinstance(node, ast.FunctionDef) and node.name == "_bring_up_router"
+        )
+        provider_class.body = [router]
+        provider_class.bases = [ast.Name(id="object", ctx=ast.Load())]
+        provider_class.keywords = []
+        provider_class.decorator_list = []
+        module.body = [provider_class]
+        process = Mock()
+        process.run.return_value.returncode = 0
+        clock = SimpleNamespace(monotonic=Mock(side_effect=[0, 0]), sleep=Mock())
+        scope = {"Log": Mock(), "subprocess": process, "time": clock,
+                 "os": __import__("os")}
+        exec(compile(ast.fix_missing_locations(module), str(source), "exec"), scope)
+        provider = scope["GoadKingdomsVmwareProvider"]()
+        provider.lab_name = "NORTH"
+        provider.get_runtime_mode = Mock(return_value="unknown")
+        provider.command = Mock()
+        provider.command.run_vagrant.return_value = True
+        provider.path = "/tmp/c1-isolated/provider"
+        provider._vmx_path = Mock(return_value="/tmp/c1-isolated/router.vmx")
+        provider._running_instance_vms = Mock(return_value=["GOAD-ROUTER"])
+        provider._script = Mock(side_effect=lambda x: "/tmp/isolated_" + x.replace("/", "_"))
+        provider._provider_env = Mock(return_value={"KINGDOMS_VMWARE_LAB": "NORTH"})
+        provider.kingdoms_vmware_binding = SimpleNamespace(router_management="10.41.99.1")
+        return provider, process
+
+    def test_north_first_router_boot_rechecks_hostaddrs_and_router_ssh(self):
+        provider, process = self.north_first_router_harness()
+        self.assertTrue(provider._bring_up_router())
+        provider.command.run_vagrant.assert_called_once_with(
+            ["up", "GOAD-ROUTER"], provider.path
+        )
+        calls = [args.args[0] for args in process.run.call_args_list]
+        self.assertEqual(calls[0], [
+            "sudo", "-n", "systemctl", "restart",
+            "kingdoms-north-vmnet-hostaddrs.service",
+        ])
+        self.assertEqual(calls[1], [
+            "bash", "/tmp/isolated_course1_kingdoms-north-vmnet-hostaddrs", "status",
+        ])
+        self.assertEqual(calls[2][0:2], [
+            "bash", "/tmp/isolated_course1_router-ssh.sh",
+        ])
+        self.assertEqual(len(calls), 3)
+        self.assertFalse(any(args and args[0] == "vmrun" for args in calls))
+
+    def test_north_first_router_failure_never_reaches_host_mutation(self):
+        provider, process = self.north_first_router_harness()
+        provider.command.run_vagrant.return_value = False
+        self.assertFalse(provider._bring_up_router())
+        process.run.assert_not_called()
+        provider._running_instance_vms.assert_not_called()
+
+    def test_north_first_router_host_repair_failure_blocks_winrm_boot(self):
+        provider, process = self.north_first_router_harness()
+        process.run.return_value.returncode = 1
+        self.assertFalse(provider._bring_up_router())
+        self.assertEqual(process.run.call_count, 1)
+        self.assertEqual(
+            process.run.call_args.args[0][-1],
+            "kingdoms-north-vmnet-hostaddrs.service",
+        )
+
+    def test_north_installed_router_does_not_reenter_vagrant(self):
+        provider, process = self.north_first_router_harness()
+        provider.get_runtime_mode.return_value = "exercise"
+        self.assertTrue(provider._bring_up_router())
+        provider.command.run_vagrant.assert_not_called()
+        self.assertEqual(process.run.call_count, 3)
+
+    def test_reference_fresh_router_boot_remains_legacy_vagrant_only(self):
+        provider, process = self.north_first_router_harness()
+        provider.lab_name = "GOAD"
+        self.assertTrue(provider._bring_up_router())
+        provider.command.run_vagrant.assert_called_once_with(
+            ["up", "GOAD-ROUTER"], provider.path
+        )
+        process.run.assert_not_called()
+        provider._running_instance_vms.assert_not_called()
 
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
