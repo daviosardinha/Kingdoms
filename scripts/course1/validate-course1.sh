@@ -2,6 +2,9 @@
 # Kingdoms Course 1: ONE offline source-to-preview acceptance command.
 # Never provisions, starts, stops, resets, snapshots or configures a VM.
 set -Eeuo pipefail
+# The regression suite always validates the preview-default guard; an explicit
+# runtime pilot authorization must never leak into a read-only source survey.
+unset KINGDOMS_NORTH_FIRST_INSTALL_PILOT
 
 readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT}"
