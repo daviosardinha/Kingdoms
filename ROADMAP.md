@@ -35,6 +35,13 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   (GOAD stages except ESSOS external-trust provisioning), including child AD,
   WS01, time-backoff, health, Phase 01 and final LPE evidence. Phase 01 now loads
   the selected Kingdoms lab data, preserving the original GOAD behavior.
+- [x] NORTH disposable first install created its router and four Windows VMs
+  under `6ca91b-north-vmware` (provider bring-up 18m35s, October 10).
+  Initial Ansible handoff failed BEFORE playbooks: the shared Ansible timing
+  selector recognized only GOAD, incorrectly entered installed-lab AD-aware
+  mode, and waited 300s for unpromoted DC01. Repair committed with exact
+  pilot authorization, current-instance binding and a mocked pre-AD handoff
+  regression. **Kali acceptance and Ansible provisioning resume pending.**
 - [ ] Run NORTH's full four-guest provisioning on a disposable instance and
   validate AD readiness and service configuration before releasing installation.
 
