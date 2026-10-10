@@ -42,6 +42,20 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   mode, and waited 300s for unpromoted DC01. Repair committed with exact
   pilot authorization, current-instance binding and a mocked pre-AD handoff
   regression. **Kali acceptance and Ansible provisioning resume pending.**
+- [x] Repair retry of an interrupted NORTH first install: classify the exact
+  `10.41.20.0/24 via 10.41.10.1 dev vmnet11` host route from structured
+  iproute2 JSON rather than comparing formatted text. Existing owned route
+  is a no-op; absent route uses non-overwriting add; foreign/ambiguous routes
+  are refused. Allow exact-route rollback after failed first Ansible, apply
+  restrictive NORTH router forwarding without waiting for AD, and explicitly
+  reject invalid Ansible handoff instead of falling back to a 300s DC wait.
+  The read-only readiness CLI now examines this route on an installed NORTH
+  instance. Source/mock regressions committed; **Kali two-stage validation
+  and live installation retry still outstanding.**
+- [x] Complete reference-vs-NORTH lifecycle source audit and next-stage
+  acceptance matrix in `docs/course1-installer-reliability-audit-20261010.md`.
+  Record the unverified 4/5 observed NORTH VMX identities, AD promotion,
+  domain time, SQL/Phase 03 and final NAT/router isolation as separate gates.
 - [ ] Run NORTH's full four-guest provisioning on a disposable instance and
   validate AD readiness and service configuration before releasing installation.
 
