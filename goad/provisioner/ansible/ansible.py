@@ -19,12 +19,29 @@ class Ansible(Provisioner):
         return f'{minutes}m {secs:02d}s'
 
     def _kingdoms_install_profile(self):
-        if self.lab_name != 'GOAD':
+        # The install timing profile is also the in-process lifecycle marker
+        # for a fresh, pre-AD provider -> Ansible handoff. NORTH must enter
+        # this path rather than the installed-lab AD-aware mode controller.
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return None
         profile = getattr(self.provider, '_kingdoms_install_profile', None)
-        if isinstance(profile, dict) and profile.get('status') == 'awaiting_ansible':
-            return profile
-        return None
+        if not isinstance(profile, dict) or profile.get('status') != 'awaiting_ansible':
+            return None
+        if self.lab_name == 'NORTH':
+            from pathlib import Path
+            from goad.course_catalog import north_first_install_pilot_authorized
+
+            # An old timing JSON or a manually invoked playbook cannot
+            # authorize a pre-AD bootstrap. This must be THIS in-process
+            # provider's successful, instance-bound first-install attempt,
+            # with the exact pilot opt-in still active.
+            if (not north_first_install_pilot_authorized()
+                    or profile.get('provider_success') is not True
+                    or profile.get('instance_id') != Path(self.instance_path).name
+                    or not self.provider.is_goad_nomad_segmented()
+                    or not self.provider._north_runtime_allowed()):
+                return None
+        return profile
 
     def _record_kingdoms_ansible_timing(self, phases, label, started, outcome, kind):
         elapsed = time.monotonic() - started
