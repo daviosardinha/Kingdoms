@@ -447,6 +447,67 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         provider._verify_north_instance_sources.assert_not_called()
         provider._check_segmented_instance_conflicts.assert_not_called()
 
+    @staticmethod
+    def north_first_install_harness():
+        """Exercise actual install control flow with all VMware I/O mocked."""
+        source = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        module = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        cls = next(node for node in module.body
+                   if isinstance(node, ast.ClassDef)
+                   and node.name == "GoadKingdomsVmwareProvider")
+        method = next(node for node in cls.body
+                      if isinstance(node, ast.FunctionDef) and node.name == "install")
+        cls.body = [method]
+        cls.bases = [ast.Name(id="object", ctx=ast.Load())]
+        cls.keywords = []
+        cls.decorator_list = []
+        module.body = [cls]
+        process = Mock()
+        process.run.return_value.returncode = 0
+        os_stub = SimpleNamespace(path=SimpleNamespace(isfile=lambda p: True))
+        scope = {"Log": Mock(), "subprocess": process, "os": os_stub}
+        exec(compile(ast.fix_missing_locations(module), str(source), "exec"), scope)
+        provider = scope["GoadKingdomsVmwareProvider"]()
+        provider.lab_name = "NORTH"
+        provider.path = "/tmp/pilot-north/provider"
+        provider.command = Mock()
+        provider.command.run_vagrant.return_value = True
+        provider.goad_nomad_windows = ["GOAD-DC01"]
+        for attr in (
+            "_north_runtime_allowed", "prepare_install",
+            "_sync_goad_nomad_inventories", "_sync_goad_nomad_vagrantfile_compatibility",
+            "_bring_up_router", "_prepare_north_pre_guest_network", "_ensure_vmware_tools",
+            "_authenticated_guest_recovery_ready", "_recover_failed_windows_vagrant_up",
+            "_rollback_north_pre_guest_bootstrap",
+        ):
+            setattr(provider, attr, Mock(return_value=True))
+        provider._script = Mock(return_value="/tmp/course1-route-helper")
+        return provider, process
+
+    def test_failed_north_windows_first_boot_rolls_back_routes(self):
+        provider, process = self.north_first_install_harness()
+        provider._ensure_vmware_tools.return_value = False
+        provider._authenticated_guest_recovery_ready.return_value = False
+        self.assertFalse(provider.install())
+        provider._rollback_north_pre_guest_bootstrap.assert_called_once()
+        process.run.assert_not_called()
+
+    def test_successful_north_handoff_preserves_routes_for_ansible(self):
+        provider, process = self.north_first_install_harness()
+        self.assertTrue(provider.install())
+        provider._prepare_north_pre_guest_network.assert_called_once()
+        provider._rollback_north_pre_guest_bootstrap.assert_not_called()
+        process.run.assert_called_once()
+
+    def test_reference_failed_install_does_not_run_north_rollback(self):
+        provider, process = self.north_first_install_harness()
+        provider.lab_name = "GOAD"
+        provider._ensure_vmware_tools.return_value = False
+        provider._authenticated_guest_recovery_ready.return_value = False
+        self.assertFalse(provider.install())
+        provider._prepare_north_pre_guest_network.assert_not_called()
+        provider._rollback_north_pre_guest_bootstrap.assert_not_called()
+
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
         method = src.split("    def _validated_kingdoms_legacy_plan(", 1)[1].split(
