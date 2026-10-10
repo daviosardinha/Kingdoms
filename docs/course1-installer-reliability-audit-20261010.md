@@ -31,7 +31,12 @@ do not modify Kali source files manually or mutate the reference GOAD lab.
    router forwarding without invoking DC-Locator-dependent installed-lab mode
    transitions. **This is partial compensating cleanup, NOT proof of full
    Windows NAT/exercise isolation.** The instance remains NOT READY.
-6. The unified read-only readiness command, when explicitly scoped to a
+6. If a pending NORTH first-install profile fails its authorization,
+   successful-provider or instance checks, Ansible now refuses it explicitly
+   instead of silently entering the AD-aware mode controller and waiting for
+   an unpromoted DC01. An already-installed/normal run has no such pending
+   first-install profile and retains its standard lifecycle.
+7. The unified read-only readiness command, when explicitly scoped to a
    verified NORTH provider directory, probes the real parent-route state.
    It reports a foreign/unverifiable route BEFORE suggesting another retry.
 
