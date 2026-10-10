@@ -350,8 +350,12 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         self.assertEqual(calls[1], [
             "bash", "/tmp/isolated_course1_kingdoms-north-vmnet-hostaddrs", "status",
         ])
+        # The provider passes the logical helper name to _script();
+        # production maps it to the NORTH-specific course1 helper. Our mock
+        # deliberately exposes that logical name rather than resolving paths.
+        provider._script.assert_any_call("router-ssh.sh")
         self.assertEqual(calls[2][0:2], [
-            "bash", "/tmp/isolated_course1_router-ssh.sh",
+            "bash", "/tmp/isolated_router-ssh.sh",
         ])
         self.assertEqual(len(calls), 3)
         self.assertFalse(any(args and args[0] == "vmrun" for args in calls))
