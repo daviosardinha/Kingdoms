@@ -1010,6 +1010,66 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         )
         return True
 
+    def _reconcile_north_host_addresses(self, phase):
+        """Restore ONLY NORTH .254 vmnet host addresses after VMware guest boot.
+
+        VMware Workstation can replace vmnet11/13's .254 address with its
+        network-editor .1 address when a Windows guest attaches, not just
+        when the router starts. The installed, reference-protected oneshot
+        knows how to repair only these two vmnets, and refuses foreign IPs.
+        A passing status check is read-only and does not restart anything.
+        """
+        if self.lab_name != 'NORTH':
+            return True
+        if not self._north_runtime_allowed():
+            return False
+        checker = self._script('course1/kingdoms-north-vmnet-hostaddrs')
+        if checker is None:
+            return False
+        try:
+            initial = subprocess.run(
+                ['bash', checker, 'status'], check=False, timeout=25,
+            )
+            if initial.returncode == 0:
+                return True
+            if not self._require_cached_sudo():
+                return False
+            Log.warning(
+                f'Kingdoms NORTH: host vmnet drift after {phase}; '
+                'repairing ONLY vmnet11/vmnet13 via protected systemd unit'
+            )
+            repair = subprocess.run(
+                ['sudo', '-n', 'systemctl', 'restart',
+                 'kingdoms-north-vmnet-hostaddrs.service'],
+                check=False, timeout=50,
+            )
+            if repair.returncode != 0:
+                Log.error('Kingdoms NORTH: protected vmnet host-address repair failed')
+                return False
+            verify = subprocess.run(
+                ['bash', checker, 'status'], check=False, timeout=25,
+            )
+            if verify.returncode != 0:
+                Log.error('Kingdoms NORTH: host-address drift persists after repair')
+                return False
+            Log.success(f'Kingdoms NORTH: vmnet host addresses restored after {phase}')
+            return True
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'Kingdoms NORTH: host-address reconciliation failed: {exc}')
+            return False
+
+    def _apply_router_policy(self, mode):
+        if self.lab_name == 'NORTH' and not self._reconcile_north_host_addresses(
+                f'router {mode} policy'):
+            return False
+        return super()._apply_router_policy(mode)
+
+    def _enable_provisioning_routes(self):
+        if self.lab_name == 'NORTH' and not self._reconcile_north_host_addresses(
+                'provisioning route enable'):
+            return False
+        return super()._enable_provisioning_routes()
+
     def _rollback_north_pre_guest_bootstrap(self):
         """Undo NORTH-only pre-guest routing after a partial bootstrap failure.
 
@@ -1143,6 +1203,11 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             for machine in self.goad_nomad_windows:
                 Log.info(f'GOAD_NOMAD: bringing up {machine}')
                 first_up = self.command.run_vagrant(['up', machine], self.path)
+                # Windows Vagrant startup itself can reassign vmnet11/13
+                # from .254 to VMware's .1 before the next protected guest.
+                if self.lab_name == 'NORTH' and not self._reconcile_north_host_addresses(
+                        f'Vagrant up {machine}'):
+                    return False
 
                 tools_ready = self._ensure_vmware_tools(machine)
                 recovery_ready = False
@@ -1166,6 +1231,9 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
                         Log.error(
                             f'GOAD_NOMAD: {machine} still failed after clean Vagrant recovery'
                         )
+                        return False
+                    if self.lab_name == 'NORTH' and not self._reconcile_north_host_addresses(
+                            f'Vagrant recovery {machine}'):
                         return False
 
             # The host has no vmnet20/vmnet30 adapters, so local Ansible must
