@@ -394,6 +394,59 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         process.run.assert_not_called()
         provider._running_instance_vms.assert_not_called()
 
+    @staticmethod
+    def north_pilot_mutation_guard_harness():
+        """Execute the committed direct-call guard without pywinrm imports."""
+        source = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        module = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        cls = next(node for node in module.body
+                   if isinstance(node, ast.ClassDef)
+                   and node.name == "GoadKingdomsVmwareProvider")
+        method = next(node for node in cls.body
+                      if isinstance(node, ast.FunctionDef)
+                      and node.name == "_north_runtime_allowed")
+        cls.body = [method]
+        cls.bases = [ast.Name(id="object", ctx=ast.Load())]
+        cls.keywords = []
+        cls.decorator_list = []
+        module.body = [cls]
+        scope = {"Log": Mock()}
+        exec(compile(ast.fix_missing_locations(module), str(source), "exec"), scope)
+        provider = scope["GoadKingdomsVmwareProvider"]()
+        provider.lab_name = "NORTH"
+        provider.path = "/tmp/disposable-north/provider"
+        provider.kingdoms_vmware_binding = SimpleNamespace(segmented_install_enabled=True)
+        provider._verify_north_instance_sources = Mock(return_value=True)
+        provider._check_segmented_instance_conflicts = Mock(return_value=True)
+        return provider
+
+    def test_north_pilot_direct_provider_requires_bound_source_and_collision_survey(self):
+        provider = self.north_pilot_mutation_guard_harness()
+        self.assertTrue(provider._north_runtime_allowed())
+        provider._verify_north_instance_sources.assert_called_once()
+        provider._check_segmented_instance_conflicts.assert_called_once()
+        provider.path = None
+        provider._verify_north_instance_sources.reset_mock()
+        provider._check_segmented_instance_conflicts.reset_mock()
+        self.assertFalse(provider._north_runtime_allowed())
+        provider._verify_north_instance_sources.assert_not_called()
+        provider._check_segmented_instance_conflicts.assert_not_called()
+
+    def test_north_pilot_direct_provider_rejects_drift_and_collision(self):
+        provider = self.north_pilot_mutation_guard_harness()
+        provider._verify_north_instance_sources.return_value = False
+        self.assertFalse(provider._north_runtime_allowed())
+        provider._check_segmented_instance_conflicts.assert_not_called()
+        provider._verify_north_instance_sources.return_value = True
+        provider._check_segmented_instance_conflicts.return_value = False
+        self.assertFalse(provider._north_runtime_allowed())
+        provider.kingdoms_vmware_binding.segmented_install_enabled = False
+        provider._verify_north_instance_sources.reset_mock()
+        provider._check_segmented_instance_conflicts.reset_mock()
+        self.assertFalse(provider._north_runtime_allowed())
+        provider._verify_north_instance_sources.assert_not_called()
+        provider._check_segmented_instance_conflicts.assert_not_called()
+
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
         method = src.split("    def _validated_kingdoms_legacy_plan(", 1)[1].split(
