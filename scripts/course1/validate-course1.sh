@@ -45,7 +45,9 @@ provider directory; it is inspected read-only and never operated on.
 --survey-host queries ip address/routes, VMware network config, vmrun list,
 and ~/.vmware/inventory.vmls for registered (including powered-off) VMX identities.
 Incomplete visibility stops with nonzero; no vmnets are allocated.
---north-instance-provider is ONLY for read-only post-install acceptance of one\nverified, existing NORTH instance. It is not a VM authorization bypass.\nThe temporary preview is automatically removed on success OR failure.
+--north-instance-provider is ONLY for read-only post-install acceptance of one
+verified, existing NORTH instance. It is not a VM authorization bypass.
+The temporary preview is automatically removed on success OR failure.
 USAGE
 }
 
