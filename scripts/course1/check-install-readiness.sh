@@ -168,7 +168,9 @@ PY
 
 printf '\nINSTALLATION MILESTONES\n'
 echo '[PASS] Native Kingdoms NORTH recipe, static regressions and host networks'
-echo '[BLOCKED] Shared VMware install/start/stop provider still GOAD-only'
+echo '[PASS] Native NORTH source-bound plans reuse the patched Kingdoms provider'
+echo '[PASS] NORTH registered/running guest MAC/vmnet collision preflight is wired'
+echo '[BLOCKED] NORTH release gate and live install/start/stop acceptance pending'
 echo '[BLOCKED] NORTH NAT/AD readiness, WinRM and exercise isolation unproven'
 echo '[BLOCKED] First disposable NORTH Vagrant/Ansible installation not attempted'
 echo '[BLOCKED] SQL/Phase 03 live validation follows first successful installation'

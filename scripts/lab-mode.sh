@@ -1372,11 +1372,24 @@ main() {
         fi
     fi
 
-    # Never interpret a Course 1 four-VM preview as a legacy six-VM range.
-    # This is read-only and executes before status/provisioning/exercise paths.
-    PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
-        python3 -m goad.course1_instance_binding --check-provider "${PROVIDER}" ||
-        fail "Refusing GOAD mode operation: instance profile binding is not approved"
+    # Verify the ACTUAL selected instance before any status/mode action.
+    # NORTH source verification is necessary but is not runtime authority.
+    if [[ "${KINGDOMS_VMWARE_LAB}" == "NORTH" ]]; then
+        PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+            python3 -m goad.course1_bound_lifecycle \
+                --check-provider "${PROVIDER}" --lab NORTH \
+                --action provisioning >/dev/null ||
+            fail "NORTH mode rejected: concrete instance source binding failed"
+        PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+            python3 -c 'from goad.kingdoms_vmware_profile import north_binding; import sys; sys.exit(0 if north_binding().segmented_install_enabled else 1)' ||
+            fail "NORTH runtime not released; refusing host/router/VM mutations"
+    else
+        # Preserve the existing six-guest reference binding and every GOAD
+        # transition exactly as already validated.
+        PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+            python3 -m goad.course1_instance_binding --check-provider "${PROVIDER}" ||
+            fail "Refusing GOAD mode operation: instance profile binding is not approved"
+    fi
 
     case "${1:-status}" in
         exercise)

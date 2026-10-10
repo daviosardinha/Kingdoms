@@ -120,6 +120,7 @@ python3 -m unittest \
     tests.test_course1_native_recipe \
     tests.test_course1_native_ansible \
     tests.test_north_native_instance \
+    tests.test_north_instance_collisions \
     tests.test_course1_install_readiness_cli \
     tests.test_lab_mode_ad_readiness
 

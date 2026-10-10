@@ -103,6 +103,14 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   activation authority**, and all live NORTH provider mutations remain blocked.
 - [x] Retained hardened `start_vm` / `stop_vm` / `stop` dispatch for NORTH
   rather than falling back to generic Vagrant NAT operations once released.
+- [x] NORTH actual `scripts/lab-mode.sh` now verifies the concrete
+  four-guest instance via the existing bound planner, while a separate
+  source-controlled release gate refuses *all* NORTH mode mutations.
+  The reference GOAD binding and lifecycle are preserved.
+- [x] NORTH's real VMware provider preflight will inspect ALL running and
+  registered guest MAC/vmnet identities, allowing only separately identified
+  Vagrant VMX IDs owned by that NORTH instance, and rejecting foreign
+  vmnet11/12/13 guests or duplicate course MACs; no new host mutation.
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.

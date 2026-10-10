@@ -51,3 +51,17 @@ install, provisioning or exercise mode.
 Remaining work includes an approved per-instance NORTH binding, safe provider
 install/start/stop routing, actual WinRM/AD readiness and full guest runtime
 acceptance. Do not use the common controller to operate an unreleased NORTH lab.
+
+## Fail-closed native mode binding (next installation stage)
+
+The existing `scripts/lab-mode.sh` now invokes the **same concrete
+four-guest NORTH bound-instance checker** that the patched Kingdoms provider
+uses. It verifies the actual NORTH provider, Vagrantfile and isolated
+provisioning files rather than mistakenly using the six-guest reference
+binder. After source identity passes, a second, independent release gate
+checks `north_binding().segmented_install_enabled` and refuses any NORTH
+status/provisioning/exercise mutation until the native runtime release.
+Neither a shell variable nor a local profile sidecar can enable it.
+
+GOAD continues to use its original `course1_instance_binding` gate, and
+the active GOAD controller is not changed.

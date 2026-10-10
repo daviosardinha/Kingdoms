@@ -93,6 +93,28 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             Log.error('GOAD Kingdoms: provider path is unavailable for collision preflight')
             return False
 
+        if self.lab_name == 'NORTH':
+            # Examine THIS instance against ALL registered and running VMware
+            # guests. Do not reuse the legacy GOAD-only MAC guard.
+            from goad.north_instance_collisions import inspect_north_guest_collisions
+            from goad.course1_host_survey import host_survey
+            from goad.course1_runtime_contract import ProfileNotReady
+            from goad.kingdoms_vmware_profile import NORTH_PLAN_PATH
+            import json
+            try:
+                proposal = json.loads(NORTH_PLAN_PATH.read_text(encoding='utf-8'))
+                checked = inspect_north_guest_collisions(
+                    self.path, proposal, host_survey()
+                )
+            except (ProfileNotReady, OSError, UnicodeError, ValueError) as exc:
+                Log.error(f'Kingdoms NORTH: VMware instance collision check blocked: {exc}')
+                return False
+            Log.success(
+                'Kingdoms NORTH: registered/running guest collision preflight passed '
+                f'({checked["foreign_vmx_examined"]} foreign VMX)'
+            )
+            return True
+
         guard = self._script('check-vmware-instance-conflicts.sh')
         if guard is None:
             return False

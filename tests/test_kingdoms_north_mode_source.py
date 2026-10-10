@@ -163,6 +163,10 @@ class KingdomsNorthModeSourceTests(unittest.TestCase):
         self.assertIn('NORTH provider is not bound to', script)
         self.assertIn('PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"', script)
         self.assertIn('python3 -m goad.course1_instance_binding --check-provider "${PROVIDER}"', script)
+        self.assertIn('python3 -m goad.course1_bound_lifecycle', script)
+        self.assertIn('--check-provider "${PROVIDER}" --lab NORTH', script)
+        self.assertIn('north_binding().segmented_install_enabled', script)
+        self.assertIn('NORTH runtime not released; refusing host/router/VM mutations', script)
         # Exercise the real method without importing the VMware runtime:
         # a full import requires pywinrm, which is intentionally optional
         # for this source-only offline validation suite.
