@@ -70,27 +70,42 @@ class KingdomsNorthModeSourceTests(unittest.TestCase):
         self.assertNotRegex(source, r"ip[ \t].*route.*(?:10\.4\.|vmnet(?:10|20|30|99))")
 
     def test_host_route_status_is_readonly(self):
+        # The real helper deliberately performs TWO read-only route surveys:
+        # JSON for strict identity and human-readable output for diagnostics.
+        # Reject and record any unexpected command, especially add/del/replace.
         with tempfile.TemporaryDirectory(prefix="kingdoms-north-route-") as folder:
             fake = Path(folder) / "ip"
+            trace = Path(folder) / "ip-calls"
             fake.write_text(
                 "#!/bin/sh\n"
-                "if [ \"$*\" = '-4 route show exact 10.41.20.0/24' ]; then\n"
-                "  echo '10.41.20.0/24 via 10.41.10.1 dev vmnet11'\n"
+                "printf '%s\\n' \"$*\" >> \"$NORTH_TEST_IP_CALLS\"\n"
+                "if [ \"$*\" = '-j -4 route show exact 10.41.20.0/24' ]; then\n"
+                "  echo '[{\"dst\":\"10.41.20.0/24\",\"gateway\":\"10.41.10.1\",\"dev\":\"vmnet11\",\"protocol\":\"boot\",\"scope\":\"global\"}]'\n"
                 "  exit 0\n"
                 "fi\n"
-                "echo 'unexpected ip mutation' >&2\n"
+                "if [ \"$*\" = '-4 route show exact 10.41.20.0/24' ]; then\n"
+                "  echo '10.41.20.0/24 via 10.41.10.1 dev vmnet11 proto boot'\n"
+                "  exit 0\n"
+                "fi\n"
+                "echo 'unexpected ip command (possible mutation)' >&2\n"
                 "exit 17\n",
                 encoding="utf-8",
             )
             fake.chmod(0o755)
             result = subprocess.run(
                 ["bash", str(ROUTES), "status"],
-                env={**os.environ, "PATH": folder + ":" + os.environ["PATH"]},
+                env={**os.environ, "PATH": folder + ":" + os.environ["PATH"],
+                     "NORTH_TEST_IP_CALLS": str(trace)},
                 capture_output=True, text=True, check=False,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("NORTH route identity: owned", result.stdout)
             self.assertIn("10.41.20.0/24 via 10.41.10.1 dev vmnet11",
                           result.stdout)
+            self.assertEqual(trace.read_text(encoding="utf-8").splitlines(), [
+                "-j -4 route show exact 10.41.20.0/24",
+                "-4 route show exact 10.41.20.0/24",
+            ])
 
     def test_router_ssh_refuses_unbound_instances_before_ssh(self):
         with tempfile.TemporaryDirectory(prefix="kingdoms-north-router-") as folder:
