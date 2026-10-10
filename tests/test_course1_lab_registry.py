@@ -74,6 +74,51 @@ assert lab.get_first_provider_name() == 'vmware'
         self.assertEqual(settings.provider_name, "vmware")
         self.assertEqual(settings.provisioner_name, "local")
 
+    def test_north_console_never_inherits_reference_address_range(self):
+        lab = Lab("NORTH", None)
+        manager = SimpleNamespace(
+            is_lab_exist=lambda name: name in ("NORTH", "GOAD"),
+            get_lab=lambda name: lab if name == "NORTH" else None,
+        )
+        settings = Settings(manager)
+        settings.ip_range = "10.4.10"
+        settings.set_lab_name("NORTH")
+        self.assertEqual(settings.ip_range, "10.41.10")
+        settings.set_ip_range("10.4.10")
+        self.assertEqual(settings.ip_range, "10.41.10")
+        settings.set_ip_range("192.168.56")
+        self.assertEqual(settings.ip_range, "10.41.10")
+        settings.set_ip_range("10.41.10")
+        self.assertEqual(settings.ip_range, "10.41.10")
+
+    def test_north_workspace_settings_refuse_foreign_scopes(self):
+        instance = object.__new__(LabInstance)
+        instance.lab_name = "NORTH"
+        instance.provider_name = "vmware"
+        instance.provisioner_name = "local"
+        instance.ip_range = "10.41.10"
+        instance.extensions = []
+        self.assertTrue(instance._north_instance_settings_valid())
+        instance.ip_range = "10.4.10"
+        self.assertFalse(instance._north_instance_settings_valid())
+        instance.ip_range = "10.41.10"
+        instance.provider_name = "virtualbox"
+        self.assertFalse(instance._north_instance_settings_valid())
+        instance.provider_name = "vmware"
+        instance.extensions = ["unreviewed"]
+        self.assertFalse(instance._north_instance_settings_valid())
+
+    def test_north_wrong_scope_load_refuses_before_workspace_access(self):
+        instance = object.__new__(LabInstance)
+        instance.lab_name = "NORTH"
+        instance.provider_name = "vmware"
+        instance.provisioner_name = "local"
+        instance.ip_range = "10.4.10"
+        instance.extensions = []
+        with patch("goad.instance.GoadPath.get_instance_path") as path:
+            self.assertFalse(instance.load(None))
+            path.assert_not_called()
+
     def test_provider_refuses_all_vm_lifecycle_actions(self):
         provider = ProviderFactory.get_provider("vmware", "NORTH", None)
         self.assertIsInstance(provider, PreviewCourseProvider)
