@@ -87,6 +87,34 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertIn("NORTH_CHILD_DC_PROMOTION_VERIFIED", proof)
         self.assertGreaterEqual(tasks[3]["retries"], 2)
 
+    def test_north_member_guards_precede_server_and_workstation_joins(self):
+        plays = self.load(ROOT / "ansible/ad-members.yml")
+        for play, legacy in ((plays[1], "member_server"),
+                             (plays[2], "commonwkstn")):
+            with self.subTest(role=legacy):
+                self.assertEqual(play["roles"][0]["role"],
+                                 "kingdoms_north_member_dns_guard")
+                self.assertEqual(play["roles"][0]["when"],
+                                 "domain_name == 'NORTH'")
+                self.assertEqual(play["roles"][1]["role"], legacy)
+
+    def test_north_member_nat_dns_and_locator_are_instance_bound(self):
+        guard = self.load(
+            ROOT / "ansible/roles/kingdoms_north_member_dns_guard/tasks/main.yml"
+        )
+        for entry, expected_adapter in zip(guard[:2], ("domain_adapter", "nat_adapter")):
+            with self.subTest(adapter=expected_adapter):
+                action = entry["ansible.windows.win_dns_client"]
+                self.assertEqual(action["adapter_names"], "{{ " + expected_adapter + " }}")
+                self.assertEqual(action["ipv4_addresses"],
+                                 ["{{ hostvars[dns_domain].ansible_host }}"])
+        proof = guard[2]["ansible.windows.win_powershell"]["script"]
+        self.assertIn("/dsgetdc:$ExpectedDomain", proof)
+        self.assertIn("addresses[0] -ne $ExpectedDns", proof)
+        self.assertIn("NORTH_MEMBER_DNS_CONTAINMENT_OK", proof)
+        self.assertNotIn(REFERENCE_DC, proof)
+        self.assertEqual(guard[2]["changed_when"], False)
+
     def test_cross_instance_reference_and_north_addresses_remain_distinct(self):
         import json
         lab = json.loads((ROOT / "ad/NORTH/data/config.json").read_text())["lab"]
