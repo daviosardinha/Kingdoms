@@ -26,7 +26,9 @@ Usage: bash scripts/course1/check-install-readiness.sh [--refresh] [--instance-p
 One NORTH installation-readiness command. Runs the full Kingdoms regression
 and host/network survey once per clean Git commit. Later checks reuse the
 passing source tests but resurvey real VMware host/network state each time.
---refresh forces the complete suite again. --instance-provider scopes the\nread-only survey to an existing, exact-source-bound NORTH installation.\nNEVER starts, stops or modifies VMs.
+--refresh forces the complete suite again. --instance-provider scopes the
+read-only survey to an existing, exact-source-bound NORTH installation.
+NEVER starts, stops or modifies VMs.
 Detailed restricted logs: ~/.local/state/kingdoms/course1
 USAGE
     exit 0 ;;
