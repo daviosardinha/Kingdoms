@@ -57,6 +57,9 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertIn("childAddresses[0] -ne $ChildDcIp", script)
         self.assertIn("NORTH_DNS_CONTAINMENT_OK", script)
         self.assertIn("Clear-DnsClientCache", script)
+        self.assertIn("natServers[0] -ne $ParentDns", script)
+        self.assertIn("ChildDcIp, '127.0.0.1'", script)
+        self.assertIn("NORTH DNS containment: unexpected NAT", script)
         self.assertEqual(tasks[1]["changed_when"], False)
         self.assertEqual(tasks[1]["ansible.windows.win_powershell"]["parameters"]["ParentDns"],
                          "{{ hostvars[dns_domain].ansible_host }}")
@@ -76,11 +79,13 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
     def test_north_checks_local_dc_after_reboot_before_dns_zone(self):
         tasks = self.load(PROMOTION)
         self.assertEqual(tasks[1]["when"], "north_child_result.changed")
-        proof = tasks[2]["ansible.windows.win_powershell"]["script"]
+        self.assertEqual(tasks[2]["ansible.windows.win_service"]["name"], "ADWS")
+        self.assertEqual(tasks[2]["ansible.windows.win_service"]["state"], "started")
+        proof = tasks[3]["ansible.windows.win_powershell"]["script"]
         self.assertIn("DomainRole -ne 5", proof)
         self.assertIn("Get-ADDomain -Current LocalComputer", proof)
         self.assertIn("NORTH_CHILD_DC_PROMOTION_VERIFIED", proof)
-        self.assertGreaterEqual(tasks[2]["retries"], 2)
+        self.assertGreaterEqual(tasks[3]["retries"], 2)
 
     def test_cross_instance_reference_and_north_addresses_remain_distinct(self):
         import json
