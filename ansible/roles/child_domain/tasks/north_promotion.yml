@@ -67,6 +67,12 @@
     post_reboot_delay: 100
   when: north_child_result.changed
 
+- name: Ensure NORTH Active Directory Web Services is available for local verification
+  ansible.windows.win_service:
+    name: ADWS
+    start_mode: auto
+    state: started
+
 - name: Verify local NORTH child-domain promotion before DNS-zone tasks
   ansible.windows.win_powershell:
     script: |
