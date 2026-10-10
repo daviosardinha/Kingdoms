@@ -14,6 +14,10 @@ import argparse
 from pathlib import Path
 
 from goad.course1_host_fit import inspect_host_fit
+from goad.north_native_instance import inspect_north_instance_assets
+from goad.north_instance_collisions import (
+    _owned_vmx_identifiers, inspect_north_guest_collisions,
+)
 from goad.course1_network_plan import ZONES, require, validate_proposal
 from goad.course1_runtime_contract import ProfileNotReady
 from goad.course1_host_survey import compact_report
@@ -22,7 +26,8 @@ HOST_ZONES = ("NORTH", "MANAGEMENT")
 REF_HOST_IPS = {"vmnet10": "10.4.10.254/24", "vmnet99": "10.4.99.254/24"}
 
 
-def inspect_network_phase(proposal: dict, snapshot: dict) -> dict:
+def inspect_network_phase(proposal: dict, snapshot: dict,
+                          instance_provider: str | Path | None = None) -> dict:
     validate_proposal(proposal)
     require(isinstance(snapshot, dict)
             and snapshot.get("status") == "OBSERVED_SNAPSHOT",
@@ -86,6 +91,41 @@ def inspect_network_phase(proposal: dict, snapshot: dict) -> dict:
             proposal["zones"][zone]["subnet"]
         ) for zone in HOST_ZONES
     }
+    scoped_provider = Path(instance_provider) if instance_provider is not None else None
+    owned_ids: set[str] = set()
+    owned_count = 0
+    if scoped_provider is not None:
+        # Deployed NORTH's own VMX identities legitimately occupy its
+        # reserved vmnets/MACs. Verify the canonical instance source and
+        # Vagrant ownership before subtracting precisely those identities.
+        inspect_north_instance_assets(scoped_provider)
+        owned_report = inspect_north_guest_collisions(
+            scoped_provider, proposal, snapshot,
+        )
+        require(owned_report["owned_vmx_examined"] > 0,
+                "scoped NORTH survey found no verified instance-owned VMX")
+        owned_ids = set(_owned_vmx_identifiers(scoped_provider, proposal))
+        observed_ids = {
+            vm["vmx_identifier"]
+            for vm in [*snapshot["running_vms"],
+                       *snapshot["registered_inventory"]["registered_vms"]]
+        }
+        owned_count = len(owned_ids & observed_ids)
+        require(owned_count == owned_report["owned_vmx_examined"],
+                "scoped NORTH VMX survey changed during inspection")
+        normalized["running_vms"] = [
+            vm for vm in snapshot["running_vms"]
+            if vm["vmx_identifier"] not in owned_ids
+        ]
+        normalized["running_vm_count"] = len(normalized["running_vms"])
+        normalized["registered_inventory"]["registered_vms"] = [
+            vm for vm in snapshot["registered_inventory"]["registered_vms"]
+            if vm["vmx_identifier"] not in owned_ids
+        ]
+        normalized["registered_inventory"]["registered_vm_count"] = len(
+            normalized["registered_inventory"]["registered_vms"]
+        )
+
     filtered = []
     for route in snapshot.get("ipv4_routes", []):
         dev = route.get("interface")
@@ -98,6 +138,13 @@ def inspect_network_phase(proposal: dict, snapshot: dict) -> dict:
                 pass
         if (dev in owned_nets and isinstance(net, ipaddress.IPv4Network)
                 and net.subnet_of(owned_nets[dev])):
+            continue
+        if (scoped_provider is not None
+                and dev == proposal["zones"]["NORTH"]["vmnet"]
+                and target == proposal["zones"]["SEVENKINGDOMS"]["subnet"]
+                and route.get("gateway") == proposal["zones"]["NORTH"]["gateway"]):
+            # Only the expected temporary parent route may be normalized;
+            # foreign routes, vmnets and VMX remain collision evidence.
             continue
         filtered.append(route)
     normalized["ipv4_routes"] = filtered
@@ -119,6 +166,7 @@ def inspect_network_phase(proposal: dict, snapshot: dict) -> dict:
         "reference_host_addresses_preserved": True,
         "registered_vm_count": conflict["registered_vm_count"],
         "running_vm_count": snapshot["running_vm_count"],
+        "north_owned_vmx_verified": owned_count,
         "host_networks_modified": False,
         "guest_lifecycle_authorized": False,
         "deployment_authorized": False,
@@ -129,12 +177,16 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--proposal", type=Path, required=True)
     p.add_argument("--snapshot", type=Path, required=True)
+    p.add_argument("--instance-provider", type=Path,
+                   help="explicit deployed NORTH provider for scoped survey")
     args = p.parse_args()
     try:
         proposal = json.loads(args.proposal.read_text(encoding="utf-8"))
         snapshot = json.loads(args.snapshot.read_text(encoding="utf-8"))
         print(json.dumps(compact_report(snapshot), indent=2))
-        result = inspect_network_phase(proposal, snapshot)
+        result = inspect_network_phase(
+            proposal, snapshot, instance_provider=args.instance_provider,
+        )
         print(json.dumps(result, indent=2))
         print("[BLOCKED] Host/VM network status does not authorize course installation")
     except (ProfileNotReady, KeyError, OSError, ValueError, TypeError) as exc:
