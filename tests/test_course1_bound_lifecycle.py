@@ -69,6 +69,53 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
                 plan_bound_instance(Path(temp), "start")
             self.assertEqual(list(Path(temp).iterdir()), [])
 
+    def test_native_north_provider_has_four_guest_bound_plan_only(self):
+        import shutil
+        from goad.instance import LabInstance
+        from goad.utils import VMWARE, PROVISIONING_LOCAL
+        from goad.kingdoms_vmware_profile import north_binding
+        with tempfile.TemporaryDirectory(prefix="kingdoms-north-bound-") as temp:
+            root = Path(temp)
+            (root / "provider").mkdir()
+            inst = object.__new__(LabInstance)
+            inst.lab_name = "NORTH"
+            inst.provider_name = VMWARE
+            inst.provisioner_name = PROVISIONING_LOCAL
+            inst.ip_range = "10.41.10"
+            inst.instance_path = str(root)
+            inst.instance_provider_path = str(root / "provider")
+            inst.extensions = []
+            inst._create_vagrantfile()
+            inst._stage_north_vmware_assets()
+            shutil.copyfile(ROOT / "ad/NORTH/providers/vmware/inventory", root / "inventory")
+            shutil.copyfile(ROOT / "ad/NORTH/data/inventory_disable_vagrant",
+                            root / "inventory_disable_vagrant")
+            plan = plan_bound_instance(root / "provider", "start", "GOAD-WS01", lab_name="NORTH")
+            self.assertEqual(plan.phases[1].machines,
+                             ("GOAD-DC01", "GOAD-DC02", "GOAD-WS01"))
+            self.assertEqual(dict(plan.management_hosts)["GOAD-WS01"], "10.41.10.31")
+            self.assertEqual(plan.execution, "BLOCKED_STATIC_PLAN_ONLY")
+            stopped = plan_bound_instance(root / "provider", "stop", lab_name="NORTH")
+            self.assertEqual(set(stopped.phases[0].machines),
+                             set(north_binding().roster.windows))
+            self.assertNotIn("GOAD-SRV03", stopped.phases[0].machines)
+            proc = subprocess.run(
+                [sys.executable, "-m", "goad.course1_bound_lifecycle",
+                 "--check-provider", str(root / "provider"),
+                 "--lab", "NORTH", "--action", "start", "--machine", "GOAD-WS01"],
+                cwd=ROOT, capture_output=True, text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            result = json.loads(proc.stdout)
+            self.assertEqual(result["binding"], "VERIFIED_NORTH_SOURCE_ONLY")
+            self.assertEqual(result["activation"], "NOT_AUTHORIZED_BY_THIS_CHECK")
+
+    def test_north_binding_refuses_reference_provider_and_untrusted_lab(self):
+        with self.assertRaises(ProfileNotReady):
+            plan_bound_instance(self.fake(), "start", lab_name="NORTH")
+        with self.assertRaises(ProfileNotReady):
+            plan_bound_instance(self.fake(), "start", lab_name="ESSOS")
+
     def test_cli_only_plans_and_cannot_activate(self):
         provider = self.fake()
         original = (provider / "Vagrantfile").read_bytes()

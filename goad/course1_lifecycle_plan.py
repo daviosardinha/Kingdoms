@@ -49,8 +49,13 @@ def plan_lifecycle(
     their historical lab-mode exercise DC order. Nothing returned here is an
     activation authorization or an installed-instance binding.
     """
+    # A NORTH roster with isolated 10.41.x addresses may only come from the
+    # committed Kingdoms network binding. This is read-only planning, NOT
+    # authorization to start any guest.
     if roster is not FULL and roster is not COURSE1:
-        raise ProfileNotReady("only the two canonical offline roster definitions are accepted")
+        from goad.kingdoms_vmware_profile import north_binding
+        if roster != north_binding().roster:
+            raise ProfileNotReady("roster is not a recognized Kingdoms lab binding")
 
     if action not in ("start", "stop", "reset", "provisioning", "exercise"):
         raise ProfileNotReady("unsupported offline lifecycle action")

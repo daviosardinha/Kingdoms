@@ -16,20 +16,31 @@ from pathlib import Path
 from goad.course1_instance_binding import inspect_instance_binding
 from goad.course1_lifecycle_plan import OfflineLifecyclePlan, plan_lifecycle
 from goad.course1_runtime_contract import FULL, ProfileNotReady
+from goad.kingdoms_vmware_profile import north_binding
+from goad.north_native_instance import inspect_north_instance_assets
 
 
 def plan_bound_instance(
-    provider_dir: str | Path, action: str, machine: str | None = None
+    provider_dir: str | Path, action: str, machine: str | None = None,
+    lab_name: str = "GOAD",
 ) -> OfflineLifecyclePlan:
-    """Inspect the *concrete* provider Vagrantfile and return a legacy plan.
+    """Read-only dependency plan for a concrete, source-verified instance.
 
-    Strictly reference-only until a separately audited Course 1 activation
-    contract exists. Does not alter disk files, runtime state or guest power.
+    GOAD keeps the historical six-guest contract. NORTH is only recognized
+    if the REAL Kingdoms-generated instance matches every native source
+    identity; this does not confer installation or VM runtime authority.
     """
-    profile = inspect_instance_binding(provider_dir)
-    if profile is not FULL:
-        raise ProfileNotReady("only validated reference Kingdoms instances can be planned")
-    return plan_lifecycle(profile, action, machine)
+    if lab_name == "GOAD":
+        profile = inspect_instance_binding(provider_dir)
+        if profile is not FULL:
+            raise ProfileNotReady("only validated reference Kingdoms instances can be planned")
+        return plan_lifecycle(profile, action, machine)
+    if lab_name == "NORTH":
+        verified = inspect_north_instance_assets(provider_dir)
+        if verified["runtime_authorized"]:
+            raise ProfileNotReady("NORTH source binding cannot grant runtime authorization")
+        return plan_lifecycle(north_binding().roster, action, machine)
+    raise ProfileNotReady("unknown Kingdoms runtime lab identity")
 
 
 def main() -> None:
@@ -41,13 +52,19 @@ def main() -> None:
         choices=("start", "stop", "reset", "provisioning", "exercise")
     )
     parser.add_argument("--machine", help="optional start target, including GOAD-ROUTER")
+    parser.add_argument("--lab", choices=("GOAD", "NORTH"), default="GOAD",
+                        help="explicit lab identity; never authorizes VM lifecycle")
     args = parser.parse_args()
     try:
-        plan = plan_bound_instance(args.check_provider, args.action, args.machine)
+        plan = plan_bound_instance(args.check_provider, args.action, args.machine,
+                                   lab_name=args.lab)
     except (ProfileNotReady, OSError, UnicodeError) as exc:
         parser.exit(1, "[BLOCK] " + str(exc) + "\n")
     result = plan.as_dict()
-    result["binding"] = "VERIFIED_REFERENCE_INSTANCE"
+    result["binding"] = (
+        "VERIFIED_REFERENCE_INSTANCE" if args.lab == "GOAD"
+        else "VERIFIED_NORTH_SOURCE_ONLY"
+    )
     result["activation"] = "NOT_AUTHORIZED_BY_THIS_CHECK"
     print(json.dumps(result, indent=2))
 

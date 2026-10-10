@@ -81,6 +81,17 @@ class NorthNativeInstanceTests(unittest.TestCase):
         self.assertIn("kingdoms-north-vmnet-hostaddrs.service", src)
         self.assertIn("is_north = self.lab_name == 'NORTH'", src)
 
+    def test_planner_is_explicitly_source_only(self):
+        from goad.course1_bound_lifecycle import plan_bound_instance
+        from goad.course1_runtime_contract import ProfileNotReady
+        root, provider = self.fixture()
+        plan = plan_bound_instance(provider, "exercise", lab_name="NORTH")
+        self.assertEqual(plan.execution, "BLOCKED_STATIC_PLAN_ONLY")
+        self.assertEqual(plan.phases[0].machines,
+                         ("GOAD-SRV02", "GOAD-WS01"))
+        with self.assertRaises(ProfileNotReady):
+            plan_bound_instance(provider, "start", "GOAD-SRV03", lab_name="NORTH")
+
     def test_do_not_write_to_existing_instance(self):
         root, provider = self.fixture()
         before = {str(p.relative_to(root)): p.read_bytes()

@@ -95,6 +95,14 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   install, start/stop, per-VM start/stop, reset, snapshot and destroy, not
   only `./goad.sh` console. The future shared segmented provider dispatch and
   host-address/router service selection use NORTH's own vmnet11/12/13 paths.
+- [x] The existing `plan_bound_instance` now recognizes native NORTH only
+  after verifying the actual Kingdoms-generated five-machine Vagrantfile,
+  inventories, VMnets/MACs/IPs and instance-local scripts. It produces the real
+  10.41.x start/stop dependency plans used by the **shared** hardened provider;
+  reference six-machine plans remain unchanged. **Read-only plans are not
+  activation authority**, and all live NORTH provider mutations remain blocked.
+- [x] Retained hardened `start_vm` / `stop_vm` / `stop` dispatch for NORTH
+  rather than falling back to generic Vagrant NAT operations once released.
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.

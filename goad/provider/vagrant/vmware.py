@@ -329,6 +329,8 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         A reduced recipe, missing/unknown machines, or a preview marker is
         rejected BEFORE source inventory/Vagrantfile synchronization or VM work.
         """
+        if self.lab_name == 'NORTH':
+            return self._verify_north_instance_sources()
         if self.lab_name != 'GOAD':
             return True
         from goad.course1_instance_binding import inspect_instance_binding

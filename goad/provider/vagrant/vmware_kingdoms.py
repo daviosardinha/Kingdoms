@@ -720,6 +720,22 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         from goad.course1_bound_lifecycle import plan_bound_instance
         from goad.course1_runtime_contract import FULL, ProfileNotReady
 
+        if self.lab_name == 'NORTH':
+            # Real source-bound four-guest planning, not an arbitrary profile
+            # flag. The runtime authorization check is a separate hard gate.
+            if not self._north_runtime_allowed():
+                return None
+            from goad.kingdoms_vmware_profile import north_binding
+            binding = north_binding()
+            if (tuple(self.goad_nomad_windows) != binding.roster.windows
+                    or dict(self.management_hosts) != dict(binding.roster.management_hosts)):
+                Log.error('Kingdoms NORTH: provider roster/address does not match course binding')
+                return None
+            try:
+                return plan_bound_instance(self.path, action, machine, lab_name='NORTH')
+            except (ProfileNotReady, OSError, UnicodeError, ValueError) as exc:
+                Log.error(f'Kingdoms NORTH: rejected installed instance lifecycle plan: {exc}')
+                return None
         if tuple(self.goad_nomad_windows) != FULL.windows:
             Log.error(
                 'Kingdoms: unsupported instance Windows roster; '
@@ -739,7 +755,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Start one installed guest, plus its router dependency when needed."""
         if not self._north_runtime_allowed():
             return False
-        if self.lab_name != 'GOAD':
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().start_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
             Log.error(f'GOAD Kingdoms: unknown instance machine: {vm_name}')
@@ -751,9 +767,11 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Stop one instance guest locally; preserve routing for live Windows."""
         if not self._north_runtime_allowed():
             return False
-        if self.lab_name != 'GOAD':
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop_vm(vm_name)
         if not self._require_full_goad_instance_binding():
+            return False
+        if self.lab_name == 'NORTH' and not self._verify_north_instance_sources():
             return False
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
             Log.error(f'GOAD Kingdoms: unknown instance machine: {vm_name}')
@@ -776,9 +794,11 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Shut down members, then DCs, then the router without Vagrant NAT."""
         if not self._north_runtime_allowed():
             return False
-        if self.lab_name != 'GOAD':
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop()
         if not self._require_full_goad_instance_binding():
+            return False
+        if self.lab_name == 'NORTH' and not self._verify_north_instance_sources():
             return False
         stop_plan = self._validated_kingdoms_legacy_plan("stop")
         if stop_plan is None:
