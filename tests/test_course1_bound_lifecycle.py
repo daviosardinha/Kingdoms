@@ -1,13 +1,14 @@
 """Instance-bound lifecycle planning and fail-closed controller contracts."""
 import ast
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, call
+from unittest.mock import Mock, call, patch
 
 from goad.course1_bound_lifecycle import plan_bound_instance
 from goad.course1_runtime_contract import FULL, ProfileNotReady
@@ -507,6 +508,109 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         self.assertFalse(provider.install())
         provider._prepare_north_pre_guest_network.assert_not_called()
         provider._rollback_north_pre_guest_bootstrap.assert_not_called()
+
+    @staticmethod
+    def north_ansible_first_boot_harness():
+        """Compile real Ansible handoff and provider guard without pywinrm."""
+        ansible_path = ROOT / "goad/provisioner/ansible/ansible.py"
+        ansible_ast = ast.parse(
+            ansible_path.read_text(encoding="utf-8"), filename=str(ansible_path)
+        )
+        ansible_class = next(
+            node for node in ansible_ast.body
+            if isinstance(node, ast.ClassDef) and node.name == "Ansible"
+        )
+        methods = [
+            node for node in ansible_class.body
+            if isinstance(node, ast.FunctionDef) and node.name in (
+                "_kingdoms_install_profile", "run"
+            )
+        ]
+        if len(methods) != 2:
+            raise AssertionError("Real Ansible profile selector or run method missing")
+        provider_path = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        provider_ast = ast.parse(
+            provider_path.read_text(encoding="utf-8"), filename=str(provider_path)
+        )
+        provider_class = next(
+            node for node in provider_ast.body
+            if isinstance(node, ast.ClassDef)
+            and node.name == "GoadKingdomsVmwareProvider"
+        )
+        bootstrap = next(
+            node for node in provider_class.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_fresh_install_bootstrap_pending"
+        )
+        scope = {"time": __import__("time"), "Log": Mock()}
+        code = ast.Module(body=methods + [bootstrap], type_ignores=[])
+        exec(compile(ast.fix_missing_locations(code), str(ansible_path), "exec"), scope)
+        profile = {
+            "instance_id": "disposable-north", "provider_success": True,
+            "status": "awaiting_ansible", "ansible_phases": [],
+            "started": 0, "_path": "/tmp/unwritten-install-timing.json",
+        }
+        provider = SimpleNamespace(
+            _kingdoms_install_profile=profile,
+            _north_runtime_allowed=Mock(return_value=True),
+            is_goad_nomad_segmented=Mock(return_value=True),
+            get_runtime_mode=Mock(return_value="unknown"),
+            _save_install_profile=Mock(return_value=True),
+        )
+        from types import MethodType
+        provider._fresh_install_bootstrap_pending = MethodType(
+            scope["_fresh_install_bootstrap_pending"], provider,
+        )
+        controller = SimpleNamespace(
+            lab_name="NORTH", provider=provider,
+            instance_path="/tmp/disposable-north",
+            _active_install_profile=None,
+            _save_install_profile=provider._save_install_profile,
+            _emit_kingdoms_install_timing=Mock(),
+        )
+        controller._kingdoms_install_profile = MethodType(
+            scope["_kingdoms_install_profile"], controller,
+        )
+        controller._run = Mock(
+            side_effect=lambda playbook, install_profile:
+                provider._fresh_install_bootstrap_pending()
+        )
+        controller.run = MethodType(scope["run"], controller)
+        return controller, provider, profile
+
+    def test_north_fresh_install_handoff_enters_pre_ad_bootstrap_before_playbooks(self):
+        from goad.course_catalog import NORTH_PILOT_ENV, NORTH_PILOT_ID
+        controller, provider, profile = self.north_ansible_first_boot_harness()
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+            self.assertTrue(controller.run())
+        controller._run.assert_called_once()
+        self.assertEqual(controller._run.call_args.args[1], profile)
+        self.assertEqual(profile["status"], "completed")
+        provider._north_runtime_allowed.assert_called_once()
+
+    def test_north_fresh_handoff_rejects_wrong_instance_and_missing_approval(self):
+        from goad.course_catalog import NORTH_PILOT_ENV, NORTH_PILOT_ID
+        controller, provider, profile = self.north_ansible_first_boot_harness()
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: "invalid"}):
+            self.assertIsNone(controller._kingdoms_install_profile())
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+            profile["instance_id"] = "other-instance"
+            self.assertIsNone(controller._kingdoms_install_profile())
+            profile["instance_id"] = "disposable-north"
+            profile["provider_success"] = False
+            self.assertIsNone(controller._kingdoms_install_profile())
+            profile["provider_success"] = True
+            self.assertIs(controller._kingdoms_install_profile(), profile)
+            provider.get_runtime_mode.return_value = "provisioning"
+            profile["status"] = "ansible_running"
+            self.assertFalse(provider._fresh_install_bootstrap_pending())
+
+    def test_reference_install_profile_selection_still_accepts_goad(self):
+        controller, provider, profile = self.north_ansible_first_boot_harness()
+        controller.lab_name = "GOAD"
+        profile["instance_id"] = "reference-instance"
+        self.assertIs(controller._kingdoms_install_profile(), profile)
+        provider._north_runtime_allowed.assert_not_called()
 
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
