@@ -372,3 +372,10 @@ A provider and platform combination is supported only when all of the following 
 - [ ] Runtime segmentation validation passes.
 - [ ] Repeated install, start and stop operations are idempotent.
 - [ ] Installation and recovery documentation is complete.
+
+- [x] Add explicit `--instance-provider` to the unified read-only readiness
+  survey after the first live NORTH boot. The original pre-install checker
+  interpreted NORTH-owned running VMX MACs and its exact temporary parent
+  route as foreign allocation collisions. Reuse instance-bound VMX ownership
+  and reject genuinely foreign NICs/routes; never weaken the pre-allocation
+  gate. Mocked regressions committed; Kali validation pending.
