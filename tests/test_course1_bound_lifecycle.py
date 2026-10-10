@@ -1,10 +1,12 @@
 """Instance-bound lifecycle planning and fail-closed controller contracts."""
+import ast
 import json
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from goad.course1_bound_lifecycle import plan_bound_instance
 from goad.course1_runtime_contract import FULL, ProfileNotReady
@@ -148,43 +150,58 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
                         reset.index("['snapshot', 'pop', '--no-delete', '--no-start']"))
         self.assertIn("reduced lifecycle activation is not yet approved", text)
 
-    def test_north_reset_refuses_bad_instance_before_snapshot_mutation(self):
-        from unittest.mock import patch
-        from goad.provider.vagrant.vmware_kingdoms import GoadKingdomsVmwareProvider
+    @staticmethod
+    def north_reset_harness():
+        """Execute the actual provider reset method without importing WinRM/VMware.
 
-        provider = object.__new__(GoadKingdomsVmwareProvider)
+        The offline source suite intentionally uses system Python; the full
+        provider imports pywinrm, a runtime-only dependency. Extract only the
+        committed method AST and execute it with mocked I/O boundaries.
+        """
+        source = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        module = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        provider_class = next(
+            node for node in module.body
+            if isinstance(node, ast.ClassDef) and node.name == "GoadKingdomsVmwareProvider"
+        )
+        reset = next(
+            node for node in provider_class.body
+            if isinstance(node, ast.FunctionDef) and node.name == "reset"
+        )
+        provider_class.body = [reset]
+        provider_class.bases = [ast.Name(id="object", ctx=ast.Load())]
+        provider_class.keywords = []
+        provider_class.decorator_list = []
+        module.body = [provider_class]
+        scope = {"Log": Mock()}
+        exec(compile(ast.fix_missing_locations(module), str(source), "exec"), scope)
+        provider = scope["GoadKingdomsVmwareProvider"]()
         provider.lab_name = "NORTH"
-        with (
-            patch.object(provider, "_north_runtime_allowed", return_value=True),
-            patch.object(provider, "_require_full_goad_instance_binding", return_value=True),
-            patch.object(provider, "_verify_north_instance_sources", return_value=False),
-            patch.object(provider, "_run_vagrant_bounded") as snapshot,
-        ):
-            self.assertFalse(provider.reset())
-            snapshot.assert_not_called()
+        provider._north_runtime_allowed = Mock(return_value=True)
+        provider._require_full_goad_instance_binding = Mock(return_value=True)
+        provider._verify_north_instance_sources = Mock(return_value=True)
+        provider._validated_kingdoms_legacy_plan = Mock(return_value=object())
+        provider._run_vagrant_bounded = Mock(return_value=True)
+        provider.get_runtime_mode = Mock(return_value="exercise")
+        provider._running_instance_vms = Mock(return_value=[])
+        provider._restore_exercise_nic_contract_offline = Mock(return_value=True)
+        return provider
+
+    def test_north_reset_refuses_bad_instance_before_snapshot_mutation(self):
+        provider = self.north_reset_harness()
+        provider._verify_north_instance_sources.return_value = False
+        self.assertFalse(provider.reset())
+        provider._run_vagrant_bounded.assert_not_called()
+        provider._running_instance_vms.assert_not_called()
 
     def test_north_reset_uses_hardened_snapshot_and_exercise_isolation(self):
-        from unittest.mock import patch
-        from goad.provider.vagrant.vmware_kingdoms import GoadKingdomsVmwareProvider
-
-        provider = object.__new__(GoadKingdomsVmwareProvider)
-        provider.lab_name = "NORTH"
-        with (
-            patch.object(provider, "_north_runtime_allowed", return_value=True),
-            patch.object(provider, "_require_full_goad_instance_binding", return_value=True),
-            patch.object(provider, "_verify_north_instance_sources", return_value=True),
-            patch.object(provider, "_validated_kingdoms_legacy_plan", return_value=object()),
-            patch.object(provider, "get_runtime_mode", return_value="exercise"),
-            patch.object(provider, "_run_vagrant_bounded", return_value=True) as snapshot,
-            patch.object(provider, "_running_instance_vms", return_value=[]) as running,
-            patch.object(provider, "_restore_exercise_nic_contract_offline", return_value=True) as isolate,
-        ):
-            self.assertTrue(provider.reset())
-            snapshot.assert_called_once_with(
-                ["snapshot", "pop", "--no-delete", "--no-start"], timeout=900
-            )
-            running.assert_called_once()
-            isolate.assert_called_once()
+        provider = self.north_reset_harness()
+        self.assertTrue(provider.reset())
+        provider._run_vagrant_bounded.assert_called_once_with(
+            ["snapshot", "pop", "--no-delete", "--no-start"], timeout=900
+        )
+        provider._running_instance_vms.assert_called_once()
+        provider._restore_exercise_nic_contract_offline.assert_called_once()
 
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
