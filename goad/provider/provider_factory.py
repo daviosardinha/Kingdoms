@@ -1,6 +1,6 @@
 from goad.utils import *
 from goad.dependencies import Dependencies
-from goad.course_catalog import course_manifest
+from goad.course_catalog import course_manifest, north_first_install_pilot_authorized
 from goad.provider.course_preview import PreviewCourseProvider
 
 
@@ -15,6 +15,11 @@ class ProviderFactory:
             # Never reuse the legacy GOAD provider for an unreleased course.
             if (provider_name == VMWARE and Dependencies.vmware_enabled
                     and provider_name in course["providers"]):
+                if lab_name == "NORTH" and north_first_install_pilot_authorized():
+                    # Instantiate the *same* hardened provider only during
+                    # the explicit disposable pilot, never for other courses.
+                    from goad.provider.vagrant.vmware_kingdoms_profile import ProfiledGoadKingdomsVmwareProvider
+                    return ProfiledGoadKingdomsVmwareProvider(lab_name)
                 return PreviewCourseProvider(lab_name, provider_name)
             return None
         if provider_name == VIRTUALBOX and Dependencies.virtualbox_enabled:
