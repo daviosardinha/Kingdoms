@@ -1098,61 +1098,68 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         if self.lab_name == 'NORTH' and not self._prepare_north_pre_guest_network():
             return False
 
-        # A fresh Windows box can fail its first VMware/Vagrant guest operation
-        # for two different reasons: Tools may genuinely be absent, or Tools may
-        # already be healthy while Vagrant's guest-communication/provisioner
-        # transition is still unstable. _ensure_vmware_tools() covers the first
-        # case and proves baseline guest readiness for both. Any failed first
-        # vagrant up then gets one clean graceful-stop -> up --provision recovery.
-        for machine in self.goad_nomad_windows:
-            Log.info(f'GOAD_NOMAD: bringing up {machine}')
-            first_up = self.command.run_vagrant(['up', machine], self.path)
+        north_handoff_complete = False
+        try:
+            # A fresh Windows box can fail its first VMware/Vagrant guest operation
+            # for two different reasons: Tools may genuinely be absent, or Tools may
+            # already be healthy while Vagrant's guest-communication/provisioner
+            # transition is still unstable. _ensure_vmware_tools() covers the first
+            # case and proves baseline guest readiness for both. Any failed first
+            # vagrant up then gets one clean graceful-stop -> up --provision recovery.
+            for machine in self.goad_nomad_windows:
+                Log.info(f'GOAD_NOMAD: bringing up {machine}')
+                first_up = self.command.run_vagrant(['up', machine], self.path)
 
-            tools_ready = self._ensure_vmware_tools(machine)
-            recovery_ready = False
-            if not tools_ready:
-                recovery_ready = self._authenticated_guest_recovery_ready(machine)
-                if not recovery_ready:
-                    return False
-                Log.warning(
-                    f'GOAD Kingdoms: {machine} has authenticated WinRM and healthy '
-                    'VMware Tools but has not reached its canonical KINGDOMS address; '
-                    'allowing one bounded recovery provision cycle'
-                )
-
-            # A failed first up always gets the deterministic recovery cycle.
-            # Also recover an existing/resumed guest when Vagrant itself returns
-            # success but strict Kingdoms readiness is still missing. This is the
-            # exact interrupted state where the NAT adapter works, the lab NIC is
-            # APIPA, and fix_ip.ps1 has not completed.
-            if not first_up or not tools_ready:
-                if not self._recover_failed_windows_vagrant_up(machine):
-                    Log.error(
-                        f'GOAD_NOMAD: {machine} still failed after clean Vagrant recovery'
+                tools_ready = self._ensure_vmware_tools(machine)
+                recovery_ready = False
+                if not tools_ready:
+                    recovery_ready = self._authenticated_guest_recovery_ready(machine)
+                    if not recovery_ready:
+                        return False
+                    Log.warning(
+                        f'GOAD Kingdoms: {machine} has authenticated WinRM and healthy '
+                        'VMware Tools but has not reached its canonical KINGDOMS address; '
+                        'allowing one bounded recovery provision cycle'
                     )
-                    return False
 
-        # The host has no vmnet20/vmnet30 adapters, so local Ansible must
-        # temporarily reach those protected networks through GOAD-ROUTER after
-        # Vagrant has brought the complete instance up.
-        route_script = self._script('provisioning-routes.sh')
-        if not os.path.isfile(route_script):
-            Log.error(f'GOAD_NOMAD provisioning route helper not found: {route_script}')
-            return False
+                # A failed first up always gets the deterministic recovery cycle.
+                # Also recover an existing/resumed guest when Vagrant itself returns
+                # success but strict Kingdoms readiness is still missing. This is the
+                # exact interrupted state where the NAT adapter works, the lab NIC is
+                # APIPA, and fix_ip.ps1 has not completed.
+                if not first_up or not tools_ready:
+                    if not self._recover_failed_windows_vagrant_up(machine):
+                        Log.error(
+                            f'GOAD_NOMAD: {machine} still failed after clean Vagrant recovery'
+                        )
+                        return False
 
-        Log.info('GOAD_NOMAD: enabling temporary host routes for local Ansible provisioning')
-        route_result = subprocess.run(
-            ['sudo', '-n', 'bash', route_script, 'enable'],
-            check=False,
-        )
-        if route_result.returncode != 0:
-            Log.error('GOAD_NOMAD: failed to enable temporary provisioning routes')
-            return False
+            # The host has no vmnet20/vmnet30 adapters, so local Ansible must
+            # temporarily reach those protected networks through GOAD-ROUTER after
+            # Vagrant has brought the complete instance up.
+            route_script = self._script('provisioning-routes.sh')
+            if route_script is None or not os.path.isfile(route_script):
+                Log.error(f'GOAD_NOMAD provisioning route helper not found: {route_script}')
+                return False
 
-        Log.warning(
-            'GOAD_NOMAD: provisioning routes are temporary and must be removed before exercise mode'
-        )
-        return True
+            Log.info('GOAD_NOMAD: enabling temporary host routes for local Ansible provisioning')
+            route_result = subprocess.run(
+                ['sudo', '-n', 'bash', route_script, 'enable'],
+                check=False,
+            )
+            if route_result.returncode != 0:
+                Log.error('GOAD_NOMAD: failed to enable temporary provisioning routes')
+                return False
+
+            Log.warning(
+                'GOAD_NOMAD: provisioning routes are temporary and must be removed before exercise mode'
+            )
+            north_handoff_complete = True
+            return True
+        finally:
+            if self.lab_name == 'NORTH' and not north_handoff_complete:
+                if not self._rollback_north_pre_guest_bootstrap():
+                    Log.error('Kingdoms NORTH: failed installation left cleanup unverified; refusing success')
 
     def _ensure_installed_member_time_policy(self, machine, host):
         """Backfill the bounded NT5DS rediscovery policy on installed members.
