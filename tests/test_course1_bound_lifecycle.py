@@ -612,6 +612,24 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         self.assertIs(controller._kingdoms_install_profile(), profile)
         provider._north_runtime_allowed.assert_not_called()
 
+    def test_north_rejected_first_install_handoff_stops_before_ad_aware_mode(self):
+        from goad.course_catalog import NORTH_PILOT_ENV, NORTH_PILOT_ID
+        controller, provider, profile = self.north_ansible_first_boot_harness()
+        controller._run = Mock(return_value=True)
+        profile["instance_id"] = "foreign-instance"
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+            self.assertFalse(controller.run())
+        controller._run.assert_not_called()
+        self.assertEqual(profile["status"], "awaiting_ansible")
+        provider._save_install_profile.assert_not_called()
+
+    def test_north_no_pending_first_boot_can_use_installed_provisioning(self):
+        controller, provider, profile = self.north_ansible_first_boot_harness()
+        profile["status"] = "completed"
+        controller._run = Mock(return_value=True)
+        self.assertTrue(controller.run())
+        controller._run.assert_called_once_with(None)
+
     def test_north_failed_ansible_closes_route_without_waiting_for_ad(self):
         from goad.course_catalog import NORTH_PILOT_ENV, NORTH_PILOT_ID
         controller, provider, profile = self.north_ansible_first_boot_harness()
