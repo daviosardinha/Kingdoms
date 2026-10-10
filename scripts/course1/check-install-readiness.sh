@@ -139,6 +139,16 @@ PY
   echo '[PASS] NORTH vmnet11/12/13, .254 host addresses and reference protections'
 fi
 
+# A deployed instance can retain the parent provisioning route after a
+# failed playbook. Inspect it BEFORE another install attempt, accepting only
+# the exact expected NORTH route or an absent route. This check is read-only
+# and requires neither sudo nor VMware guest mutations.
+if [[ -n "$NORTH_INSTANCE_PROVIDER" ]]; then
+  ROUTE_STATUS="$(bash scripts/course1/provisioning-routes.sh status 2>> "$LOG")" ||
+    fail "NORTH parent route is foreign/unverifiable; inspect log: $LOG"
+  echo "[PASS] $ROUTE_STATUS"
+fi
+
 # Query the ACTUAL patched Kingdoms source gates, never a decorative checklist.
 if ! python3 - <<'PY'
 from goad.course_catalog import course_manifest, refuse_course_mutation
@@ -188,7 +198,12 @@ echo '[PASS] Native NORTH source-bound plans reuse the patched Kingdoms provider
 echo '[PASS] NORTH registered/running guest MAC/vmnet collision preflight is wired'
 echo '[BLOCKED] NORTH release gate and live install/start/stop acceptance pending'
 echo '[BLOCKED] NORTH NAT/AD readiness, WinRM and exercise isolation unproven'
-echo '[BLOCKED] First disposable NORTH Vagrant/Ansible installation not attempted'
+if [[ -n "$NORTH_INSTANCE_PROVIDER" ]]; then
+  echo '[PASS] Existing NORTH instance inspected; VMware guest bring-up attempted'
+  echo '[BLOCKED] Native Ansible AD provisioning and final exercise isolation remain unproven'
+else
+  echo '[BLOCKED] First disposable NORTH Vagrant/Ansible installation not attempted'
+fi
 echo '[BLOCKED] SQL/Phase 03 live validation follows first successful installation'
 printf '\nRESULT: NOT INSTALLABLE YET; no guest, host network, or installed lab was changed.\n'
 printf 'Detailed log: %s\n' "$LOG"
