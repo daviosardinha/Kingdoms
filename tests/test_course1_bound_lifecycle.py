@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 from goad.course1_bound_lifecycle import plan_bound_instance
 from goad.course1_runtime_contract import FULL, ProfileNotReady
@@ -202,6 +202,101 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         )
         provider._running_instance_vms.assert_called_once()
         provider._restore_exercise_nic_contract_offline.assert_called_once()
+
+    @staticmethod
+    def north_pre_guest_harness():
+        """Run committed NORTH pre-guest methods without requiring pywinrm."""
+        source = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        module = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        provider_class = next(
+            node for node in module.body
+            if isinstance(node, ast.ClassDef) and node.name == "GoadKingdomsVmwareProvider"
+        )
+        provider_class.body = [
+            node for node in provider_class.body
+            if isinstance(node, ast.FunctionDef) and node.name in (
+                "_prepare_north_pre_guest_network",
+                "_rollback_north_pre_guest_bootstrap",
+            )
+        ]
+        if len(provider_class.body) != 2:
+            raise AssertionError("NORTH bootstrap methods are missing")
+        provider_class.bases = [ast.Name(id="object", ctx=ast.Load())]
+        provider_class.keywords = []
+        provider_class.decorator_list = []
+        module.body = [provider_class]
+        scope = {"Log": Mock(), "subprocess": Mock()}
+        exec(compile(ast.fix_missing_locations(module), str(source), "exec"), scope)
+        provider = scope["GoadKingdomsVmwareProvider"]()
+        provider.lab_name = "NORTH"
+        provider._north_runtime_allowed = Mock(return_value=True)
+        provider._verify_north_instance_sources = Mock(return_value=True)
+        provider._apply_router_policy = Mock(return_value=True)
+        provider._enable_provisioning_routes = Mock(return_value=True)
+        provider._script = Mock(return_value="/tmp/isolated-north-helper")
+        scope["subprocess"].run.return_value.returncode = 0
+        return provider, scope["subprocess"]
+
+    def test_north_install_prepares_routes_before_first_windows_vagrant_up(self):
+        source = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text()
+        install = source.split("    def install(self):", 1)[1].split(
+            "    def _ensure_installed_member_time_policy(", 1
+        )[0]
+        router = install.index("if not self._bring_up_router():")
+        north_routes = install.index(
+            "if self.lab_name == 'NORTH' and not self._prepare_north_pre_guest_network():"
+        )
+        first_windows = install.index("for machine in self.goad_nomad_windows:")
+        self.assertLess(router, north_routes)
+        self.assertLess(north_routes, first_windows)
+
+    def test_north_pre_guest_routes_follow_router_policy_and_check_binding(self):
+        provider, subprocess_mock = self.north_pre_guest_harness()
+        sequence = Mock()
+        sequence.attach_mock(provider._apply_router_policy, "policy")
+        sequence.attach_mock(provider._enable_provisioning_routes, "routes")
+        self.assertTrue(provider._prepare_north_pre_guest_network())
+        self.assertEqual(sequence.mock_calls, [
+            call.policy("provisioning"), call.routes(),
+        ])
+        provider._north_runtime_allowed.assert_called_once()
+        provider._verify_north_instance_sources.assert_called_once()
+        subprocess_mock.run.assert_not_called()
+
+    def test_north_pre_guest_fails_closed_if_route_enable_fails(self):
+        provider, subprocess_mock = self.north_pre_guest_harness()
+        provider._enable_provisioning_routes.return_value = False
+        self.assertFalse(provider._prepare_north_pre_guest_network())
+        self.assertEqual(provider._apply_router_policy.call_args_list, [
+            call("provisioning"), call("exercise"),
+        ])
+        subprocess_mock.run.assert_called_once_with(
+            ["sudo", "-n", "bash", "/tmp/isolated-north-helper", "disable"],
+            check=False, timeout=30,
+        )
+
+    def test_north_pre_guest_fails_closed_if_router_policy_fails(self):
+        provider, subprocess_mock = self.north_pre_guest_harness()
+        provider._apply_router_policy.side_effect = [False, True]
+        self.assertFalse(provider._prepare_north_pre_guest_network())
+        provider._enable_provisioning_routes.assert_not_called()
+        subprocess_mock.run.assert_called_once()
+
+    def test_north_rollback_reports_incomplete_cleanup(self):
+        provider, subprocess_mock = self.north_pre_guest_harness()
+        subprocess_mock.run.return_value.returncode = 1
+        self.assertFalse(provider._rollback_north_pre_guest_bootstrap())
+        provider._apply_router_policy.assert_called_once_with("exercise")
+
+    def test_go_references_do_not_enter_north_pre_guest_bootstrap(self):
+        provider, subprocess_mock = self.north_pre_guest_harness()
+        provider.lab_name = "GOAD"
+        self.assertTrue(provider._prepare_north_pre_guest_network())
+        provider._north_runtime_allowed.assert_not_called()
+        provider._verify_north_instance_sources.assert_not_called()
+        provider._apply_router_policy.assert_not_called()
+        provider._enable_provisioning_routes.assert_not_called()
+        subprocess_mock.run.assert_not_called()
 
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
