@@ -941,9 +941,11 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """
         if not self._north_runtime_allowed():
             return False
-        if self.lab_name != 'GOAD':
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().reset()
         if not self._require_full_goad_instance_binding():
+            return False
+        if self.lab_name == 'NORTH' and not self._verify_north_instance_sources():
             return False
         if self._validated_kingdoms_legacy_plan("reset") is None:
             return False
