@@ -1495,7 +1495,15 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         back to NAT after a management failure and obscure the original error.
         """
         if self.get_runtime_mode() not in ('exercise', 'provisioning'):
-            return self.command.run_vagrant(['up', 'GOAD-ROUTER'], self.path)
+            if not self.command.run_vagrant(['up', 'GOAD-ROUTER'], self.path):
+                return False
+            if self.lab_name != 'NORTH':
+                # Preserve the validated legacy GOAD first-install behavior.
+                return True
+            # VMware may recreate NORTH vmnet11/13 during the FIRST Vagrant
+            # power-on too. Reuse the installed-router host-address repair,
+            # isolated identity check, and authenticated SSH readiness below
+            # before allowing any Windows guest to be created.
 
         vmx = self._vmx_path('GOAD-ROUTER')
         if not vmx:
