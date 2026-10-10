@@ -15,11 +15,15 @@ committed patched Kingdoms recipe.
 consumes bound plans and now keeps start/stop/per-VM operations on the
 hardened Kingdoms path for NORTH rather than falling back to stock Vagrant.
 
-This is **source-only and read-only** until runtime acceptance:
+The `plan_bound_instance` CLI remains **source-only and read-only** and never grants execution authority:
 `execution=BLOCKED_STATIC_PLAN_ONLY`, `activation=NOT_AUTHORIZED_BY_THIS_CHECK`.
-The `NORTH` course manifest, instance creation, provider and mode operations
-remain blocked. No VMware VM or host route is modified by these checks, and
-the reference six-machine planner remains unchanged.
+By default, NORTH stays PREVIEW: instance creation, provider, and mode
+operations are denied. For the first disposable VMware deployment, the
+source-controlled NORTH manifest now contains an exact pilot identity.
+An operator must also opt in using the exact
+`KINGDOMS_NORTH_FIRST_INSTALL_PILOT` value. Without BOTH approvals the
+preview restrictions remain intact. The pilot is **not** a general Course 1
+release; the original six-machine reference planner remains unchanged.
 
 Remaining work before opening a controlled first installation: make the
 runtime provider identity concrete, protect collision/power-on paths from
@@ -27,3 +31,38 @@ reference VMX overlap, provide a recoverable NORTH mode controller that uses
 the same authenticated AD readiness with the child/parent only, validate
 Windows Vagrant NAT/WinRM and the three NIC router in a disposable live
 instance, and prove reference isolation end to end.
+
+## Controlled first-install pilot — operator runbook
+
+1. Pull a clean, upstream-matched `feature/course1-reduced-profile-source`.
+   Run `bash scripts/course1/check-install-readiness.sh --refresh` with
+   no pilot environment set. All source regressions, VMware inventory,
+   vmnet11/12/13, .254 addresses and reference collision protections must
+   pass. The dashboard intentionally still exits 2 and displays
+   `NOT INSTALLABLE YET` because the course is not generally released.
+2. Confirm no existing NORTH disposable installation is registered on those
+   vmnets. Do not stop or modify the six-guest reference to make this work.
+   Have enough RAM/disk in the actual VMware VM storage volume, not just the
+   repository checkout.
+3. Start the **interactive** native console with:
+   `KINGDOMS_NORTH_FIRST_INSTALL_PILOT=NORTH_VMWARE_DISPOSABLE_FIRST_INSTALL_20261010 ./goad.sh`
+   Then explicitly `unload` any reference instance, `set_lab NORTH`,
+   inspect `settings` (must show FIRST-INSTALL-PILOT, vmware, local), and
+   issue `install`. Never use default/implicit GOAD lab selection.
+4. The pilot requires the four-guest native Vagrantfile and inventories,
+   instance-local WinRM/router assets, static 10.41.10 instance range,
+   and registered/running VMX collision survey BEFORE any provider VM/host
+   mutation. It stages the router first, validates vmnet11/13 host addresses
+   and authenticated management SSH, and enables only NORTH's temporary
+   parent route before Windows startup. A failed Windows first boot attempts
+   exact-route and router-policy rollback. A failed install is NOT a ready lab.
+5. Inspect Vagrant/WinRM/Ansible output and saved install timing. Verify the
+   parent and child AD domains, WinRM, SQL, and Phase 03 in sequence. Run
+   provisioning-to-exercise isolation checks and reference regression before
+   considering promotion from the pilot.
+
+**Safety:** This pilot is a deliberate operator acceptance test, not a guarantee
+of success. Never force `vagrant up` directly, replace a VMX path, merge the
+pilot into main, or disable binding/collision protections to proceed. Pilot
+authorization does not grant `ws01`, `create_empty`, or other independent
+course console shortcuts; use the native full `install` lifecycle only.
