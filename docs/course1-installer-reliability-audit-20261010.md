@@ -162,3 +162,16 @@ installation path and observe its instance-bound preflight restoring
 `.254` BEFORE any Vagrant up. Only AFTER that succeeds, repeat the
 full instance-scoped host readiness and continue with AD/Ansible/exercise
 acceptance. Source tests do NOT prove live repair or isolation.
+
+## Offline regression discovery correction
+
+Kali on `9fad91d` confirmed 55/55 targeted lifecycle/VMnet tests and
+355/355 tests in the canonical `validate-course1.sh` suite. On review, the
+explicit test list unintentionally OMITTED two independently exercised
+modules: `tests.test_course1_north_vmnet_reconciliation` (14 cases) and
+`tests.test_course1_route_state` (6 cases). Both are now included in the
+canonical offline suite, alongside a discovery-contract regression that
+requires these safety modules exactly once. The new full-suite expected count
+is 376, subject to Kali execution. No VM/host runtime changes were made.
+An offline `validate-course1.sh` success does NOT certify the live host while
+vmnet11/13 remain at VMware's `.1` addresses.
