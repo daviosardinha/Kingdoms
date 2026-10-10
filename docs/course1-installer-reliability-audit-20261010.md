@@ -106,3 +106,46 @@ live AD and exercise isolation acceptance; the command must nevertheless
 report all source regressions, host/network/foreign collision gates, and
 the NORTH route classification as passing. If the route remains classified
 foreign, STOP and inspect its raw structured evidence; never delete it by hand.
+
+## Second live resume: Windows Vagrant host-vmnet drift (2026-10-10)
+
+The preserved NORTH instance resumed with all existing VMX files. GOAD-WS01
+was previously powered off but had a valid Vagrant VMX ID. Its subsequent
+`vagrant up GOAD-WS01` completed, with VMware Tools and WinRM healthy at
+`10.41.10.31`. VMware then left `vmnet11` configured as
+`10.41.10.1/24` instead of NORTH's required `10.41.10.254/24`.
+The provisioning-route helper correctly refused to proceed. Rollback reported
+`host owns NORTH router gateway 10.41.99.1`, consistent with management
+vmnet13 having been reassigned to VMware's .1 address as well. The cleanup
+failure was **reported**, not ignored; do not claim exercise isolation from it.
+
+**Root cause in shared Kingdoms lifecycle:** the instance-bound NORTH
+host-address service was invoked immediately after router bring-up, but
+the subsequent Windows Vagrant operations can independently recreate the
+host vmnet adapters. The provider was missing a Windows post-Vagrant
+reconciliation boundary, not an Ansible/WinRM dependency. The original
+reference GOAD recovery path remains unchanged.
+
+**Source correction:** the NORTH provider now performs a read-only
+`kingdoms-north-vmnet-hostaddrs status` after EACH Windows `vagrant up`
+and after bounded guest recovery, before proceeding to the next guest.
+Only on drift, with the original exact-instance collision guard and cached
+sudo authorization still valid, it restarts
+`kingdoms-north-vmnet-hostaddrs.service` and verifies status again.
+The established helper only repairs vmnet11 and vmnet13 from allowed .1/absent
+states to their expected .254; it refuses unexpected addresses, missing
+reference .254, or host presence on isolated vmnet12. NORTH route enable
+and router policy application independently require the same reconciliation,
+including during compensating failure rollback. No runtime changes are made
+by Git pull or the offline tests.
+
+**Boundaries to keep:** do not restart all VMware networking, modify
+`/etc/vmware/networking`, power off any reference guest, alter vmnet10/20/30/99,
+or manually add/delete host routes. The installer must report fail-closed
+if reconciliation cannot establish the exact expected host addresses.
+
+**New acceptance gate:** Kali must pass
+`tests.test_course1_north_vmnet_reconciliation`, the updated real-install
+AST mocks in `tests.test_course1_bound_lifecycle`, and the complete
+instance-scoped readiness. Live exercise-isolation/AD validation is still
+pending; source tests do NOT prove either.
