@@ -23,7 +23,10 @@ class NorthReadinessDashboardTests(unittest.TestCase):
     def test_dashboard_caches_only_source_but_resurveys_live_vmware(self):
         content = CHECK.read_text()
         self.assertIn('git status --porcelain', content)
-        self.assertIn('validate-course1.sh --survey-host', content)
+        self.assertIn('validate_args=(--survey-host)', content)
+        self.assertIn('validate-course1.sh "${validate_args[@]}"', content)
+        self.assertIn('--instance-provider', content)
+        self.assertIn('instance_provider=sys.argv[3] or None', content)
         self.assertIn("offline-pass.txt", content)
         self.assertIn("goad.course1_host_survey --check --json-only", content)
         self.assertIn("inspect_network_phase", content)
