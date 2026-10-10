@@ -124,6 +124,16 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.
+- [x] Commit controlled NORTH *first-install pilot* in the native course
+  manifest, shared console/provider dispatch and four-guest instance writer,
+  requiring the exact operator acknowledgement. Default remains PREVIEW.
+  Pin 10.41.10, reject non-VMware/non-local/extended or foreign instance
+  scopes, and recheck source identity plus registered/running VMX collision
+  inventory before provider VM mutations.
+- [x] Keep read-only validation independent from operator pilot opt-in.
+  Add offline tests for pilot gating, real disposable workspace staging,
+  post-router/pre-Windows routing, and failed first-Windows cleanup.
+  **Kali runtime regression and disposable first boot still pending.**
 - [ ] Confirm native `./goad.sh` install/start/stop/provisioning/exercise
   on a disposable NORTH instance, including rollback, AD, SQL and Phase 03.
 - [ ] Release NORTH provider only AFTER actual runtime checks pass; until then
