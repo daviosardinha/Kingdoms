@@ -40,7 +40,9 @@ class KingdomsVMwareBinding:
         if len(set(self.roster.management_hosts.values())) != len(self.roster.windows):
             raise ValueError("guest management addresses must be unique")
         if self.lab == "NORTH" and self.segmented_install_enabled:
-            raise ValueError("NORTH runtime is not authorized yet")
+            from goad.course_catalog import north_first_install_pilot_authorized
+            if not north_first_install_pilot_authorized():
+                raise ValueError("NORTH runtime is not authorized yet")
 
 
 REFERENCE = KingdomsVMwareBinding(
@@ -58,6 +60,11 @@ REFERENCE = KingdomsVMwareBinding(
     management_host="10.4.99.254",
     segmented_install_enabled=True,
 )
+
+
+def _north_pilot_runtime_enabled() -> bool:
+    from goad.course_catalog import north_first_install_pilot_authorized
+    return north_first_install_pilot_authorized()
 
 
 def north_binding() -> KingdomsVMwareBinding:
@@ -87,7 +94,7 @@ def north_binding() -> KingdomsVMwareBinding:
         router_management=proposal["zones"]["MANAGEMENT"]["gateway"],
         north_host=proposal["host_addresses"]["NORTH"],
         management_host=proposal["host_addresses"]["MANAGEMENT"],
-        segmented_install_enabled=False,
+        segmented_install_enabled=_north_pilot_runtime_enabled(),
     )
 
 
