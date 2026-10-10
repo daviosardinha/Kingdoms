@@ -7,6 +7,7 @@ a course with a manifest is strictly non-installable.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from goad.goadpath import GoadPath
@@ -61,9 +62,40 @@ def course_manifest(lab_name: str) -> dict | None:
     return info
 
 
+# An explicit disposable-first-install exception, not a general course release.
+# The source-controlled manifest, narrow action allowlist, and operator
+# acknowledgement must all agree. No env variable alone can authorize NORTH.
+NORTH_PILOT_ID = "NORTH_VMWARE_DISPOSABLE_FIRST_INSTALL_20261010"
+NORTH_PILOT_ENV = "KINGDOMS_NORTH_FIRST_INSTALL_PILOT"
+NORTH_PILOT_ACTIONS = frozenset({
+    "install/create", "install", "create_instance",
+    "create_instance_folder", "install_instance",
+    "provide", "provision_lab",
+})
+
+
+def north_first_install_pilot_authorized() -> bool:
+    """Require committed NORTH identity AND an exact operator opt-in."""
+    if os.environ.get(NORTH_PILOT_ENV) != NORTH_PILOT_ID:
+        return False
+    info = course_manifest("NORTH")
+    return bool(
+        info
+        and info.get("lab") == "NORTH"
+        and info.get("runtime_profile") == "course1-fall-of-the-north"
+        and info.get("state") == "PREVIEW_ONLY_NOT_INSTALLABLE"
+        and info.get("providers") == {"vmware": "preview"}
+        and info.get("first_install_pilot") == NORTH_PILOT_ID
+    )
+
+
 def refuse_course_mutation(lab_name: str, action: str) -> bool:
     """True means caller MUST refuse the action; no artifact may be written."""
     if is_course_lab(lab_name):
         course_manifest(lab_name)  # malformed manifests fail closed
+        if (lab_name == "NORTH"
+                and action in NORTH_PILOT_ACTIONS
+                and north_first_install_pilot_authorized()):
+            return False
         return True
     return False
