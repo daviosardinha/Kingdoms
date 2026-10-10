@@ -144,8 +144,16 @@ by Git pull or the offline tests.
 or manually add/delete host routes. The installer must report fail-closed
 if reconciliation cannot establish the exact expected host addresses.
 
+**Initial-retry preflight:** the failed run already left the host with
+VMware's `.1` addresses. The native NORTH `prepare_install()` now runs the
+same guarded reconciliation AFTER instance source/VMX collision checks and
+cached sudo, but BEFORE the inherited preflight demands `.254`. Without this
+additional boundary, every subsequent retry would fail before the new
+post-Windows hooks could run. GOAD's preflight behavior is unchanged.
+
 **New acceptance gate:** Kali must pass
-`tests.test_course1_north_vmnet_reconciliation`, the updated real-install
+`tests.test_course1_north_vmnet_reconciliation` (including preflight,
+post-Windows, policy/route, and rollback cases), the updated real-install
 AST mocks in `tests.test_course1_bound_lifecycle`, and the complete
 instance-scoped readiness. Live exercise-isolation/AD validation is still
 pending; source tests do NOT prove either.
