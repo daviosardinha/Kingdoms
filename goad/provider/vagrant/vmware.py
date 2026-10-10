@@ -322,6 +322,38 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
 
         return self._install_vmware_tools(machine, vmx, port)
 
+    def _require_full_goad_instance_binding(self):
+        """Prevent legacy lifecycle helpers from mutating a reduced instance.
+
+        The existing six-VM GOAD provider is the only activated implementation.
+        A reduced recipe, missing/unknown machines, or a preview marker is
+        rejected BEFORE source inventory/Vagrantfile synchronization or VM work.
+        """
+        if self.lab_name == 'NORTH':
+            return self._verify_north_instance_sources()
+        if self.lab_name != 'GOAD':
+            return True
+        from goad.course1_instance_binding import inspect_instance_binding
+        from goad.course1_runtime_contract import FULL, ProfileNotReady
+        try:
+            return inspect_instance_binding(self.path) is FULL
+        except (ProfileNotReady, OSError, UnicodeError) as exc:
+            Log.error(f'GOAD Kingdoms: blocked non-legacy instance binding: {exc}')
+            return False
+
+    def _verify_north_instance_sources(self):
+        """Read-only gate for the actual NORTH LabInstance-generated assets."""
+        from goad.north_native_instance import inspect_north_instance_assets
+        from goad.course1_runtime_contract import ProfileNotReady
+        try:
+            inspected = inspect_north_instance_assets(self.path)
+        except (ProfileNotReady, OSError, UnicodeError, ValueError) as exc:
+            Log.error(f'Kingdoms NORTH: instance source verification failed: {exc}')
+            return False
+        Log.success('Kingdoms NORTH: native instance source verified '
+                    '(not runtime authorization)')
+        return inspected['status'] == 'NATIVE_INSTANCE_SOURCE_VERIFIED'
+
     def _sync_goad_nomad_vagrantfile_compatibility(self):
         """Backfill current segmented VMware settings into existing instances.
 
@@ -331,6 +363,13 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         small and idempotent so old workspaces gain the same provider settings
         before the next Windows ``vagrant up``.
         """
+        if self.lab_name == 'NORTH':
+            # NORTH is built from the patched Kingdoms template. Never rewrite
+            # it using the reference six-guest WS01 compatibility migration.
+            return self._verify_north_instance_sources()
+
+        if not self._require_full_goad_instance_binding():
+            return False
         vagrantfile = os.path.join(str(self.path), 'Vagrantfile')
         if not os.path.isfile(vagrantfile):
             Log.error(f'GOAD_NOMAD: instance Vagrantfile not found: {vagrantfile}')
@@ -444,6 +483,13 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         those generated files without asking the operator to edit the test
         checkout or workspace manually.
         """
+        if self.lab_name == 'NORTH':
+            # Native NORTH inventories must match its own canonical source,
+            # never be overwritten by the GOAD reference inventory.
+            return self._verify_north_instance_sources()
+
+        if not self._require_full_goad_instance_binding():
+            return False
         instance_path = os.path.dirname(str(self.path))
         provider_source = (
             GoadPath.get_lab_provider_path('GOAD', 'vmware')

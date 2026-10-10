@@ -15,6 +15,7 @@ import threading
 import time
 
 from goad.log import Log
+from goad.course_catalog import refuse_course_mutation
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
 
@@ -196,6 +197,16 @@ class GoadNomad(BaseGoad):
             return provider
         return None
 
+    def _course_preview_blocked(self, action):
+        lab = self.lab_manager.get_current_lab_name()
+        if refuse_course_mutation(lab, action):
+            Log.error(
+                f'Kingdoms {lab}: {action} refused — course is listed as PREVIEW. '
+                'The independent provider/instance is not released yet.'
+            )
+            return True
+        return False
+
     def do_create(self, arg=''):
         """Create a new instance, with an explicit non-interactive CLI path.
 
@@ -203,6 +214,8 @@ class GoadNomad(BaseGoad):
         A command-line -t install is already an explicit operator action and
         must not block or silently abort because stdin is not a TTY.
         """
+        if self._course_preview_blocked("install/create"):
+            return False
         if arg != '--non-interactive':
             return super().do_create(arg)
 
@@ -224,6 +237,8 @@ class GoadNomad(BaseGoad):
         return self.do_install_instance()
     def do_install(self, arg=''):
         """Run a full install and return success only for an installed instance."""
+        if self._course_preview_blocked("install"):
+            return False
         result = self._run_with_install_timer(lambda: self.do_create(arg))
         if result is False:
             return False
@@ -242,6 +257,8 @@ class GoadNomad(BaseGoad):
 
         GOAD_NOMAD treats the current provider return value as authoritative.
         """
+        if self._course_preview_blocked("provide"):
+            return False
         provider = self.lab_manager.get_current_instance_provider()
         if provider is None:
             Log.error('No provider loaded for the current instance')
@@ -278,6 +295,8 @@ class GoadNomad(BaseGoad):
 
     def do_install_instance(self, arg=''):
         """Install/retry an existing instance without trusting stale status."""
+        if self._course_preview_blocked("install_instance"):
+            return False
         if not getattr(self, '_install_timer_active', False):
             return self._run_with_install_timer(
                 lambda: self._do_install_instance(arg)
@@ -285,6 +304,8 @@ class GoadNomad(BaseGoad):
         return self._do_install_instance(arg)
 
     def _do_install_instance(self, arg=''):
+        if self._course_preview_blocked("install_instance"):
+            return False
         Log.info('Launch providing')
         if not self.do_provide():
             Log.error('Providing error stop')
@@ -312,6 +333,8 @@ class GoadNomad(BaseGoad):
         while calling ``finalize_install`` again would repeat the exercise-mode
         transition. Keep one lifecycle owner and one human-readable timer.
         """
+        if self._course_preview_blocked("provision_lab"):
+            return False
         if self.lab_manager.get_current_instance_provider() is None:
             Log.error('No provider loaded for the current instance')
             return False
@@ -333,8 +356,25 @@ class GoadNomad(BaseGoad):
         )
         return True
 
+    def do_provision(self, arg):
+        if self._course_preview_blocked("provision"):
+            return False
+        return super().do_provision(arg)
+
+    def do_provision_lab_from(self, arg):
+        if self._course_preview_blocked("provision_lab_from"):
+            return False
+        return super().do_provision_lab_from(arg)
+
+    def do_create_empty(self, arg=''):
+        if self._course_preview_blocked("create_empty"):
+            return False
+        return super().do_create_empty(arg)
+
     def do_ws01(self, arg=''):
         """Materialize and provision only the clean M2 WS01 foundation."""
+        if self._course_preview_blocked("ws01"):
+            return False
         return self._run_with_install_timer(self._do_ws01)
 
     def _do_ws01(self):

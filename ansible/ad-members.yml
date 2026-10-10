@@ -9,6 +9,7 @@
 - name: "play servers AD configuration"
   hosts: server
   roles:
+    - { role: 'kingdoms_north_member_dns_guard', when: "domain_name == 'NORTH'", tags: 'north_dns_guard' }
     - { role: 'member_server', tags: 'server'}
   vars:
     member_domain: "{{lab.hosts[dict_key].domain}}"
@@ -18,6 +19,7 @@
 - name: "play workstations AD configuration"
   hosts: workstation
   roles:
+    - { role: 'kingdoms_north_member_dns_guard', when: "domain_name == 'NORTH'", tags: 'north_dns_guard' }
     - { role: 'commonwkstn', tags: 'workstation'}
   vars:
     member_domain: "{{lab.hosts[dict_key].domain}}"

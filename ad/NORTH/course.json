@@ -1,0 +1,12 @@
+{
+  "lab": "NORTH",
+  "course": "course1",
+  "title": "Fall of the North",
+  "runtime_profile": "course1-fall-of-the-north",
+  "state": "PREVIEW_ONLY_NOT_INSTALLABLE",
+  "providers": {
+    "vmware": "preview"
+  },
+  "kingdoms_foundation": "kingdoms-foundation-v1",
+  "first_install_pilot": "NORTH_VMWARE_DISPOSABLE_FIRST_INSTALL_20261010"
+}

@@ -13,11 +13,245 @@ Work must follow this order. A lower-priority platform expansion must not displa
 | **P0** | Current Kingdoms VMware correctness and fail-closed isolation | Start immediately |
 | **P1** | Fresh-install bootstrap and dependency reliability | After P0 behavior is protected by regression tests |
 | **P2** | Automated validation and release gates | Develop alongside P0/P1; complete before provider expansion |
-| **P3** | Provider-neutral architecture and VirtualBox on Linux | Only after all P0 items and required P1/P2 gates are complete |
-| **P4** | Proxmox support | After the provider-neutral lifecycle is proven on VMware and VirtualBox |
-| **P5** | Windows host support | Last: only after P0–P4 foundations relevant to the selected provider are complete |
+| **P3** | Provider-neutral lifecycle contracts; VirtualBox follow-up deferred | Only after all P0 items and required P1/P2 gates are complete |
+| **P4** | Course 1 Ludus on Proxmox | After Course 1 VMware release and required provider-neutral contracts are validated; VirtualBox is not a prerequisite |
+| **P5** | Windows host and additional provider support | Later: after the relevant existing-provider foundations are complete |
 
 **Hard gate:** do not start Windows host implementation while any P0 item remains open. Windows design and research may be recorded, but implementation waits until the existing installation and isolation lifecycle is dependable.
+
+## Course rollout sequence — explicit provider priority
+
+**Active course target: Kingdoms Course 1 — Fall of the North.**
+
+1. **Now — VMware Workstation:** finish the isolated four-Windows-VM + router installer, per-instance network identities, KINGDOMS2 SQL, lifecycle, reset and Phase 03 attack parity. Complete the Course 1 walkthrough and VMware release acceptance.
+2. **Next — Ludus on Proxmox:** after VMware Course 1 is ready, port the *same validated course profile* into Ludus. Validate template provisioning, per-learner instance isolation, routed WireGuard access and the dedicated attacker Layer 2 path needed for NORTH poisoning/relay demonstrations. Do not declare Ludus supported before its own end-to-end acceptance.
+3. **Later — other providers/courses:** VirtualBox, direct Proxmox control, Windows hosts and future Course 2 profiles are separate backlog tracks. The existing six-Windows-VM reference environment must not automatically be renamed Course 2.
+
+**Architectural rule:** a Kingdoms course profile describes the domain topology, roles, exercises and required behavior; a provider adapter implements deployment, network attachment and lifecycle. Neither course identity nor installation authority may be inferred from Git branch, VM name or a CLI-only profile label. Bind both to a validated installed instance.
+
+The necessary **provider-neutral contracts** from P3 must precede Ludus. VirtualBox-specific work listed under P3 is deferred, so it does not block the user-prioritized Ludus rollout. No Ludus implementation should interrupt the current VMware Course 1 reliability and release gates.
+
+- [x] Bind NORTH to the same patched Kingdoms Ansible install playbook list
+  (GOAD stages except ESSOS external-trust provisioning), including child AD,
+  WS01, time-backoff, health, Phase 01 and final LPE evidence. Phase 01 now loads
+  the selected Kingdoms lab data, preserving the original GOAD behavior.
+- [x] NORTH disposable first install created its router and four Windows VMs
+  under `6ca91b-north-vmware` (provider bring-up 18m35s, October 10).
+  Initial Ansible handoff failed BEFORE playbooks: the shared Ansible timing
+  selector recognized only GOAD, incorrectly entered installed-lab AD-aware
+  mode, and waited 300s for unpromoted DC01. Repair committed with exact
+  pilot authorization, current-instance binding and a mocked pre-AD handoff
+  regression. **Kali acceptance and Ansible provisioning resume pending.**
+- [x] Repair retry of an interrupted NORTH first install: classify the exact
+  `10.41.20.0/24 via 10.41.10.1 dev vmnet11` host route from structured
+  iproute2 JSON rather than comparing formatted text. Existing owned route
+  is a no-op; absent route uses non-overwriting add; foreign/ambiguous routes
+  are refused. Allow exact-route rollback after failed first Ansible, apply
+  restrictive NORTH router forwarding without waiting for AD, and explicitly
+  reject invalid Ansible handoff instead of falling back to a 300s DC wait.
+  The read-only readiness CLI now examines this route on an installed NORTH
+  instance. Source/mock regressions committed; **Kali two-stage validation
+  and live installation retry still outstanding.**
+- [x] Complete reference-vs-NORTH lifecycle source audit and next-stage
+  acceptance matrix in `docs/course1-installer-reliability-audit-20261010.md`.
+  Record the unverified 4/5 observed NORTH VMX identities, AD promotion,
+  domain time, SQL/Phase 03 and final NAT/router isolation as separate gates.
+- [x] Fix second live NORTH resume failure: VMware Vagrant Windows boot
+  reassigns host vmnet11/13 from .254 to its own .1 address, blocking the
+  protected parent route and router-policy cleanup. Exact-instance/VMX-
+  authenticated NORTH preflight now repairs only allowed vmnet11/13 drift
+  through the existing protected host-address service; each Windows Vagrant
+  startup/recovery and each router-policy/route operation also verifies
+  and reconciles host address state. Foreign host addresses, reference
+  vmnets and unverified repairs still fail closed; regression tests committed.
+  **Live Kali verification and actual Ansible provisioning remain pending.**
+- [ ] Run NORTH's full four-guest provisioning on a disposable instance and
+  validate AD readiness and service configuration before releasing installation.
+
+## Single NORTH installation-readiness command
+
+- [x] One operator entrypoint: `bash scripts/course1/check-install-readiness.sh`.
+  Includes existing offline suite, native VMware Vagrant/Ansible syntax, network
+  and registered VMware VMX survey, reference host-address preservation,
+  native provider release guard and host memory/disk advisory.
+- [x] Only cache a passing **source** suite for the exact clean HEAD/upstream
+  SHA; **always re-survey live VMware/network state**. `--refresh` forces all
+  tests. Quiet terminal report, restricted detailed logs. Return 2 while the
+  installer/lifecycle remains BLOCKED; never fake a successful installation.
+- [ ] Complete profile-aware NORTH four-guest install/start/stop and NAT/AD
+  exercise transitions. After these work, extend this SAME readiness command
+  with verified live install checks; don't introduce more operator scripts.
+
+## NORTH native recipe from patched Kingdoms installer — in progress
+
+- [x] Materialized `ad/NORTH/data/{config.json,inventory,inventory_disable_vagrant}`
+  and `ad/NORTH/providers/vmware/{Vagrantfile,inventory,router/provision.sh}`
+  from the **Kingdoms-patched reference**, not upstream GOAD.
+- [x] Four Windows machines + Debian router; parent/child domain only,
+  no ESSOS forest trust or vmnet30; isolated vmnet11/12/13 MACs and IPs.
+- [x] Added the native recipe source regression to the Course 1 suite.
+- [x] Adapt the existing `LabInstance` source to stage NORTH's router
+  and Windows Vagrant assets into its **own** workspace with guarded,
+  idempotent writes (source-only; not yet activated).
+- [ ] Validate this path during disposable `NORTH` instance creation after
+  profile-specific lifecycle readiness, before lifting install guards.
+- [x] Introduced native VMware lab bindings in the existing patched
+  `GoadNomadVmwareProvider` constructor: GOAD's six guests, four segments and
+  addresses remain exactly as validated; NORTH's four guests and vmnet11/12/13
+  are now separate source-controlled runtime identities, with six focused
+  regressions. NORTH's *segmented install* permission remains **false**.
+- [x] Source: NORTH isolated provision/exercise nftables policies, strict
+  one-route parent domain helper, instance-bound management SSH, profile-scoped
+  helper selection in the shared Kingdoms provider. GOAD helpers untouched.
+  NORTH provider remains blocked from mutating router/host routes.
+- [x] Patched shared VMware Vagrant template for NORTH: retain the Kingdoms
+  box-update suppression, bounded halt, VMware Tools/WinRM guest-IP handling,
+  and stage Windows remediation scripts from the NORTH instance workspace.
+  The GOAD reference template rendering keeps its original paths unchanged.
+- [ ] Prove NORTH instance-local Vagrant script resolution with Kali 274-test
+  validation, then complete profile-aware mode/AD and provisioner lifecycle.
+- [x] Profile-aware source integration in the *existing* `scripts/lab-mode.sh`:
+  select GOAD six-guest versus NORTH four-guest Windows/AD/time identities,
+  profile-specific router policy, nftables table, host routes and router SSH.
+  NORTH requires explicit provider binding and remains rejected by the existing
+  preview/instance safety gate. `--describe-profile` provides safe regression
+  evidence for both profiles without touching any VM or host network.
+- [x] The **real shared VMware provider** now verifies generated NORTH
+  `provider/Vagrantfile`, guest IP/MAC/vmnet surface, both Ansible inventories,
+  instance-local PowerShell scripts and router provision script against the
+  native **patched Kingdoms** source. It refuses any drift or foreign assets
+  before privileged/VM actions; never copies the six-guest GOAD inventory.
+- [x] Explicit NORTH preview rejection now covers direct VMware provider
+  install, start/stop, per-VM start/stop, reset, snapshot and destroy, not
+  only `./goad.sh` console. The future shared segmented provider dispatch and
+  host-address/router service selection use NORTH's own vmnet11/12/13 paths.
+- [x] The existing `plan_bound_instance` now recognizes native NORTH only
+  after verifying the actual Kingdoms-generated five-machine Vagrantfile,
+  inventories, VMnets/MACs/IPs and instance-local scripts. It produces the real
+  10.41.x start/stop dependency plans used by the **shared** hardened provider;
+  reference six-machine plans remain unchanged. **Read-only plans are not
+  activation authority**, and all live NORTH provider mutations remain blocked.
+- [x] Retained hardened `start_vm` / `stop_vm` / `stop` dispatch for NORTH
+  rather than falling back to generic Vagrant NAT operations once released.
+- [x] NORTH actual `scripts/lab-mode.sh` now verifies the concrete
+  four-guest instance via the existing bound planner, while a separate
+  source-controlled release gate refuses *all* NORTH mode mutations.
+  The reference GOAD binding and lifecycle are preserved.
+- [x] NORTH's real VMware provider preflight will inspect ALL running and
+  registered guest MAC/vmnet identities, allowing only separately identified
+  Vagrant VMX IDs owned by that NORTH instance, and rejecting foreign
+  vmnet11/12/13 guests or duplicate course MACs; no new host mutation.
+- [x] Stage NORTH's protected parent-domain route and provisioning router
+  policy after router bring-up but BEFORE first Windows Vagrant up; preserve
+  the legacy GOAD order. On bootstrap failure, attempt NORTH-only exact-route
+  removal and router exercise-policy rollback, reporting incomplete cleanup.
+  Source regressions are committed; live VMware/WinRM validation remains open.
+- [x] Reuse the installed-router VMware host-address repair, vmnet11/13 status
+  and authenticated management SSH gate after NORTH's FIRST Vagrant router
+  bring-up as well; unlike the legacy GOAD first-boot fast path, NORTH must not
+  begin Windows VM creation until its router and .254 host addresses are
+  genuinely usable. Offline mocked regressions committed; live acceptance open.
+- [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
+  Windows/AD readiness and post-Vagrant inventory synchronization. Only then
+  can the existing Kingdoms `install` lifecycle be enabled for NORTH.
+- [x] Commit controlled NORTH *first-install pilot* in the native course
+  manifest, shared console/provider dispatch and four-guest instance writer,
+  requiring the exact operator acknowledgement. Default remains PREVIEW.
+  Pin 10.41.10, reject non-VMware/non-local/extended or foreign instance
+  scopes, and recheck source identity plus registered/running VMX collision
+  inventory before provider VM mutations.
+- [x] Keep read-only validation independent from operator pilot opt-in.
+  Add offline tests for pilot gating, real disposable workspace staging,
+  post-router/pre-Windows routing, and failed first-Windows cleanup.
+  **Kali runtime regression and disposable first boot still pending.**
+- [ ] Confirm native `./goad.sh` install/start/stop/provisioning/exercise
+  on a disposable NORTH instance, including rollback, AD, SQL and Phase 03.
+- [ ] Release NORTH provider only AFTER actual runtime checks pass; until then
+  `NORTH` stays visible but explicitly not installable.
+
+## NORTH VMware host-address recovery (post-network allocation)
+
+- [x] Initial three-vmnet transaction completed on the operator's Kali host:
+  vmnet11 NORTH, vmnet12 SEVENKINGDOMS, vmnet13 MANAGEMENT.
+  Existing vmnet10/20/30/99 devices preserved. Reference guests stopped.
+  Recovery backup: \`c1-20261009T220236Z-8a928dcd\`.
+- [x] Investigated VMware host addresses: vmnet11/13 auto-assigned \`.1\`,
+  which conflicts with the future NORTH router gateways. Need \`.254\`
+  on the host, matching the proven Kingdoms reference design.
+- [x] Added a pre/post network allocation observational checker and a
+  separate NORTH-only host-address systemd service/timer, following the
+  already-patched Kingdoms reference behavior without editing its timer.
+- [ ] Verify the new source tests and post-allocation \`--survey-host\` gate
+  on Kali; confirm stage reports \`NORTH_HOST_ADDRESSES_PENDING\`.
+- [ ] During the approved maintenance window and with all VMware guests
+  stopped, install the isolated NORTH host-address helper and verify it
+  repairs only vmnet11/13 to \`.254\`, then reaches
+  \`NORTH_HOST_ADDRESSES_READY\`.
+- [ ] Verify reference networking, restart existing Kingdoms reference
+  guests through their established lifecycle and prove AD/domain readiness.
+- [ ] Only after reference recovery, continue NORTH disposable router/VM
+  provisioning and SQL/Phase 03 release acceptance.
+
+Plan: \`docs/course1-north-host-addresses.md\`.
+No NORTH install/start permission is implied.
+
+## Mandatory Kingdoms foundation contract
+
+**Never use upstream GOAD as the source for NORTH or future courses.**
+Every course inherits the validated, patched **Kingdoms** provisioning,
+AD readiness, VMware Tools/WinRM recovery, lifecycle, network isolation,
+collision protection, sudo authorization, rollback and logging foundations.
+Legacy folders/VM names (\`ad/GOAD\`, \`GOAD-DC01\`, \`goad.sh\`) exist for
+compatibility with the working reference, not to authorize upstream defaults.
+
+- [x] Declare a Kingdoms foundation identity for NORTH and future course
+  manifests; reject missing/mismatched identities.
+- [x] Verify the current patched Kingdoms source before rendering reduced
+  NORTH preview artifacts; add removal/failure regressions.
+- [ ] Extract a reusable, course-neutral Kingdoms base from the existing
+  patched reference **without losing behavior or changing the installed
+  reference**; replace transitional \`ad/GOAD\` source derivation.
+- [ ] Port the established source/runtime/integration regression gates
+  into the course-neutral provider lifecycle contract.
+- [ ] Prove NORTH clean install/start/stop/mode/reset/failure rollback,
+  dual-domain AD/SQL and Phase 03 offensive parity on a disposable instance
+  before marking its VMware provider available.
+- [ ] Ensure future Course 2+ lab recipes use that validated reusable
+  Kingdoms foundation rather than copied GOAD topology/config defaults.
+
+Full policy: \`docs/kingdoms-foundation.md\`.
+
+## Native Kingdoms lab catalog — one console for every course
+
+**Canonical operator entry point:** `./goad.sh` at the root of the
+**primary Kingdoms project**. Lab identities are native `ad/<LAB>` recipes
+and appear in the existing `labs` command. Their provider adapters and
+installed instances stay scoped to that selected lab; separate source
+checkouts are temporary developer working trees, not an operational UI.
+
+**Course 1 identity:** `NORTH` (course title: *Fall of the North*).
+`ad/NORTH/course.json` maps it to
+`course1-fall-of-the-north` and declares VMware `preview` only.
+`ad/NORTH/providers/vmware` participates in the existing lab directory
+discovery; the console displays `preview` rather than a misleading
+green supported-provider check. `unload` the loaded reference
+GOAD instance, then `labs` and `set_lab NORTH` to select the new
+lab. **NORTH install/create/provision/start/stop remain blocked** until
+the provider and per-instance lifecycle pass release acceptance.
+
+Once released, native `set_lab NORTH` → `install` creates an independent
+instance with exactly four Windows guests and its Debian router. A
+future Course 2 will get another named `ad/<LAB>/course.json` profile,
+its own provider recipe and isolated instances; no Course 2 has been
+named or deployed. Ludus is the subsequent provider for NORTH after
+VMware Course 1 release. Never present the older GOAD/ESSOS reference
+as a Course 2 release.
+
+**Merge contract:** the existing `main` checkout keeps the live
+`GOAD` reference lab until all changes are reviewed. Native NORTH
+registration currently lives only in draft PR #30. Do not synchronize
+the feature checkout's empty `workspace` over the existing main
+`workspace`; merging Git source does not migrate installed VM state.
 
 ## Delivery policy
 
@@ -26,7 +260,7 @@ Work must follow this order. A lower-priority platform expansion must not displa
 - Require source validation, failure-path testing and a rollback plan before merge.
 - Preserve deny-by-default exercise isolation.
 - Treat a non-zero provider, provisioning, extension or isolation result as an installation failure.
-- Finish and validate each priority before promoting the next priority into active implementation.
+- Complete P0–P2 reliability gates before provider expansion. For P3→P4, validate the provider-neutral contracts first; VirtualBox-specific implementation is deferred until after the Ludus Course 1 rollout.
 
 ## P0 — Current installation correctness and isolation
 
@@ -73,9 +307,9 @@ These findings from the full-project audit have priority over every new platform
 - [ ] Add isolation assertions after both successful and failed provisioning.
 - [ ] Run a disposable release matrix before declaring a provider or platform supported.
 
-## P3 — Provider-neutral architecture and VirtualBox on Linux
+## P3 — Provider-neutral contracts (VirtualBox follow-up deferred)
 
-First extract provider-neutral lifecycle contracts for network preparation, runtime mode, adapter state, rollback and validation. Do not copy VMware-specific shell behavior into another provider.
+First extract provider-neutral lifecycle contracts for network preparation, runtime mode, adapter state, rollback and validation. Do not copy VMware-specific shell behavior into another provider. The **first two** contract checklist items are prerequisites for Ludus; the subsequent VirtualBox-specific items are future work, not Ludus release blockers.
 
 - [ ] Define provider-neutral provisioning and exercise mode interfaces.
 - [ ] Define provider-neutral transition state and rollback contracts.
@@ -85,7 +319,14 @@ First extract provider-neutral lifecycle contracts for network preparation, runt
 - [ ] Verify runtime adapter state through VirtualBox tooling.
 - [ ] Validate clean install, resume, start, stop, failure cleanup and segmentation.
 
-## P4 — Proxmox support
+## P4 — Ludus / Proxmox support (after VMware Course 1 release)
+
+Ludus is the **next Course 1 provider after VMware**. Prefer its native deployment lifecycle for the port; any separate direct-Proxmox Terraform implementation is independent follow-up work, not an assumption about Ludus.
+
+- [ ] Build an explicit Ludus Course 1 profile using the four Windows guests plus router, without an ESSOS domain or legacy ESSOS network.
+- [ ] Preserve per-instance isolation, course entitlements/identity boundaries and repeatable deployment/reset semantics.
+- [ ] Validate remote Kali over WireGuard, and provide a tested attacker Layer 2 path for LLMNR/NBT-NS/mDNS, IPv6 mitm6/WPAD and relay scenarios.
+- [ ] Run fresh AD, MSSQL, certificate services, Phase 03 and full Course 1 release regressions independently on Ludus.
 
 - [ ] Build reusable Windows and Debian router templates with Packer.
 - [ ] Model the four zones using dedicated or VLAN-aware Linux bridges.
@@ -95,11 +336,11 @@ First extract provider-neutral lifecycle contracts for network preparation, runt
 - [ ] Validate segmentation from both the provisioning system and guest networks.
 - [ ] Pass the complete provider release acceptance criteria.
 
-## P5 — Windows host support
+## P5 — Windows host and additional provider support
 
 Upstream GOAD supports Windows through WSL or native Python with a provisioning VM. Kingdoms needs an explicit Windows control-plane design rather than a direct port of Linux-only Bash and systemd behavior.
 
-Implementation starts only after the P0 reliability findings are closed and the relevant provider-neutral lifecycle is proven.
+Implementation starts only after the P0 reliability findings are closed and the relevant provider-neutral lifecycle is proven. VirtualBox-specific work remains deferred until after the Course 1 Ludus portability milestone.
 
 - [ ] Support Windows 11 hosts with VMware Workstation and VirtualBox.
 - [ ] Define and test WSL and native-Python control paths.
@@ -154,3 +395,21 @@ A provider and platform combination is supported only when all of the following 
 - [ ] Runtime segmentation validation passes.
 - [ ] Repeated install, start and stop operations are idempotent.
 - [ ] Installation and recovery documentation is complete.
+
+- [x] Add explicit `--instance-provider` to the unified read-only readiness
+  survey after the first live NORTH boot. The original pre-install checker
+  interpreted NORTH-owned running VMX MACs and its exact temporary parent
+  route as foreign allocation collisions. Reuse instance-bound VMX ownership
+  and reject genuinely foreign NICs/routes; never weaken the pre-allocation
+  gate. Mocked regressions committed; Kali validation pending.
+
+- [x] Fix observed dual-forest DNS collision during NORTH child promotion:
+  DC02 NAT DNS 192.168.213.2 resolved original WINTERFELL 10.4.10.11 while
+  the isolated parent is 10.41.20.10 and child should be 10.41.10.11.
+  Add NORTH-only DNS-client pin and forced instance-local parent/child DC
+  Locator verification before promotion. Add separate NORTH promotion path:
+  no SkipPreChecks, local DomainRole proof after reboot and truthful changed
+  status, with GOAD reference tasks unchanged. Apply the same instance-local
+  DNS/DC Locator guard before NORTH SRV02/WS01 domain joins. Canonical
+  regression added, **Kali execution and live AD installation not yet proven**.
+  Evidence and recovery contract: docs/course1-installer-reliability-audit-20261010.md.

@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep Kingdoms NORTH VMware host addresses persistent
+After=vmware.service
+
+[Timer]
+OnActiveSec=3s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit=kingdoms-north-vmnet-hostaddrs.service
+
+[Install]
+WantedBy=timers.target

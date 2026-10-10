@@ -1,0 +1,92 @@
+# KINGDOMS native NORTH — four Windows VMs + Debian router.
+# Generated from the patched Kingdoms foundation. Provider still release-gated.
+boxes = [
+  {
+    :name => "GOAD-DC01",
+    :ip => "10.41.20.10",
+    :lab_gateway => "10.41.20.1",
+    :lab_mac => "00:50:56:3a:20:10",
+    :box => "StefanScherer/windows_2019",
+    :box_version => "2021.05.15",
+    :os => "windows",
+    :cpus => 2,
+    :mem => 3000,
+    :skip_private_network => true,
+    :vmware_network_adapters => [
+      { :slot => 1, :vnet => "vmnet12", :mac => "00:50:56:3a:20:10" }
+    ]
+  },
+
+  {
+    :name => "GOAD-DC02",
+    :ip => "10.41.10.11",
+    :lab_gateway => "10.41.10.1",
+    :lab_mac => "00:50:56:3a:10:11",
+    :box => "StefanScherer/windows_2019",
+    :box_version => "2021.05.15",
+    :os => "windows",
+    :cpus => 2,
+    :mem => 3000,
+    :skip_private_network => true,
+    :vmware_network_adapters => [
+      { :slot => 1, :vnet => "vmnet11", :mac => "00:50:56:3a:10:11" }
+    ]
+  },
+
+  {
+    :name => "GOAD-SRV02",
+    :ip => "10.41.10.22",
+    :lab_gateway => "10.41.10.1",
+    :lab_mac => "00:50:56:3a:10:22",
+    :box => "StefanScherer/windows_2019",
+    :box_version => "2021.05.15",
+    :os => "windows",
+    :cpus => 2,
+    :mem => 6000,
+    :skip_private_network => true,
+    :vmware_network_adapters => [
+      { :slot => 1, :vnet => "vmnet11", :mac => "00:50:56:3a:10:22" }
+    ]
+  },
+
+  {
+    :name => "GOAD-WS01",
+    :ip => "10.41.10.31",
+    :lab_gateway => "10.41.10.1",
+    :lab_mac => "00:50:56:3a:10:31",
+    :box => "mayfly/windows10",
+    :box_version => "2024.01.06",
+    :os => "windows",
+    :cpus => 2,
+    :mem => 4000,
+    :skip_private_network => true,
+    :vmware_network_adapters => [
+      { :slot => 1, :vnet => "vmnet11", :mac => "00:50:56:3a:10:31" }
+    ]
+  },
+
+  {
+    :name => "GOAD-ROUTER",
+    :hostname => "kingdoms-course1-router",
+    :box => "bento/debian-12",
+    :os => "linux",
+    :cpus => 1,
+    :mem => 768,
+    :skip_private_network => true,
+    :vmware_vmx => {
+      "ethernet0.startConnected" => "TRUE",
+      "ethernet0.pcislotnumber" => "160",
+      "ethernet1.pcislotnumber" => "224",
+      "ethernet2.pcislotnumber" => "256",
+      "ethernet3.pcislotnumber" => "1184"
+    },
+    :vmware_network_adapters => [
+      { :slot => 1, :vnet => "vmnet11", :mac => "00:50:56:3b:10:01" },
+      { :slot => 2, :vnet => "vmnet12", :mac => "00:50:56:3b:20:01" },
+      { :slot => 3, :vnet => "vmnet13", :mac => "00:50:56:3b:99:01" }
+    ],
+    :provision_scripts => [
+      "../router/provision.sh"
+    ]
+  }
+]

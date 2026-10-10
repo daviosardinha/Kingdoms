@@ -1,5 +1,6 @@
 from goad.log import *
 from rich.table import Table
+from goad.course_catalog import course_manifest, north_first_install_pilot_authorized
 
 
 def show_labs_providers_list(labs):
@@ -22,10 +23,15 @@ def show_labs_providers_table(labs):
         table.add_column(header)
 
     for lab in labs:
+        course = course_manifest(lab.lab_name)
         row_value = [lab.lab_name]
         for header in headers:
             if header in lab.providers.keys():
-                row_value.append('[green]✓[/green]')
+                # Unreleased courses must never be presented as installable.
+                if course and lab.lab_name == 'NORTH' and north_first_install_pilot_authorized():
+                    row_value.append('[yellow]first-install pilot[/yellow]')
+                else:
+                    row_value.append('[yellow]preview[/yellow]' if course else '[green]✓[/green]')
             else:
                 row_value.append('[red]X[/red]')
         table.add_row(*row_value)

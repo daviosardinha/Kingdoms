@@ -39,7 +39,7 @@ boxes.append(
   # GOAD_NOMAD: shutdown failures must be bounded and allowed to fall back
   # automatically instead of requiring Ctrl+C from the operator.
   config.vm.boot_timeout = 1200
-{% if lab_name == 'GOAD' %}
+{% if lab_name in ['GOAD', 'NORTH'] %}
   config.vm.box_check_update = false
   config.vm.graceful_halt_timeout = 120
 {% else %}
@@ -49,6 +49,13 @@ boxes.append(
   config.winrm.retry_limit = 30
   config.winrm.retry_delay = 10
 
+  # Instance-scoped NORTH assets; preserve the existing validated GOAD path.
+{% if lab_name == 'NORTH' %}
+  {% set windows_provision_dir = '../vagrant/' %}
+{% else %}
+  {% set windows_provision_dir = '../../../vagrant/' %}
+{% endif %}
+
   boxes.each do |box|
     config.vm.define box[:name] do |target|
       # BOX
@@ -56,7 +63,7 @@ boxes.append(
         v.vmx["memsize"] = box[:mem]
         v.vmx["numvcpus"] = box[:cpus]
 
-{% if lab_name == 'GOAD' %}
+{% if lab_name in ['GOAD', 'NORTH'] %}
         # Multi-NIC Windows guests must use the provisioning NAT address for
         # Vagrant management. VMware Tools can otherwise return an exercise NIC
         # first (for example 10.4.30.12), which is intentionally unreachable
@@ -117,19 +124,19 @@ boxes.append(
       if box[:os] == "windows"
         target.vm.guest = :windows
         target.vm.communicator = "winrm"
-        target.vm.provision :shell, :path => "../../../vagrant/Install-WMF3Hotfix.ps1", privileged: false
-        target.vm.provision :shell, :path => "../../../vagrant/ConfigureRemotingForAnsible.ps1", privileged: false
+        target.vm.provision :shell, :path => "{{ windows_provision_dir }}Install-WMF3Hotfix.ps1", privileged: false
+        target.vm.provision :shell, :path => "{{ windows_provision_dir }}ConfigureRemotingForAnsible.ps1", privileged: false
 
         # Configure the exercise NIC. The legacy one-argument form is kept for
         # other labs; segmented boxes additionally provide their gateway + MAC.
         if ENV['VAGRANT_DEFAULT_PROVIDER'] == "vmware_desktop"
           if box.has_key?(:lab_gateway) && box.has_key?(:lab_mac)
             target.vm.provision :shell,
-              :path => "../../../vagrant/fix_ip.ps1",
+              :path => "{{ windows_provision_dir }}fix_ip.ps1",
               privileged: false,
               args: [box[:ip], box[:lab_gateway], box[:lab_mac]]
           else
-            target.vm.provision :shell, :path => "../../../vagrant/fix_ip.ps1", privileged: false, args: box[:ip]
+            target.vm.provision :shell, :path => "{{ windows_provision_dir }}fix_ip.ps1", privileged: false, args: box[:ip]
           end
         end
       else

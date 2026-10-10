@@ -1,16 +1,16 @@
 ---
-# GOAD Kingdoms only. Existing NORTH ACLs must already have been provisioned.
+# Patched Kingdoms Phase 01 for full GOAD or native NORTH; use selected lab data.
 - name: Load Phase 01 scenario data without contacting other zones
   hosts: dc02:srv02
   gather_facts: false
   tasks:
     - name: Require the Kingdoms scenario
       ansible.builtin.assert:
-        that: domain_name == 'GOAD'
-        fail_msg: Phase 01 is specific to GOAD Kingdoms.
+        that: domain_name in ['GOAD', 'NORTH']
+        fail_msg: Phase 01 requires a native Kingdoms GOAD or NORTH lab.
     - name: Load canonical Kingdoms data
       ansible.builtin.include_vars:
-        file: ../ad/GOAD/data/config.json
+        file: "../ad/{{ domain_name }}/data/config.json"
 
 - name: Provision WINTERFELL enumeration lessons
   hosts: dc02

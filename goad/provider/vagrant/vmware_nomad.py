@@ -6,6 +6,7 @@ import time
 import winrm
 
 from goad.goadpath import GoadPath
+from goad.kingdoms_vmware_profile import binding_for
 from goad.log import Log
 from goad.provider.vagrant.vmware import VmwareProvider
 
@@ -34,14 +35,42 @@ class GoadNomadVmwareProvider(VmwareProvider):
         'GOAD-WS01': '10.4.10.31',
     }
 
+    def __init__(self, lab_name):
+        super().__init__(lab_name)
+        # Data-only instance binding: the patched Kingdoms provider is shared.
+        # GOAD receives byte-for-byte equivalent 6-guest/4-zone values.
+        # NORTH can be selected as a separate profile, but is NOT installable
+        # until its router/exercise lifecycle is proved independently.
+        binding = binding_for(lab_name)
+        self.kingdoms_vmware_binding = binding
+        if binding is not None:
+            self.goad_nomad_windows = list(binding.roster.windows)
+            self.management_hosts = dict(binding.roster.management_hosts)
+            self.network_zones = binding.zones
+            self.network_scope = (
+                "10.4.0.0/16 (segmented)" if lab_name == "GOAD"
+                else "10.41.0.0/16 (segmented)"
+            )
+
     def is_goad_nomad_segmented(self):
-        return self.lab_name == 'GOAD'
+        if self.lab_name == 'GOAD':
+            return True
+        if self.lab_name == 'NORTH':
+            binding = getattr(self, 'kingdoms_vmware_binding', None)
+            return binding is not None and binding.segmented_install_enabled
+        return False
 
     @staticmethod
     def _project_root_from_script(script):
         return os.path.dirname(os.path.dirname(script))
 
     def _script(self, name):
+        # Preserve the reference helpers; isolate NORTH's router and routes.
+        if self.lab_name == 'NORTH':
+            name = {
+                'router-ssh.sh': 'course1/router-ssh.sh',
+                'provisioning-routes.sh': 'course1/provisioning-routes.sh',
+            }.get(name, name)
         script = GoadPath.get_script_file(name)
         if not os.path.isfile(script):
             Log.error(f'GOAD_NOMAD helper not found: {script}')
@@ -51,6 +80,7 @@ class GoadNomadVmwareProvider(VmwareProvider):
     def _provider_env(self):
         env = os.environ.copy()
         env['GOAD_PROVIDER_DIR'] = str(self.path)
+        env['KINGDOMS_VMWARE_LAB'] = self.lab_name
         return env
 
     def _run_vagrant_bounded(self, args, timeout):
@@ -113,7 +143,9 @@ class GoadNomadVmwareProvider(VmwareProvider):
 
     def _router_policy_path(self, mode):
         return os.path.join(
-            GoadPath.get_lab_provider_path('GOAD', 'vmware'),
+            GoadPath.get_lab_provider_path(
+                self.lab_name if self.lab_name == 'NORTH' else 'GOAD', 'vmware'
+            ),
             'router',
             'nftables',
             f'{mode}.nft',
@@ -129,6 +161,11 @@ class GoadNomadVmwareProvider(VmwareProvider):
         therefore applies only the router policy; the full mode controller takes
         ownership again once all Windows guests exist.
         """
+        binding = self.kingdoms_vmware_binding
+        if self.lab_name == 'NORTH' and (
+                binding is None or not binding.segmented_install_enabled):
+            Log.error('NORTH router policy changes blocked until runtime acceptance')
+            return False
         policy = self._router_policy_path(mode)
         if not os.path.isfile(policy):
             Log.error(f'GOAD_NOMAD router policy not found: {policy}')
@@ -169,6 +206,11 @@ class GoadNomadVmwareProvider(VmwareProvider):
         return True
 
     def _enable_provisioning_routes(self):
+        binding = self.kingdoms_vmware_binding
+        if self.lab_name == 'NORTH' and (
+                binding is None or not binding.segmented_install_enabled):
+            Log.error('NORTH routes blocked until runtime acceptance')
+            return False
         route_script = self._script('provisioning-routes.sh')
         if route_script is None:
             return False
@@ -269,7 +311,21 @@ class GoadNomadVmwareProvider(VmwareProvider):
         return True
 
     def prepare_install(self):
-        """Ensure the four GOAD_NOMAD VMware networks exist before Vagrant."""
+        """Validate the profile's host networks before any guest mutation."""
+        if self.lab_name == 'NORTH':
+            if not self.is_goad_nomad_segmented():
+                Log.error('Kingdoms NORTH: live VMware provider release is blocked')
+                return False
+            # NORTH host networks were allocated by a separate protected
+            # transaction. NEVER execute the reference VMware network setup.
+            checker = self._script('course1/kingdoms-north-vmnet-hostaddrs')
+            if checker is None:
+                return False
+            result = subprocess.run(['bash', checker, 'status'], check=False)
+            if result.returncode != 0:
+                Log.error('Kingdoms NORTH: host vmnet .254 network check failed')
+                return False
+            return True
         if not self.is_goad_nomad_segmented():
             return True
 

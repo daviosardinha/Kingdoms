@@ -1,6 +1,7 @@
 from goad.log import Log
 from goad.utils import *
 from goad.dependencies import Dependencies
+from goad.course_catalog import course_manifest, north_first_install_pilot_authorized
 
 
 class Settings:
@@ -36,7 +37,14 @@ class Settings:
         Log.info(f'Current Lab         : {self.lab_name}')
         Log.info(f'Current Provider    : {self.provider_name}')
         Log.info(f'Current Provisioner : {self.provisioner_name}')
-        if self.is_goad_nomad_segmented():
+        course = course_manifest(self.lab_name)
+        if course is not None:
+            Log.info(f'Course              : {course["title"]}')
+            if self.lab_name == 'NORTH' and north_first_install_pilot_authorized():
+                Log.warning('Deployment State    : CONTROLLED FIRST INSTALL PILOT (unvalidated)')
+            else:
+                Log.info('Deployment State    : PREVIEW ONLY (not installable)')
+        elif self.is_goad_nomad_segmented():
             Log.info(f'Current Network     : {self.GOAD_NOMAD_NETWORK_SCOPE}')
         elif self.provider_name != LUDUS:
             Log.info(f'Current IP range    : {self.ip_range}.X')
@@ -45,6 +53,11 @@ class Settings:
             Log.info(f' - {extension}')
 
     def inline(self):
+        course = course_manifest(self.lab_name)
+        if course is not None:
+            state = ('FIRST-INSTALL-PILOT' if self.lab_name == 'NORTH' and
+                     north_first_install_pilot_authorized() else 'PREVIEW')
+            return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/{state}'
         if self.is_goad_nomad_segmented():
             return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/10.4.0.0-16-segmented'
         if self.provider_name == LUDUS:
@@ -62,6 +75,11 @@ class Settings:
         if self.lab_manager.is_lab_exist(lab_name):
             # set lab
             self.lab_name = lab_name
+            if lab_name == 'NORTH':
+                # NORTH is a statically addressed, isolated native Kingdoms
+                # recipe. It must never inherit GOAD or the generic default
+                # instance range when selected through the shared console.
+                self.ip_range = '10.41.10'
             if refresh:
                 self._refresh_provider()
         else:
@@ -140,6 +158,12 @@ class Settings:
         return self.provisioner_name
 
     def set_ip_range(self, ip_range):
+        if self.lab_name == 'NORTH' and ip_range != '10.41.10':
+            Log.error(
+                'Kingdoms NORTH has a fixed 10.41.10 instance range; '
+                'refusing a mismatched address request'
+            )
+            return self.ip_range
         error = False
         try:
             parts = ip_range.split('.')

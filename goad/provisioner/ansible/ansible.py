@@ -19,12 +19,29 @@ class Ansible(Provisioner):
         return f'{minutes}m {secs:02d}s'
 
     def _kingdoms_install_profile(self):
-        if self.lab_name != 'GOAD':
+        # The install timing profile is also the in-process lifecycle marker
+        # for a fresh, pre-AD provider -> Ansible handoff. NORTH must enter
+        # this path rather than the installed-lab AD-aware mode controller.
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return None
         profile = getattr(self.provider, '_kingdoms_install_profile', None)
-        if isinstance(profile, dict) and profile.get('status') == 'awaiting_ansible':
-            return profile
-        return None
+        if not isinstance(profile, dict) or profile.get('status') != 'awaiting_ansible':
+            return None
+        if self.lab_name == 'NORTH':
+            from pathlib import Path
+            from goad.course_catalog import north_first_install_pilot_authorized
+
+            # An old timing JSON or a manually invoked playbook cannot
+            # authorize a pre-AD bootstrap. This must be THIS in-process
+            # provider's successful, instance-bound first-install attempt,
+            # with the exact pilot opt-in still active.
+            if (not north_first_install_pilot_authorized()
+                    or profile.get('provider_success') is not True
+                    or profile.get('instance_id') != Path(self.instance_path).name
+                    or not self.provider.is_goad_nomad_segmented()
+                    or not self.provider._north_runtime_allowed()):
+                return None
+        return profile
 
     def _record_kingdoms_ansible_timing(self, phases, label, started, outcome, kind):
         elapsed = time.monotonic() - started
@@ -180,6 +197,20 @@ class Ansible(Provisioner):
     def run(self, playbook=None):
         profile = self._kingdoms_install_profile() if playbook is None else None
         if profile is None:
+            # A failed first-install handshake must NEVER fall back to the
+            # installed/AD-aware provisioning controller while the forest-root
+            # DC may still be unpromoted. Refuse promptly and preserve the
+            # instance instead of waiting for DC Locator for 300 seconds.
+            candidate = getattr(self.provider, '_kingdoms_install_profile', None)
+            if (self.lab_name == 'NORTH' and playbook is None
+                    and isinstance(candidate, dict)
+                    and candidate.get('status') == 'awaiting_ansible'):
+                Log.error(
+                    'Kingdoms NORTH: first-install Ansible handoff rejected '
+                    '(pilot authorization, provider result, or instance binding); '
+                    'refusing AD-aware fallback before domain promotion'
+                )
+                return False
             return self._run(playbook)
         ansible_started = time.monotonic()
         profile['status'] = 'ansible_running'
@@ -196,6 +227,28 @@ class Ansible(Provisioner):
             raise
         finally:
             self._active_install_profile = previous
+            if self.lab_name == 'NORTH' and not result:
+                # Ansible can fail before DC01 has been promoted. Running the
+                # normal mode controller here repeats the 300s AD deadlock.
+                # Only close the current, authorized NORTH provider's host
+                # route and router forwarding. Keep the instance NOT READY.
+                abort = getattr(self.provider, 'abort_north_failed_provisioning', None)
+                if callable(abort):
+                    try:
+                        if not abort():
+                            Log.error(
+                                'Kingdoms NORTH: failed Ansible cleanup unverified; '
+                                'inspect networking before retry'
+                            )
+                    except Exception as exc:
+                        Log.error(
+                            f'Kingdoms NORTH: failed Ansible cleanup raised: {exc}'
+                        )
+                else:
+                    Log.error(
+                        'Kingdoms NORTH: no failure cleanup implementation; '
+                        'operator must inspect temporary routing'
+                    )
             profile['finished'] = time.monotonic()
             profile['ansible_elapsed'] = profile['finished'] - ansible_started
             profile['status'] = 'completed' if result else outcome

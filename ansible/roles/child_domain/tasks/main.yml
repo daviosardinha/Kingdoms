@@ -53,6 +53,13 @@
     include_management_tools: yes
   register: dns_features
 
+# The legacy reference GOAD child-domain role is intentionally preserved.
+# NORTH reuses the same DNS namespace as a separately running GOAD forest:
+# protect both adapters and prove an instance-local DC Locator before promotion.
+- name: Guard NORTH child promotion against foreign VMware NAT DNS
+  ansible.builtin.include_tasks: north_dns_containment.yml
+  when: domain_name | default('') == 'NORTH'
+
 # DNSCHANGE
 # - name: "disable interface {{nat_adapter}} before join domain"
 #   win_shell: netsh interface set interface "{{nat_adapter}}" disable
@@ -107,12 +114,19 @@
       NewDomainNetbiosName: "{{netbios_name}}"
       NewDomainName: "{{domain.split('.')[0]}}"
   register: child_result
+  when: domain_name | default('') != 'NORTH'
 
-- name: Reboot
+- name: Execute guarded NORTH-specific local ADDS child promotion and readiness
+  ansible.builtin.include_tasks: north_promotion.yml
+  when: domain_name | default('') == 'NORTH'
+
+- name: Reboot legacy GOAD child after domain creation
   win_reboot:
     reboot_timeout: 900
     post_reboot_delay: 100
-  when: child_result.changed
+  when:
+    - domain_name | default('') != 'NORTH'
+    - child_result.changed
 
 # - name: "enable interface {{nat_adapter}} after domain joined"
 #   win_shell: netsh interface set interface "{{nat_adapter}}" enable

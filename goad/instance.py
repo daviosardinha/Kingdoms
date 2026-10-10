@@ -7,6 +7,7 @@ from goad.log import Log
 from goad.exceptions import ProviderPathNotFound, JumpBoxInitFailed
 from goad.provisioner.provisioner_factory import ProvisionerFactory
 from goad.utils import *
+from goad.course_catalog import refuse_course_mutation
 
 
 class LabInstance:
@@ -38,6 +39,9 @@ class LabInstance:
         self.provisioner = None
 
     def load(self, labs, creation=False):
+        if self.lab_name == 'NORTH' and not self._north_instance_settings_valid():
+            Log.error('Kingdoms NORTH: refused instance load with mismatched scope')
+            return False
         instance_path = GoadPath.get_instance_path(self.instance_id)
         if not os.path.isdir(instance_path):
             Log.error('instance path not found abort')
@@ -273,6 +277,55 @@ class LabInstance:
                 tf_file.write(tf_content)
                 Log.success(f'Instance terraform file created : {Utils.get_relative_path(instance_tf_file)}')
 
+    def _stage_north_vmware_assets(self):
+        """Stage only this instance's NORTH router and Windows Vagrant scripts.
+
+        The shared Kingdoms LabInstance builder remains the sole owner of
+        instance creation. This is profile-specific asset staging, not a new
+        installer or authority to bypass NORTH's release guard.
+        """
+        from pathlib import Path
+        from goad.course1_vmware_candidate import render_candidate
+        from goad.course1_network_plan import validate_proposal
+        from goad.kingdoms_foundation import validate_foundation
+
+        validate_foundation()
+        project = Path(GoadPath.get_project_path())
+        plan_path = project / "docs/course1-network-candidate.example.json"
+        proposal = json.loads(plan_path.read_text(encoding="utf-8"))
+        validate_proposal(proposal)
+        candidate = render_candidate(proposal)
+
+        router_source = (
+            project / "ad/NORTH/providers/vmware/router/provision.sh"
+        )
+        if not router_source.is_file() or router_source.is_symlink():
+            raise ValueError("NORTH router provision source missing or unsafe")
+        assets = {
+            "router/provision.sh": router_source.read_text(encoding="utf-8"),
+            "vagrant/fix_ip.ps1": candidate["vagrant/fix_ip.ps1"],
+            "vagrant/ConfigureRemotingForAnsible.ps1":
+                candidate["vagrant/ConfigureRemotingForAnsible.ps1"],
+            "vagrant/Install-WMF3Hotfix.ps1":
+                candidate["vagrant/Install-WMF3Hotfix.ps1"],
+        }
+        destination_root = Path(self.instance_path)
+        if not destination_root.is_dir() or destination_root.is_symlink():
+            raise ValueError("NORTH instance directory is unsafe")
+        for relative, content in assets.items():
+            target = destination_root / relative
+            parent = target.parent
+            if parent.is_symlink():
+                raise ValueError(f"NORTH asset parent must not be a symlink: {parent}")
+            parent.mkdir(mode=0o700, exist_ok=True)
+            if target.exists() or target.is_symlink():
+                if (target.is_symlink() or not target.is_file()
+                        or target.read_text(encoding="utf-8") != content):
+                    raise ValueError(f"NORTH instance asset mismatch: {relative}")
+                continue
+            target.write_text(content, encoding="utf-8")
+            target.chmod(0o700 if relative.endswith(".sh") else 0o600)
+
     def _create_provider_dir(self):
         # create provider dir
         # workspace/provider
@@ -285,6 +338,8 @@ class LabInstance:
         Log.info('Create instance providing files')
         if self.is_vagrant():
             self._create_vagrantfile()
+            if self.lab_name == 'NORTH' and self.provider_name == VMWARE:
+                self._stage_north_vmware_assets()
         if self.provider_name == VMWARE_ESXI:
             self._create_esxi_env()
         if self.is_ludus():
@@ -296,7 +351,14 @@ class LabInstance:
         Log.info(f'Create lab provisioning file {inventory_file}')
         # create lab inventory
         lab_provider_path = GoadPath.get_lab_data_path(self.lab_name)
-        environment = Environment(loader=FileSystemLoader(lab_provider_path))
+        # NORTH requires byte-for-byte correspondence with the committed
+        # four-guest inventory. Jinja2 normally strips the final newline,
+        # which makes the freshly created instance fail its source binding.
+        # Preserve legacy GOAD rendering exactly as it was.
+        environment = Environment(
+            loader=FileSystemLoader(lab_provider_path),
+            keep_trailing_newline=(self.lab_name == 'NORTH'),
+        )
         # create inventory template
         inventory_template = environment.get_template(inventory_file)
         instance_inventory_content = inventory_template.render(
@@ -314,7 +376,14 @@ class LabInstance:
         Log.info('Create instance provisioning files')
         # create provisioning inventory
         lab_provider_path = GoadPath.get_lab_provider_path(self.lab_name, self.provider_name)
-        environment = Environment(loader=FileSystemLoader(lab_provider_path))
+        # NORTH requires byte-for-byte correspondence with the committed
+        # four-guest inventory. Jinja2 normally strips the final newline,
+        # which makes the freshly created instance fail its source binding.
+        # Preserve legacy GOAD rendering exactly as it was.
+        environment = Environment(
+            loader=FileSystemLoader(lab_provider_path),
+            keep_trailing_newline=(self.lab_name == 'NORTH'),
+        )
         # create inventory template
         inventory_template = environment.get_template("inventory")
         instance_inventory_content = inventory_template.render(
@@ -350,7 +419,27 @@ class LabInstance:
     def update_instance_folder(self):
         self.create_instance_folder(True)
 
+    def _north_instance_settings_valid(self):
+        """NORTH must never stage a GOAD/default IP range or an extension."""
+        return (
+            self.provider_name == VMWARE
+            and self.provisioner_name == PROVISIONING_LOCAL
+            and self.ip_range == '10.41.10'
+            and not self.extensions
+        )
+
     def create_instance_folder(self, force=False):
+        # This is the filesystem boundary. Protect direct invocation as well
+        # as every current and future interactive/non-interactive CLI path.
+        if refuse_course_mutation(self.lab_name, "create_instance_folder"):
+            Log.error(f'Kingdoms {self.lab_name}: instance creation is blocked (course preview)')
+            return False
+        if self.lab_name == 'NORTH' and not self._north_instance_settings_valid():
+            Log.error(
+                'Kingdoms NORTH: refusing non-VMware, non-local, non-10.41.10, '
+                'or extended instance creation before writing any assets'
+            )
+            return False
         instance_exist = False
         if os.path.isdir(self.instance_path):
             instance_exist = True
