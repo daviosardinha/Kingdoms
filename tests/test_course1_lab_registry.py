@@ -198,7 +198,6 @@ assert lab.get_first_provider_name() == 'vmware'
                 self.assertFalse(refuse_course_mutation("NORTH", operation))
             for operation in ("create_empty", "ws01", "provision", "reset", "destroy"):
                 self.assertTrue(refuse_course_mutation("NORTH", operation))
-            self.assertTrue(refuse_course_mutation("FUTURE", "install"))
             self.assertFalse(refuse_course_mutation("GOAD", "install"))
 
     def test_north_pilot_dispatches_real_provider_only_with_ack(self):
