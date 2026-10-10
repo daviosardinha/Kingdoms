@@ -197,6 +197,20 @@ class Ansible(Provisioner):
     def run(self, playbook=None):
         profile = self._kingdoms_install_profile() if playbook is None else None
         if profile is None:
+            # A failed first-install handshake must NEVER fall back to the
+            # installed/AD-aware provisioning controller while the forest-root
+            # DC may still be unpromoted. Refuse promptly and preserve the
+            # instance instead of waiting for DC Locator for 300 seconds.
+            candidate = getattr(self.provider, '_kingdoms_install_profile', None)
+            if (self.lab_name == 'NORTH' and playbook is None
+                    and isinstance(candidate, dict)
+                    and candidate.get('status') == 'awaiting_ansible'):
+                Log.error(
+                    'Kingdoms NORTH: first-install Ansible handoff rejected '
+                    '(pilot authorization, provider result, or instance binding); '
+                    'refusing AD-aware fallback before domain promotion'
+                )
+                return False
             return self._run(playbook)
         ansible_started = time.monotonic()
         profile['status'] = 'ansible_running'
