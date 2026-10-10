@@ -1036,6 +1036,40 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             Log.error('Kingdoms NORTH: router exercise-policy rollback unverified')
         return route_ok and policy_ok
 
+    def abort_north_failed_provisioning(self):
+        """Close NORTH's host/router bypass after a failed first Ansible run.
+
+        This is deliberately NOT the installed-lab exercise-mode controller:
+        before AD promotion succeeds that controller depends on DC Locator.
+        A failed installation must never claim READY or exercise isolation,
+        but we can still remove its exact temporary host route and set the
+        router's restrictive forwarding policy without touching GOAD.
+        """
+        if self.lab_name != 'NORTH' or not self._north_runtime_allowed():
+            return False
+        if not self._require_cached_sudo():
+            Log.error('Kingdoms NORTH: cannot secure failed provisioning without sudo')
+            return False
+        mode = self.get_runtime_mode()
+        if mode not in ('unknown', 'provisioning'):
+            Log.error(
+                f'Kingdoms NORTH: refusing first-install rollback in runtime mode {mode}'
+            )
+            return False
+        clean = self._rollback_north_pre_guest_bootstrap()
+        if clean:
+            Log.warning(
+                'Kingdoms NORTH: failed Ansible provisioning closed host route '
+                'and router forwarding; Windows NAT/exercise isolation is '
+                'UNVERIFIED and instance remains NOT READY'
+            )
+        else:
+            Log.error(
+                'Kingdoms NORTH: failed provisioning cleanup INCOMPLETE; '
+                'manual review required before another installation attempt'
+            )
+        return clean
+
     def _prepare_north_pre_guest_network(self):
         """Establish protected-zone reachability before NORTH Windows Vagrant up.
 
