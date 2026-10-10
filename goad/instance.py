@@ -39,6 +39,9 @@ class LabInstance:
         self.provisioner = None
 
     def load(self, labs, creation=False):
+        if self.lab_name == 'NORTH' and not self._north_instance_settings_valid():
+            Log.error('Kingdoms NORTH: refused instance load with mismatched scope')
+            return False
         instance_path = GoadPath.get_instance_path(self.instance_id)
         if not os.path.isdir(instance_path):
             Log.error('instance path not found abort')
@@ -402,11 +405,26 @@ class LabInstance:
     def update_instance_folder(self):
         self.create_instance_folder(True)
 
+    def _north_instance_settings_valid(self):
+        """NORTH must never stage a GOAD/default IP range or an extension."""
+        return (
+            self.provider_name == VMWARE
+            and self.provisioner_name == PROVISIONING_LOCAL
+            and self.ip_range == '10.41.10'
+            and not self.extensions
+        )
+
     def create_instance_folder(self, force=False):
         # This is the filesystem boundary. Protect direct invocation as well
         # as every current and future interactive/non-interactive CLI path.
         if refuse_course_mutation(self.lab_name, "create_instance_folder"):
             Log.error(f'Kingdoms {self.lab_name}: instance creation is blocked (course preview)')
+            return False
+        if self.lab_name == 'NORTH' and not self._north_instance_settings_valid():
+            Log.error(
+                'Kingdoms NORTH: refusing non-VMware, non-local, non-10.41.10, '
+                'or extended instance creation before writing any assets'
+            )
             return False
         instance_exist = False
         if os.path.isdir(self.instance_path):
