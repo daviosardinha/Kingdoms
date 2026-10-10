@@ -71,8 +71,10 @@ do not modify Kali source files manually or mutate the reference GOAD lab.
   then exact four-host AD readiness. A failed playbook is NEVER a ready lab.
 - **P1:** Validate SQL Server and Phase 03 fixtures (including L2 poison/relay,
   Windows/WS01 interactions). Source-level checks cannot prove these.
-- **P1:** Inspect why the first post-deployment survey observed four owned
-  VMX identities rather than assuming all five were powered and owned.
+- **P1:** The post-deployment survey observed four owned VMX identities.
+  The scoped survey now reports the verified and unobserved guest **names**
+  without guessing why. Inspect which of the five is missing before declaring
+  provider coverage complete; do not auto-register or clone any missing guest.
 - **P1:** Test interruption/retry, idempotent start/stop, and measured startup
   time only after the initial successful AD installation.
 
