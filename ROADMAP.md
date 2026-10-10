@@ -116,6 +116,11 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   the legacy GOAD order. On bootstrap failure, attempt NORTH-only exact-route
   removal and router exercise-policy rollback, reporting incomplete cleanup.
   Source regressions are committed; live VMware/WinRM validation remains open.
+- [x] Reuse the installed-router VMware host-address repair, vmnet11/13 status
+  and authenticated management SSH gate after NORTH's FIRST Vagrant router
+  bring-up as well; unlike the legacy GOAD first-boot fast path, NORTH must not
+  begin Windows VM creation until its router and .254 host addresses are
+  genuinely usable. Offline mocked regressions committed; live acceptance open.
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.
