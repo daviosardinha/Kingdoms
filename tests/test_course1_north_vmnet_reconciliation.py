@@ -37,7 +37,7 @@ class NorthVmnetReconciliationTests(unittest.TestCase):
         )
         wanted = {
             "_reconcile_north_host_addresses", "_apply_router_policy",
-            "_enable_provisioning_routes",
+            "_enable_provisioning_routes", "_rollback_north_pre_guest_bootstrap",
         }
         klass.body = [
             node for node in klass.body
@@ -133,6 +133,40 @@ class NorthVmnetReconciliationTests(unittest.TestCase):
         self.assertTrue(provider._apply_router_policy("exercise"))
         self.assertTrue(provider._enable_provisioning_routes())
         self.assertEqual(provider.inherited_calls, [("policy", "exercise"), ("routes",)])
+
+    def test_failed_install_rollback_repairs_vmnet_before_router_policy(self):
+        provider = self.provider()
+        # The route is already removed (or removal works) while VMware has
+        # recreated a host vmnet. Policy SSH must not run until .254 is back.
+        results = [
+            SimpleNamespace(returncode=0),  # exact NORTH route disable
+            SimpleNamespace(returncode=1),  # .254 status failed
+            SimpleNamespace(returncode=0),  # protected NORTH repair service
+            SimpleNamespace(returncode=0),  # independent .254 status
+        ]
+        with patch.object(subprocess, "run", side_effect=results) as run:
+            self.assertTrue(provider._rollback_north_pre_guest_bootstrap())
+        self.assertEqual(run.call_args_list, [
+            call(["sudo", "-n", "bash", HELPER, "disable"],
+                 check=False, timeout=30),
+            call(["bash", HELPER, "status"], check=False, timeout=25),
+            call(["sudo", "-n", "systemctl", "restart", SERVICE],
+                 check=False, timeout=50),
+            call(["bash", HELPER, "status"], check=False, timeout=25),
+        ])
+        self.assertEqual(provider.inherited_calls, [("policy", "exercise")])
+
+    def test_failed_install_rollback_never_claims_isolation_after_bad_repair(self):
+        provider = self.provider()
+        results = [
+            SimpleNamespace(returncode=0),  # exact route absent/removed
+            SimpleNamespace(returncode=1),  # bad .254
+            SimpleNamespace(returncode=1),  # repair refused
+        ]
+        with patch.object(subprocess, "run", side_effect=results) as run:
+            self.assertFalse(provider._rollback_north_pre_guest_bootstrap())
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(provider.inherited_calls, [])
 
     def test_reference_routes_and_policy_remain_unchanged(self):
         provider = self.provider()
