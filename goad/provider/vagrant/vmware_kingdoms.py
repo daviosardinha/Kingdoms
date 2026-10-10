@@ -28,6 +28,14 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         if binding is None or not binding.segmented_install_enabled:
             Log.error('Kingdoms NORTH: VM lifecycle not released; no guest operation authorized')
             return False
+        # Also gate direct provider calls: an opt-in environment variable is
+        # NEVER permission to touch an arbitrary Vagrant/VMX directory.
+        if self.path is None or not self._verify_north_instance_sources():
+            Log.error('Kingdoms NORTH: runtime rejected unbound instance sources')
+            return False
+        if not self._check_segmented_instance_conflicts():
+            Log.error('Kingdoms NORTH: runtime rejected a foreign/colliding VMware VMX')
+            return False
         return True
 
     def start(self, vm_name=None):
