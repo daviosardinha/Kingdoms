@@ -1,0 +1,77 @@
+---
+# NORTH only. VMware NAT must remain available for WinRM/bootstrap, but must
+# never contribute a resolver that can find the separate reference GOAD forest.
+# Keep this separate from the common GOAD child-domain promotion path.
+- name: Pin NORTH DC02 provisioning NAT DNS to the instance parent controller
+  ansible.windows.win_dns_client:
+    adapter_names: "{{ nat_adapter }}"
+    ipv4_addresses:
+      - "{{ hostvars[dns_domain].ansible_host }}"
+  when: two_adapters | bool
+
+- name: Prove NORTH DNS and DC Locator cannot discover the reference forest
+  ansible.windows.win_powershell:
+    script: |
+      [CmdletBinding()]
+      param(
+        [String]$NatAdapter,
+        [String]$DomainAdapter,
+        [String]$ParentDns,
+        [String]$ParentDomain,
+        [String]$ParentDcFqdn,
+        [String]$ChildDomain,
+        [String]$ChildDcIp
+      )
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if ($NatAdapter -eq $DomainAdapter) {
+        throw "NORTH DNS containment: provisioning and exercise NIC are the same"
+      }
+      foreach ($alias in @($NatAdapter, $DomainAdapter)) {
+        $servers = @((Get-DnsClientServerAddress -InterfaceAlias $alias -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses)
+        if ($servers.Count -ne 1 -or $servers[0] -ne $ParentDns) {
+          throw "NORTH DNS containment: adapter $alias has unexpected IPv4 DNS resolver(s): $($servers -join ',')"
+        }
+      }
+      $records = @(Resolve-DnsName -Server $ParentDns -Name $ParentDcFqdn -Type A -DnsOnly -ErrorAction Stop)
+      if (-not ($records | Where-Object { $_.IPAddress -eq $ParentDns })) {
+        throw "NORTH DNS containment: selected parent DNS does not own expected parent DC address"
+      }
+      # Drop stale resolver cache after removing the foreign VMware NAT DNS.
+      Clear-DnsClientCache -ErrorAction Stop
+      $parentLocator = & nltest.exe "/dsgetdc:$ParentDomain" /force 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        throw "NORTH DNS containment: current parent-domain DC Locator failed"
+      }
+      $parentAddressLines = @($parentLocator | Where-Object { "$_" -match 'Address:' })
+      $parentAddresses = @($parentAddressLines | ForEach-Object {
+        [regex]::Matches("$_", '(?:\d{1,3}\.){3}\d{1,3}') | ForEach-Object { $_.Value }
+      })
+      if ($parentAddresses.Count -ne 1 -or $parentAddresses[0] -ne $ParentDns) {
+        throw "NORTH DNS containment: parent DC Locator resolved outside current NORTH instance: $($parentAddresses -join ',')"
+      }
+      # On a brand-new DC02 this domain MUST NOT resolve to a foreign DC.
+      # After a successful promotion, only this instance's child DC is legal.
+      $childLocator = & nltest.exe "/dsgetdc:$ChildDomain" /force 2>&1
+      $childStatus = $LASTEXITCODE
+      if ($childStatus -eq 0) {
+        $childLines = @($childLocator | Where-Object { "$_" -match 'Address:' })
+        $childAddresses = @($childLines | ForEach-Object {
+          [regex]::Matches("$_", '(?:\d{1,3}\.){3}\d{1,3}') | ForEach-Object { $_.Value }
+        })
+        $computer = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+        if ($childAddresses.Count -ne 1 -or $childAddresses[0] -ne $ChildDcIp -or
+            [int]$computer.DomainRole -ne 5 -or $computer.Domain -ine $ChildDomain) {
+          throw "NORTH DNS containment: child DC Locator resolved to foreign or incomplete domain: $($childAddresses -join ',')"
+        }
+      }
+      Write-Output "NORTH_DNS_CONTAINMENT_OK parent=$ParentDns child_status=$childStatus"
+    parameters:
+      NatAdapter: "{{ nat_adapter }}"
+      DomainAdapter: "{{ domain_adapter }}"
+      ParentDns: "{{ hostvars[dns_domain].ansible_host }}"
+      ParentDomain: "{{ parent_domain }}"
+      ParentDcFqdn: "{{ source_dc }}"
+      ChildDomain: "{{ domain }}"
+      ChildDcIp: "{{ hostvars[dict_key].ansible_host }}"
+  changed_when: false
