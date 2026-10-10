@@ -7,5 +7,6 @@
   "providers": {
     "vmware": "preview"
   },
-  "kingdoms_foundation": "kingdoms-foundation-v1"
+  "kingdoms_foundation": "kingdoms-foundation-v1",
+  "first_install_pilot": "NORTH_VMWARE_DISPOSABLE_FIRST_INSTALL_20261010"
 }
