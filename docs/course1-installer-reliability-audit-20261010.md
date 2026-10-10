@@ -151,9 +151,14 @@ cached sudo, but BEFORE the inherited preflight demands `.254`. Without this
 additional boundary, every subsequent retry would fail before the new
 post-Windows hooks could run. GOAD's preflight behavior is unchanged.
 
-**New acceptance gate:** Kali must pass
-`tests.test_course1_north_vmnet_reconciliation` (including preflight,
-post-Windows, policy/route, and rollback cases), the updated real-install
-AST mocks in `tests.test_course1_bound_lifecycle`, and the complete
-instance-scoped readiness. Live exercise-isolation/AD validation is still
-pending; source tests do NOT prove either.
+**New acceptance gate, in safe order:** First run all offline source
+regressions, including `tests.test_course1_north_vmnet_reconciliation`
+(preflight, post-Windows, policy/route, rollback cases) and
+`tests.test_course1_bound_lifecycle`. Do NOT demand a green live-host
+readiness survey while the last failed Vagrant boot has left vmnet11/13
+at VMware's `.1` address: the survey must fail closed until repaired.
+Next, after operator review, enter the already-authorized native NORTH
+installation path and observe its instance-bound preflight restoring
+`.254` BEFORE any Vagrant up. Only AFTER that succeeds, repeat the
+full instance-scoped host readiness and continue with AD/Ansible/exercise
+acceptance. Source tests do NOT prove live repair or isolation.
