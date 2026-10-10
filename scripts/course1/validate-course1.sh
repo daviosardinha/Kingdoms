@@ -117,6 +117,8 @@ python3 -m unittest \
     tests.test_course1_external_artifacts \
     tests.test_course1_lifecycle_plan \
     tests.test_course1_bound_lifecycle \
+    tests.test_course1_north_vmnet_reconciliation \
+    tests.test_course1_route_state \
     tests.test_course1_source_gate \
     tests.test_course1_network_plan \
     tests.test_course1_host_fit \
