@@ -111,6 +111,11 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   registered guest MAC/vmnet identities, allowing only separately identified
   Vagrant VMX IDs owned by that NORTH instance, and rejecting foreign
   vmnet11/12/13 guests or duplicate course MACs; no new host mutation.
+- [x] Stage NORTH's protected parent-domain route and provisioning router
+  policy after router bring-up but BEFORE first Windows Vagrant up; preserve
+  the legacy GOAD order. On bootstrap failure, attempt NORTH-only exact-route
+  removal and router exercise-policy rollback, reporting incomplete cleanup.
+  Source regressions are committed; live VMware/WinRM validation remains open.
 - [ ] Complete/validate NORTH's actual four-guest mode controller and NAT,
   Windows/AD readiness and post-Vagrant inventory synchronization. Only then
   can the existing Kingdoms `install` lifecycle be enabled for NORTH.
