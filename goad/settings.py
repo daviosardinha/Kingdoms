@@ -1,7 +1,7 @@
 from goad.log import Log
 from goad.utils import *
 from goad.dependencies import Dependencies
-from goad.course_catalog import course_manifest
+from goad.course_catalog import course_manifest, north_first_install_pilot_authorized
 
 
 class Settings:
@@ -40,7 +40,10 @@ class Settings:
         course = course_manifest(self.lab_name)
         if course is not None:
             Log.info(f'Course              : {course["title"]}')
-            Log.info('Deployment State    : PREVIEW ONLY (not installable)')
+            if self.lab_name == 'NORTH' and north_first_install_pilot_authorized():
+                Log.warning('Deployment State    : CONTROLLED FIRST INSTALL PILOT (unvalidated)')
+            else:
+                Log.info('Deployment State    : PREVIEW ONLY (not installable)')
         elif self.is_goad_nomad_segmented():
             Log.info(f'Current Network     : {self.GOAD_NOMAD_NETWORK_SCOPE}')
         elif self.provider_name != LUDUS:
@@ -52,7 +55,9 @@ class Settings:
     def inline(self):
         course = course_manifest(self.lab_name)
         if course is not None:
-            return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/PREVIEW'
+            state = ('FIRST-INSTALL-PILOT' if self.lab_name == 'NORTH' and
+                     north_first_install_pilot_authorized() else 'PREVIEW')
+            return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/{state}'
         if self.is_goad_nomad_segmented():
             return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/10.4.0.0-16-segmented'
         if self.provider_name == LUDUS:
