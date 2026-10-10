@@ -216,3 +216,59 @@ reject unexpected AD/DC Locator endpoints, fail fast on promotion failure,
 verify actual post-reboot domain role/services before DNS-zone checks,
 and provide a negative test against reference `10.4.10.11`. Do not certify
 a cause or a fix until live observations confirm it.
+
+## Confirmed root cause: reference-domain discovery through NAT DNS
+
+DC02 evidence collected after the 2026-10-10 failed promotion:
+
+- NORTH Ethernet1 (exercise NIC): DNS = 10.41.20.10 (NORTH parent).
+- NORTH Ethernet0 (VMware NAT): DNS = 192.168.213.2 (foreign resolver).
+- Forced DC Locator for north.sevenkingdoms.local resolved original
+  WINTERFELL at 10.4.10.11, not disposable NORTH's 10.41.10.11.
+- The only route to 10.4.10.11 was the NAT default via 192.168.213.2.
+- Querying NORTH parent DNS 10.41.20.10 directly for the child DC SRV
+  returned NXDOMAIN, consistent with NORTH child not being created yet.
+- DCPromoUI.log last-write timestamp was 2026-10-10 19:29:47 UTC,
+  matching the current failed install; returned child domain name collision
+  and error 31. Local dc02 reported DomainRole=2 and WORKGROUP.
+
+**Cause confirmed at the DNS/DC Locator boundary**, not lack of AD feature
+installation and not a need to recreate VMware guests. Distinct vmnets do
+not create independent AD namespaces while a guest still uses a DNS resolver
+that can discover another forest with the same domain names.
+
+### NORTH-only GitHub correction
+
+1. In NORTH child-domain promotion, explicitly pin the NAT NIC resolver to
+   the **current instance parent** (10.41.20.10), retaining the NAT link
+   used for WinRM. Validate both NIC resolver sets and parent hostname A
+   record. Clear stale resolver cache and demand a forced parent DC Locator
+   result with EXACT address 10.41.20.10. Reject any foreign child DC Locator
+   answer; only absent child or an already-promoted *local* 10.41.10.11 is
+   acceptable. NO hard-coded original reference DC in operational code.
+2. NORTH child promotion uses local Win32_ComputerSystem state rather than
+   a potentially foreign Get-ADDomain -Identity response, does not skip ADDS
+   prechecks, only marks Changed after Install-ADDSDomain succeeds, and
+   proves actual local DC role/AD services after reboot BEFORE DNS-zone tasks.
+   ADWS is started before calling Get-ADDomain -Current LocalComputer.
+   The legacy GOAD promotion/reboot tasks remain used only for GOAD.
+3. Both NORTH domain-member roles (SRV02 and WS01) now pin their NAT and lab
+   DNS resolvers to 10.41.10.11 and require a forced DC Locator lookup
+   returning that exact address BEFORE win_domain_membership. This prevents
+   the same collision from silently joining the original NORTH later.
+4. Canonical source regression includes a dedicated negative/positive
+   DNS containment/promotion contract and verifies the shared GOAD path
+   remains gated and unchanged.
+
+### Unverified (do NOT claim fixed yet)
+
+- Kali canonical offline suite pass for these commits;
+- Live Windows DNS address pin survives DHCP, reboot and Vagrant recovery;
+- Forced DC Locator on DC02 now selects 10.41.20.10 for parent and does
+  not discover 10.4.10.11 for child;
+- New WINTERFELL promotion, child AD-integrated DNS zone, child time/ADWS
+  services, and member joins;
+- Final exercise NAT disconnection and router isolation.
+
+Do not modify the original reference environment, manually create child
+DNS records, manually join the old forest, or start a duplicate instance.
