@@ -148,6 +148,44 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
                         reset.index("['snapshot', 'pop', '--no-delete', '--no-start']"))
         self.assertIn("reduced lifecycle activation is not yet approved", text)
 
+    def test_north_reset_refuses_bad_instance_before_snapshot_mutation(self):
+        from unittest.mock import patch
+        from goad.provider.vagrant.vmware_kingdoms import GoadKingdomsVmwareProvider
+
+        provider = object.__new__(GoadKingdomsVmwareProvider)
+        provider.lab_name = "NORTH"
+        with (
+            patch.object(provider, "_north_runtime_allowed", return_value=True),
+            patch.object(provider, "_require_full_goad_instance_binding", return_value=True),
+            patch.object(provider, "_verify_north_instance_sources", return_value=False),
+            patch.object(provider, "_run_vagrant_bounded") as snapshot,
+        ):
+            self.assertFalse(provider.reset())
+            snapshot.assert_not_called()
+
+    def test_north_reset_uses_hardened_snapshot_and_exercise_isolation(self):
+        from unittest.mock import patch
+        from goad.provider.vagrant.vmware_kingdoms import GoadKingdomsVmwareProvider
+
+        provider = object.__new__(GoadKingdomsVmwareProvider)
+        provider.lab_name = "NORTH"
+        with (
+            patch.object(provider, "_north_runtime_allowed", return_value=True),
+            patch.object(provider, "_require_full_goad_instance_binding", return_value=True),
+            patch.object(provider, "_verify_north_instance_sources", return_value=True),
+            patch.object(provider, "_validated_kingdoms_legacy_plan", return_value=object()),
+            patch.object(provider, "get_runtime_mode", return_value="exercise"),
+            patch.object(provider, "_run_vagrant_bounded", return_value=True) as snapshot,
+            patch.object(provider, "_running_instance_vms", return_value=[]) as running,
+            patch.object(provider, "_restore_exercise_nic_contract_offline", return_value=True) as isolate,
+        ):
+            self.assertTrue(provider.reset())
+            snapshot.assert_called_once_with(
+                ["snapshot", "pop", "--no-delete", "--no-start"], timeout=900
+            )
+            running.assert_called_once()
+            isolate.assert_called_once()
+
     def test_provider_planner_checks_legacy_hosts_and_roster(self):
         src = (ROOT / "goad/provider/vagrant/vmware_kingdoms.py").read_text(encoding="utf-8")
         method = src.split("    def _validated_kingdoms_legacy_plan(", 1)[1].split(
