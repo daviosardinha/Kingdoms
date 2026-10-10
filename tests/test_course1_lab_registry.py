@@ -255,6 +255,18 @@ assert lab.get_first_provider_name() == 'vmware'
                 self.assertTrue(instance.create_instance_folder())
             self.assertEqual(instance.status, CREATED)
             self.assertEqual(json.loads((workspace / "instance.json").read_text())["lab"], "NORTH")
+            # Both files are genuine native Kingdoms instance-writer outputs:
+            # their trailing newlines must survive Jinja2 rendering, or the
+            # actual provider rejects the instance before powering on a VM.
+            project = Path(__file__).resolve().parents[1]
+            for generated, canonical in (
+                ("inventory", "ad/NORTH/providers/vmware/inventory"),
+                ("inventory_disable_vagrant", "ad/NORTH/data/inventory_disable_vagrant"),
+            ):
+                with self.subTest(generated=generated):
+                    actual_bytes = (workspace / generated).read_bytes()
+                    self.assertTrue(actual_bytes.endswith(b"\\n"))
+                    self.assertEqual(actual_bytes, (project / canonical).read_bytes())
             plan = plan_bound_instance(workspace / "provider", "start",
                                        "GOAD-WS01", lab_name="NORTH")
             self.assertEqual(tuple(plan.phases[1].machines),
