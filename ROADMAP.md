@@ -56,6 +56,15 @@ The necessary **provider-neutral contracts** from P3 must precede Ludus. Virtual
   acceptance matrix in `docs/course1-installer-reliability-audit-20261010.md`.
   Record the unverified 4/5 observed NORTH VMX identities, AD promotion,
   domain time, SQL/Phase 03 and final NAT/router isolation as separate gates.
+- [x] Fix second live NORTH resume failure: VMware Vagrant Windows boot
+  reassigns host vmnet11/13 from .254 to its own .1 address, blocking the
+  protected parent route and router-policy cleanup. Exact-instance/VMX-
+  authenticated NORTH preflight now repairs only allowed vmnet11/13 drift
+  through the existing protected host-address service; each Windows Vagrant
+  startup/recovery and each router-policy/route operation also verifies
+  and reconciles host address state. Foreign host addresses, reference
+  vmnets and unverified repairs still fail closed; regression tests committed.
+  **Live Kali verification and actual Ansible provisioning remain pending.**
 - [ ] Run NORTH's full four-guest provisioning on a disposable instance and
   validate AD readiness and service configuration before releasing installation.
 
