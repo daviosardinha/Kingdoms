@@ -32,6 +32,24 @@ class NorthReadinessDashboardTests(unittest.TestCase):
         self.assertIn("inspect_network_phase", content)
         self.assertIn("registered_inventory_complete", content)
 
+    def test_canonical_source_regression_includes_north_retry_guards(self):
+        validator = (ROOT / "scripts/course1/validate-course1.sh").read_text(
+            encoding="utf-8"
+        )
+        full_suite = validator.split(
+            'step "02 - Complete offline contract regression suite"', 1
+        )[1].split(
+            'step "02b - Native NORTH Vagrant/router source parsers"', 1
+        )[0]
+        for module in (
+            "tests.test_course1_north_vmnet_reconciliation",
+            "tests.test_course1_route_state",
+            "tests.test_course1_bound_lifecycle",
+            "tests.test_north_instance_collisions",
+        ):
+            with self.subTest(module=module):
+                self.assertEqual(full_suite.count(module), 1)
+
     def test_dashboard_never_authorizes_premature_install(self):
         content = CHECK.read_text()
         self.assertIn('PREVIEW_ONLY_NOT_INSTALLABLE', content)
