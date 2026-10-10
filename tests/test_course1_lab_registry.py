@@ -1,5 +1,6 @@
 """Native Kingdoms console discovery: NORTH is selectable but NOT deployable."""
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -178,6 +179,60 @@ assert lab.get_first_provider_name() == 'vmware'
         ]:
             with self.subTest(action=method):
                 self.assertIs(getattr(console, method)(arg), False)
+
+    def test_north_pilot_requires_exact_manifest_and_operator_ack(self):
+        from goad.course_catalog import (
+            NORTH_PILOT_ID, NORTH_PILOT_ENV,
+            north_first_install_pilot_authorized,
+        )
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: "wrong"}):
+            self.assertFalse(north_first_install_pilot_authorized())
+            self.assertTrue(refuse_course_mutation("NORTH", "install"))
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+            self.assertTrue(north_first_install_pilot_authorized())
+            for operation in (
+                "install/create", "install", "create_instance",
+                "create_instance_folder", "install_instance",
+                "provide", "provision_lab",
+            ):
+                self.assertFalse(refuse_course_mutation("NORTH", operation))
+            for operation in ("create_empty", "ws01", "provision", "reset", "destroy"):
+                self.assertTrue(refuse_course_mutation("NORTH", operation))
+            self.assertTrue(refuse_course_mutation("FUTURE", "install"))
+            self.assertFalse(refuse_course_mutation("GOAD", "install"))
+
+    def test_north_pilot_dispatches_real_provider_only_with_ack(self):
+        import sys
+        from types import ModuleType
+        from goad.course_catalog import NORTH_PILOT_ID, NORTH_PILOT_ENV
+        name = "goad.provider.vagrant.vmware_kingdoms_profile"
+        stub = ModuleType(name)
+
+        class MockHardenedProvider:
+            def __init__(self, lab_name):
+                self.lab_name = lab_name
+
+        stub.ProfiledGoadKingdomsVmwareProvider = MockHardenedProvider
+        with patch.dict(sys.modules, {name: stub}):
+            with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+                provider = ProviderFactory.get_provider("vmware", "NORTH", None)
+                self.assertIsInstance(provider, MockHardenedProvider)
+                self.assertEqual(provider.lab_name, "NORTH")
+            with patch.dict(os.environ, {NORTH_PILOT_ENV: "invalid"}):
+                provider = ProviderFactory.get_provider("vmware", "NORTH", None)
+                self.assertIsInstance(provider, PreviewCourseProvider)
+
+    def test_north_pilot_binding_uses_pinned_four_guest_identity(self):
+        from goad.course_catalog import NORTH_PILOT_ID, NORTH_PILOT_ENV
+        from goad.kingdoms_vmware_profile import north_binding
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+            binding = north_binding()
+            self.assertTrue(binding.segmented_install_enabled)
+            self.assertEqual(len(binding.roster.windows), 4)
+            self.assertEqual(binding.north_host, "10.41.10.254")
+            self.assertEqual(binding.management_host, "10.41.99.254")
+        with patch.dict(os.environ, {NORTH_PILOT_ENV: "invalid"}):
+            self.assertFalse(north_binding().segmented_install_enabled)
 
     def test_goa_d_legacy_cannot_be_reinterpreted_as_course_one(self):
         self.assertIsNone(course_manifest("GOAD"))
