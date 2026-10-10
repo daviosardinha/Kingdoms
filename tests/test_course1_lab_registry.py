@@ -233,6 +233,38 @@ assert lab.get_first_provider_name() == 'vmware'
         with patch.dict(os.environ, {NORTH_PILOT_ENV: "invalid"}):
             self.assertFalse(north_binding().segmented_install_enabled)
 
+    def test_north_pilot_builds_real_disposable_workspace_offline(self):
+        """Exercise the real native instance writer without any Vagrant/VMware I/O."""
+        from goad.course_catalog import NORTH_PILOT_ENV, NORTH_PILOT_ID
+        from goad.course1_bound_lifecycle import plan_bound_instance
+        from goad.utils import CREATED
+        with tempfile.TemporaryDirectory(prefix="kingdoms-north-pilot-staging-") as folder:
+            workspace = Path(folder) / "disposable-north"
+            instance = object.__new__(LabInstance)
+            instance.instance_id = "kingdoms-north-pilot-test"
+            instance.lab_name = "NORTH"
+            instance.provider_name = "vmware"
+            instance.provisioner_name = "local"
+            instance.ip_range = "10.41.10"
+            instance.extensions = []
+            instance.status = ""
+            instance.is_default = False
+            instance.instance_path = str(workspace)
+            instance.instance_provider_path = str(workspace / "provider")
+            with patch.dict(os.environ, {NORTH_PILOT_ENV: NORTH_PILOT_ID}):
+                self.assertTrue(instance.create_instance_folder())
+            self.assertEqual(instance.status, CREATED)
+            self.assertEqual(json.loads((workspace / "instance.json").read_text())["lab"], "NORTH")
+            plan = plan_bound_instance(workspace / "provider", "start",
+                                       "GOAD-WS01", lab_name="NORTH")
+            self.assertEqual(tuple(plan.phases[1].machines),
+                             ("GOAD-DC01", "GOAD-DC02", "GOAD-WS01"))
+            self.assertEqual(dict(plan.management_hosts)["GOAD-WS01"],
+                             "10.41.10.31")
+            self.assertEqual(plan.execution, "BLOCKED_STATIC_PLAN_ONLY")
+            self.assertTrue((workspace / "router/provision.sh").is_file())
+            self.assertFalse((workspace / "provider/.vagrant").exists())
+
     def test_goa_d_legacy_cannot_be_reinterpreted_as_course_one(self):
         self.assertIsNone(course_manifest("GOAD"))
         self.assertFalse(refuse_course_mutation("GOAD", "start"))
