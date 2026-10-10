@@ -94,6 +94,8 @@ def inspect_network_phase(proposal: dict, snapshot: dict,
     scoped_provider = Path(instance_provider) if instance_provider is not None else None
     owned_ids: set[str] = set()
     owned_count = 0
+    owned_guest_names: list[str] = []
+    unobserved_guests: list[str] = []
     if scoped_provider is not None:
         # Deployed NORTH's own VMX identities legitimately occupy its
         # reserved vmnets/MACs. Verify the canonical instance source and
@@ -111,6 +113,8 @@ def inspect_network_phase(proposal: dict, snapshot: dict,
                        *snapshot["registered_inventory"]["registered_vms"]]
         }
         owned_count = len(owned_ids & observed_ids)
+        owned_guest_names = owned_report["owned_guests_verified"]
+        unobserved_guests = owned_report["owned_guests_unobserved"]
         require(owned_count == owned_report["owned_vmx_examined"],
                 "scoped NORTH VMX survey changed during inspection")
         normalized["running_vms"] = [
@@ -167,6 +171,8 @@ def inspect_network_phase(proposal: dict, snapshot: dict,
         "registered_vm_count": conflict["registered_vm_count"],
         "running_vm_count": snapshot["running_vm_count"],
         "north_owned_vmx_verified": owned_count,
+        "north_owned_guests_verified": owned_guest_names,
+        "north_owned_guests_unobserved": unobserved_guests,
         "host_networks_modified": False,
         "guest_lifecycle_authorized": False,
         "deployment_authorized": False,
