@@ -1,4 +1,5 @@
 """Native Kingdoms console discovery: NORTH is selectable but NOT deployable."""
+import ast
 import json
 import os
 import tempfile
@@ -17,6 +18,62 @@ from goad.settings import Settings
 
 
 class NorthNativeLabTests(unittest.TestCase):
+    def test_native_console_and_vmware_provider_modules_parse_before_pilot(self):
+        """Fail offline before an invalid Python source can reach ./goad.sh.
+
+        Do not import VMware, WinRM or Ansible clients here. Parse the actual
+        source files that the opt-in NORTH console loads, including the shared
+        reference VMware foundation. This catches broken syntax that mocked
+        method-only tests cannot see.
+        """
+        root = Path(__file__).resolve().parents[1]
+        sources = (
+            "goad.py",
+            "goad_nomad.py",
+            "goad/course_catalog.py",
+            "goad/instance.py",
+            "goad/kingdoms_vmware_profile.py",
+            "goad/settings.py",
+            "goad/lab_manager.py",
+            "goad/provider/provider_factory.py",
+            "goad/provider/vagrant/vmware.py",
+            "goad/provider/vagrant/vmware_nomad.py",
+            "goad/provider/vagrant/vmware_kingdoms.py",
+            "goad/provider/vagrant/vmware_kingdoms_profile.py",
+        )
+        parsed = {}
+        for name in sources:
+            with self.subTest(module=name):
+                source = root / name
+                parsed[name] = ast.parse(
+                    source.read_text(encoding="utf-8"), filename=str(source)
+                )
+
+        shared = parsed["goad/provider/vagrant/vmware.py"]
+        provider = next(
+            node for node in shared.body
+            if isinstance(node, ast.ClassDef) and node.name == "VmwareProvider"
+        )
+        install_methods = [
+            node for node in provider.body
+            if isinstance(node, ast.FunctionDef) and node.name == "install"
+        ]
+        self.assertEqual(
+            len(install_methods), 1,
+            "shared VMware foundation must have exactly one install method"
+        )
+        sync_method = next(
+            node for node in provider.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_sync_goad_nomad_inventories"
+        )
+        self.assertTrue(any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "search"
+            for node in ast.walk(sync_method)
+        ), "canonical GOAD inventory synchronization must retain its regex")
+
     def test_north_discovery_does_not_import_runtime_credential_stacks(self):
         # A fresh Python interpreter must be able to discover an unreleased
         # course without importing its live WinRM or ansible-runner clients.
