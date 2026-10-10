@@ -66,3 +66,27 @@ of success. Never force `vagrant up` directly, replace a VMX path, merge the
 pilot into main, or disable binding/collision protections to proceed. Pilot
 authorization does not grant `ws01`, `create_empty`, or other independent
 course console shortcuts; use the native full `install` lifecycle only.
+
+## Post-install readiness survey (existing NORTH instance)
+
+After the disposable first provider bring-up, the default pre-allocation host
+collision survey remains intentionally strict: it cannot distinguish newly
+created NORTH guest MACs from an unauthorized foreign guest on vmnet11/12/13.
+Do **not** delete, unregister, or stop guests to satisfy that pre-install gate.
+
+For an actual instance, scope the same read-only readiness command to its
+existing **absolute** `provider` directory (no pilot environment required):
+
+```bash
+bash scripts/course1/check-install-readiness.sh --refresh \
+  --instance-provider "$HOME/kingdoms-course1-src/workspace/6ca91b-north-vmware/provider"
+```
+
+The scoped survey first validates the canonical NORTH instance assets and
+reuses the full registered/running VMX collision preflight. Only VMX identities
+proven owned by this instance using canonical Vagrant IDs and matching reserved
+MACs are removed from the *comparison copy* of the host snapshot. The
+specific temporary `10.41.20.0/24 via 10.41.10.1 dev vmnet11` route may also
+be normalized. Other routes, foreign VMX guests, subnets, or changed vmnets
+still fail closed. The survey does not modify the instance or authorize general
+installation. Keep the already provisioned router/Windows guests intact.
