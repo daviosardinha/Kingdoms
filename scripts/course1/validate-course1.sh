@@ -13,12 +13,13 @@ export PYTHONDONTWRITEBYTECODE=1
 
 REFERENCE_PROVIDER=""
 SURVEY_HOST=0
+NORTH_INSTANCE_PROVIDER=""
 PRIVATE_WORKDIR=""
 
 usage() {
     cat <<'USAGE'
 Usage:
-  bash scripts/course1/validate-course1.sh [--reference-provider ABSOLUTE_PATH] [--survey-host]
+  bash scripts/course1/validate-course1.sh [--reference-provider ABSOLUTE_PATH] [--survey-host] [--north-instance-provider ABSOLUTE_PATH]
 
 Runs the complete offline Course 1 gate:
   1. Clean, pinned, upstream-matched Kingdoms Git source
@@ -44,7 +45,7 @@ provider directory; it is inspected read-only and never operated on.
 --survey-host queries ip address/routes, VMware network config, vmrun list,
 and ~/.vmware/inventory.vmls for registered (including powered-off) VMX identities.
 Incomplete visibility stops with nonzero; no vmnets are allocated.
-The temporary preview is automatically removed on success OR failure.
+--north-instance-provider is ONLY for read-only post-install acceptance of one\nverified, existing NORTH instance. It is not a VM authorization bypass.\nThe temporary preview is automatically removed on success OR failure.
 USAGE
 }
 
@@ -66,6 +67,12 @@ trap 'exit 143' TERM
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --north-instance-provider)
+            [[ $# -ge 2 && "$2" == /* && -d "$2" && ! -L "$2" ]] ||
+                fail "--north-instance-provider requires a real absolute NORTH provider directory"
+            NORTH_INSTANCE_PROVIDER="$2"
+            shift 2
+            ;;
         --survey-host)
             SURVEY_HOST=1
             shift
@@ -238,9 +245,13 @@ if [[ "${SURVEY_HOST}" -eq 1 ]]; then
     python3 -m goad.course1_host_survey --check --json-only > "${HOST_SNAPSHOT}"
     [[ -s "${HOST_SNAPSHOT}" ]] || fail "VMware host survey did not return evidence"
     step "11 - Pre/post allocation VMware evidence and registered VM collisions"
+    north_phase_args=()
+    if [[ -n "${NORTH_INSTANCE_PROVIDER}" ]]; then
+        north_phase_args+=(--instance-provider "${NORTH_INSTANCE_PROVIDER}")
+    fi
     python3 -m goad.course1_vmnet_phase \
         --proposal docs/course1-network-candidate.example.json \
-        --snapshot "${HOST_SNAPSHOT}"
+        --snapshot "${HOST_SNAPSHOT}" "${north_phase_args[@]}"
     echo "[BLOCKED] New NORTH .254 host address persistence and live runtime remain separate gates"
 fi
 
