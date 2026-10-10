@@ -129,10 +129,15 @@ def inspect_north_guest_collisions(
         require(not (vnets & reserved_vmnets),
                 "foreign VMware guest is attached to an isolated NORTH vmnet")
         examined.add(vmx_id)
+    verified_guests = sorted({ours[vmx_id] for vmx_id in owned_seen})
     return {
         "status": "NO_IDENTIFIED_NORTH_VM_COLLISIONS",
         "foreign_vmx_examined": len(examined),
         "owned_vmx_examined": len(owned_seen),
+        # Named, non-sensitive ownership coverage: after first bootstrap,
+        # four verified VMX identities do NOT prove all five guests exist.
+        "owned_guests_verified": verified_guests,
+        "owned_guests_unobserved": sorted(set(EXPECTED_GUESTS) - set(verified_guests)),
         "registered_inventory_complete": True,
         "reference_vmware_preserved": True,
         "runtime_authorized": False,
