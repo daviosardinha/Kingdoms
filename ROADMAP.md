@@ -402,3 +402,14 @@ A provider and platform combination is supported only when all of the following 
   route as foreign allocation collisions. Reuse instance-bound VMX ownership
   and reject genuinely foreign NICs/routes; never weaken the pre-allocation
   gate. Mocked regressions committed; Kali validation pending.
+
+- [x] Fix observed dual-forest DNS collision during NORTH child promotion:
+  DC02 NAT DNS 192.168.213.2 resolved original WINTERFELL 10.4.10.11 while
+  the isolated parent is 10.41.20.10 and child should be 10.41.10.11.
+  Add NORTH-only DNS-client pin and forced instance-local parent/child DC
+  Locator verification before promotion. Add separate NORTH promotion path:
+  no SkipPreChecks, local DomainRole proof after reboot and truthful changed
+  status, with GOAD reference tasks unchanged. Apply the same instance-local
+  DNS/DC Locator guard before NORTH SRV02/WS01 domain joins. Canonical
+  regression added, **Kali execution and live AD installation not yet proven**.
+  Evidence and recovery contract: docs/course1-installer-reliability-audit-20261010.md.
