@@ -1,0 +1,53 @@
+---
+# Prevent a NORTH member from joining the identically named reference GOAD
+# domain over VMware NAT. No reference guest or vmnet changes are performed.
+- name: Configure NORTH member exercise DNS to this instance's child controller
+  ansible.windows.win_dns_client:
+    adapter_names: "{{ domain_adapter }}"
+    ipv4_addresses:
+      - "{{ hostvars[dns_domain].ansible_host }}"
+
+- name: Configure NORTH member NAT DNS to this instance's child controller
+  ansible.windows.win_dns_client:
+    adapter_names: "{{ nat_adapter }}"
+    ipv4_addresses:
+      - "{{ hostvars[dns_domain].ansible_host }}"
+  when: two_adapters | bool
+
+- name: Prove NORTH member will discover only its own WINTERFELL before joining
+  ansible.windows.win_powershell:
+    script: |
+      [CmdletBinding()]
+      param([String]$NatAdapter, [String]$DomainAdapter,
+            [String]$ExpectedDns, [String]$ExpectedDomain)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      if ($NatAdapter -eq $DomainAdapter) {
+        throw 'NORTH member DNS containment: network adapters are not distinct'
+      }
+      foreach ($alias in @($NatAdapter, $DomainAdapter)) {
+        $servers = @((Get-DnsClientServerAddress -InterfaceAlias $alias -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses)
+        if ($servers.Count -ne 1 -or $servers[0] -ne $ExpectedDns) {
+          throw "NORTH member DNS containment: unexpected DNS on $alias"
+        }
+      }
+      Clear-DnsClientCache -ErrorAction Stop
+      $located = & nltest.exe "/dsgetdc:$ExpectedDomain" /force 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        throw 'NORTH member DNS containment: child DC Locator failed'
+      }
+      $addresses = @($located | Where-Object { "$_" -match 'Address:' } |
+        ForEach-Object {
+          [regex]::Matches("$_", '(?:\d{1,3}\.){3}\d{1,3}') |
+          ForEach-Object { $_.Value }
+        })
+      if ($addresses.Count -ne 1 -or $addresses[0] -ne $ExpectedDns) {
+        throw "NORTH member DNS containment: foreign child DC discovered: $($addresses -join ',')"
+      }
+      Write-Output "NORTH_MEMBER_DNS_CONTAINMENT_OK server=$ExpectedDns"
+    parameters:
+      NatAdapter: "{{ nat_adapter }}"
+      DomainAdapter: "{{ domain_adapter }}"
+      ExpectedDns: "{{ hostvars[dns_domain].ansible_host }}"
+      ExpectedDomain: "{{ member_domain }}"
+  changed_when: false
