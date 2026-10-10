@@ -480,6 +480,7 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
             "_bring_up_router", "_prepare_north_pre_guest_network", "_ensure_vmware_tools",
             "_authenticated_guest_recovery_ready", "_recover_failed_windows_vagrant_up",
             "_rollback_north_pre_guest_bootstrap",
+            "_reconcile_north_host_addresses",
         ):
             setattr(provider, attr, Mock(return_value=True))
         provider._script = Mock(return_value="/tmp/course1-route-helper")
@@ -497,8 +498,31 @@ class BoundKingdomsLifecycleTests(unittest.TestCase):
         provider, process = self.north_first_install_harness()
         self.assertTrue(provider.install())
         provider._prepare_north_pre_guest_network.assert_called_once()
+        provider._reconcile_north_host_addresses.assert_called_once_with(
+            "Vagrant up GOAD-DC01",
+        )
         provider._rollback_north_pre_guest_bootstrap.assert_not_called()
         process.run.assert_called_once()
+
+    def test_north_repair_before_guest_tools_and_recovery(self):
+        provider, _ = self.north_first_install_harness()
+        provider.command.run_vagrant.return_value = False
+        provider._recover_failed_windows_vagrant_up.return_value = True
+        self.assertTrue(provider.install())
+        self.assertEqual(
+            provider._reconcile_north_host_addresses.call_args_list,
+            [call("Vagrant up GOAD-DC01"),
+             call("Vagrant recovery GOAD-DC01")],
+        )
+        provider._rollback_north_pre_guest_bootstrap.assert_not_called()
+
+    def test_north_drift_fails_before_guest_tools_or_ansible(self):
+        provider, process = self.north_first_install_harness()
+        provider._reconcile_north_host_addresses.return_value = False
+        self.assertFalse(provider.install())
+        provider._ensure_vmware_tools.assert_not_called()
+        provider._rollback_north_pre_guest_bootstrap.assert_called_once()
+        process.run.assert_not_called()
 
     def test_reference_failed_install_does_not_run_north_rollback(self):
         provider, process = self.north_first_install_harness()
