@@ -51,7 +51,7 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
             return ()
         with patch.object(runtime, "require_explicit_root", noop), \
              patch.object(runtime, "inspect_live", noop), \
-             patch.object(runtime, "inspect_live_hostaddrs", noop), \
+             patch.object(runtime, "inspect_live_hostaddrs", hostaddr_check or noop), \
              patch.object(runtime, "inspect_live_hostaddr_assets", noop), \
              patch.object(runtime, "asset_paths", return_value=self.paths), \
              patch.object(runtime, "run_command", fake_command):
@@ -143,7 +143,7 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
             if args[:2] == (str(self.vmware), "--start"):
                 starts.append(1)
                 if len(starts) == 1:
-                    self.netmap.write_text("VMWARE_CREATED_MAP\\n")
+                    self.netmap.write_text("VMWARE_CREATED_MAP\n")
         def fail_addr(*args, **kwargs):
             raise RuntimeError("deliberately fail address verification")
         with self.assertRaisesRegex(RuntimeError, "failed safely"):
@@ -160,25 +160,25 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
             if args[:2] == (str(self.vmware), "--start"):
                 starts.append(1)
                 if len(starts) == 1:
-                    self.netmap.write_text("VMWARE_CREATED_MAP\\n")
+                    self.netmap.write_text("VMWARE_CREATED_MAP\n")
             elif args[:2] == (str(self.vmware), "--stop") and starts:
-                self.netmap.write_text("FOREIGN_MAP_CHANGE\\n")
+                self.netmap.write_text("FOREIGN_MAP_CHANGE\n")
         def fail_addr(*args, **kwargs):
             raise RuntimeError("verify failed")
         with self.assertRaisesRegex(RuntimeError, "network restart failed"):
             self.launch(vmware_behavior=create_or_change_on_restart,
                         hostaddr_check=fail_addr)
-        self.assertEqual(self.netmap.read_text(), "FOREIGN_MAP_CHANGE\\n")
+        self.assertEqual(self.netmap.read_text(), "FOREIGN_MAP_CHANGE\n")
         self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"], "MANUAL_RECONCILIATION")
 
     def test_symlinked_netmap_is_refused_without_host_writes(self):
         self.netmap.unlink()
         target = self.root / "foreign-netmap"
-        target.write_text("UNRELATED\\n")
+        target.write_text("UNRELATED\n")
         self.netmap.symlink_to(target)
         with self.assertRaisesRegex(NorthSetupError, "symlink"):
             self.launch()
-        self.assertEqual(target.read_text(), "UNRELATED\\n")
+        self.assertEqual(target.read_text(), "UNRELATED\n")
         self.assertEqual(self.networking.read_text(), BASE)
         self.assertFalse(self.backups.exists())
         self.assertFalse(self.owner.exists())
