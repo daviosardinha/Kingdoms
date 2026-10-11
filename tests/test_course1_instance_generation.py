@@ -132,6 +132,22 @@ class Course1InstanceGenerationTests(unittest.TestCase):
             self.assertIn(f"{name} ansible_host={ip}", inventory)
             self.assertIn(f"{name} ansible_host={ip}", post)
 
+    def test_kingdoms_instance_list_shows_north_as_segmented_16(self):
+        source = (ROOT / "goad/instances.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        cls = next(x for x in tree.body if isinstance(x, ast.ClassDef)
+                   and x.name == "LabInstances")
+        namespace = {"VMWARE": "vmware"}
+        exec(compile(ast.Module(body=[cls], type_ignores=[]),
+                     "goad/instances.py", "exec"), namespace)
+        listing = namespace["LabInstances"].__new__(namespace["LabInstances"])
+        north = SimpleNamespace(lab_name="NORTH", provider_name="vmware",
+                                ip_range="10.4.0")
+        full = SimpleNamespace(lab_name="GOAD", provider_name="vmware",
+                               ip_range="192.168.56")
+        self.assertEqual(listing._network_scope(north), "10.4.0.0/16 (segmented)")
+        self.assertEqual(listing._network_scope(full), "10.4.0.0/16 (segmented)")
+
     def test_original_kingdoms_legacy_template_branch_is_preserved(self):
         source = (ROOT / "template/provider/vmware/Vagrantfile").read_text()
         self.assertEqual(source.count("{% if lab_name in ['GOAD', 'NORTH'] %}"), 2)
