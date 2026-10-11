@@ -169,6 +169,27 @@ def verify_vmnet_config(config: str, layout: dict) -> tuple[str, ...]:
     return tuple(checked)
 
 
+
+def known_vmware_hostaddr_normalization(proposed: bytes, observed: bytes, layout: dict) -> bool:
+    """Accept ONLY optional NORTH .254 metadata lines removed by VMware.
+
+    Workstation may drop HOSTONLY_HOSTADDR on network service restart. The
+    Linux/systemd .254 checks remain authoritative. No other byte, whitespace,
+    network, route or existing VMware setting may change unnoticed.
+    """
+    variants = {proposed}
+    for name in ("north", "management"):
+        segment = layout["segments"][name]
+        number = segment["vmnet"][5:]
+        address = segment["host_address"]
+        if address is None:
+            return False
+        removable = f"answer VNET_{number}_HOSTONLY_HOSTADDR {address}\\n".encode("ascii")
+        variants |= {data.replace(removable, b"", 1)
+                     for data in tuple(variants) if removable in data}
+    return observed in variants
+
+
 def network_plan(network_base=None, vmnets=None, baseline: str | None = None) -> dict:
     layout = load_course1_topology(network_base, vmnets)
     if baseline is None:
