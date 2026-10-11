@@ -225,7 +225,7 @@ def vmware_user_registry() -> dict:
     except OSError as exc:
         report["error"] = str(exc)
         return report
-    pattern = re.compile(r'^vmlist\\d+\\.config\\s*=\\s*"([^"]+)"')
+    pattern = re.compile(r'^vmlist\d+\.config\s*=\s*"([^"]+)"')
     report["registered_vmx_paths"] = [
         m.group(1) for line in lines if (m := pattern.match(line.strip()))
     ]
@@ -251,7 +251,7 @@ def summarize(report: dict) -> None:
     for unit, evidence in report["systemd"]["unit_states"].items():
         state = evidence.get("stdout", "")
         if "LoadState=loaded" in state or "ActiveState=active" in state:
-            print("UNIT:", unit, state.replace("\\n", " | ")[:180])
+            print("UNIT:", unit, state.replace("\n", " | ")[:180])
     for key in ("vmware_running_vmx", "vagrant_global_status", "host_ipv4_routes",
                 "host_ipv4_addresses", "network_firewall_rules"):
         value = report.get(key, {})
