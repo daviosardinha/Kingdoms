@@ -225,3 +225,32 @@ registered VM and is **not** one of these seven orphan PIDs. The previous
 provider directory. After confirming orphan shutdown, separately audit
 VMware registry and Vagrant index, dedicated host services/timers,
 vmnet10/11/12/13/20/30/99, firewall rules, and user-owned leftovers.
+
+## 2026-10-11 — original seven orphan VM processes successfully terminated
+
+Operator ran the verified Bash process-identity teardown (after avoiding Zsh
+history expansion of Bash associative-array syntax). All seven exact
+GOAD_NOMAD instance/process identities passed verification. Each received
+a TERM signal; the subsequent remaining-orphan check found nothing to
+force-kill. The final VMware output explicitly reads:
+
+```text
+===== FINAL VMWARE STATE =====
+Total running VMs: 0
+```
+
+This establishes that the eleven? **No**: NORTH's five disposable Vagrant
+VMs were explicitly destroyed, and the original seven orphan VMware
+processes were terminated; **all twelve are no longer running**, but
+original Vagrant metadata and Workstation registrations remain to be
+removed. Original guest disk/VMX files were already deleted by the
+operator's prior checkout-folder removal.
+
+**Do not claim the host clean yet.** Proceed with ownership-aware removal
+of stale Workstation registrations, Vagrant cache, discarded linked
+worktree and workspace, dedicated Kingdoms units/helpers, exact
+vmnet10/11/12/13/20/30/99 configurations, and owned routes.
+Before VMware global networking reset, inspect the separately registered
+`~/vmware/KINGDOMS-SQL-CLONE/KINGDOMS-SQL-CLONE.vmx` for references
+to any target vmnets; do not break a foreign guest or remove unrelated
+VMware inventory entries. Re-run clean-state validation after each stage.
