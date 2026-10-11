@@ -31,6 +31,14 @@ class StubPaths:
     def get_template_path(provider):
         return str(ROOT / "template" / "provider" / provider)
 
+    @staticmethod
+    def get_instance_path(instance_id):
+        return str(ROOT / "workspace" / instance_id)
+
+    @staticmethod
+    def get_instance_provider_path(instance_id):
+        return str(ROOT / "workspace" / instance_id / "provider")
+
 
 def load_instance_class():
     source = (ROOT / "goad/instance.py").read_text(encoding="utf-8")
@@ -70,6 +78,13 @@ class Course1InstanceGenerationTests(unittest.TestCase):
         self.instance._course1_artifacts = None
         self.instance.instance_path = str(self.base / "course1-id")
         self.instance.instance_provider_path = str(self.base / "course1-id" / "provider")
+
+    def test_new_course1_instance_normalizes_global_flat_default(self):
+        cls = load_instance_class()
+        north = cls("north-id", "NORTH", None, "vmware", "local", "192.168.56")
+        full = cls("goad-id", "GOAD", None, "vmware", "local", "192.168.56")
+        self.assertEqual(north.ip_range, "10.4.0")
+        self.assertEqual(full.ip_range, "192.168.56")
 
     def test_default_settings_resolve_to_kingdoms_10_4(self):
         layout = self.instance._course1_source_artifacts()
