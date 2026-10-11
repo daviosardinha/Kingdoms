@@ -1,6 +1,28 @@
 ---
 # Prevent a NORTH member from joining the identically named reference GOAD
 # domain over VMware NAT. No reference guest or vmnet changes are performed.
+- name: Discover NORTH member IPv4 adapters from this Windows host
+  ansible.builtin.set_fact:
+    north_member_lab_interfaces: "{{ ansible_interfaces | selectattr('ipv4.address', 'defined') | selectattr('ipv4.address', 'equalto', ansible_host) | list }}"
+    north_member_other_interfaces: "{{ ansible_interfaces | selectattr('ipv4.address', 'defined') | rejectattr('ipv4.address', 'equalto', ansible_host) | list }}"
+  changed_when: false
+
+- name: Reject unexpected NORTH member interface topology before DNS changes
+  ansible.builtin.assert:
+    that:
+      - north_member_lab_interfaces | length == 1
+      - north_member_other_interfaces | length <= 1
+      - north_member_lab_interfaces[0].connection_name | length > 0
+      - north_member_other_interfaces | length == 0 or (north_member_other_interfaces[0].connection_name | length > 0 and north_member_other_interfaces[0].default_gateway is defined and north_member_other_interfaces[0].default_gateway is not none)
+    fail_msg: "NORTH member network evidence is ambiguous; refuse DNS and domain-join changes"
+
+- name: Bind NORTH member interface roles to this host, never dc01 run_once facts
+  ansible.builtin.set_fact:
+    domain_adapter: "{{ north_member_lab_interfaces[0].connection_name }}"
+    nat_adapter: "{{ north_member_other_interfaces[0].connection_name if north_member_other_interfaces | length == 1 else '' }}"
+    two_adapters: "{{ north_member_other_interfaces | length == 1 }}"
+  changed_when: false
+
 - name: Configure NORTH member exercise DNS to this instance's child controller
   ansible.windows.win_dns_client:
     adapter_names: "{{ domain_adapter }}"
@@ -19,13 +41,23 @@
     script: |
       [CmdletBinding()]
       param([String]$NatAdapter, [String]$DomainAdapter,
-            [String]$ExpectedDns, [String]$ExpectedDomain)
+            [bool]$HasNat, [String]$ExpectedDns, [String]$ExpectedDomain)
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
-      if ($NatAdapter -eq $DomainAdapter) {
+      if ($HasNat -and $NatAdapter -eq $DomainAdapter) {
         throw 'NORTH member DNS containment: network adapters are not distinct'
       }
-      foreach ($alias in @($NatAdapter, $DomainAdapter)) {
+      if (-not $DomainAdapter) {
+        throw 'NORTH member DNS containment: missing verified exercise interface'
+      }
+      $checkedInterfaces = @($DomainAdapter)
+      if ($HasNat) {
+        if (-not $NatAdapter) {
+          throw 'NORTH member DNS containment: NAT enabled but interface missing'
+        }
+        $checkedInterfaces += $NatAdapter
+      }
+      foreach ($alias in $checkedInterfaces) {
         $servers = @((Get-DnsClientServerAddress -InterfaceAlias $alias -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses)
         if ($servers.Count -ne 1 -or $servers[0] -ne $ExpectedDns) {
           throw "NORTH member DNS containment: unexpected DNS on $alias"
@@ -48,6 +80,7 @@
     parameters:
       NatAdapter: "{{ nat_adapter }}"
       DomainAdapter: "{{ domain_adapter }}"
+      HasNat: "{{ two_adapters | bool }}"
       ExpectedDns: "{{ hostvars[dns_domain].ansible_host }}"
       ExpectedDomain: "{{ member_domain }}"
   changed_when: false
