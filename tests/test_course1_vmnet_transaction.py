@@ -87,6 +87,41 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["state"], "COMMITTED")
 
+
+    def test_vmware_removing_optional_hostaddr_lines_is_valid_and_recorded(self):
+        def vmware_normalizes():
+            self.calls.append("restart")
+            text = self.networking.read_text()
+            for num, addr in (("10", "10.4.10.254"), ("99", "10.4.99.254")):
+                text = text.replace(
+                    f"answer VNET_{num}_HOSTONLY_HOSTADDR {addr}\\n", ""
+                )
+            self.networking.write_text(text)
+        record = self.run_txn(restart=vmware_normalizes)
+        installed = self.networking.read_bytes()
+        self.assertNotIn(b"HOSTONLY_HOSTADDR", installed)
+        self.assertEqual(record["installed_sha256"], hashlib.sha256(installed).hexdigest())
+        self.assertEqual(self.calls, ["restart", "verify"])
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"], "COMMITTED")
+
+    def test_failed_verification_after_vmware_normalization_can_still_rollback(self):
+        def vmware_normalizes():
+            self.calls.append("restart")
+            if len(self.calls) == 1:
+                text = self.networking.read_text().replace(
+                    "answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\\n", ""
+                )
+                self.networking.write_text(text)
+        with self.assertRaisesRegex(VmnetTransactionError, "failed safely"):
+            self.run_txn(
+                restart=vmware_normalizes,
+                verify=lambda: (_ for _ in ()).throw(RuntimeError("guest addr check failed")),
+            )
+        self.assertEqual(self.networking.read_text(), BASELINE)
+        self.assertFalse(self.state.exists())
+        self.assertEqual(self.calls, ["restart", "restart"])
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"], "ROLLED_BACK")
+
     def test_outdated_reviewed_hash_never_changes_anything(self):
         with self.assertRaisesRegex(VmnetTransactionError, "changed after plan"):
             self.run_txn(digest="bad-hash")
