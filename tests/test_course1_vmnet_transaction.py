@@ -94,7 +94,7 @@ class Course1VmnetTransactionTests(unittest.TestCase):
             text = self.networking.read_text()
             for num, addr in (("10", "10.4.10.254"), ("99", "10.4.99.254")):
                 text = text.replace(
-                    f"answer VNET_{num}_HOSTONLY_HOSTADDR {addr}\\n", ""
+                    f"answer VNET_{num}_HOSTONLY_HOSTADDR {addr}\n", ""
                 )
             self.networking.write_text(text)
         record = self.run_txn(restart=vmware_normalizes)
@@ -109,7 +109,7 @@ class Course1VmnetTransactionTests(unittest.TestCase):
             self.calls.append("restart")
             if len(self.calls) == 1:
                 text = self.networking.read_text().replace(
-                    "answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\\n", ""
+                    "answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\n", ""
                 )
                 self.networking.write_text(text)
         with self.assertRaisesRegex(VmnetTransactionError, "failed safely"):
