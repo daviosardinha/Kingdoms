@@ -54,7 +54,10 @@ class GoadNomadVmwareProvider(VmwareProvider):
             )
 
     def is_goad_nomad_segmented(self):
-        return self.lab_name == 'GOAD'
+        # NORTH is a reduced instance of the same segmented Kingdoms engine.
+        # The independent NORTH install guard remains active until its host
+        # networking and AD lifecycle are fully integrated and validated.
+        return self.lab_name in ('GOAD', 'NORTH')
 
     @staticmethod
     def _project_root_from_script(script):
