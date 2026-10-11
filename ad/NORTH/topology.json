@@ -1,0 +1,47 @@
+{
+  "profile": "NORTH",
+  "network_base": "10.4.0.0/16",
+  "router": "GOAD-ROUTER",
+  "segments": {
+    "north": {
+      "third_octet": 10,
+      "vmnet": 10,
+      "router_host": 1,
+      "host_interface": 254
+    },
+    "sevenkingdoms": {
+      "third_octet": 20,
+      "vmnet": 20,
+      "router_host": 1,
+      "host_interface": null
+    },
+    "management": {
+      "third_octet": 99,
+      "vmnet": 99,
+      "router_host": 1,
+      "host_interface": 254
+    }
+  },
+  "windows": {
+    "GOAD-DC01": {
+      "inventory": "dc01",
+      "segment": "sevenkingdoms",
+      "host_octet": 10
+    },
+    "GOAD-DC02": {
+      "inventory": "dc02",
+      "segment": "north",
+      "host_octet": 11
+    },
+    "GOAD-SRV02": {
+      "inventory": "srv02",
+      "segment": "north",
+      "host_octet": 22
+    },
+    "GOAD-WS01": {
+      "inventory": "ws01",
+      "segment": "north",
+      "host_octet": 31
+    }
+  }
+}
