@@ -27,7 +27,7 @@ case "$MODE" in
 Kingdoms Course 1 — single-entrypoint development and release gate
 
 Usage:
-  bash scripts/course1-rollout.sh             # all existing tests + host gate + five-point readiness
+  bash scripts/course1-rollout.sh --all       # all existing tests + host gate + five-point readiness
   bash scripts/course1-rollout.sh --source    # same, no live clean-host inspection
   bash scripts/course1-rollout.sh --plan      # fast, read-only engineering status
   bash scripts/course1-rollout.sh --deploy    # BLOCKED until the missing runtime integrations are reviewed
