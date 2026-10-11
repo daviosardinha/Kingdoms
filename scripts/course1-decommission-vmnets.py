@@ -145,6 +145,9 @@ def apply(source: str, new_source: str, backup_root: Path) -> None:
     except Exception:
         print("[ROLLBACK] Restoring saved VMware networking settings", file=sys.stderr)
         shutil.copy2(backup_root / "networking", NETWORKING)
+        saved_netmap = backup_root / "netmap.conf"
+        if saved_netmap.is_file():
+            shutil.copy2(saved_netmap, NETMAP)
         if stopped:
             try:
                 shell(str(VMWARE_NETWORKS), "--stop", timeout=90)
