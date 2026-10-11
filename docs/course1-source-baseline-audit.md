@@ -224,7 +224,7 @@ The reduced Vagrant router slot definition was also corrected to have
 exactly three lab NIC PCI-slot assignments (Essos' fourth has gone).
 
 Regression sources added:
-- `tests/test_course1_topology.py`: nine pure topology /16, alternate
+- `tests/test_course1_topology.py`: ten pure topology /16, alternate
   prefix, address, protection and vmnet identity tests.
 - `tests/test_course1_provider_guard.py`: five class-level tests for
   original six-host preservation, reduced instance roster and blocked
@@ -237,3 +237,11 @@ wire a Course 1 playbook manifest retaining the exact Kingdoms
 provisioning cadence; run the full existing Kingdoms regression suite.
 Only after all these gates pass may the temporary Course 1 install guard
 be removed. Until then, never attempt a live NORTH install.
+
+A source-level connector comparison verified that removing the new
+`GoadNomadVmwareProvider.__init__` constructor and its new resolver import
+leaves the **entire original provider source byte-identical to Kingdoms
+`main`**. Thus GOAD behavior was not refactored as part of this step.
+The three dedicated Course 1 test modules now contain **24 tests**.
+Kali runtime test execution is pending; an offline source check is not
+a claim that the provider is installation-ready.
