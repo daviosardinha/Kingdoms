@@ -307,12 +307,12 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
         initial = self.owner.read_bytes()
         self.networking.write_text(
             self.networking.read_text()
-            + "answer VNET_1_HOSTONLY_HOSTADDR 192.168.56.1\\n"
+            + "answer VNET_1_HOSTONLY_HOSTADDR 192.168.56.1\n"
         )
         report = self.diagnose()
         self.assertFalse(report["exact_match"])
         self.assertEqual(report["vmnet_topology"], "PASS")
-        self.assertIn("answer VNET_1_HOSTONLY_HOSTADDR", "\\n".join(report["diff"]))
+        self.assertIn("answer VNET_1_HOSTONLY_HOSTADDR", "\n".join(report["diff"]))
         self.assertEqual(self.owner.read_bytes(), initial)
 
     def test_readonly_diagnose_flags_protected_vmnet_change(self):
@@ -326,7 +326,7 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
         report = self.diagnose()
         self.assertFalse(report["exact_match"])
         self.assertTrue(report["vmnet_topology"].startswith("FAIL:"))
-        self.assertIn("VNET_20_VIRTUAL_ADAPTER", "\\n".join(report["diff"]))
+        self.assertIn("VNET_20_VIRTUAL_ADAPTER", "\n".join(report["diff"]))
 
     def test_readonly_diagnose_blocks_other_instance(self):
         self.launch()
