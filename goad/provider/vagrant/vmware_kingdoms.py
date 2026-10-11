@@ -1463,6 +1463,8 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
 
     def prepare_provisioning(self):
         """Prepare fresh pre-AD bootstrap without weakening installed lifecycle."""
+        if self._course1_unwired():
+            return False
         if not self.is_goad_nomad_segmented():
             return super().prepare_provisioning()
 
