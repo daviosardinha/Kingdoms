@@ -320,6 +320,18 @@ class GoadNomadVmwareProvider(VmwareProvider):
         if check_script is None or setup_script is None:
             return False
 
+        if self.lab_name == 'NORTH':
+            # Never run the four-segment GOAD setup for a reduced Course 1
+            # instance. NORTH needs separately owned vmnets and host-address
+            # persistence; those are verified read-only here, not installed.
+            for arguments in (['bash', check_script, '--north'],
+                              ['bash', check_script, '--north', '--live']):
+                if subprocess.run(arguments, check=False).returncode != 0:
+                    Log.error('Course 1: native VMware networks/host addresses not ready')
+                    return False
+            Log.success('Course 1: three-segment network checks passed')
+            return True
+
         Log.info('GOAD_NOMAD: checking segmented VMware networks')
         check = subprocess.run(['bash', check_script], check=False)
         if check.returncode == 0:
