@@ -1,0 +1,45 @@
+---
+# Read-only, pre-promotion acceptance for the EXISTING NORTH instance.
+# Invokes the identical PowerShell proof from the production containment role.
+# Does NOT change DNS clients, reboot guests, or run Install-ADDSDomain.
+- name: Verify NORTH DC02 DNS containment without triggering promotion
+  hosts: dc02
+  gather_facts: true
+  vars_files:
+    - "../ad/NORTH/data/config.json"
+  tasks:
+    - name: Verify static NORTH domain identities
+      ansible.builtin.assert:
+        that:
+          - lab.hosts.dc01.domain == 'sevenkingdoms.local'
+          - lab.hosts.dc02.domain == 'north.sevenkingdoms.local'
+          - hostvars['dc01'].ansible_host == '10.41.20.10'
+          - hostvars['dc02'].ansible_host == '10.41.10.11'
+        fail_msg: 'NORTH preflight requires the isolated instance identity'
+
+    - name: Discover NORTH domain and VMware NAT interfaces read-only
+      ansible.builtin.set_fact:
+        north_domain_interfaces: "{{ ansible_interfaces | selectattr('ipv4.address', 'defined') | selectattr('ipv4.address', 'equalto', hostvars['dc02'].ansible_host) | list }}"
+        north_nat_interfaces: "{{ ansible_interfaces | selectattr('ipv4.address', 'defined') | rejectattr('ipv4.address', 'equalto', hostvars['dc02'].ansible_host) | list }}"
+
+    - name: Refuse ambiguous or missing DC02 interfaces
+      ansible.builtin.assert:
+        that:
+          - north_domain_interfaces | length == 1
+          - north_nat_interfaces | length == 1
+          - north_nat_interfaces[0].default_gateway is defined
+          - north_nat_interfaces[0].default_gateway is not none
+        fail_msg: 'NORTH DNS preflight found unexpected Windows interface topology'
+
+    - name: Run the exact NORTH instance-bound DNS/DC Locator guard (no mutation)
+      ansible.windows.win_powershell:
+        script: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/roles/child_domain/tasks/north_dns_containment.yml') | from_yaml)[1]['ansible.windows.win_powershell']['script'] }}"
+        parameters:
+          NatAdapter: "{{ north_nat_interfaces[0].connection_name }}"
+          DomainAdapter: "{{ north_domain_interfaces[0].connection_name }}"
+          ParentDns: "{{ hostvars['dc01'].ansible_host }}"
+          ParentDomain: "{{ lab.hosts.dc01.domain }}"
+          ParentDcFqdn: "{{ lab.hosts.dc01.hostname }}.{{ lab.hosts.dc01.domain }}"
+          ChildDomain: "{{ lab.hosts.dc02.domain }}"
+          ChildDcIp: "{{ hostvars['dc02'].ansible_host }}"
+      changed_when: false
