@@ -8,6 +8,13 @@ set -euo pipefail
 if [[ "${1:-}" == "--north" ]]; then
   readonly KINGDOMS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   shift
+  if [[ "${1:-}" == "diagnose" ]]; then
+    shift
+    # Root-owned journal and networking are read, never rewritten. A nonzero
+    # status is expected when VMware has altered the committed file.
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_host_network_apply diagnose "$@"
+  fi
   if [[ "${1:-}" == "verify" ]]; then
     shift
     # Installed-owner attestation is read-only and must inspect root-owned
