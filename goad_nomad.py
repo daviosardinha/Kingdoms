@@ -222,6 +222,33 @@ class GoadNomad(BaseGoad):
             return False
 
         return self.do_install_instance()
+    def do_prepare_north(self):
+        """Create the native NORTH instance files only; never start Vagrant.
+
+        The provider remains install-guarded until the separate host networking
+        and lifecycle acceptance gates are proven.
+        """
+        if (self.lab_manager.get_current_lab_name() != 'NORTH'
+                or self.lab_manager.get_current_provider_name() != 'vmware'):
+            Log.error('prepare-north requires the NORTH lab with VMware provider')
+            return False
+        if self.lab_manager.get_current_instance() is not None:
+            Log.error('A lab instance is already selected; refusing to create another')
+            return False
+        if not self.lab_manager.create_instance():
+            Log.error('NORTH source-only instance preparation failed')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        if (instance is None or instance.lab_name != 'NORTH'
+                or instance.provider_name != 'vmware'):
+            Log.error('NORTH instance identity was not established')
+            return False
+        Log.success(
+            'NORTH instance files created; no VMware, Vagrant or host networking changed'
+        )
+        Log.info('NORTH provider directory: ' + str(instance.instance_provider_path))
+        return True
+
     def do_install(self, arg=''):
         """Run a full install and return success only for an installed instance."""
         result = self._run_with_install_timer(lambda: self.do_create(arg))
@@ -482,7 +509,7 @@ class GoadNomad(BaseGoad):
 
 
 def parse_args():
-    task_help = 'tasks available: install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
+    task_help = 'tasks available: prepare-north/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='goad_nomad.py',
         description='GOAD_NOMAD lab management console.',
@@ -517,6 +544,11 @@ def _dispatch_task(goad, args):
             Log.error('Instance must be selected (-i) to use --run_playbook (-r) or --ansible_only (-a)')
             return 1
 
+    if args.task == 'prepare-north':
+        if args.instance is not None:
+            Log.error('prepare-north does not accept an existing instance (-i)')
+            return 1
+        return 0 if goad.do_prepare_north() else 1
     if args.task == 'install':
         if args.instance is not None:
             if args.run_playbook is not None:
