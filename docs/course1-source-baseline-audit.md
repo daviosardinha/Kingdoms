@@ -4,13 +4,11 @@ Status: **source review complete; no Course 1 VMs installed or source deployment
 
 ## Authoritative starting point
 
-Course 1 **Fall of the North** must derive from Kingdoms `main` and
-`ad/GOAD`. The `rebuild/course1-from-kingdoms` branch was created
-directly from that base. The discarded `feature/course1-reduced-profile-source`
+**Kingdoms is the sole product and engineering baseline. We are NOT rebuilding from upstream GOAD.** Course 1 **Fall of the North** derives from the validated Kingdoms `main` codebase, including its hardened VMware/Vagrant provider, AD provisioning, exercise isolation, lifecycle, Windows workstation and security fixtures. The current Kingdoms repository happens to store its original full scenario under the legacy path `ad/GOAD`; that directory is *Kingdoms-owned scenario data*, not a request to use a separate upstream GOAD checkout. The `rebuild/course1-from-kingdoms` branch was created directly from **Kingdoms `main`**. The discarded `feature/course1-reduced-profile-source`
 branch has been deleted by the operator and must not be resurrected or copied.
 
-Source-derived finding: the original setup is **not** a generic, topology-
-agnostic GOAD installation. It is a proven GOAD_NOMAD/Kingdoms segmented
+Source-derived finding: the validated **Kingdoms** setup is **not** a generic, topology-
+agnostic GOAD installation. It is a proven Kingdoms segmented
 VMware implementation containing hard-coded six-Windows, four-segment
 contracts. Keep its mechanisms, but parameterize the input data that those
 mechanisms currently assume.
@@ -31,7 +29,7 @@ not inferred from a fresh successful live installation of Course 1.
    deterministic Vagrant VMX/WinRM lifecycle, router-first boot, and temporary
    provisioning routes; these are already supported for `lab_name == GOAD`.
 4. `goad/provisioner/ansible/ansible.py` follows `playbooks.yml`.
-   The GOAD sequence includes child-domain creation, member joins, time,
+   The **Kingdoms GOAD-profile sequence** includes child-domain creation, member joins, time,
    AD data, WS01 baseline, ADCS, services, security, Phase 01, LPE, and
    health gates. A plain `default` playbook sequence is **not** equivalent.
 5. On success, provider finalization re-enters **exercise mode**; the existing
@@ -121,11 +119,11 @@ an already installed forest with identical AD FQDNs.
 
 ## Approved minimal engineering approach
 
-1. Add **one new profile definition**, tentatively `ad/NORTH` (Course 1),
-   by pruning a source copy of `ad/GOAD` without altering GOAD or
+1. Add **one new profile definition**, `ad/NORTH` (Course 1),
+   by reducing the **Kingdoms-owned** legacy scenario at `ad/GOAD` without altering its full Kingdoms profile or
    importing anything from the deleted experimental branch.
 2. Add one corresponding `NORTH` playbook manifest reproducing the
-   **GOAD Kingdoms sequence**, but with Essos-only activities omitted
+   **validated Kingdoms provisioning sequence**, but with Essos-only activities omitted
    and data file selection bound to the current profile. Never silently
    fall back to `default`.
 3. Make the **existing** VMware provider derive its guest roster,
@@ -137,7 +135,7 @@ an already installed forest with identical AD FQDNs.
 5. Implement fast, source-only checks for unresolved inventory/deleted
    host references, playbook prerequisites, unrendered Jinja values,
    networking conflict and output consistency before long Ansible runs.
-6. Prove both full GOAD baseline and reduced Course 1 contracts offline
+6. Prove both the full **Kingdoms** baseline and reduced Course 1 contracts offline
    before performing a single fresh live Course 1 install on clean Kali.
    Validate DCs, members, attack paths, routing, NAT isolation,
    start/stop/reset and measured timings before calling it complete.
@@ -162,8 +160,7 @@ installation or provisioning changes have been made by this audit.
 ## Implementation checkpoint — reduced profile source created
 
 The first new, **source-only** Course 1 profile now exists at `ad/NORTH`.
-It was derived from unchanged `ad/GOAD`, not the deleted experimental
-feature branch, and contains:
+It was derived exclusively from **Kingdoms `main`** (using its internal legacy `ad/GOAD` scenario data), not from upstream GOAD or the deleted experimental feature branch, and contains:
 
 - Four retained Windows hosts plus router in the VMware Vagrantfile.
 - Two retained AD domain definitions and pruned domain/provider inventories.
@@ -172,13 +169,13 @@ feature branch, and contains:
 - CASTELBLACK SQL link to BRAAVOS, parent Essos trust, cross-forest group
   member, and KINGSLANDING `sidhistory.ps1` (which actually runs
   `netdom trust ... /d:essos.local`) removed from Course 1.
-- Original GOAD PowerShell scripts referenced from the existing
+- Original **Kingdoms-owned** PowerShell scripts referenced from the existing
   `ansible/vulnerabilities.yml` for `domain_name == NORTH`;
   GOAD still uses its original per-lab script directory unchanged.
   No cloned/offshoot lesson script implementations.
 
 `tests/test_course1_minimal_profile_source.py` contains nine focused
-source regressions verifying the exact GOAD-minus-Essos data delta,
+source regressions verifying the exact **Kingdoms-minus-Essos** data delta,
 inventories, Vagrant roster, router policy, source scripts and original
 GOAD preservation. A separate static GitHub source pass verified eleven
 required files and source invariants.
