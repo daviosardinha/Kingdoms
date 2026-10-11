@@ -41,6 +41,7 @@ class ProviderInputTests(unittest.TestCase):
         self.assertEqual(len(provider.management_hosts), 6)
         self.assertEqual(len(provider.network_zones), 4)
         self.assertIn(("ESSOS", "vmnet30", "10.4.30.0/24"), provider.network_zones)
+        self.assertTrue(provider.is_goad_nomad_segmented())
 
     def test_course1_reuses_same_provider_with_four_guest_roster(self):
         provider = self.make("NORTH")
@@ -52,6 +53,7 @@ class ProviderInputTests(unittest.TestCase):
         self.assertEqual(set(zone[1] for zone in provider.network_zones),
                          {"vmnet10", "vmnet20", "vmnet99"})
         self.assertNotIn("ESSOS", str(provider.network_zones))
+        self.assertTrue(provider.is_goad_nomad_segmented())
 
     def test_another_kingdoms_lab_does_not_mutate_shared_defaults(self):
         north = self.make("NORTH")
@@ -82,6 +84,14 @@ class GuardBase:
         self.calls.append("reset")
         return True
 
+    def stop(self):
+        self.calls.append("stop")
+        return True
+
+    def stop_vm(self, vm_name):
+        self.calls.append("stop_vm")
+        return True
+
     def prepare_install(self):
         self.calls.append("prepare_install")
         return True
@@ -102,6 +112,8 @@ class UnsafeInstallGuardTests(unittest.TestCase):
         self.assertIs(provider.install(), False)
         self.assertIs(provider.start(), False)
         self.assertIs(provider.start_vm("GOAD-DC01"), False)
+        self.assertIs(provider.stop_vm("GOAD-DC01"), False)
+        self.assertIs(provider.stop(), False)
         self.assertIs(provider.reset(), False)
         self.assertIs(provider.prepare_install(), False)
         self.assertIs(provider.prepare_provisioning(), False)
