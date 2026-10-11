@@ -505,3 +505,31 @@ ticket caches from the user's home directory, delete only the abandoned
 `feature/course1-reduced-profile-source` remote branch, and repeat final
 read-only host checks. Preserve `main`, `rebuild/course1-from-kingdoms`,
 `~/kingdoms-rebuild`, shared VMware/Vagrant tooling, and cleanup backups.
+
+## 2026-10-11 — final clean-host verification accepted
+
+The operator's final screenshot establishes:
+
+- Both retired Kerberos ccache files removed by exact-file cleanup.
+- Obsolete `feature/course1-reduced-profile-source` remote Git branch
+  explicitly deleted by `git push origin --delete`; the subsequent
+  `git ls-remote --heads origin feature/course1-reduced-profile-source`
+  returned no branch.
+- `vmrun -T ws list`: **Total running VMs: 0**.
+- `vagrant global-status`: no active or cached lab entries.
+- No target vmnet10/11/12/13/20/30/99 interfaces from the operator's
+  network check.
+- No matching GOAD/Kingdoms systemd system or user units.
+- No matching GOAD/Kingdoms or old 10.4/10.41 references in the
+  operator's `sudo nft list ruleset` filtered check.
+
+**Status: retired-lab host decommission complete for the verified scope.**
+This is not a claim that every private file on Kali has been deleted:
+`~/.goad` remains intentionally as potentially reusable tooling,
+and cleanup evidence/backups are intentionally preserved.
+
+Next work begins solely from `main`-based
+`rebuild/course1-from-kingdoms`, with the original validated Kingdoms
+VMware + Ansible engine, reduction of Essos dependencies, and a
+parametric base 10.4.0.0/16 address plan. No experimental NORTH
+provider or feature-branch code may be reused.
