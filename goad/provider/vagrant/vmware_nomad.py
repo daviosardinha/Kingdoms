@@ -73,6 +73,7 @@ class GoadNomadVmwareProvider(VmwareProvider):
     def _provider_env(self):
         env = os.environ.copy()
         env['GOAD_PROVIDER_DIR'] = str(self.path)
+        env['GOAD_LAB_PROFILE'] = self.lab_name
         return env
 
     def _run_vagrant_bounded(self, args, timeout):
@@ -135,7 +136,7 @@ class GoadNomadVmwareProvider(VmwareProvider):
 
     def _router_policy_path(self, mode):
         return os.path.join(
-            GoadPath.get_lab_provider_path('GOAD', 'vmware'),
+            GoadPath.get_lab_provider_path(self.lab_name, 'vmware'),
             'router',
             'nftables',
             f'{mode}.nft',
