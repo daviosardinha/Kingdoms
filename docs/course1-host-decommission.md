@@ -354,3 +354,21 @@ After service cleanup, separately review the stale
 `~/kingdoms-course1-src` worktree and residual
 `6ca91b-north-vmware` folder, and the old remote Git feature branch.
 These have not yet been cleaned or verified.
+
+## 2026-10-11 — retired host-address services removed
+
+The user successfully ran the exact ownership-verified cleanup for:
+`goad-nomad-vmnet-hostaddrs.{service,timer}`,
+`kingdoms-north-vmnet-hostaddrs.{service,timer}`, and the matching
+`/usr/local/sbin` helper executables. Both prefixes verified as owned;
+the two timers were disabled; six files were moved into
+`/etc/vmware/kingdoms-cleanup-20261011T121537Z/hostaddr-units`.
+`systemctl daemon-reload` completed. The final output confirmed
+`[PASS] Obsolete host-address services removed`.
+
+Remaining work: inspect/prune only stale Workstation library records,
+Vagrant machine-index references to the missing original/fresh workspaces,
+the discarded NORTH checkout/workspace, and the abandoned feature branch.
+The separate fresh rebuild checkout `~/kingdoms-rebuild`, `main`, and
+unrelated VMware/Vagrant state must not be removed. Further host-owned
+Kingdoms artifacts require verified path-by-path classification.
