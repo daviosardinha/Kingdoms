@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from goad.course1_host_network_apply import apply, NorthSetupError
+from goad.course1_host_network_apply import apply, inspect_installed_north, NorthSetupError
 from goad.course1_vmnet_journal import inspect_vmnet_journals
 
 BASE = (
@@ -211,6 +211,67 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
         self.assertEqual(self.paths["timer"].read_text(), "foreign")
         self.assertEqual(self.networking.read_text(), BASE)
         self.assertFalse(self.owner.exists())
+
+    def attest(self):
+        return inspect_installed_north(
+            self.provider, networking=self.networking, owner=self.owner,
+            backups=self.backups, owner_uid=os.getuid(), inspect_host=False,
+        )
+
+    def test_installed_owner_matches_exact_north_instance_and_journal(self):
+        self.launch()
+        proofs = self.attest()
+        self.assertEqual(len(proofs), 2)
+
+    def test_owner_attestation_rejects_wrong_instance_and_modified_vmnet(self):
+        self.launch()
+        foreign = self.root / "other-instance"
+        foreign.mkdir()
+        with self.assertRaisesRegex(NorthSetupError, "another instance"):
+            inspect_installed_north(
+                foreign, networking=self.networking, owner=self.owner,
+                backups=self.backups, owner_uid=os.getuid(), inspect_host=False,
+            )
+        self.networking.write_text(self.networking.read_text() + "# changed\n")
+        with self.assertRaisesRegex(NorthSetupError, "differs from owned"):
+            self.attest()
+
+    def test_owner_attestation_rejects_untrusted_record(self):
+        self.launch()
+        self.owner.chmod(0o644)
+        with self.assertRaisesRegex(NorthSetupError, "permissions are unsafe"):
+            self.attest()
+        self.owner.chmod(0o600)
+        other = self.root / "owner-real"
+        self.owner.rename(other)
+        self.owner.symlink_to(other)
+        with self.assertRaisesRegex(NorthSetupError, "missing or unsafe"):
+            self.attest()
+
+    def test_owner_attestation_rejects_missing_backup_and_stale_journal(self):
+        self.launch()
+        record = json.loads(self.owner.read_text())
+        Path(record["backup"]).unlink()
+        with self.assertRaisesRegex(NorthSetupError, "backup is missing"):
+            self.attest()
+        Path(record["backup"]).write_bytes(BASE.encode())
+        journal_path = next(self.backups.glob("north-*")) / "journal.json"
+        data = json.loads(journal_path.read_text())
+        data["state"] = "MANUAL_RECONCILIATION"
+        journal_path.write_text(json.dumps(data))
+        with self.assertRaisesRegex(NorthSetupError, "requires reconciliation"):
+            self.attest()
+
+    def test_owner_attestation_checks_live_addresses_by_default(self):
+        self.launch()
+        import goad.course1_host_network_apply as runtime
+        with patch.object(runtime, "inspect_live_hostaddrs",
+                          side_effect=ValueError("address drift")):
+            with self.assertRaisesRegex(ValueError, "address drift"):
+                inspect_installed_north(
+                    self.provider, networking=self.networking, owner=self.owner,
+                    backups=self.backups, owner_uid=os.getuid(),
+                )
 
     def test_no_implicit_host_apply_in_one_command_validator(self):
         script = (Path(__file__).resolve().parents[1] /
