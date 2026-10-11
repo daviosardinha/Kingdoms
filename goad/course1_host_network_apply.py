@@ -25,7 +25,7 @@ from goad.course1_hostaddrs import (
 )
 from goad.course1_hostaddr_install import install_owned_address_assets
 from goad.course1_network_preflight import inspect_live
-from goad.course1_vmnet_config import render_vmnet_config, verify_vmnet_config
+from goad.course1_vmnet_config import (render_vmnet_config, verify_vmnet_config, verify_owned_vmnet_runtime)
 from goad.course1_vmnet_journal import inspect_vmnet_journals
 from goad.course1_vmnet_transaction import (
     _atomic_bytes, _plain_regular, _safe_directory, execute_testable_network_transaction,
@@ -231,6 +231,27 @@ def apply(provider_dir, reviewed_sha256, networking=NETWORKING, netmap=NETMAP,
 
 
 
+def _reconstruct_committed_vmnet(record, baseline, layout):
+    """Prove the immutable owner SHA corresponds to original apply bytes."""
+    proposed = render_vmnet_config(baseline.decode("utf-8"), layout).encode("utf-8")
+    candidates = {proposed}
+    for zone in ("north", "management"):
+        segment = layout["segments"][zone]
+        number = segment["vmnet"][5:]
+        address = segment["host_address"]
+        optional = f"answer VNET_{number}_HOSTONLY_HOSTADDR {address}\n".encode("ascii")
+        candidates |= {data.replace(optional, b"", 1)
+                       for data in tuple(candidates) if optional in data}
+    committed = next(
+        (data for data in candidates
+         if hashlib.sha256(data).hexdigest() == record.get("installed_sha256")),
+        None,
+    )
+    if committed is None:
+        raise NorthSetupError("NORTH owner hash does not match a valid committed config")
+    return committed
+
+
 def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
                             backups=BACKUPS, owner_uid=0, inspect_host=True):
     """Check installed NORTH ownership before native Kingdoms lifecycle.
@@ -266,8 +287,6 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
     config = Path(networking)
     _plain_regular(config)
     installed = config.read_bytes()
-    if hashlib.sha256(installed).hexdigest() != record.get("installed_sha256"):
-        raise NorthSetupError("NORTH VMware config differs from owned installation")
     verify_vmnet_config(installed.decode("utf-8"), layout)
 
     root = Path(backups)
@@ -291,12 +310,20 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
     if len(matching) != 1:
         raise NorthSetupError("No unique committed NORTH network transaction matches this instance")
 
+    committed = _reconstruct_committed_vmnet(record, saved.read_bytes(), layout)
+    if installed != committed:
+        # Full Kingdoms already checks runtime vmnet policy rather than
+        # treating the mutable VMware configuration file as immutable.
+        # NORTH additionally proves *all* observed changes are explicitly
+        # permitted VMware/Vagrant runtime normalization, never silent edits.
+        verify_owned_vmnet_runtime(committed, installed, saved.read_bytes(), layout)
+
     if inspect_host:
         inspect_live_hostaddrs(layout)
         inspect_live_hostaddr_assets(layout)
     return (
-        "NORTH VMware owner, baseline backup and committed journal match the instance",
-        "NORTH vmnets and persistent host address contract verified",
+        "NORTH immutable owner, baseline backup and committed journal match the instance",
+        "NORTH live vmnets and permitted VMware/Vagrant normalization verified",
     )
 
 
@@ -338,20 +365,7 @@ def diagnose_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
     if hashlib.sha256(baseline).hexdigest() != record.get("baseline_sha256"):
         raise NorthSetupError("NORTH backup checksum differs from the owner record")
     layout = load_course1_topology()
-    proposed = render_vmnet_config(baseline.decode("utf-8"), layout).encode("utf-8")
-    # The original apply accepts exactly 0/1/2 VMware host-address removals.
-    candidates = {proposed}
-    for zone in ("north", "management"):
-        segment = layout["segments"][zone]
-        number = segment["vmnet"][5:]
-        addr = segment["host_address"]
-        optional = f"answer VNET_{number}_HOSTONLY_HOSTADDR {addr}\n".encode("ascii")
-        candidates |= {data.replace(optional, b"", 1) for data in tuple(candidates)
-                       if optional in data}
-    owned = next((data for data in candidates
-                  if hashlib.sha256(data).hexdigest() == record.get("installed_sha256")), None)
-    if owned is None:
-        raise NorthSetupError("NORTH owner hash does not match any committed VMware variant")
+    owned = _reconstruct_committed_vmnet(record, baseline, layout)
     path = Path(networking)
     if path.is_symlink():
         raise NorthSetupError("Unsafe VMware networking symlink")
