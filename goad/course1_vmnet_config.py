@@ -184,7 +184,7 @@ def known_vmware_hostaddr_normalization(proposed: bytes, observed: bytes, layout
         address = segment["host_address"]
         if address is None:
             return False
-        removable = f"answer VNET_{number}_HOSTONLY_HOSTADDR {address}\\n".encode("ascii")
+        removable = f"answer VNET_{number}_HOSTONLY_HOSTADDR {address}\n".encode("ascii")
         variants |= {data.replace(removable, b"", 1)
                      for data in tuple(variants) if removable in data}
     return observed in variants
