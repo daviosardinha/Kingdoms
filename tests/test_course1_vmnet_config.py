@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 
 from goad.course1_vmnet_config import (NetworkPlanError, network_plan,
-                                       render_vmnet_config, verify_vmnet_config)
+                                       render_vmnet_config, verify_vmnet_config,
+                                       known_vmware_hostaddr_normalization)
 from goad.kingdoms_topology import load_course1_topology
 
 
@@ -120,6 +121,28 @@ class Course1VmnetPlanTests(unittest.TestCase):
         self.assertIn('    30: {"subnet": "10.4.30.0"', source)
         self.assertIn('configure_addr vmnet10 10.4.10.254/24', source)
         self.assertIn('configure_addr vmnet99 10.4.99.254/24', source)
+
+
+    def test_vmware_optional_hostaddr_normalization_rejects_foreign_edits(self):
+        proposed = render_vmnet_config(BASELINE, self.layout).encode()
+        only_north = proposed.replace(
+            b"answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\\n", b""
+        )
+        both = only_north.replace(
+            b"answer VNET_99_HOSTONLY_HOSTADDR 10.4.99.254\\n", b""
+        )
+        for variant in (proposed, only_north, both):
+            with self.subTest(variant=len(variant)):
+                self.assertTrue(known_vmware_hostaddr_normalization(
+                    proposed, variant, self.layout,
+                ))
+        self.assertFalse(known_vmware_hostaddr_normalization(
+            proposed, both + b"# another administrator changed VMware settings\\n", self.layout,
+        ))
+        self.assertFalse(known_vmware_hostaddr_normalization(
+            proposed, proposed.replace(b"VNET_20_VIRTUAL_ADAPTER no",
+                                       b"VNET_20_VIRTUAL_ADAPTER yes"), self.layout,
+        ))
 
     def test_config_check_accepts_expected_three_networks(self):
         output = render_vmnet_config(BASELINE, self.layout)
