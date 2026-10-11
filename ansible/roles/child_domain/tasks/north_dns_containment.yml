@@ -99,6 +99,9 @@
         # nonzero result with its exact missing-domain evidence. Never
         # treat timeouts, access failures or foreign DC answers as safe.
         $childError = "$($childLookup.Stdout) $($childLookup.Stderr)"
+        if ([int]$computer.DomainRole -ne 2 -or $computer.PartOfDomain) {
+          throw "NORTH DNS containment: child discovery absent but local Windows is not a standalone pre-promotion server (role=$($computer.DomainRole))"
+        }
         # The native process exit value varies by nltest build; the
         # freshly captured Windows status and symbolic error MUST both
         # prove 1355. We are already in the nonzero-exit branch.
