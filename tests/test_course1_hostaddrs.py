@@ -1,4 +1,5 @@
 """NORTH-only VMware host address assets, never touching host/systemd."""
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -99,6 +100,34 @@ class Course1HostAddressTests(unittest.TestCase):
         self.assertTrue(TIMER.startswith("kingdoms-north"))
         for source in self.assets.values():
             self.assertNotIn("goad-nomad-vmnet-hostaddrs", source)
+
+    def test_existing_kingdoms_setup_entrypoint_previews_default_hostaddrs(self):
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            ["bash", "scripts/setup-vmware-networks.sh", "--north", "hostaddr-plan"],
+            cwd=root, text=True, capture_output=True, timeout=15
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["interfaces"]["vmnet10"]["desired"], "10.4.10.254/24")
+        self.assertEqual(data["interfaces"]["vmnet99"]["desired"], "10.4.99.254/24")
+        self.assertEqual(data["protected"], "vmnet20")
+        self.assertEqual(data["assets"], ["helper", "service", "timer"])
+        self.assertIn("READ-ONLY", data["mode"])
+
+    def test_existing_kingdoms_setup_entrypoint_previews_alternate_hostaddrs(self):
+        root = Path(__file__).resolve().parents[1]
+        result = subprocess.run(
+            ["bash", "scripts/setup-vmware-networks.sh", "--north", "hostaddr-plan",
+             "--network-base", "10.5.0.0/16", "--vmnet", "north=11",
+             "--vmnet", "sevenkingdoms=21", "--vmnet", "management=98"],
+            cwd=root, text=True, capture_output=True, timeout=15
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["interfaces"]["vmnet11"]["desired"], "10.5.10.254/24")
+        self.assertEqual(data["interfaces"]["vmnet98"]["desired"], "10.5.99.254/24")
+        self.assertEqual(data["protected"], "vmnet21")
 
     def test_no_install_or_systemd_actions_in_asset_renderer(self):
         code = (Path(__file__).resolve().parents[1] /
