@@ -8,6 +8,7 @@ source of truth for a future audited installation stage, NOT a new provider.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import ipaddress
 import json
@@ -188,6 +189,136 @@ def known_vmware_hostaddr_normalization(proposed: bytes, observed: bytes, layout
         variants |= {data.replace(removable, b"", 1)
                      for data in tuple(variants) if removable in data}
     return observed in variants
+
+
+
+def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
+                               layout: dict) -> tuple[str, ...]:
+    """Accept only safe VMware/Vagrant runtime normalization of owned vmnets.
+
+    The commit-time owner SHA remains immutable. Unlike the initial apply
+    transaction, live Vagrant machine creation causes VMware to reorder its
+    settings, rotate *foreign* DHCP config hashes and create vmnet8 NAT port
+    forwards. Compare canonical declarations, never blindly trust a hash of
+    the mutable runtime file. New forwards are limited to the *original*
+    vmnet8 NAT subnet and Windows/SSH guest management ports.
+    """
+    try:
+        base_text = baseline.decode("utf-8")
+        owned_text = owned.decode("utf-8")
+        observed_text = observed.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise NetworkPlanError("VMware networking has invalid UTF-8") from exc
+    verify_vmnet_config(observed_text, layout)
+    owned_vmnet_ids = {int(z["vmnet"][5:]) for z in layout["segments"].values()}
+    optional_hosts = {
+        (int(z["vmnet"][5:]), "HOSTONLY_HOSTADDR"): z["host_address"]
+        for z in layout["segments"].values() if z["host_address"] is not None
+    }
+
+    def entries(text):
+        result = Counter()
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            words = line.split()
+            if words[0] == "answer":
+                if len(words) != 3:
+                    raise NetworkPlanError("Malformed VMware answer declaration")
+                match = re.fullmatch(r"VNET_(\d+)_([A-Z0-9_]+)", words[1])
+                if match:
+                    number, key = int(match.group(1)), match.group(2)
+                    value = words[2]
+                    if (number, key) in optional_hosts:
+                        if value != optional_hosts[(number, key)]:
+                            raise NetworkPlanError("Wrong NORTH optional host address")
+                        continue  # Normal VMware removal/restoration is harmless.
+                    if number not in owned_vmnet_ids and key == "DHCP_CFG_HASH":
+                        if re.fullmatch(r"[a-fA-F0-9]{40}", value) is None:
+                            raise NetworkPlanError("Malformed VMware DHCP config hash")
+                        line = f"answer VNET_{number}_DHCP_CFG_HASH <rotating>"
+                    else:
+                        line = " ".join(words)
+                else:
+                    line = " ".join(words)
+            elif words[0] == "add_nat_portfwd":
+                # No unknown syntax or wrapped line may sneak through.
+                if len(words) != 6:
+                    raise NetworkPlanError("Malformed Vagrant NAT forwarding entry")
+                line = " ".join(words)
+            result[line] += 1
+        return result
+
+    recorded = entries(owned_text)
+    active = entries(observed_text)
+    removed = recorded - active
+    if removed:
+        raise NetworkPlanError(
+            "VMware removed or modified owned/foreign network declarations: "
+            + repr(sorted(removed.elements())[:4])
+        )
+    additions = active - recorded
+    if not additions:
+        return ("VMware network declarations are semantically unchanged",)
+
+    # This subnet comes from the immutable original backup, not the live
+    # config. Never accept new forwarding to NORTH's isolated 10.4 networks.
+    settings = {}
+    for raw in base_text.splitlines():
+        words = raw.split()
+        if len(words) == 3 and words[0] == "answer" and words[1].startswith("VNET_8_"):
+            if words[1] in settings:
+                raise NetworkPlanError("Duplicate original vmnet8 NAT metadata")
+            settings[words[1]] = words[2]
+    try:
+        if settings.get("VNET_8_NAT") != "yes":
+            raise ValueError("vmnet8 is not an owned foreign NAT network")
+        nat_range = ipaddress.ip_network(
+            f'{settings["VNET_8_HOSTONLY_SUBNET"]}/'
+            f'{settings["VNET_8_HOSTONLY_NETMASK"]}', strict=True,
+        )
+        if not isinstance(nat_range, ipaddress.IPv4Network):
+            raise ValueError("vmnet8 must use IPv4")
+    except (KeyError, ValueError) as exc:
+        raise NetworkPlanError(
+            "Original vmnet8 NAT subnet cannot be authenticated"
+        ) from exc
+
+    port_keys = set()
+    for declaration in active:
+        if not declaration.startswith("add_nat_portfwd "):
+            continue
+        parts = declaration.split()
+        if len(parts) != 6 or parts[2] not in ("tcp", "udp"):
+            raise NetworkPlanError("Unexpected VMware NAT forwarding syntax")
+        try:
+            source_port, target_port = int(parts[3]), int(parts[5])
+            if not (1 <= source_port <= 65535 and 1 <= target_port <= 65535):
+                raise ValueError("Port out of range")
+            target = ipaddress.IPv4Address(parts[4])
+        except (ValueError, ipaddress.AddressValueError) as exc:
+            raise NetworkPlanError("Invalid VMware NAT forwarding destination") from exc
+        key = (parts[1], parts[2], source_port)
+        if key in port_keys or active[declaration] != 1:
+            raise NetworkPlanError("Duplicate VMware NAT forwarding host port")
+        port_keys.add(key)
+
+    for declaration in additions.elements():
+        parts = declaration.split()
+        if (len(parts) != 6 or parts[0] != "add_nat_portfwd"
+                or parts[1] != "8" or parts[2] != "tcp"):
+            raise NetworkPlanError("Unexpected new VMware networking directive")
+        target = ipaddress.IPv4Address(parts[4])
+        target_port = int(parts[5])
+        if (target not in nat_range
+                or target in (nat_range.network_address, nat_range.broadcast_address)
+                or target_port not in (22, 5985, 5986)):
+            raise NetworkPlanError("New NAT forwarding is outside approved Vagrant management")
+    return (
+        "VMware declaration ordering and foreign DHCP hashes are normalized",
+        "New Vagrant forwarding is restricted to baseline vmnet8 guest management",
+    )
 
 
 def network_plan(network_base=None, vmnets=None, baseline: str | None = None) -> dict:
