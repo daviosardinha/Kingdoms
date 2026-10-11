@@ -595,3 +595,51 @@ python3 -m py_compile tests/test_course1_vmnet_config.py goad/course1_vmnet_conf
 Continue with the same non-mutating 45-test validation and
 `--north plan` plus read-only ownership preflight after compile passes.
 NORTH installation remains blocked.
+
+## 2026-10-11 — Kali 45/45 vmnet planning + ownership preflight accepted; transaction staging
+
+The operator's Kali terminal confirms **45 tests passed** and the
+read-only `scripts/setup-vmware-networks.sh --north plan` generated
+the intended three segments under `10.4.0.0/16`: North vmnet10
+(`10.4.10.0/24`, host .254), Seven Kingdoms vmnet20
+(`10.4.20.0/24`, no host adapter), and Management vmnet99
+(`10.4.99.0/24`, host .254), DHCP/NAT disabled for all. The
+`goad.course1_network_preflight` verified no running VMware process/
+guest, no requested vmnet reuse or host subnet/route collision and no
+conflicting registered VMX adapters or MAC identities. **No networks were
+created** by this acceptance run.
+
+The next source-only stage is committed:
+- `goad/course1_vmnet_transaction.py` implements callback-driven,
+  **offline-testable** atomic configuration replacement. It requires
+  an existing absolute instance provider directory for ownership,
+  verifies the reviewed SHA-256 baseline, refuses symlinks/hardlinks,
+  writes a permanent backup before replacing a file, preserves
+  mode/ownership, and records the owner and exact network layout
+  *only after* injected restart/live-verification callbacks succeed.
+  Failed callback execution rolls back when (and only when) the active
+  configuration still matches the proposed bytes; a third-party edit
+  results in a fail-closed error with backup preserved rather than
+  overwriting their changes.
+- Nine `tests/test_course1_vmnet_transaction.py` tests exercise a
+  temporary directory instead of `/etc/vmware`: success, wrong
+  plan hash, failed restart, failed live validation, concurrent edit,
+  existing ownership, missing provider, symlinked config, and
+  disabled live CLI.
+- `goad/course1_vmnet_config.py` now honors existing VMware
+  `HOSTONLY_NETMASK` when determining subnet overlap, rather than
+  assuming all foreign VMware networks are /24; two additional
+  tests cover a foreign /16 overlap and duplicate netmask.
+- Existing full-Kingdoms VMware network setup/check script bodies
+  were compared against `main` and remain **byte-for-byte preserved**.
+  The explicit `--north plan` and `--north check` branches remain
+  read-only. NORTH install/start/reset guard still refuses deployment.
+
+**The new selected test target is 56 tests; Kali run is pending.**
+Run the regression suite and a read-only host preflight. Importantly,
+the transactional layer **has no host-applying CLI**. It has not yet
+been wired to VMware stop/start, the exact in-use `/etc/vmware`
+files, `netmap.conf` rollback, systemd .254 address persistence or
+cross-process transaction lock. Those are required before explicitly
+enabling a controlled network-creation action. This stage does not
+authorize a NORTH lab installation.
