@@ -120,11 +120,11 @@ class KingdomsCourse1RouteTests(unittest.TestCase):
     def test_bash_script_dispatches_only_for_explicit_north(self):
         file = Path(__file__).resolve().parents[1] / "scripts/provisioning-routes.sh"
         source = file.read_text()
-        self.assertIn('if [[ "\${1:-}" == "--north" ]]', source)
+        self.assertIn('if [[ "${1:-}" == "--north" ]]', source)
         self.assertIn("python3 -m goad.course1_routes", source)
         legacy = source.split('fi\n', 1)[1]
         self.assertIn('readonly ESSOS_NET="10.4.30.0/24"', legacy)
-        self.assertIn('ip route replace "\${ESSOS_NET}"', legacy)
+        self.assertIn('ip route replace "${ESSOS_NET}"', legacy)
 
 
 if __name__ == "__main__":
