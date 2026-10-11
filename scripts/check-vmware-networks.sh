@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# NORTH-only configuration check through existing Kingdoms entrypoint.
+# Still read-only: runtime .254 addresses/services are verified separately.
+if [[ "${1:-}" == "--north" ]]; then
+  readonly KINGDOMS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  shift
+  exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    python3 -m goad.course1_vmnet_config check "$@"
+fi
+
 readonly NETWORKING_FILE="/etc/vmware/networking"
 readonly VMWARE_NETWORKS="/usr/bin/vmware-networks"
 readonly HOSTADDR_SERVICE="goad-nomad-vmnet-hostaddrs.service"
