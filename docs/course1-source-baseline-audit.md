@@ -245,3 +245,35 @@ leaves the **entire original provider source byte-identical to Kingdoms
 The three dedicated Course 1 test modules now contain **24 tests**.
 Kali runtime test execution is pending; an offline source check is not
 a claim that the provider is installation-ready.
+
+## 2026-10-11 — successful Kali source checks; new render/preflight gates
+
+Kali proved **58 passing tests**, valid Ruby Vagrantfile syntax and a
+read-only `10.5.0.0/16` alternate topology preview. This does **not**
+prove VM/AD deployment readiness.
+
+Subsequent source review found two errors and fixed them before install:
+the Course 1 `[trust]` inventory group improperly retained DC01 even
+though Essos trust was removed; post-Vagrant inventory lacked a
+connection definition for WS01. Both corrections are committed.
+
+The **read-only** `goad.course1_source_preflight` now rejects broken
+domain/trust/inventory references, missing retained Kingdoms scripts,
+and Vagrant/router/firewall inconsistencies; its six regression tests
+cover both successful and deliberately broken fixtures.
+
+The **in-memory only** `goad.course1_artifact_render` uses the single
+`ad/NORTH/topology.json` model to render five mutually consistent
+VMware/Ansible/router/firewall artifacts, preserves default 10.4 text,
+and derives alternate 10.X subnet/vmnet/MAC assignments without
+writing files. Six new tests cover byte-identical default output,
+10.5 artifact agreement, seven MAC identities and unsafe allocations.
+The topology resolver now forbids reusing any default Kingdoms vmnet
+IDs for a nondefault /16.
+
+**NEXT GATE**: The 12 newly added regressions and both read-only tools
+have not yet been executed on Kali. Their success will validate source
+rendering only. The existing Kingdoms instance generator, host vmnet
+services, provisioning routes and lifecycle still need to consume the
+rendered artifacts. The explicit NORTH install/start guard remains in
+place and must **not** be removed yet.
