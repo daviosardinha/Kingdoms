@@ -50,7 +50,11 @@ def run(*command: str, check=True) -> subprocess.CompletedProcess:
 
 def route_table() -> list[dict]:
     try:
-        data = json.loads(run("ip", "-j", "-4", "route", "show", "table", "all").stdout)
+        # Linux iproute2 maps protocol 186 to the registered name "bgp"
+        # in default JSON output. Request numeric protocol identifiers so
+        # the instance-owned route remains idempotent after its first install.
+        # -N is a read-only presentation flag, not a route mutation.
+        data = json.loads(run("ip", "-j", "-N", "-4", "route", "show", "table", "all").stdout)
     except (ValueError, TypeError) as exc:
         raise RouteConflict("Invalid structured Linux route table") from exc
     if not isinstance(data, list):
