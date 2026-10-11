@@ -487,6 +487,8 @@ class LocalShutdown(unittest.TestCase):
         self.helper = load_method('goad/provider/vagrant/vmware_kingdoms.py', '_stop_machine_via_vmware', self.namespace)
         self.provider = Mock()
         self.provider.lab_name = 'GOAD'
+        # Full Kingdoms is wired; only the reduced NORTH profile is guarded.
+        self.provider._course1_unwired.return_value = False
         self.provider.goad_nomad_windows = class_field('goad/provider/vagrant/vmware.py', 'goad_nomad_windows')
         self.provider._last_bounded_vagrant_reaped = True
         self.names = self.provider.goad_nomad_windows + ['GOAD-ROUTER']
