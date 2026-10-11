@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from goad.kingdoms_topology import load_course1_topology, parse_vmnet_args
+from goad.course1_hostaddrs import hostaddr_plan, render_hostaddr_assets
 
 NETWORKING_FILE = Path("/etc/vmware/networking")
 KEY = re.compile(r"^\s*answer\s+VNET_(\d+)_([A-Z0-9_]+)(?:\s+|$)")
@@ -201,13 +202,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Render-only VMware network plan for existing Kingdoms NORTH"
     )
-    parser.add_argument("action", choices=("plan", "check"))
+    parser.add_argument("action", choices=("plan", "check", "hostaddr-plan"))
     parser.add_argument("--network-base", default=None)
     parser.add_argument("--vmnet", action="append", default=[])
     args = parser.parse_args()
     try:
         allocations = parse_vmnet_args(args.vmnet)
-        if args.action == "check":
+        if args.action == "hostaddr-plan":
+            layout = load_course1_topology(args.network_base, allocations)
+            hostaddr = hostaddr_plan(layout)
+            hostaddr["assets"] = sorted(render_hostaddr_assets(layout))
+            hostaddr["mode"] = "READ-ONLY; no systemd unit installed"
+        elif args.action == "check":
             layout = load_course1_topology(args.network_base, allocations)
             if not NETWORKING_FILE.is_file() or NETWORKING_FILE.is_symlink():
                 raise NetworkPlanError("VMware networking baseline is missing or unsafe")
@@ -218,7 +224,9 @@ def main() -> None:
             planned = network_plan(args.network_base, allocations)
     except (NetworkPlanError, ValueError, OSError, KeyError) as exc:
         parser.exit(1, "[BLOCKED] NORTH VMware networking: " + str(exc) + "\n")
-    if args.action == "check":
+    if args.action == "hostaddr-plan":
+        print(json.dumps(hostaddr, indent=2, sort_keys=True))
+    elif args.action == "check":
         for finding in findings:
             print("[PASS] " + finding)
         print("[CONFIG ONLY] Host interface addresses and owner identity not proven")
