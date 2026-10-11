@@ -185,6 +185,59 @@ def filesystem_matches() -> list[dict]:
     return [file_info(item) for item in candidates if item.exists() or item.is_symlink()]
 
 
+def vmware_user_registry() -> dict:
+    # Workstation's inventory may include unrelated powered-off VMs.
+    # Capture evidence only; never remove or rewrite inventory.vmls.
+    path = Path.home() / ".vmware" / "inventory.vmls"
+    report = file_info(path)
+    if not path.is_file() or path.is_symlink():
+        return report
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        report["error"] = str(exc)
+        return report
+    pattern = re.compile(r'^vmlist\\d+\\.config\\s*=\\s*"([^"]+)"')
+    report["registered_vmx_paths"] = [
+        m.group(1) for line in lines if (m := pattern.match(line.strip()))
+    ]
+    return report
+
+
+def summarize(report: dict) -> None:
+    print("===== KINGDOMS CLEANUP — READ-ONLY OWNERSHIP AUDIT =====")
+    print("This command has NOT deleted, shut down or changed any VM/network.")
+    for checkout, entries in report["workspace_instances"].items():
+        print(f"CHECKOUT {checkout}:")
+        for item in entries:
+            print(f"  - {item['instance']} | lab={item['metadata'].get('lab','UNKNOWN')} "
+                  f"| cleanup_candidate={item['candidate_for_cleanup']} "
+                  f"| Vagrant VMX IDs={len(item['vagrant_identities'])}")
+            for vm in item["vagrant_identities"]:
+                print(f"      {vm['machine']} -> {vm['vmx']} "
+                      f"exists={vm.get('vmx_exists','unknown')}")
+    print("VMNET SETTINGS:",
+          ", ".join(sorted(report["vmware_network_config"].get(
+              "target_network_settings", {}
+          ))) or "none observed")
+    for unit, evidence in report["systemd"]["unit_states"].items():
+        state = evidence.get("stdout", "")
+        if "LoadState=loaded" in state or "ActiveState=active" in state:
+            print("UNIT:", unit, state.replace("\\n", " | ")[:180])
+    for key in ("vmware_running_vmx", "vagrant_global_status", "host_ipv4_routes",
+                "host_ipv4_addresses", "network_firewall_rules"):
+        value = report.get(key, {})
+        if key == "network_firewall_rules":
+            problems = {k: v.get("stderr", "") for k, v in value.items()
+                        if v.get("exit_code") not in (0,)}
+            if problems:
+                print("EVIDENCE GAPS (firewall):", problems)
+        elif isinstance(value, dict) and value.get("exit_code") not in (0,):
+            print("EVIDENCE GAP:", key, value.get("stderr", "")[:140])
+    print("DO NOT DELETE YET: review exact VMX ownership and service/network scope.")
+    print("========================================================")
+
+
 def vmware_network_config() -> dict:
     path = Path("/etc/vmware/networking")
     evidence = {"path": str(path), "available": path.is_file()}
@@ -223,7 +276,11 @@ def main() -> int:
             checkout: instance_candidates(Path(checkout)) for checkout in checkouts
         },
         "vmware_running_vmx": run("vmrun", "-T", "ws", "list", timeout=20),
-        "vmware_registered_vmx": run("vmrun", "-T", "ws", "listRegisteredVM", timeout=20),
+        # vmrun list shows only powered-on Workstation guests. It does NOT
+        # prove powered-off registration: collect user registry and Vagrant
+        # machine index separately, without running vagrant --prune.
+        "vagrant_global_status": run("vagrant", "global-status", timeout=20),
+        "vmware_registry_file": vmware_user_registry(),
         "vmware_network_config": vmware_network_config(),
         "host_ipv4_routes": run("ip", "-j", "-4", "route", "show", "table", "all"),
         "host_ipv4_addresses": run("ip", "-j", "-4", "addr", "show"),
@@ -235,9 +292,20 @@ def main() -> int:
         ),
         "scheduled_jobs": run("systemctl", "list-timers", "--all", "--no-pager"),
         "network_firewall_rules": {
-            "nft_ruleset": run("nft", "-a", "list", "ruleset", timeout=15),
-            "iptables_save": run("iptables-save", timeout=15),
+            "nft_ruleset": run("sudo", "-n", "nft", "-a", "list", "ruleset", timeout=15),
+            "iptables_save": run("sudo", "-n", "iptables-save", timeout=15),
         },
+        "user_systemd_unit_files": run(
+            "systemctl", "--user", "list-unit-files", "--all", "--no-pager"
+        ),
+        "user_systemd_running": run(
+            "systemctl", "--user", "list-units", "--all", "--no-pager"
+        ),
+        "user_crontab": run("crontab", "-l"),
+        "host_cron_kingdoms_matches": run(
+            "grep", "-RilE", "GOAD_NOMAD|kingdoms-north|kingdoms-phase03",
+            "/etc/cron.d", timeout=10,
+        ),
         "vmware_network_service": run("systemctl", "show", "vmware.service",
                                       "--property=LoadState,ActiveState,SubState"),
         "safety_notes": [
@@ -258,6 +326,7 @@ def main() -> int:
         with target.open("x", encoding="utf-8") as handle:
             handle.write(payload + "\n")
         print(f"Saved read-only audit: {target}")
+        summarize(report)
     else:
         print(payload)
     return 0
