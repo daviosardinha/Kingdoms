@@ -8,6 +8,13 @@ set -euo pipefail
 if [[ "${1:-}" == "--north" ]]; then
   readonly KINGDOMS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   shift
+  if [[ "${1:-}" == "verify" ]]; then
+    shift
+    # Installed-owner attestation is read-only and must inspect root-owned
+    # mode-0600 transaction evidence. No VMware restart or network writes.
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_host_network_apply verify "$@"
+  fi
   if [[ "${1:-}" == "apply" ]]; then
     shift
     # Explicit, reviewed host mutation. Nothing invokes this from the normal
