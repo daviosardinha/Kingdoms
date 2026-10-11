@@ -303,9 +303,24 @@ The provider correctly removed the temporary host route and applied
 restrictive router forwarding after the four attempts. Windows NAT/exercise
 isolation remains UNVERIFIED and this installed NORTH instance is NOT READY.
 
-**Validation remaining:** execute the new 12-case
-`tests.test_course1_child_dns_containment` and full expected 388-case
+**Validation remaining:** execute the new 13-case
+`tests.test_course1_child_dns_containment` and full expected 389-case
 offline source suite from GitHub on Kali. These are source contracts, not
 live PowerShell tests; only then resume the preserved instance to observe
 `NORTH_DNS_CONTAINMENT_OK ... child_status=1355` followed by actual
 `Install-ADDSDomain` and post-reboot local DC proof.
+
+### Small live gate before another full install
+
+After Kali has pulled the new commits and passed offline regressions,
+run `ansible-playbook -i ad/NORTH/data/inventory
+-i workspace/6ca91b-north-vmware/inventory -i globalsettings.ini
+ansible/north-child-dns-preflight.yml` from repository root. The playbook
+selects only dc02, derives its current guest NIC aliases from facts,
+and invokes the *same* PowerShell proof task via a read-only source lookup.
+It does NOT pin DNS, promote AD, reboot, modify host routes or touch
+reference VMs. It DOES flush DC02's volatile Windows DNS client cache as
+part of the shared proof before its forced DC Locator queries. Expect
+`NORTH_DNS_CONTAINMENT_OK parent=10.41.20.10 child_status=1355`.
+If any other result occurs, DO NOT run full installation; inspect the
+exact stderr/exit evidence and the local adapter DNS configuration first.
