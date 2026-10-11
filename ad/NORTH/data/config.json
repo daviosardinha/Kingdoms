@@ -18,9 +18,7 @@
             "sevenkingdoms\\Baratheon"
           ]
         },
-        "scripts": [
-          "sidhistory.ps1"
-        ],
+        "scripts": [],
         "vulns": [
           "disable_firewall",
           "adcs_esc10_case1",
