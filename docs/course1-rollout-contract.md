@@ -109,6 +109,34 @@ not authorization for reinstallation**. The fix must be implemented and tested
 against those exact differences before resuming the existing instance's
 provisioning.
 
+### NORTH provisioning-route protocol alias after first VM bring-up
+
+The first real NORTH retry brought all five previously-created VMs back
+without duplication, then stopped on the single, **already-owned**
+parent-domain route to 10.4.20.0/24 via 10.4.10.1 on vmnet10.
+Read-only diagnostics showed ownership matched the selected instance,
+but Linux route JSON presented protocol 186 as its registered name **bgp**.
+The NORTH verifier compared that name directly to the string 186 and
+mistook its own existing route for a foreign/overlapping route.
+
+The same route source now uses **ip -j -N -4 route show table all**.
+The iproute2 -N presentation flag requests numeric protocol IDs;
+it performs no host writes. The existing ownership record, route
+destination, gateway, interface, main-table and overlapping-route
+checks are unchanged. Repeated enable is idempotent, and missing or
+mismatched owner still blocks. Original full-Kingdoms route helpers
+and Essos handling are untouched.
+
+Post-fix read-only acceptance:
+
+```bash
+bash scripts/course1-rollout.sh --installed "$PWD/workspace/ac9fda-north-vmware/provider"
+sudo bash scripts/provisioning-routes.sh --north status --provider-dir "$PWD/workspace/ac9fda-north-vmware/provider"
+```
+
+Expect route status OWNED while provision mode still retains the
+temporary parent-route. This is not authorization to delete/recreate
+routes manually or replace the owned route with another protocol.
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
