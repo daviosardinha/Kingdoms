@@ -109,6 +109,55 @@ def render_vmnet_config(original: str, layout: dict) -> str:
     return original.rstrip("\n") + "\n\n" + suffix
 
 
+def verify_vmnet_config(config: str, layout: dict) -> tuple[str, ...]:
+    """Verify exact config-level DHCP, NAT, subnet and host-adapter policy.
+
+    This does not assert the host interfaces actually have the .254 addresses.
+    The existing Linux address helper/runtime network checks remain separate.
+    """
+    if not isinstance(config, str) or not config.strip():
+        raise NetworkPlanError("VMware networking configuration is absent")
+    per_net: dict[int, dict[str, list[str]]] = {}
+    for raw in config.splitlines():
+        m = KEY.match(raw)
+        if m is None:
+            continue
+        words = raw.split()
+        if len(words) != 3:
+            raise NetworkPlanError("Malformed existing VMware network setting")
+        per_net.setdefault(int(m.group(1)), {}).setdefault(m.group(2), []).append(words[2])
+
+    checked = []
+    for name in NETWORK_LABELS:
+        zone = layout["segments"][name]
+        number = int(zone["vmnet"][5:])
+        values = per_net.get(number, {})
+        network = ipaddress.ip_network(zone["cidr"], strict=True)
+        expected = {
+            "DHCP": "no",
+            "NAT": "no",
+            "HOSTONLY_NETMASK": "255.255.255.0",
+            "HOSTONLY_SUBNET": str(network.network_address),
+            "VIRTUAL_ADAPTER": "yes" if zone["host_address"] is not None else "no",
+        }
+        # VMware may remove the optional host-address metadata when it
+        # recreates an adapter; host addresses require separate live checks.
+        if zone["host_address"] is not None:
+            if "HOSTONLY_HOSTADDR" in values:
+                expected["HOSTONLY_HOSTADDR"] = zone["host_address"]
+        elif "HOSTONLY_HOSTADDR" in values:
+            raise NetworkPlanError(f"Protected {name} zone has an unwanted host address")
+        for key, value in expected.items():
+            actual = values.get(key, [])
+            if actual != [value]:
+                raise NetworkPlanError(
+                    f"{zone['vmnet']} {key} mismatch or duplicate: "
+                    f"expected {value}, observed {actual}"
+                )
+        checked.append(f"{zone['vmnet']} {name.upper()} configuration matches Kingdoms topology")
+    return tuple(checked)
+
+
 def network_plan(network_base=None, vmnets=None, baseline: str | None = None) -> dict:
     layout = load_course1_topology(network_base, vmnets)
     if baseline is None:
@@ -142,16 +191,30 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Render-only VMware network plan for existing Kingdoms NORTH"
     )
-    parser.add_argument("action", choices=("plan",))
+    parser.add_argument("action", choices=("plan", "check"))
     parser.add_argument("--network-base", default=None)
     parser.add_argument("--vmnet", action="append", default=[])
     args = parser.parse_args()
     try:
-        planned = network_plan(args.network_base, parse_vmnet_args(args.vmnet))
+        allocations = parse_vmnet_args(args.vmnet)
+        if args.action == "check":
+            layout = load_course1_topology(args.network_base, allocations)
+            if not NETWORKING_FILE.is_file() or NETWORKING_FILE.is_symlink():
+                raise NetworkPlanError("VMware networking baseline is missing or unsafe")
+            findings = verify_vmnet_config(
+                NETWORKING_FILE.read_text(encoding="utf-8"), layout
+            )
+        else:
+            planned = network_plan(args.network_base, allocations)
     except (NetworkPlanError, ValueError, OSError, KeyError) as exc:
         parser.exit(1, "[BLOCKED] NORTH VMware networking: " + str(exc) + "\n")
-    print(json.dumps({k: v for k, v in planned.items() if k != "proposed_text"},
-                     indent=2, sort_keys=True))
+    if args.action == "check":
+        for finding in findings:
+            print("[PASS] " + finding)
+        print("[CONFIG ONLY] Host interface addresses and owner identity not proven")
+    else:
+        print(json.dumps({k: v for k, v in planned.items() if k != "proposed_text"},
+                         indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
