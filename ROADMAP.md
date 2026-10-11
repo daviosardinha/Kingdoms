@@ -426,3 +426,14 @@ A provider and platform combination is supported only when all of the following 
   PowerShell guard on the existing DC02 without DNS reconfiguration, AD
   promotion or reboot (it clears only the volatile DNS cache).
   **Kali and live DC02 proof pending**.
+
+- [x] Fix NORTH WS01 member DNS guard against absent `Ethernet0` after
+  verified WINTERFELL child promotion and successful SRV02 join:
+  inherited DC01 `run_once` interface facts were incorrectly reused
+  for the individual member. NORTH's member guard now derives adapter
+  names and one-vs-two NIC status from each Windows guest's facts,
+  refuses ambiguous/foreign NIC layouts before DNS mutation, skips
+  NAT-only DNS operations if the NIC is absent, and requires exact
+  WINTERFELL DC Locator identity for every member. The legacy GOAD
+  role/data paths are untouched. Added offline topology/negative tests
+  and a read-only two-member smoke. **Kali/live validation pending**.
