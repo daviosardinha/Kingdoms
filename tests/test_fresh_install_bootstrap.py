@@ -42,6 +42,11 @@ class FreshInstallBootstrapTests(unittest.TestCase):
         cls = load_provider(BaseProvider)
         provider = cls()
         provider.lab_name = 'GOAD'
+        # The NORTH host-network ownership attestation is independently
+        # tested in test_course1_provider_guard.py. This unit suite verifies
+        # only the pre-AD / installed-mode provisioning decision; the fixture
+        # has no real instance path or privileged VMware owner record.
+        provider._course1_unwired = Mock(return_value=False)
         provider.is_goad_nomad_segmented = Mock(return_value=True)
         provider.get_runtime_mode = Mock(return_value=mode)
         provider._kingdoms_install_profile = {
