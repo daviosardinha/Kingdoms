@@ -292,3 +292,31 @@ First enumerate all VMX registrations and possible foreign attachments,
 back up the current `/etc/vmware/networking` and `netmap.conf`,
 then use an exact-number VNET delta with rollback and post-reset
 verification preserving vmnet1/vmnet8 and unrelated VMs.
+
+## 2026-10-11 — user removed ~/vmware; host networking staged
+
+The operator reports manually deleting `~/vmware` (previously containing
+`KINGDOMS-SQL-CLONE`). This does not automatically delete its stale
+Workstation library registration, which may still refer to a missing VMX.
+No running guests remain per the immediately prior `vmrun list`.
+
+A strictly scoped network-removal helper has been added:
+`scripts/course1-decommission-vmnets.py`. It offers a read-only
+`plan` mode and an explicit `apply --confirm --backup-root` mode.
+The latter requires a root process, zero running VMware VMs/processes,
+and no **existing**, registered VMX that attaches to any of
+vmnet10/11/12/13/20/30/99. It creates a unique backup of
+`/etc/vmware/networking` and `netmap.conf`, edits only the seven
+exact VNET record families and per-vmnet description comments, restarts
+`vmware-networks` and rolls back the networking file if restart
+or subsequent configuration checks fail. Default vmnet1/vmnet8 remain.
+
+**Acceptance status:** The helper is a new source implementation,
+NOT YET syntax-tested or live-tested on Kali. Do not execute apply until
+the operator has run `python3 -m py_compile
+scripts/course1-decommission-vmnets.py`,
+`python3 scripts/course1-decommission-vmnets.py plan`,
+and confirmed the proposal and any remaining registered VMX attachments.
+Afterwards, hostaddr unit files, stale Workstation entries, Vagrant
+machine-index metadata, discarded worktrees, and old Git branch
+remain separate explicit cleanup steps.
