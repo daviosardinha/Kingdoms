@@ -94,6 +94,7 @@ expected = [
     'ad-child_domain.yml',
     'wait5m.yml',
     'ad-members.yml',
+    'kingdoms-time-backoff.yml',
     'ad-trusts.yml',
     'ad-data.yml',
     'ws01.yml',
