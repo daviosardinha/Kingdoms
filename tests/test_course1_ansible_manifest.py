@@ -1,6 +1,7 @@
 """NORTH must use Kingdoms' full Ansible cadence minus retired Essos trust."""
 import ast
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,18 @@ class Course1AnsibleManifestTests(unittest.TestCase):
         self.assertEqual(len(reduced), 21)
         for play in reduced:
             self.assertTrue((ROOT / "ansible" / play).is_file(), play)
+
+    def test_full_kingdoms_gate_expected_sequence_tracks_manifest(self):
+        """Keep GOAD's original source gate synchronized with its actual playbook order."""
+        gate = (ROOT / "scripts/validate-goad-kingdoms-install-source.sh").read_text()
+        match = re.search(r"(?ms)^expected = (\\[\\n.*?^\\])", gate)
+        self.assertIsNotNone(match, "GOAD source gate expected sequence not found")
+        expected = ast.literal_eval(match.group(1))
+        self.assertEqual(expected, self.playbooks["GOAD"])
+        self.assertEqual(
+            self.playbooks["GOAD"].index("kingdoms-time-backoff.yml"),
+            self.playbooks["GOAD"].index("ad-members.yml") + 1,
+        )
 
     def test_existing_ansible_selector_returns_north_not_default(self):
         selector = get_existing_playbook_method(self.path)
