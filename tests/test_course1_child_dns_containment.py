@@ -257,6 +257,52 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertIn("HasNat: \"{{ two_adapters | bool }}\"", source)
         self.assertNotIn("Ethernet0'\n", source)
 
+    def test_member_live_preflight_reuses_actual_role_dclocator_without_mutation(self):
+        playbook = ROOT / "ansible/north-members-nic-preflight.yml"
+        plays = self.load(playbook)
+        self.assertEqual(len(plays), 1)
+        self.assertEqual(plays[0]["hosts"], "srv02:ws01")
+        self.assertTrue(plays[0]["gather_facts"])
+        tasks = plays[0]["tasks"]
+        guard = self.load(
+            ROOT / "ansible/roles/kingdoms_north_member_dns_guard/tasks/main.yml"
+        )
+        self.assertEqual(len(tasks), 7)
+        self.assertEqual(tasks[1]["ansible.builtin.set_fact"],
+                         guard[0]["ansible.builtin.set_fact"])
+        self.assertEqual(tasks[2]["ansible.builtin.assert"]["that"],
+                         guard[1]["ansible.builtin.assert"]["that"])
+        self.assertEqual(tasks[3]["ansible.builtin.set_fact"],
+                         guard[2]["ansible.builtin.set_fact"])
+        proof = tasks[5]["ansible.windows.win_powershell"]
+        self.assertIn("kingdoms_north_member_dns_guard/tasks/main.yml", proof["script"])
+        self.assertIn("from_yaml)[5]", proof["script"])
+        self.assertEqual(proof["parameters"]["ExpectedDns"],
+                         "{{ hostvars['dc02'].ansible_host }}")
+        self.assertEqual(proof["parameters"]["HasNat"], "{{ two_adapters | bool }}")
+        self.assertEqual(tasks[5]["changed_when"], False)
+        self.assertEqual(tasks[6]["ansible.builtin.debug"]["var"],
+                         "north_member_dns_proof.output")
+        text = playbook.read_text(encoding="utf-8")
+        self.assertNotIn("win_dns_client:", text)
+        self.assertNotIn("win_domain_membership:", text)
+        self.assertNotIn("microsoft.ad.membership:", text)
+        self.assertNotIn("win_reboot:", text)
+        self.assertNotIn("include_role:", text)
+
+    def test_ws01_missing_nat_skips_nat_dns_but_not_dc_locator(self):
+        guard = self.load(
+            ROOT / "ansible/roles/kingdoms_north_member_dns_guard/tasks/main.yml"
+        )
+        self.assertEqual(guard[4]["when"], "two_adapters | bool")
+        proof = guard[5]["ansible.windows.win_powershell"]["script"]
+        self.assertIn("$checkedInterfaces = @($DomainAdapter)", proof)
+        self.assertIn("if ($HasNat)", proof)
+        self.assertIn("$checkedInterfaces += $NatAdapter", proof)
+        self.assertIn("nltest.exe", proof)
+        self.assertIn("addresses[0] -ne $ExpectedDns", proof)
+        self.assertNotIn("10.4.10.11", proof)
+
     def test_cross_instance_reference_and_north_addresses_remain_distinct(self):
         import json
         lab = json.loads((ROOT / "ad/NORTH/data/config.json").read_text())["lab"]
