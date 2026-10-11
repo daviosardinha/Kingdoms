@@ -24,6 +24,38 @@
       )
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
+      function Invoke-NorthDcLocator {
+        param([Parameter(Mandatory=$true)][string]$Name)
+        # nltest emits ERROR_NO_SUCH_DOMAIN to native stderr on an as-yet
+        # nonexistent child. With PowerShell ErrorActionPreference=Stop,
+        # invoking nltest directly creates a terminating NativeCommandError
+        # before its exit status can be inspected. Capture both native streams
+        # without ever emitting an error record into win_powershell.
+        $start = New-Object System.Diagnostics.ProcessStartInfo
+        $start.FileName = Join-Path $env:SystemRoot 'System32\nltest.exe'
+        $start.Arguments = "/dsgetdc:$Name /force"
+        $start.UseShellExecute = $false
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        $start.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($start)
+        if ($null -eq $proc) { throw 'NORTH DC Locator failed to launch' }
+        try {
+          $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+          $stderrTask = $proc.StandardError.ReadToEndAsync()
+          if (-not $proc.WaitForExit(20000)) {
+            $proc.Kill()
+            throw "NORTH DC Locator timed out for $Name"
+          }
+          return [pscustomobject]@{
+            ExitCode = [int]$proc.ExitCode
+            Stdout = $stdoutTask.GetAwaiter().GetResult()
+            Stderr = $stderrTask.GetAwaiter().GetResult()
+          }
+        } finally {
+          $proc.Dispose()
+        }
+      }
       if ($NatAdapter -eq $DomainAdapter) {
         throw "NORTH DNS containment: provisioning and exercise NIC are the same"
       }
@@ -46,11 +78,11 @@
       }
       # Drop stale resolver cache after removing the foreign VMware NAT DNS.
       Clear-DnsClientCache -ErrorAction Stop
-      $parentLocator = & nltest.exe "/dsgetdc:$ParentDomain" /force 2>&1
-      if ($LASTEXITCODE -ne 0) {
-        throw "NORTH DNS containment: current parent-domain DC Locator failed"
+      $parentLookup = Invoke-NorthDcLocator -Name $ParentDomain
+      if ($parentLookup.ExitCode -ne 0) {
+        throw "NORTH DNS containment: current parent-domain DC Locator failed (code=$($parentLookup.ExitCode))"
       }
-      $parentAddressLines = @($parentLocator | Where-Object { "$_" -match 'Address:' })
+      $parentAddressLines = @($parentLookup.Stdout -split '\r?\n' | Where-Object { "$_" -match 'Address:' })
       $parentAddresses = @($parentAddressLines | ForEach-Object {
         [regex]::Matches("$_", '(?:\d{1,3}\.){3}\d{1,3}') | ForEach-Object { $_.Value }
       })
@@ -59,10 +91,23 @@
       }
       # On a brand-new DC02 this domain MUST NOT resolve to a foreign DC.
       # After a successful promotion, only this instance's child DC is legal.
-      $childLocator = & nltest.exe "/dsgetdc:$ChildDomain" /force 2>&1
-      $childStatus = $LASTEXITCODE
+      $childLookup = Invoke-NorthDcLocator -Name $ChildDomain
+      $childStatus = $childLookup.ExitCode
+      if ($childStatus -ne 0) {
+        # Before promotion, 1355 is the one *expected* negative result:
+        # NORTH's child must not exist yet. Accept only a real nltest
+        # nonzero result with its exact missing-domain evidence. Never
+        # treat timeouts, access failures or foreign DC answers as safe.
+        $childError = "$($childLookup.Stdout) $($childLookup.Stderr)"
+        if ($childStatus -notin @(1, 1355) -or
+            $childError -notmatch 'Status\s*=\s*1355\b' -or
+            $childError -notmatch 'ERROR_NO_SUCH_DOMAIN') {
+          throw "NORTH DNS containment: unexpected child lookup error (code=$childStatus)"
+        }
+        $childStatus = 1355
+      }
       if ($childStatus -eq 0) {
-        $childLines = @($childLocator | Where-Object { "$_" -match 'Address:' })
+        $childLines = @($childLookup.Stdout -split '\r?\n' | Where-Object { "$_" -match 'Address:' })
         $childAddresses = @($childLines | ForEach-Object {
           [regex]::Matches("$_", '(?:\d{1,3}\.){3}\d{1,3}') | ForEach-Object { $_.Value }
         })
