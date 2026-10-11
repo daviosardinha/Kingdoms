@@ -189,7 +189,7 @@ class Course1HostAddressTests(unittest.TestCase):
                 "goad/course1_hostaddrs.py").read_text()
         for phrase in ("systemctl start", ".write_text(", "sudo ",
                        "os.replace(", "ip -4 addr flush dev",
-                       '"route", "add"', '"addr", "add"'):
+                       '"vmware-networks", "--start"'):
             self.assertNotIn(phrase, code)
 
 
