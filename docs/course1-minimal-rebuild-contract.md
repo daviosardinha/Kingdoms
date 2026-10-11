@@ -8,7 +8,9 @@ This branch was created **directly from main**.
 
 ## Intent
 
-Course 1 is the working Kingdoms/GOAD_NOMAD deployment **minus Essos**,
+**Kingdoms `main` is the single implementation baseline, not upstream GOAD.** The legacy directory name `ad/GOAD` and internal identifiers like `GOAD-DC01` are inherited naming inside our *Kingdoms* repository. They do not imply reimporting upstream GOAD code or replacing validated Kingdoms engineering.
+
+Course 1 is the working **Kingdoms** deployment **minus Essos**,
 not a separate provider, installer, VMnet controller, Ansible fork, or
 lifecycle framework. Retain the same VMware Vagrant provisioning engine,
 Ansible role sequence, installed-lab exercise isolation, restart/reset,
@@ -27,7 +29,7 @@ management-plane behavior, and security fixtures that work for Kingdoms.
 Delete GOAD-DC03 (MEEREEN) and GOAD-SRV03 (BRAAVOS) *from Course 1
 definition*, along with Essos-only domain contents, inventory groups,
 playbook targets, router segment, trust references and dependent
-vulnerabilities. Do not delete GOAD files or hosts in the reference
+vulnerabilities. Do not delete or alter the full Kingdoms scenario files or hosts in the legacy
 `ad/GOAD` profile. Protect Course 1's SQL, WS01, Phase 01 and Phase 03
 attack paths while removing unreachable Essos-only material.
 
