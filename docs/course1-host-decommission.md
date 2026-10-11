@@ -433,3 +433,29 @@ all other VMware inventory properties/entries.
 `apply --confirm` is PENDING. Do not claim VMware registry clean yet.
 Run the plan and confirm the eight explicit registrations before apply.
 The Vagrant registry already reports no active environments after prune.
+
+## 2026-10-11 — stale VMware library and Vagrant index removed
+
+Operator ran the dedicated `tests.test_course1_cleanup_vmware_library`
+suite (4/4 PASS), reviewed `scripts/course1-cleanup-vmware-library.py plan`,
+and successfully executed `apply --confirm`. Exactly eight entries
+(`vmlist4` through `vmlist11`) were removed: the seven missing original
+GOAD guest VMX registrations and the deleted `KINGDOMS-SQL-CLONE`.
+Backup file created:
+`/home/stark/.vmware/inventory.vmls.backup-20261011T163541602406Z`.
+
+Afterward `vmrun -T ws list` showed `Total running VMs: 0`,
+`vagrant global-status` showed no active entries, and the only
+`inventory.vmls` config entries were the three pre-existing empty
+slots `vmlist1.config = ""`, `vmlist2.config = ""` and
+`vmlist3.config = ""`. Keep these harmless empty slots.
+
+**Core virtualization cleanup complete**, not yet final host hygiene.
+Outstanding acceptance: read-only post-removal scan of remaining
+Kingdoms/GOAD timers, processes, routes, nft/iptables rules, crontabs,
+credential cache files, legacy backups and stray helper scripts; classify
+findings with exact ownership evidence. Verify the abandoned
+`feature/course1-reduced-profile-source` branch is no longer needed and
+delete only that named remote branch; preserve `main` and
+`rebuild/course1-from-kingdoms`. Do not purge reusable `~/.goad`
+tooling, unrelated caches or any other project resources without review.
