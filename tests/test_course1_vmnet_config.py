@@ -71,6 +71,26 @@ class Course1VmnetPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(NetworkPlanError, "overlaps"):
             render_vmnet_config(original, self.layout)
 
+    def test_foreign_broad_netmask_overlap_blocks_requested_subnet(self):
+        # 10.4.0.0/16 includes North even though its first /24 is not 10.4.10.
+        original = (
+            BASELINE
+            + "answer VNET_55_HOSTONLY_SUBNET 10.4.0.0\n"
+            + "answer VNET_55_HOSTONLY_NETMASK 255.255.0.0\n"
+        )
+        with self.assertRaisesRegex(NetworkPlanError, "overlaps"):
+            render_vmnet_config(original, self.layout)
+
+    def test_duplicate_foreign_netmask_is_rejected(self):
+        original = (
+            BASELINE
+            + "answer VNET_55_HOSTONLY_SUBNET 10.6.10.0\n"
+            + "answer VNET_55_HOSTONLY_NETMASK 255.255.255.0\n"
+            + "answer VNET_55_HOSTONLY_NETMASK 255.255.0.0\n"
+        )
+        with self.assertRaisesRegex(NetworkPlanError, "Duplicate existing"):
+            render_vmnet_config(original, self.layout)
+
     def test_invalid_existing_vmware_subnet_fails_closed(self):
         original = BASELINE + "answer VNET_55_HOSTONLY_SUBNET not-an-ip\n"
         with self.assertRaisesRegex(NetworkPlanError, "Invalid existing"):
