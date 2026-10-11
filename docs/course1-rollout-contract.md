@@ -18,6 +18,14 @@ The default `--all` action runs the established `scripts/validate-course1.sh` su
 
 Other modes: `--source` runs the full source suite without live host inspection; `--plan` prints the five current engineering readiness states quickly without running the regression; `--deploy` is deliberately **blocked** pending runtime adapter and acceptance evidence.
 
+## Host integration now committed (not live-proven)
+
+The reduced host setup is connected through the **existing** `scripts/setup-vmware-networks.sh --north apply` dispatcher. Its privileged adapter calls the existing file transaction and creates the exact NORTH helper/service/timer using exclusive ownership checks. The adapter requires an existing instance-provider directory and a manually reviewed baseline SHA-256, rechecks VM/route/VMX collisions under the vmnet transaction lock, writes durable VMware netmap recovery evidence, and fails closed on interrupted restarts or unowned assets.
+
+The Python unit tests now inject VMware restart, partial systemd activation, failed commit, and foreign file edits entirely in temporary directories. `scripts/course1-rollout.sh --all` automatically discovers those tests. **No live VMware apply, systemd activation, first NORTH VM launch, or AD acceptance has been performed.** The current NORTH lifecycle guard remains in place.
+
+When future live acceptance is authorized, its reviewed `--north apply` workflow must be performed on the intended clean Kali host with explicit privilege and reconciled instance identity. It is **not** automatically invoked by `--all`, and it must not be confused with `--deploy`, which is still blocked.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
@@ -28,6 +36,6 @@ Other modes: `--source` runs the full source suite without live host inspection;
 
 ## Current truthful state
 
-The current `course1-rollout.sh` is a **source-controlled orchestrator and hard safety gate**, not a live installer. It provides one operator command and reports the remaining implementation blockers together. Creating VMs and modifying VMware/systemd are not available in this revision. The next work must land as reviewed source and focused tests before changing its `--deploy` behavior.
+The current `course1-rollout.sh` is a **source-controlled orchestrator and hard safety gate**, not a live installer. A separately guarded `--north apply` path exists through the original network setup script, but has not received Kali live acceptance. It provides one operator command and reports the remaining implementation blockers together. Creating VMs and modifying VMware/systemd are not available in this revision. The next work must land as reviewed source and focused tests before changing its `--deploy` behavior.
 
 Never ask the operator to apply quick local changes outside GitHub or run five separate isolated test scripts. Git commit -> push -> Kali pull -> one-command validation is the established workflow.
