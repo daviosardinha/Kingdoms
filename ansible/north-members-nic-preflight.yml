@@ -1,0 +1,59 @@
+---
+# Safe live acceptance for preserved NORTH SRV02/WS01 after member-join failure.
+# Read-only except host-local Ansible facts and Windows volatile DNS cache.
+# Runs EXACT production DC Locator PowerShell proof without configuring NICs,
+# joining a domain, restarting Windows, or mutating reference Kingdoms.
+- name: Verify NORTH member adapters and child DC Locator before join retry
+  hosts: srv02:ws01
+  gather_facts: true
+  tasks:
+    - name: Verify existing isolated NORTH inventory identity
+      ansible.builtin.assert:
+        that:
+          - hostvars['dc02'].ansible_host == '10.41.10.11'
+          - dns_domain == 'dc02'
+          - ansible_host == ('10.41.10.22' if inventory_hostname == 'srv02' else '10.41.10.31')
+        fail_msg: 'NORTH member preflight requires the preserved instance inventory'
+
+    - name: Discover member IPv4 adapter topology from this Windows host
+      ansible.builtin.set_fact:
+        north_member_lab_interfaces: "{{ ansible_interfaces | selectattr('ipv4.address', 'defined') | selectattr('ipv4.address', 'equalto', ansible_host) | list }}"
+        north_member_other_interfaces: "{{ ansible_interfaces | selectattr('ipv4.address', 'defined') | rejectattr('ipv4.address', 'equalto', ansible_host) | list }}"
+      changed_when: false
+
+    - name: Refuse missing or ambiguous member NIC evidence
+      ansible.builtin.assert:
+        that:
+          - north_member_lab_interfaces | length == 1
+          - north_member_other_interfaces | length <= 1
+          - north_member_lab_interfaces[0].connection_name | length > 0
+          - north_member_other_interfaces | length == 0 or (north_member_other_interfaces[0].connection_name | length > 0 and north_member_other_interfaces[0].default_gateway is defined and north_member_other_interfaces[0].default_gateway is not none)
+        fail_msg: 'NORTH member NIC topology is unsafe for domain join'
+
+    - name: Bind actual member interface names, without changing Windows configuration
+      ansible.builtin.set_fact:
+        domain_adapter: "{{ north_member_lab_interfaces[0].connection_name }}"
+        nat_adapter: "{{ north_member_other_interfaces[0].connection_name if north_member_other_interfaces | length == 1 else '' }}"
+        two_adapters: "{{ north_member_other_interfaces | length == 1 }}"
+      changed_when: false
+
+    - name: Display actual NORTH member NIC evidence
+      ansible.builtin.debug:
+        msg:
+          - "NORTH_MEMBER_NIC host={{ inventory_hostname }} lab={{ domain_adapter }} nat={{ nat_adapter | default('') }} has_nat={{ two_adapters | bool }}"
+
+    - name: Run exact production NORTH member DNS and child DC Locator guard
+      ansible.windows.win_powershell:
+        script: "{{ (lookup('ansible.builtin.file', playbook_dir ~ '/roles/kingdoms_north_member_dns_guard/tasks/main.yml') | from_yaml)[5]['ansible.windows.win_powershell']['script'] }}"
+        parameters:
+          NatAdapter: "{{ nat_adapter }}"
+          DomainAdapter: "{{ domain_adapter }}"
+          HasNat: "{{ two_adapters | bool }}"
+          ExpectedDns: "{{ hostvars['dc02'].ansible_host }}"
+          ExpectedDomain: "north.sevenkingdoms.local"
+      register: north_member_dns_proof
+      changed_when: false
+
+    - name: Display instance-bound member DNS proof
+      ansible.builtin.debug:
+        var: north_member_dns_proof.output
