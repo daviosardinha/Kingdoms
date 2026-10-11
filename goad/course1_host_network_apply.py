@@ -345,7 +345,7 @@ def diagnose_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
         segment = layout["segments"][zone]
         number = segment["vmnet"][5:]
         addr = segment["host_address"]
-        optional = f"answer VNET_{number}_HOSTONLY_HOSTADDR {addr}\\n".encode("ascii")
+        optional = f"answer VNET_{number}_HOSTONLY_HOSTADDR {addr}\n".encode("ascii")
         candidates |= {data.replace(optional, b"", 1) for data in tuple(candidates)
                        if optional in data}
     owned = next((data for data in candidates
@@ -401,10 +401,10 @@ def main():
                     print(line)
                 if result["diff_truncated"]:
                     print("[DIFF] Truncated after 100 lines")
-                parser.exit(2, "[BLOCKED] NORTH VMnet contents drifted; no changes made\\n")
+                parser.exit(2, "[BLOCKED] NORTH VMnet contents drifted; no changes made\n")
             print("[PASS] NORTH VMware networking still matches the original commit")
         except (NorthSetupError, ValueError, OSError, RuntimeError) as exc:
-            parser.exit(1, "[BLOCKED] NORTH drift diagnosis: " + str(exc) + "\\n")
+            parser.exit(1, "[BLOCKED] NORTH drift diagnosis: " + str(exc) + "\n")
         return
     if len(sys.argv) > 1 and sys.argv[1] == "verify":
         parser = argparse.ArgumentParser(description="Read-only NORTH ownership check")
