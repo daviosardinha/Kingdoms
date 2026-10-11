@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import subprocess
 
 from goad.kingdoms_topology import load_course1_topology, parse_vmnet_args
 
@@ -56,6 +57,60 @@ def repair_decisions(layout, observed):
         if rule["desired"] not in observed[iface]:
             actions.append(("ip", "-4", "addr", "add", rule["desired"], "dev", iface))
     return tuple(actions)
+
+
+
+def verify_hostaddr_runtime(layout, links, addresses):
+    """Verify live Linux interfaces in parsed ip -j output, without writes."""
+    if not isinstance(links, list) or not isinstance(addresses, list):
+        raise ValueError("Malformed Linux network inspection output")
+    planned = hostaddr_plan(layout)
+    names = [link.get("ifname") for link in links]
+    if planned["protected"] in names:
+        raise ValueError("Protected Seven Kingdoms adapter exposed on Kali")
+    if any(iface not in names for iface in planned["interfaces"]):
+        raise ValueError("Missing host-visible VMware interface")
+    observed = {}
+    for iface in planned["interfaces"]:
+        entries = [entry for entry in addresses if entry.get("ifname") == iface]
+        if len(entries) != 1:
+            raise ValueError("Missing or ambiguous host-address evidence")
+        ips = []
+        for addr in entries[0].get("addr_info", []):
+            if addr.get("family") != "inet":
+                continue
+            if not isinstance(addr.get("local"), str) or type(addr.get("prefixlen")) is not int:
+                raise ValueError("Incomplete IPv4 address evidence")
+            ips.append(addr["local"] + "/" + str(addr["prefixlen"]))
+        observed[iface] = ips
+    needed = repair_decisions(layout, observed)
+    if needed:
+        raise ValueError("Host IPv4 repair is still required")
+    return (
+        "Both NORTH VMware host adapters have exactly the expected .254 addresses",
+        "VMware .1 addresses are absent and Seven Kingdoms has no host adapter",
+    )
+
+
+def inspect_live_hostaddrs(layout):
+    """Read-only iproute2 call; no systemd, VMware or kernel changes."""
+    def read_ip(*args):
+        try:
+            result = subprocess.run(
+                ("ip", "-j", *args), check=False, capture_output=True,
+                text=True, timeout=12,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("Linux iproute2 inspection unavailable") from exc
+        if result.returncode:
+            raise ValueError("Failed to inspect Linux interfaces")
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid iproute2 JSON") from exc
+    return verify_hostaddr_runtime(
+        layout, read_ip("link", "show"), read_ip("-4", "addr", "show")
+    )
 
 
 def render_hostaddr_assets(layout):
@@ -135,6 +190,7 @@ WantedBy=timers.target
 
 def main():
     parser = argparse.ArgumentParser(description="Read-only NORTH host-address preview")
+    parser.add_argument("--live", action="store_true", help="Read-only host IPv4 verification")
     parser.add_argument("--network-base", default=None)
     parser.add_argument("--vmnet", action="append", default=[])
     args = parser.parse_args()
@@ -142,7 +198,12 @@ def main():
         layout = load_course1_topology(args.network_base, parse_vmnet_args(args.vmnet))
         planned = hostaddr_plan(layout)
         planned["assets"] = sorted(render_hostaddr_assets(layout))
-        planned["mode"] = "READ-ONLY; no systemd service installed"
+        if args.live:
+            for line in inspect_live_hostaddrs(layout):
+                print("[PASS] " + line)
+            planned["mode"] = "READ-ONLY host inspection; no systemd changes"
+        else:
+            planned["mode"] = "READ-ONLY; no systemd service installed"
     except (KeyError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(planned, sort_keys=True, indent=2))
