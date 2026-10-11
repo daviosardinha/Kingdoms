@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import pwd
 import re
@@ -24,6 +25,7 @@ from goad.course1_hostaddrs import (
 from goad.course1_hostaddr_install import install_owned_address_assets
 from goad.course1_network_preflight import inspect_live
 from goad.course1_vmnet_config import verify_vmnet_config
+from goad.course1_vmnet_journal import inspect_vmnet_journals
 from goad.course1_vmnet_transaction import (
     _atomic_bytes, _plain_regular, _safe_directory, execute_testable_network_transaction,
 )
@@ -227,7 +229,91 @@ def apply(provider_dir, reviewed_sha256, networking=NETWORKING, netmap=NETMAP,
         raise
 
 
+
+def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
+                            backups=BACKUPS, owner_uid=0, inspect_host=True):
+    """Check installed NORTH ownership before native Kingdoms lifecycle.
+
+    This is read-only. The clean-host preflight must NOT run post-install,
+    because the vmnets it rejects are now intentionally owned by NORTH.
+    """
+    provider = Path(provider_dir)
+    if not provider.is_absolute() or provider.is_symlink() or not provider.is_dir():
+        raise NorthSetupError("NORTH provider directory missing or unsafe")
+    identity = str(provider.resolve(strict=True))
+    record_path = Path(owner)
+    if record_path.is_symlink() or not record_path.is_file():
+        raise NorthSetupError("NORTH host network owner record is missing or unsafe")
+    metadata = _plain_regular(record_path)
+    if metadata.st_uid != owner_uid or stat.S_IMODE(metadata.st_mode) != 0o600:
+        raise NorthSetupError("NORTH owner record permissions are unsafe")
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError) as exc:
+        raise NorthSetupError("NORTH owner record is unreadable") from exc
+
+    layout = load_course1_topology()
+    vmnets = {name: zone["vmnet"] for name, zone in layout["segments"].items()}
+    if (not isinstance(record, dict) or record.get("profile") != "NORTH"
+            or record.get("provider") != identity
+            or record.get("network_base") != layout["network_base"]
+            or record.get("vmnets") != vmnets):
+        raise NorthSetupError("NORTH networking belongs to another instance or profile")
+    if not isinstance(record.get("backup"), str):
+        raise NorthSetupError("NORTH owner record has no baseline backup")
+
+    config = Path(networking)
+    _plain_regular(config)
+    installed = config.read_bytes()
+    if hashlib.sha256(installed).hexdigest() != record.get("installed_sha256"):
+        raise NorthSetupError("NORTH VMware config differs from owned installation")
+    verify_vmnet_config(installed.decode("utf-8"), layout)
+
+    root = Path(backups)
+    if root.is_symlink() or not root.is_dir():
+        raise NorthSetupError("NORTH transaction backup directory is unsafe")
+    saved = Path(record["backup"])
+    if (not saved.is_absolute() or saved.is_symlink()
+            or saved.parent.is_symlink()
+            or not saved.is_file() or saved.parent.parent != root):
+        raise NorthSetupError("NORTH owned networking backup is missing or unsafe")
+    if hashlib.sha256(saved.read_bytes()).hexdigest() != record.get("baseline_sha256"):
+        raise NorthSetupError("NORTH backup does not match its ownership record")
+    journals = inspect_vmnet_journals(root)
+    if any(item["state"] not in ("COMMITTED", "ROLLED_BACK") for item in journals):
+        raise NorthSetupError("Unresolved NORTH transaction requires reconciliation")
+    matching = [item for item in journals
+                if item["state"] == "COMMITTED"
+                and item["backup"] == str(saved)
+                and item["provider"] == identity
+                and item["baseline_sha256"] == record["baseline_sha256"]]
+    if len(matching) != 1:
+        raise NorthSetupError("No unique committed NORTH network transaction matches this instance")
+
+    if inspect_host:
+        inspect_live_hostaddrs(layout)
+        inspect_live_hostaddr_assets(layout)
+    return (
+        "NORTH VMware owner, baseline backup and committed journal match the instance",
+        "NORTH vmnets and persistent host address contract verified",
+    )
+
+
+
 def main():
+    # The original --north apply CLI remains unchanged. Verification is a
+    # distinct, root-readable, read-only action; never call apply from it.
+    if len(sys.argv) > 1 and sys.argv[1] == "verify":
+        parser = argparse.ArgumentParser(description="Read-only NORTH ownership check")
+        parser.add_argument("--provider-dir", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            require_explicit_root()
+            for proof in inspect_installed_north(args.provider_dir):
+                print("[PASS] " + proof)
+        except (NorthSetupError, ValueError, OSError, RuntimeError) as exc:
+            parser.exit(1, "[BLOCKED] NORTH ownership verification: " + str(exc) + "\n")
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider-dir", required=True)
     parser.add_argument("--reviewed-sha256", required=True)
