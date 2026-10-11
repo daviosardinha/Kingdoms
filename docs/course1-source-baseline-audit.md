@@ -726,3 +726,46 @@ live host-applying entrypoint: VMware restart/netmap recovery, managed
 systemd asset installation, active VMX ownership recheck and exercise
 lifecycle must be bound and accepted before an install action exists.
 The NORTH install/start/reset guard remains active.
+
+## 2026-10-11 — Kali 84/84 accepted; consolidated Course 1 validation command
+
+The operator's Kali screenshot confirms **84/84 selected regression
+tests passing** and five read-only clean-host network ownership proofs.
+
+The new canonical single-command validation is:
+
+    git pull --ff-only && bash scripts/validate-course1.sh
+
+The tracked scripts/validate-course1.sh runs all checks together:
+- Original clean-branch/upstream Git source identity gate.
+- Syntax compilation for ALL Kingdoms Python source and test modules,
+  selected relevant Bash scripts, and both GOAD and NORTH Vagrantfiles.
+- Automatic discovery of ALL tests/test_*.py Python unit tests. New
+  modules are included without editing a hand-built unittest list.
+- NORTH source integrity and explicit 21-play Ansible manifest checks.
+- Existing full Kingdoms clean-install source compatibility.
+- Both default 10.4 and alternate isolated 10.5 topologies, VM/Ansible/
+  router artifact render checks, parent-zone routes, vmnet plans and
+  .254 host-address repair previews.
+- Finally, a live READ-ONLY pre-install host VMware/VMX/IP/route
+  collision check.
+
+The command stops on the first failed stage, prints the last 100 log
+lines and keeps the detailed temporary logs for diagnosis. A passing
+run prints total stages and elapsed time. Pass/fail is precise:
+a code/source failure is distinguished from an occupied/blocked host.
+
+Use scripts/validate-course1.sh --skip-host to validate source and
+all tests when a lab is already installed, or for source-only work:
+the clean-host collision check would correctly reject allocated vmnets.
+
+Ten new tests in tests/test_course1_validation_orchestrator.py cover
+dynamic discovery, safety, test/source gate ordering, CLI help,
+failure logs and both network variants. The script itself never
+installs a VM, edits a vmnet, starts systemd, or runs live Ansible.
+The NORTH install/start/reset guard remains enabled.
+
+**The complete one-command validator is not yet confirmed on Kali.**
+Because full test discovery expands past the previously selected 84
+tests, do not claim a predetermined total passing-test count; the
+validator will report the actual count.
