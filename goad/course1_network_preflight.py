@@ -50,9 +50,12 @@ def inactive_vmware() -> None:
     if running.strip() != "Total running VMs: 0":
         raise NetworkConflict("VMware has running guests or an unexpected VM inventory")
     for process in ("vmware-vmx", "vmware"):
-        result = subprocess.run(
-            ["pgrep", "-x", process], capture_output=True, text=True, timeout=10
-        )
+        try:
+            result = subprocess.run(
+                ["pgrep", "-x", process], capture_output=True, text=True, timeout=10
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise NetworkConflict(f"Unable to inspect VMware process {process}") from exc
         if result.returncode != 1:
             raise NetworkConflict(f"VMware process {process} is active or cannot be checked")
 
