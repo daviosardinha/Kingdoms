@@ -167,18 +167,95 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         guard = self.load(
             ROOT / "ansible/roles/kingdoms_north_member_dns_guard/tasks/main.yml"
         )
-        for entry, expected_adapter in zip(guard[:2], ("domain_adapter", "nat_adapter")):
+        self.assertEqual(guard[0]["name"],
+                         "Discover NORTH member IPv4 adapters from this Windows host")
+        self.assertEqual(guard[1]["ansible.builtin.assert"]["that"][0],
+                         "north_member_lab_interfaces | length == 1")
+        self.assertIn("north_member_other_interfaces | length <= 1",
+                      guard[1]["ansible.builtin.assert"]["that"])
+        self.assertIn("two_adapters", guard[2]["ansible.builtin.set_fact"])
+        for entry, expected_adapter in zip(guard[3:5], ("domain_adapter", "nat_adapter")):
             with self.subTest(adapter=expected_adapter):
                 action = entry["ansible.windows.win_dns_client"]
                 self.assertEqual(action["adapter_names"], "{{ " + expected_adapter + " }}")
                 self.assertEqual(action["ipv4_addresses"],
                                  ["{{ hostvars[dns_domain].ansible_host }}"])
-        proof = guard[2]["ansible.windows.win_powershell"]["script"]
+        self.assertEqual(guard[4]["when"], "two_adapters | bool")
+        proof = guard[5]["ansible.windows.win_powershell"]["script"]
         self.assertIn("/dsgetdc:$ExpectedDomain", proof)
         self.assertIn("addresses[0] -ne $ExpectedDns", proof)
+        self.assertIn("$checkedInterfaces = @($DomainAdapter)", proof)
+        self.assertIn("if ($HasNat)", proof)
         self.assertIn("NORTH_MEMBER_DNS_CONTAINMENT_OK", proof)
         self.assertNotIn(REFERENCE_DC, proof)
-        self.assertEqual(guard[2]["changed_when"], False)
+        self.assertEqual(guard[5]["changed_when"], False)
+        self.assertEqual(guard[5]["ansible.windows.win_powershell"]["parameters"]["HasNat"],
+                         "{{ two_adapters | bool }}")
+
+    def test_ws01_single_homed_and_srv02_dual_homed_are_resolved_per_host(self):
+        from jinja2 import StrictUndefined
+        from jinja2.nativetypes import NativeEnvironment
+        tasks = self.load(
+            ROOT / "ansible/roles/kingdoms_north_member_dns_guard/tasks/main.yml"
+        )
+        env = NativeEnvironment(undefined=StrictUndefined)
+        lab = {"connection_name": "Ethernet1",
+               "ipv4": {"address": "10.41.10.31"}}
+        nat = {"connection_name": "Ethernet0",
+               "default_gateway": "192.168.213.2",
+               "ipv4": {"address": "192.168.213.239"}}
+        for interfaces, expected_nat, valid in (
+            ([lab], False, True),
+            ([lab, nat], True, True),
+            ([lab, nat, {**nat, "connection_name": "Ethernet2"}], True, False),
+            ([nat], False, False),
+            ([], False, False),
+        ):
+            with self.subTest(interfaces=interfaces):
+                context = {"ansible_interfaces": interfaces,
+                           "ansible_host": "10.41.10.31"}
+                binding = tasks[0]["ansible.builtin.set_fact"]
+                lab_matches = env.from_string(
+                    binding["north_member_lab_interfaces"]
+                ).render(**context)
+                other_matches = env.from_string(
+                    binding["north_member_other_interfaces"]
+                ).render(**context)
+                context.update(north_member_lab_interfaces=lab_matches,
+                               north_member_other_interfaces=other_matches)
+                topology_ok = (
+                    len(lab_matches) == 1 and len(other_matches) <= 1 and
+                    bool(lab_matches[0].get("connection_name")) and
+                    (len(other_matches) == 0 or
+                     (bool(other_matches[0].get("connection_name")) and
+                      other_matches[0].get("default_gateway") is not None))
+                )
+                self.assertEqual(topology_ok, valid)
+                if not valid:
+                    continue
+                resolved = tasks[2]["ansible.builtin.set_fact"]
+                self.assertEqual(
+                    env.from_string(resolved["domain_adapter"]).render(**context),
+                    "Ethernet1"
+                )
+                self.assertEqual(
+                    env.from_string(resolved["nat_adapter"]).render(**context),
+                    "Ethernet0" if expected_nat else ""
+                )
+                self.assertIs(
+                    env.from_string(resolved["two_adapters"]).render(**context),
+                    expected_nat
+                )
+
+    def test_member_guard_rejects_stale_dc01_nic_facts_and_unexpected_nat(self):
+        source = (ROOT / "ansible/roles/kingdoms_north_member_dns_guard/tasks/main.yml").read_text()
+        self.assertIn("ansible_interfaces | selectattr", source)
+        self.assertIn("ansible_host", source)
+        self.assertIn("north_member_other_interfaces | length <= 1", source)
+        self.assertIn("north_member_other_interfaces[0].default_gateway", source)
+        self.assertIn("NORTH member network evidence is ambiguous", source)
+        self.assertIn("HasNat: \"{{ two_adapters | bool }}\"", source)
+        self.assertNotIn("Ethernet0'\n", source)
 
     def test_cross_instance_reference_and_north_addresses_remain_distinct(self):
         import json
