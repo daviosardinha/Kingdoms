@@ -115,7 +115,7 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
 
     def test_bad_digest_refuses_before_any_vmware_restart(self):
         self.sha = "0" * 64
-        with self.assertRaisesRegex(RuntimeError, "changed after plan"):
+        with self.assertRaisesRegex(RuntimeError, "changed since reviewed baseline"):
             self.launch()
         self.assertEqual(self.networking.read_text(), BASE)
         self.assertFalse(self.owner.exists())
