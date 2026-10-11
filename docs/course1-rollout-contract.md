@@ -55,6 +55,35 @@ This is a host setup acceptance check, **not** proof of AD, child trust,
 MSSQL, or Phase 03 readiness. Start the **existing** prepared instance only
 after the installed check returns green; do not create a second NORTH instance.
 
+### First live NORTH bring-up: VMware configuration drift
+
+On the first official NORTH install, the original Kingdoms provider successfully
+created all five guests (including WS01) in approximately 25 minutes, then
+stopped before Ansible provisioning because the root-owned network config SHA
+no longer matched the hash recorded during host-network installation.
+
+This is a **post-VM-start ownership attestation**, not evidence of failed guest
+creation or an AD provisioning failure. Do not destroy the prepared NORTH
+instance, rerun host-network apply, overwrite the owner record or skip the
+guard. The network layer needs an actual byte-level diagnosis before deciding
+whether VMware performed an expected normalization or introduced an unsafe
+change.
+
+A guarded read-only diagnostic is available through the *existing* setup
+entrypoint:
+
+```bash
+sudo bash scripts/setup-vmware-networks.sh --north diagnose \
+  --provider-dir "$PWD/workspace/ac9fda-north-vmware/provider"
+```
+
+It reconstructs the original committed config from the owned baseline backup,
+compares the present bytes, prints the SHA-256 values, topology check and a
+bounded diff. Exit 2 means drift was found and is **expected diagnostic output,
+not authorization for reinstallation**. The fix must be implemented and tested
+against those exact differences before resuming the existing instance's
+provisioning.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
