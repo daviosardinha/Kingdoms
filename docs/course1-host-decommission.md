@@ -239,9 +239,9 @@ force-kill. The final VMware output explicitly reads:
 Total running VMs: 0
 ```
 
-This establishes that the eleven? **No**: NORTH's five disposable Vagrant
-VMs were explicitly destroyed, and the original seven orphan VMware
-processes were terminated; **all twelve are no longer running**, but
+NORTH's five disposable Vagrant VMs were explicitly destroyed, and
+the original seven orphan VMware processes were terminated. Thus,
+**all twelve are no longer running**, but
 original Vagrant metadata and Workstation registrations remain to be
 removed. Original guest disk/VMX files were already deleted by the
 operator's prior checkout-folder removal.
