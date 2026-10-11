@@ -367,3 +367,29 @@ AD/exercise lifecycle and vmnet ownership preflight still hardcode
 the full six-host topology. The NORTH fail-closed install guard
 remains active. Next integrate those runtime components before
 running a single controlled first install.
+
+## 2026-10-11 — Kali 86-test run identified only two broken test fixtures
+
+Operator ran the 86 selected source/regression tests after adding the
+explicit NORTH Kingdoms Ansible manifest. Result: **86 run, two failures**,
+both in `tests.test_course1_source_preflight`:
+
+- `test_playbook_manifest_missing_blocks_before_vagrant` attempted
+  to match the literal backslash-n characters `NORTH:\\n` instead of
+  a Python string containing the actual newline. The assertion failed
+  before calling the preflight under test.
+- `test_external_trust_play_is_rejected_for_course1` used the same
+  double-escaped `NORTH:\\n` in `partition`, leading to an empty
+  separator and assertion failure, before the trust-rejection check.
+
+Commit `ef2ab744ae1cd4f1f96dd3ee28b5d1d5ef8d343a` replaced only
+those negative-fixture literals (including the injected
+`ad-trusts.yml` newline) with correctly escaped Python newline
+sequences. No Kingdoms engine, production preflight, Ansible manifest,
+virtual network or deployment behavior was modified by this fix.
+
+**Acceptance is pending a new Kali test run.** Expected 86/86,
+then rerun `python3 -m goad.course1_source_preflight`.
+The temporary NORTH install/lifecycle guard remains active. Do not
+start Vagrant or Ansible until runtime network/lifecycle integration
+is separately completed and validated.
