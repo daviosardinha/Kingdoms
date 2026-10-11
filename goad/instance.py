@@ -23,7 +23,13 @@ class LabInstance:
         self.config = config
         self.provider_name = provider_name
         self.provisioner_name = provisioner_name
-        self.ip_range = ip_range
+        # The legacy global setting describes a flat 192.168.56.x lab.
+        # Course 1 instead defaults to Kingdoms' 10.4.0.0/16 segmentation.
+        # Normalize only the new NORTH instance metadata, never other labs.
+        self.ip_range = (
+            '10.4.0' if lab_name == 'NORTH' and ip_range in
+            (None, '', '192.168.56') else ip_range
+        )
         self.status = status
         if extensions is None:
             extensions = []
