@@ -3,6 +3,7 @@
 The Bash roster is executed independently of main(): no VMware, sudo,
 Vagrant, networking, or guest action is used during these tests.
 """
+import ast
 import os
 from pathlib import Path
 import subprocess
@@ -75,13 +76,38 @@ printf 'WINDOWS=%s\\n' "${WINDOWS_VMS[*]}"
             self.assertIn(name, self.script)
 
     def test_north_runtime_remains_guarded_until_host_contract_complete(self):
-        self.assertIn("if self.lab_name != 'NORTH':", self.provider)
-        self.assertIn('return True', self.provider)
-        for method in ("def install(self):", "def prepare_install(self):",
-                       "def start_vm(self, vm_name):", "def reset(self):"):
-            index = self.provider.index(method)
-            self.assertIn("if self._course1_unwired():",
-                          self.provider[index:index + 700])
+        # Parse executable statements, not a fixed 700-character slice:
+        # reset() has a long docstring describing VMware snapshot recovery.
+        tree = ast.parse(self.provider)
+        cls = next(node for node in tree.body
+                   if isinstance(node, ast.ClassDef)
+                   and node.name == "GoadKingdomsVmwareProvider")
+        methods = {node.name: node for node in cls.body
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        guard = methods["_course1_unwired"]
+        self.assertIn("if self.lab_name != 'NORTH':",
+                      ast.get_source_segment(self.provider, guard))
+        for name in ("install", "prepare_install", "start", "start_vm",
+                     "stop", "stop_vm", "reset", "prepare_provisioning",
+                     "set_runtime_mode"):
+            with self.subTest(method=name):
+                body = methods[name].body
+                # Python AST keeps the docstring as the first Expr node.
+                if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+                    body = body[1:]
+                self.assertTrue(body, name)
+                check = body[0]
+                self.assertIsInstance(check, ast.If, name)
+                self.assertIsInstance(check.test, ast.Call, name)
+                self.assertIsInstance(check.test.func, ast.Attribute, name)
+                self.assertIsInstance(check.test.func.value, ast.Name, name)
+                self.assertEqual(check.test.func.value.id, "self", name)
+                self.assertEqual(check.test.func.attr, "_course1_unwired", name)
+                self.assertEqual(check.test.args, [], name)
+                self.assertEqual(len(check.body), 1, name)
+                self.assertIsInstance(check.body[0], ast.Return, name)
+                self.assertIsInstance(check.body[0].value, ast.Constant, name)
+                self.assertIs(check.body[0].value.value, False, name)
 
 
 if __name__ == "__main__":
