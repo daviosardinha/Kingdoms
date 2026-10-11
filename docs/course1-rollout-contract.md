@@ -55,6 +55,31 @@ This is a host setup acceptance check, **not** proof of AD, child trust,
 MSSQL, or Phase 03 readiness. Start the **existing** prepared instance only
 after the installed check returns green; do not create a second NORTH instance.
 
+### Resolution: reuse full Kingdoms runtime checks without losing NORTH ownership
+
+The first installed-NORTH diagnostic confirmed **[TOPOLOGY] PASS**: VMware
+reordered the VNET declarations, removed optional .254 metadata, rotated
+the existing vmnet1/vmnet8 DHCP_CFG_HASH tokens, and appended vmnet8 NAT
+forwards to generated guest addresses. A strict full-file SHA check mistakenly
+treated those normal runtime operations as an ownership violation.
+
+The immutable owner record, original baseline backup and committed transaction
+journal remain mandatory and are **never rewritten**. Verification reconstructs
+the original installed bytes and checks their saved hash, then uses the
+validated full-Kingdoms semantic vmnet policy with a strict NORTH allowlist:
+declaration ordering, correct optional .254 metadata, and already-present
+foreign DHCP hash rotation.
+
+New Vagrant NAT forwarding is allowed only on baseline vmnet8, via TCP,
+to guests inside vmnet8's original NAT subnet on ports 22, 5985 or 5986.
+Every other added, deleted or modified directive, including isolation changes,
+foreign subnet drift, unexpected NAT forwards, and duplicate host ports,
+is rejected. Live .254 addresses and systemd repair assets must also pass.
+
+Use the source-and-live-owner **--installed** gate for the existing provider
+before retrying Ansible provisioning. The separate **--north diagnose** command
+shows raw byte drift and can still exit 2 even when expected VMware changes
+pass the installed semantic verification.
 ### First live NORTH bring-up: VMware configuration drift
 
 On the first official NORTH install, the original Kingdoms provider successfully
