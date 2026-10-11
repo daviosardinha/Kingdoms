@@ -52,6 +52,18 @@ class Course1UnifiedValidationTests(unittest.TestCase):
         ):
             self.assertIn(required, self.source)
 
+    def test_source_vmnet_previews_do_not_require_vmware_host_networking(self):
+        self.assertIn("def test_", "def test_")
+        self.assertIn("preview_offline_vmnet()", self.source)
+        self.assertIn("network_plan(args.network_base, parse_vmnet_args(args.vmnet), baseline=baseline)",
+                      self.source)
+        self.assertIn("preview_offline_vmnet", self.source)
+        self.assertIn("Read-only live VMware baseline configuration plan", self.source)
+        self.assertLess(
+            self.source.index('stage "Default additive VMware vmnet configuration preview (offline)"'),
+            self.source.index('stage "Read-only live VMware baseline configuration plan"'),
+        )
+
     def test_clean_host_check_is_the_last_validation_stage(self):
         live = self.source.index(
             'stage "Live READ-ONLY clean-host vmnet/IP/VMX collision check"'
