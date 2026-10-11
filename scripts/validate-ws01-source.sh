@@ -50,6 +50,7 @@ import ast
 import json
 from pathlib import Path
 import re
+import subprocess
 
 
 def fail(message):
@@ -177,12 +178,38 @@ if management.get('GOAD-WS01') != '10.4.10.31' or len(management) != 6:
     fail(f'management readiness contract mismatch: {management!r}')
 
 lab_mode = Path('scripts/lab-mode.sh').read_text()
-lab_mode_match = re.search(r'(?ms)^readonly WINDOWS_VMS=\((.*?)^\)', lab_mode)
-if lab_mode_match is None:
+# The shared lifecycle now defines one full GOAD roster and omits only the
+# two Essos guests for NORTH. A static whitespace split would incorrectly
+# treat the Bash array expansion as a literal Windows VM name. Evaluate only
+# the declaration block (no main(), host operations, sudo or Vagrant).
+try:
+    roster_start = lab_mode.index('# An explicit profile selection controls only')
+    roster_end = lab_mode.index('\ndeclare -A DC_DOMAIN=(', roster_start)
+except ValueError:
+    fail('lab-mode profile roster declaration missing')
+roster_source = lab_mode[roster_start:roster_end]
+if 'readonly WINDOWS_VMS=(' not in roster_source:
     fail('lab-mode Windows VM list missing')
-lab_mode_windows = lab_mode_match.group(1).split()
-if lab_mode_windows != expected_windows:
-    fail(f'lab-mode Windows list mismatch: {lab_mode_windows!r}')
+
+north_windows = [vm for vm in expected_windows
+                 if vm not in ('GOAD-DC03', 'GOAD-SRV03')]
+for profile, expected_roster in (
+    ('GOAD', expected_windows),
+    ('NORTH', north_windows),
+):
+    try:
+        completed = subprocess.run(
+            ['bash', '-c', roster_source + '\necho "${WINDOWS_VMS[*]}"\n'],
+            env={'GOAD_LAB_PROFILE': profile, 'PATH': '/usr/bin:/bin'},
+            capture_output=True, text=True, check=False, timeout=8,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        fail(f'lab-mode {profile} roster evaluation failed: {exc}')
+    if completed.returncode != 0:
+        fail(f'lab-mode {profile} roster evaluation failed: {completed.stderr.strip()}')
+    actual_roster = completed.stdout.strip().split()
+    if actual_roster != expected_roster:
+        fail(f'lab-mode {profile} Windows roster mismatch: {actual_roster!r}')
 
 runtime = Path('scripts/validate-network-segmentation-runtime.sh').read_text()
 focused_runtime = Path('scripts/validate-ws01-runtime.sh').read_text()
