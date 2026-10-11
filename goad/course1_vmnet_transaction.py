@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from goad.course1_vmnet_config import render_vmnet_config
+from goad.course1_vmnet_config import render_vmnet_config, known_vmware_hostaddr_normalization
 from goad.course1_vmnet_journal import (
     exclusive_vmnet_lock, require_reconciled, record_journal,
 )
@@ -168,15 +168,16 @@ def _execute_transaction_locked(
         journal["state"] = "VERIFYING"
         record_journal(backup_folder, journal)
         verify_live_networks()
-        if networking.read_bytes() != proposed:
-            raise VmnetTransactionError("VMware modified networking after verification")
+        installed_bytes = networking.read_bytes()
+        if not known_vmware_hostaddr_normalization(proposed, installed_bytes, layout):
+            raise VmnetTransactionError("Unexpected VMware networking change after verification")
         record = {
             "profile": "NORTH",
             "provider": provider_identity,
             "network_base": layout["network_base"],
             "vmnets": {name: zone["vmnet"] for name, zone in layout["segments"].items()},
             "baseline_sha256": _digest(original),
-            "installed_sha256": _digest(proposed),
+            "installed_sha256": _digest(installed_bytes),
             "backup": str(backup),
         }
         # Exclusive create; never replace someone else's ownership record.
@@ -203,7 +204,8 @@ def _execute_transaction_locked(
         if changed:
             # VMware or another administrator may have modified the file.
             # Never overwrite their changes just to claim successful rollback.
-            if networking.read_bytes() != proposed:
+            if not known_vmware_hostaddr_normalization(
+                    proposed, networking.read_bytes(), layout):
                 journal["state"] = "MANUAL_RECONCILIATION"
                 record_journal(backup_folder, journal)
                 raise VmnetTransactionError(
