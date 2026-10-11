@@ -64,6 +64,23 @@ class FreshInstallBootstrapTests(unittest.TestCase):
         provider._enable_provisioning_routes.assert_called_once_with()
         provider._validate_management_plane.assert_called_once_with()
 
+    def test_north_fresh_install_uses_existing_pre_ad_management_path(self):
+        provider = self.make_provider()
+        provider.lab_name = 'NORTH'
+        self.assertTrue(provider.prepare_provisioning())
+        self.assertEqual(provider.base_prepare_calls, 0)
+        provider._apply_router_policy.assert_called_once_with('provisioning')
+        provider._enable_provisioning_routes.assert_called_once_with()
+        provider._validate_management_plane.assert_called_once_with()
+
+    def test_north_provisioned_instance_cannot_reenter_pre_ad_path(self):
+        provider = self.make_provider(mode='exercise')
+        provider.lab_name = 'NORTH'
+        self.assertEqual(provider.prepare_provisioning(), 'BASE_AD_AWARE_PATH')
+        self.assertEqual(provider.base_prepare_calls, 1)
+        provider._apply_router_policy.assert_not_called()
+        provider._enable_provisioning_routes.assert_not_called()
+
     def test_installed_instance_keeps_normal_ad_aware_transition(self):
         provider = self.make_provider(mode='exercise')
 
