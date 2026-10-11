@@ -88,6 +88,22 @@ class CleanupAuditTests(unittest.TestCase):
             self.assertIn("vmnet99", report["target_network_settings"])
             self.assertNotIn("vmnet8", report["target_network_settings"])
 
+    def test_vmware_powered_off_registry_is_read_only(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home)
+            (root / ".vmware").mkdir()
+            vmx = root / "machines" / "GOAD-DC01.vmx"
+            registry = root / ".vmware/inventory.vmls"
+            registry.write_text(
+                'vmlist0.config = "' + str(vmx) + '"\n'
+                'vmlist1.config = "/other/unrelated.vmx"\n'
+            )
+            with patch.object(audit.Path, "home", return_value=root):
+                found = audit.vmware_user_registry()
+            self.assertEqual(found["registered_vmx_paths"],
+                             [str(vmx), "/other/unrelated.vmx"])
+            self.assertTrue(found["exists"])
+
     def test_process_audit_never_exposes_args(self):
         fake = {"exit_code": 0, "stdout": "1234 vmware-vmx\n5678 python\n",
                 "stderr": ""}
