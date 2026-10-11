@@ -135,19 +135,8 @@ class Course1VmnetPlanTests(unittest.TestCase):
     def test_original_kingdoms_check_script_preserved_with_explicit_north(self):
         source = (Path(__file__).resolve().parents[1] /
                   "scripts/check-vmware-networks.sh").read_text()
-        self.assertIn('if [[ "' + '        source = (Path(__file__).resolve().parents[1] /
-                  "goad/course1_vmnet_config.py").read_text()
-        for forbidden in (
-            "subprocess.", "systemctl", "vmware-networks --",
-            ".write_text(", "os.replace(", "ip route add",
-            "rmtree(", "unlink(", "open('w'",
-        ):
-            self.assertNotIn(forbidden, source)
-
-
-if __name__ == "__main__":
-    unittest.main()
- + '{1:-}" == "--north" ]]', source)
+        expected_dispatch = 'if [[ "' + '$' + '{1:-}" == "--north" ]]'
+        self.assertIn(expected_dispatch, source)
         self.assertIn("python3 -m goad.course1_vmnet_config check", source)
         self.assertIn("'30 10.4.30.0 no ESSOS'", source)
         self.assertIn("GOAD_NOMAD design", source)
