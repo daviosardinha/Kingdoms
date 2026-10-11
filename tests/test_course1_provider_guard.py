@@ -115,6 +115,7 @@ class UnsafeInstallGuardTests(unittest.TestCase):
         self.assertIs(provider.stop_vm("GOAD-DC01"), False)
         self.assertIs(provider.stop(), False)
         self.assertIs(provider.reset(), False)
+        self.assertIs(provider.set_runtime_mode("exercise"), False)
         self.assertIs(provider.prepare_install(), False)
         self.assertIs(provider.prepare_provisioning(), False)
         self.assertEqual(provider.calls, [])
