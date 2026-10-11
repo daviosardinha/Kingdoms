@@ -393,3 +393,48 @@ then rerun `python3 -m goad.course1_source_preflight`.
 The temporary NORTH install/lifecycle guard remains active. Do not
 start Vagrant or Ansible until runtime network/lifecycle integration
 is separately completed and validated.
+
+## 2026-10-11 — 86/86 accepted; read-only live host ownership preflight
+
+The user's Kali terminal confirms **86 tests PASS** in 0.485s and
+all **six** `python3 -m goad.course1_source_preflight` proofs PASS.
+This closes the exact 21-play NORTH manifest/source-fixture checkpoint.
+Neither Vagrant, Windows provisioning nor host network setup was run.
+
+Subsequent inspection of the existing Kingdoms networking/lifecycle
+sources confirms `scripts/setup-vmware-networks.sh` and
+`scripts/check-vmware-networks.sh` still hard-code
+vmnet10/20/**30**/99; `scripts/provisioning-routes.sh` still
+adds both the Seven Kingdoms route AND the removed Essos route;
+`scripts/lab-mode.sh` still requires all six Windows machines
+and Essos; the original `GoadKingdomsVmwareProvider` currently retains
+the intentional Course 1 install guard. These are not safe to run
+unmodified for NORTH.
+
+The **read-only** `goad/course1_network_preflight.py` adds a
+separate source-derived host ownership gate. It validates exact
+requested vmnet numbers against `/etc/vmware/networking` and live
+Linux interfaces, refuses overlapping host IPv4 addresses/routes,
+requires zero running VMware guests AND no VMware GUI/VMX process,
+and inspects every registered existing VMware VMX for requested
+vmnet and deterministic MAC conflicts. Missing/unreadable registered
+VMX and unavailable host-inspection commands block the operation
+instead of silently assuming safety. It does not write files,
+change routes, start guests, or call VMware host setup.
+
+Run from an otherwise idle Kali host after source tests:
+```bash
+python3 -m unittest tests.test_course1_network_preflight
+python3 -m goad.course1_network_preflight
+```
+
+The fourteen new tests in `tests/test_course1_network_preflight.py`
+cover absence/presence of vmnets, host IPs, overlapping routes,
+VMX ID/MAC collisions and process failures.
+
+**NOT YET LIVE VALIDATED**; running the preflight is safe but does not
+authorize installation. Other collision classes (unregistered VMX,
+DNS/DC Locator authority, VMware MAC ownership across Vagrant caches)
+and the actual source-driven host vmnet setup/route/lifecycle binding
+still require controlled validation before removing the install guard.
+The full Kingdoms GOAD network scripts were not modified in this step.
