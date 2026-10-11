@@ -320,3 +320,37 @@ and confirmed the proposal and any remaining registered VMX attachments.
 Afterwards, hostaddr unit files, stale Workstation entries, Vagrant
 machine-index metadata, discarded worktrees, and old Git branch
 remain separate explicit cleanup steps.
+
+## 2026-10-11 — VMware network cleanup passed live
+
+Kali ran the newly committed six-test `tests.test_course1_decommission_vmnets`
+suite: **6/6 PASS**. The exact non-mutating cleanup `plan` reported
+vmnet10, vmnet11, vmnet12, vmnet13, vmnet20, vmnet30, vmnet99
+and 13 remaining configuration lines. The confirmed `apply` then
+printed:
+
+```text
+[BACKUP] /etc/vmware/kingdoms-cleanup-20261011T121537Z
+[PASS] VMware network definitions removed; defaults preserved
+```
+
+Post-apply verification showed only **vmnet1 and vmnet8** in
+`ip -br link show`, no obsolete VNET configuration keys, and
+`vmrun -T ws list`: **Total running VMs: 0**.
+
+**Do not restore old host address helpers/timers**: they refer to vmnets
+that no longer exist. Next manually verify exact `FragmentPath` and
+`ExecStart` provenance for:
+`goad-nomad-vmnet-hostaddrs.service/.timer` and
+`kingdoms-north-vmnet-hostaddrs.service/.timer`. Once those are
+proven and inactive, remove only those four unit files and the
+`/usr/local/sbin/goad-nomad-vmnet-hostaddrs` and
+`/usr/local/sbin/kingdoms-north-vmnet-hostaddrs` helpers, followed by
+`systemctl daemon-reload`. Never touch vmware.service, VMware default
+networking, or other host service units.
+
+After service cleanup, separately review the stale
+`~/.vmware/inventory.vmls`, Vagrant global index, broken linked
+`~/kingdoms-course1-src` worktree and residual
+`6ca91b-north-vmware` folder, and the old remote Git feature branch.
+These have not yet been cleaned or verified.
