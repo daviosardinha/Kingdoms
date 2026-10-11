@@ -438,3 +438,59 @@ DNS/DC Locator authority, VMware MAC ownership across Vagrant caches)
 and the actual source-driven host vmnet setup/route/lifecycle binding
 still require controlled validation before removing the install guard.
 The full Kingdoms GOAD network scripts were not modified in this step.
+
+## 2026-10-11 — existing Kingdoms provisioning route now supports NORTH ownership
+
+Following the operator's 86/86 PASS source validation, the
+`scripts/provisioning-routes.sh` original full-Kingdoms code was
+retained **byte-for-byte** behind an explicit `--north` dispatcher.
+For the original GOAD/full Kingdoms profile, both temporary protected
+routes remain unchanged; no Essos behavior is altered.
+
+The **same existing route entrypoint** now delegates
+`--north plan|status|enable|disable` to the small
+`goad/course1_routes.py` profile-specific controller, which uses the
+authoritative `ad/NORTH/topology.json`. Default NORTH creates only
+`10.4.20.0/24 via 10.4.10.1 dev vmnet10`: it never creates the
+retired Essos route `10.4.30.0/24`. An alternate layout changes both
+the protected subnet and vmnet from the same resolved topology.
+
+For actual enable/disable, it requires root and an exact provider
+directory. Each new kernel route is tagged with protocol 186, and its
+provider identity + exact route are recorded in root-owned, mode-0600
+`/run/kingdoms-course1-routes/<hash>.json`; a missing or foreign state
+record prohibits deletion of any existing route. The controller
+uses the structured Linux route table to reject overlap/foreign route
+ownership; it refuses missing NORTH host-adapter identity, a
+nonresponding router gateway, stale state, or unexpected collisions,
+and never calls `ip route replace`. On a state-record write failure,
+it attempts rollback of only the newly added exact route.
+
+The **existing** `GoadNomadVmwareProvider._enable_provisioning_routes`
+now dispatches NORTH with
+`sudo -n bash scripts/provisioning-routes.sh --north enable --provider-dir
+<exact instance provider>`. Full Kingdoms continues to execute the
+unchanged `sudo bash provisioning-routes.sh enable` command.
+
+New offline tests:
+- `tests/test_course1_routes.py`: 12 cases for exact one-route
+  topology, alternate 10.5, foreign/VPN route refusal, missing/stale
+  ownership, idempotence, safe remove and explicit Bash dispatch.
+- `tests/test_course1_provider_route_dispatch.py`: three tests
+  confirming the NORTH-specific provider command and byte-preserved
+  full Kingdoms command path.
+- The preceding `tests/test_course1_network_preflight.py` provides
+  14 additional read-only host ownership tests.
+
+**Kali acceptance pending** for the 29 newly written tests. Read-only
+route preview:
+```bash
+bash scripts/provisioning-routes.sh --north plan
+```
+
+**Still explicitly NOT installable:** the physical VMware host vmnet setup,
+router exercise-mode lifecycle and final source/instance network collision
+contracts are not wired. The `_course1_unwired` gate continues to deny
+NORTH Vagrant/Ansible/start/reset. Never execute `--north enable`
+or `--north disable` against the host until the runtime integration
+is fully validated.
