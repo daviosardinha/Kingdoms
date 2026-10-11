@@ -494,3 +494,22 @@ contracts are not wired. The `_course1_unwired` gate continues to deny
 NORTH Vagrant/Ansible/start/reset. Never execute `--north enable`
 or `--north disable` against the host until the runtime integration
 is fully validated.
+
+## 2026-10-11 — Kali NORTH route-tests fixture correction (awaiting rerun)
+
+Kali pulled the instance-owned provisioning-route integration and ran the
+29 selected route/network tests. **28 passed; one failed**:
+`test_bash_script_dispatches_only_for_explicit_north` in
+`tests/test_course1_routes.py`. The failure was caused by a bad test
+literal asserting that shell code contained a literal backslash before
+`\${1:-}`; the actual Bash script correctly uses `${1:-}`.
+The same assertion also incorrectly looked for a backslash before
+`${ESSOS_NET}` in the original full-Kingdoms route code.
+
+Commit `4adb144a3730c39878fc7ab4199ce6ada02571e3` changed ONLY
+those two test strings. Verified against GitHub source: both corrected
+test literals match the Bash source; no production code, network
+configuration, routes or guests were changed. **Kali confirmation
+pending**: rerun the 29 tests, `bash -n` and read-only NORTH route
+`plan` before proceeding to host-vmnet/exercise-lifecycle work.
+The NORTH install/start guard remains in effect.
