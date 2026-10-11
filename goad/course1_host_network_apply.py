@@ -8,6 +8,7 @@ No VM is launched and the NORTH install guard stays active.
 from __future__ import annotations
 
 import argparse
+import difflib
 import hashlib
 import json
 import os
@@ -24,7 +25,7 @@ from goad.course1_hostaddrs import (
 )
 from goad.course1_hostaddr_install import install_owned_address_assets
 from goad.course1_network_preflight import inspect_live
-from goad.course1_vmnet_config import verify_vmnet_config
+from goad.course1_vmnet_config import render_vmnet_config, verify_vmnet_config
 from goad.course1_vmnet_journal import inspect_vmnet_journals
 from goad.course1_vmnet_transaction import (
     _atomic_bytes, _plain_regular, _safe_directory, execute_testable_network_transaction,
@@ -300,9 +301,111 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
 
 
 
+
+def diagnose_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
+                             backups=BACKUPS, owner_uid=0):
+    """Read-only byte comparison of VMware's *current* config with owned bytes.
+
+    Reconstruct the exact committed bytes from the owner baseline and the
+    optional host-address lines that VMware is allowed to remove at apply time.
+    Never silently rebase the owner SHA or weaken the native provider guard.
+    """
+    provider = Path(provider_dir)
+    if not provider.is_absolute() or provider.is_symlink() or not provider.is_dir():
+        raise NorthSetupError("NORTH provider directory is missing or unsafe")
+    identity = str(provider.resolve(strict=True))
+    record_file = Path(owner)
+    if record_file.is_symlink() or not record_file.is_file():
+        raise NorthSetupError("NORTH owner record is missing or unsafe")
+    meta = _plain_regular(record_file)
+    if meta.st_uid != owner_uid or stat.S_IMODE(meta.st_mode) != 0o600:
+        raise NorthSetupError("NORTH owner record ownership or mode is unsafe")
+    record = json.loads(record_file.read_text(encoding="utf-8"))
+    if not isinstance(record, dict) or record.get("profile") != "NORTH" or record.get("provider") != identity:
+        raise NorthSetupError("NORTH owner record belongs to a different instance")
+    backup_root = Path(backups)
+    if backup_root.is_symlink() or not backup_root.is_dir():
+        raise NorthSetupError("NORTH backup directory is unsafe")
+    saved_name = record.get("backup")
+    if not isinstance(saved_name, str):
+        raise NorthSetupError("NORTH owner record has no backup")
+    saved = Path(saved_name)
+    if (not saved.is_absolute() or saved.is_symlink() or saved.parent.is_symlink()
+            or saved.parent.parent != backup_root):
+        raise NorthSetupError("NORTH backup path escaped its owned directory")
+    _plain_regular(saved)
+    baseline = saved.read_bytes()
+    if hashlib.sha256(baseline).hexdigest() != record.get("baseline_sha256"):
+        raise NorthSetupError("NORTH backup checksum differs from the owner record")
+    layout = load_course1_topology()
+    proposed = render_vmnet_config(baseline.decode("utf-8"), layout).encode("utf-8")
+    # The original apply accepts exactly 0/1/2 VMware host-address removals.
+    candidates = {proposed}
+    for zone in ("north", "management"):
+        segment = layout["segments"][zone]
+        number = segment["vmnet"][5:]
+        addr = segment["host_address"]
+        optional = f"answer VNET_{number}_HOSTONLY_HOSTADDR {addr}\\n".encode("ascii")
+        candidates |= {data.replace(optional, b"", 1) for data in tuple(candidates)
+                       if optional in data}
+    owned = next((data for data in candidates
+                  if hashlib.sha256(data).hexdigest() == record.get("installed_sha256")), None)
+    if owned is None:
+        raise NorthSetupError("NORTH owner hash does not match any committed VMware variant")
+    path = Path(networking)
+    if path.is_symlink():
+        raise NorthSetupError("Unsafe VMware networking symlink")
+    _plain_regular(path)
+    current = path.read_bytes()
+    exact = current == owned
+    try:
+        verify_vmnet_config(current.decode("utf-8"), layout)
+        topology = "PASS"
+    except (ValueError, UnicodeError) as exc:
+        topology = "FAIL: " + str(exc)
+    # Limit display to changed lines, not an uncontrolled full file dump.
+    diff = list(difflib.unified_diff(
+        owned.decode("utf-8").splitlines(),
+        current.decode("utf-8", errors="replace").splitlines(),
+        fromfile="owned-at-commit", tofile="vmware-now", lineterm="",
+    ))
+    return {
+        "provider": identity,
+        "owned_sha256": record["installed_sha256"],
+        "observed_sha256": hashlib.sha256(current).hexdigest(),
+        "exact_match": exact,
+        "vmnet_topology": topology,
+        "diff": diff[:100],
+        "diff_truncated": len(diff) > 100,
+    }
+
+
+
 def main():
     # The original --north apply CLI remains unchanged. Verification is a
     # distinct, root-readable, read-only action; never call apply from it.
+    if len(sys.argv) > 1 and sys.argv[1] == "diagnose":
+        parser = argparse.ArgumentParser(description="Read-only NORTH VMware byte drift diagnosis")
+        parser.add_argument("--provider-dir", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            require_explicit_root()
+            result = diagnose_installed_north(args.provider_dir)
+            print("[OWNED SHA256] " + result["owned_sha256"])
+            print("[CURRENT SHA256] " + result["observed_sha256"])
+            print("[TOPOLOGY] " + result["vmnet_topology"])
+            print("[BYTE MATCH] " + ("YES" if result["exact_match"] else "NO"))
+            if not result["exact_match"]:
+                print("[DIFF] Changes since the verified NORTH network commit:")
+                for line in result["diff"]:
+                    print(line)
+                if result["diff_truncated"]:
+                    print("[DIFF] Truncated after 100 lines")
+                parser.exit(2, "[BLOCKED] NORTH VMnet contents drifted; no changes made\\n")
+            print("[PASS] NORTH VMware networking still matches the original commit")
+        except (NorthSetupError, ValueError, OSError, RuntimeError) as exc:
+            parser.exit(1, "[BLOCKED] NORTH drift diagnosis: " + str(exc) + "\\n")
+        return
     if len(sys.argv) > 1 and sys.argv[1] == "verify":
         parser = argparse.ArgumentParser(description="Read-only NORTH ownership check")
         parser.add_argument("--provider-dir", required=True)
