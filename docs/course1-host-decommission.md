@@ -372,3 +372,41 @@ the discarded NORTH checkout/workspace, and the abandoned feature branch.
 The separate fresh rebuild checkout `~/kingdoms-rebuild`, `main`, and
 unrelated VMware/Vagrant state must not be removed. Further host-owned
 Kingdoms artifacts require verified path-by-path classification.
+
+## 2026-10-11 — old hostaddr files gone; only stale VM indexes remain
+
+The operator verified hostaddr unit/helper removal with:
+`[VERIFIED] goad-nomad-vmnet-hostaddrs`,
+`[VERIFIED] kingdoms-north-vmnet-hostaddrs`, and
+`[PASS] Obsolete host-address services removed`.
+
+Latest VM/library/home snapshot:
+
+- `~/.vmware/inventory.vmls`: seven `vmlist4.config` through
+  `vmlist10.config` entries point to the deleted
+  `~/Documents/GOAD_NOMAD/workspace/6fdd5a-goad-vmware` instance.
+  One `vmlist11.config` entry points to now-deleted
+  `~/vmware/KINGDOMS-SQL-CLONE/KINGDOMS-SQL-CLONE.vmx`.
+  Other empty slots should be preserved; edit only those eight proven
+  owned-and-missing VMX registrations, including any properties under
+  those eight exact vmlist slot numbers, backing up the whole registry.
+  Do not remove `~/.vmware` or rewrite non-owned registered entries.
+- `vagrant global-status` lists fourteen obsolete machine-index entries:
+  seven from `GOAD_NOMAD/workspace/6fdd5a-goad-vmware` and
+  seven from `GOAD_NOMAD_fresh/workspace/22a3c5-goad-vmware`.
+  Both provider directories were verified MISSING. A controlled
+  `vagrant global-status --prune` may remove those stale index
+  entries; it is **not** a VM destroy. Check remaining global-status.
+- `~/kingdoms-course1-src`, `~/Documents/GOAD_NOMAD`,
+  `~/Documents/GOAD_NOMAD_fresh`, and `~/vmware` are already missing;
+  no folder deletion is needed. The new `~/kingdoms-rebuild` Git
+  checkout remains clean.
+- At home top level, a Kerberos `.ccache` file with NORTH principal
+  and `~/.goad` remain. The `.ccache` is a likely lab-secret artifact
+  to inspect and securely retire; `~/.goad` may contain reusable
+  installer dependencies, so do NOT bulk-delete it.
+
+Once stale registry cleanup is completed and VMware remains usable,
+repeat the global host audit for systemd/cron/routing/firewall leftovers
+and delete the abandoned GitHub feature branch. The initial registry
+cleanup is **not yet executed**.
