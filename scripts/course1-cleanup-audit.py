@@ -142,6 +142,34 @@ def available_checkouts(explicit: list[str]) -> list[str]:
     return result
 
 
+def process_candidates() -> dict:
+    snapshot = run("ps", "-eo", "pid=,comm=", timeout=10)
+    if snapshot["exit_code"] != 0:
+        return {"error": snapshot["stderr"]}
+    markers = ("kingdoms", "goad", "vmware-vmx", "xfreerdp",
+               "ntlmrelayx", "responder", "mitm6")
+    # Use only kernel process names, NOT command lines (which can contain
+    # domain credentials, API tokens and other secrets).
+    matches = []
+    for line in snapshot["stdout"].splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) == 2 and any(m in parts[1].lower() for m in markers):
+            matches.append({"pid": parts[0], "comm": parts[1]})
+    return {"processes": matches}
+
+
+def cron_candidates() -> dict:
+    cron = run("crontab", "-l")
+    if cron["exit_code"] != 0:
+        return {"available": False, "notes": "no readable user crontab"}
+    matches = []
+    for i, line in enumerate(cron["stdout"].splitlines(), 1):
+        if re.search(r"kingdoms|goad", line, re.IGNORECASE):
+            # Never include crontab command lines: they may embed passwords.
+            matches.append({"line_number": i, "marker": "kingdoms/goad"})
+    return {"available": True, "matching_line_numbers": matches}
+
+
 def systemd_units() -> dict:
     names = list(SERVICE_NAMES)
     found = run("systemctl", "list-unit-files", "--all", "--no-legend",
@@ -151,7 +179,7 @@ def systemd_units() -> dict:
         if not parts:
             continue
         name = parts[0]
-        if (name.startswith(("kingdoms-", "goad-", "friday-", "nomad-"))
+        if (name.startswith(("kingdoms-", "goad-"))
                 and name not in names):
             names.append(name)
     return {
@@ -287,9 +315,7 @@ def main() -> int:
         "host_interface_links": run("ip", "-j", "link", "show"),
         "systemd": systemd_units(),
         "known_helper_paths": filesystem_matches(),
-        "kingdoms_related_processes": run(
-            "pgrep", "-af", r"kingdoms|goad|responder|ntlmrelayx|mitm6|xfreerdp"
-        ),
+        "kingdoms_related_processes": process_candidates(),
         "scheduled_jobs": run("systemctl", "list-timers", "--all", "--no-pager"),
         "network_firewall_rules": {
             "nft_ruleset": run("sudo", "-n", "nft", "-a", "list", "ruleset", timeout=15),
@@ -301,7 +327,7 @@ def main() -> int:
         "user_systemd_running": run(
             "systemctl", "--user", "list-units", "--all", "--no-pager"
         ),
-        "user_crontab": run("crontab", "-l"),
+        "user_crontab": cron_candidates(),
         "host_cron_kingdoms_matches": run(
             "grep", "-RilE", "GOAD_NOMAD|kingdoms-north|kingdoms-phase03",
             "/etc/cron.d", timeout=10,
