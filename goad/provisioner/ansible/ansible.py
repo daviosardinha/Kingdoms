@@ -163,7 +163,10 @@ class Ansible(Provisioner):
         with open(playbook_organisation_file, 'r') as playbooks:
             data_loaded = yaml.safe_load(playbooks)
         if lab_name == 'NORTH' and (
-            'NORTH' not in data_loaded or not isinstance(data_loaded['NORTH'], list)
+            not isinstance(data_loaded, dict)
+            or 'NORTH' not in data_loaded
+            or not isinstance(data_loaded['NORTH'], list)
+            or not data_loaded['NORTH']
         ):
             # Generic Ansible's default fallback would silently deploy a
             # different lab after a long Windows startup. Never do that for
