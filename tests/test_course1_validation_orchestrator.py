@@ -53,7 +53,7 @@ class Course1UnifiedValidationTests(unittest.TestCase):
             self.assertIn(required, self.source)
 
     def test_source_vmnet_previews_do_not_require_vmware_host_networking(self):
-        self.assertIn("def test_", "def test_")
+        self.assertNotIn("NETWORKING_FILE.read_text", self.source)
         self.assertIn("preview_offline_vmnet()", self.source)
         self.assertIn("network_plan(args.network_base, parse_vmnet_args(args.vmnet), baseline=baseline)",
                       self.source)
