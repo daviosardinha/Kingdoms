@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import yaml
 from pathlib import Path
 
 from goad.kingdoms_topology import load_course1_topology
@@ -147,6 +148,32 @@ def validate_course1_source(root: Path = ROOT) -> tuple[str, ...]:
         if re.search(r"GOAD-DC03|GOAD-SRV03|vmnet30|essos", document, re.I):
             raise Course1SourceError("Deleted Essos machine/network persists in Course 1")
     messages.append("Vagrant/router/AD policy matches default Course 1 topology")
+
+    # The generic Ansible provisioner silently falls back to "default"
+    # for unknown lab IDs. Refuse a missing or incomplete Course 1 manifest
+    # here, before the first VM/workspace or 20-minute Windows startup.
+    plan = yaml.safe_load((root / "playbooks.yml").read_text(encoding="utf-8"))
+    if not isinstance(plan, dict) or not isinstance(plan.get("GOAD"), list) or (
+        not isinstance(plan.get("NORTH"), list)
+    ):
+        raise Course1SourceError("Missing explicit Kingdoms Course 1 NORTH playbook manifest")
+    full = plan["GOAD"]
+    north = plan["NORTH"]
+    expected = [entry for entry in full if entry != "ad-trusts.yml"]
+    if full.count("ad-trusts.yml") != 1 or north != expected:
+        raise Course1SourceError(
+            "NORTH playbook order differs from validated Kingdoms sequence minus Essos trust"
+        )
+    for playbook in north:
+        if not isinstance(playbook, str) or "/" in playbook or (
+            not (root / "ansible" / playbook).is_file()
+        ):
+            raise Course1SourceError("NORTH references missing or invalid Ansible playbook")
+    phase01 = (root / "ansible/phase01.yml").read_text(encoding="utf-8")
+    if not ("domain_name in ['GOAD', 'NORTH']" in phase01
+            and 'file: "../ad/{{ domain_name }}/data/config.json"' in phase01):
+        raise Course1SourceError("Phase 01 is not bound to the selected Kingdoms scenario")
+    messages.append("NORTH Ansible manifest reproduces Kingdoms sequence minus Essos trust")
     messages.append("SOURCE PRECHECK PASS; NORTH lifecycle remains blocked pending runtime wiring")
     return tuple(messages)
 
