@@ -2,7 +2,8 @@
 import unittest
 from pathlib import Path
 
-from goad.course1_vmnet_config import NetworkPlanError, network_plan, render_vmnet_config
+from goad.course1_vmnet_config import (NetworkPlanError, network_plan,
+                                       render_vmnet_config, verify_vmnet_config)
 from goad.kingdoms_topology import load_course1_topology
 
 
@@ -99,6 +100,57 @@ class Course1VmnetPlanTests(unittest.TestCase):
         self.assertIn('    30: {"subnet": "10.4.30.0"', source)
         self.assertIn('configure_addr vmnet10 10.4.10.254/24', source)
         self.assertIn('configure_addr vmnet99 10.4.99.254/24', source)
+
+    def test_config_check_accepts_expected_three_networks(self):
+        output = render_vmnet_config(BASELINE, self.layout)
+        findings = verify_vmnet_config(output, self.layout)
+        self.assertEqual(len(findings), 3)
+        self.assertTrue(all("Kingdoms topology" in x for x in findings))
+
+    def test_config_check_refuses_unexpected_parent_host_interface(self):
+        output = render_vmnet_config(BASELINE, self.layout)
+        altered = output.replace(
+            "answer VNET_20_VIRTUAL_ADAPTER no",
+            "answer VNET_20_VIRTUAL_ADAPTER yes",
+        )
+        with self.assertRaisesRegex(NetworkPlanError, "mismatch"):
+            verify_vmnet_config(altered, self.layout)
+
+    def test_config_check_refuses_nat_or_dhcp_enable(self):
+        output = render_vmnet_config(BASELINE, self.layout)
+        for key in ("NAT", "DHCP"):
+            with self.subTest(key=key):
+                altered = output.replace(f"answer VNET_10_{key} no",
+                                         f"answer VNET_10_{key} yes")
+                with self.assertRaisesRegex(NetworkPlanError, "mismatch"):
+                    verify_vmnet_config(altered, self.layout)
+
+    def test_vmware_stripping_optional_hostaddr_keeps_config_only_valid(self):
+        output = render_vmnet_config(BASELINE, self.layout)
+        altered = output.replace(
+            "answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\n", ""
+        )
+        self.assertEqual(len(verify_vmnet_config(altered, self.layout)), 3)
+
+    def test_original_kingdoms_check_script_preserved_with_explicit_north(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "scripts/check-vmware-networks.sh").read_text()
+        self.assertIn('if [[ "' + '        source = (Path(__file__).resolve().parents[1] /
+                  "goad/course1_vmnet_config.py").read_text()
+        for forbidden in (
+            "subprocess.", "systemctl", "vmware-networks --",
+            ".write_text(", "os.replace(", "ip route add",
+            "rmtree(", "unlink(", "open('w'",
+        ):
+            self.assertNotIn(forbidden, source)
+
+
+if __name__ == "__main__":
+    unittest.main()
+ + '{1:-}" == "--north" ]]', source)
+        self.assertIn("python3 -m goad.course1_vmnet_config check", source)
+        self.assertIn("'30 10.4.30.0 no ESSOS'", source)
+        self.assertIn("GOAD_NOMAD design", source)
 
     def test_config_module_is_no_write_and_has_no_runtime_commands(self):
         source = (Path(__file__).resolve().parents[1] /
