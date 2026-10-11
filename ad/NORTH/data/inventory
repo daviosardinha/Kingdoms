@@ -82,7 +82,7 @@ dc02
 ; external trust, need domain trust entry in config (bidirectionnal)
 ; usage : ad-trusts.yml
 [trust]
-dc01
+; No external Essos forest trust exists in Fall of the North.
 
 ; install adcs
 ; usage : adcs.yml
