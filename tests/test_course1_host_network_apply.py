@@ -273,6 +273,20 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
                     backups=self.backups, owner_uid=os.getuid(),
                 )
 
+    def test_ownership_verify_cli_does_not_call_network_apply(self):
+        import sys
+        import goad.course1_host_network_apply as runtime
+        with patch.object(sys, "argv", ["north-host", "verify", "--provider-dir",
+                                        str(self.provider)]), \
+             patch.object(runtime, "require_explicit_root") as root, \
+             patch.object(runtime, "inspect_installed_north",
+                          return_value=("owner matched",)) as check, \
+             patch.object(runtime, "apply") as apply_vmware:
+            runtime.main()
+        root.assert_called_once_with()
+        check.assert_called_once_with(str(self.provider))
+        apply_vmware.assert_not_called()
+
     def test_no_implicit_host_apply_in_one_command_validator(self):
         script = (Path(__file__).resolve().parents[1] /
                   "scripts/validate-course1.sh").read_text()
