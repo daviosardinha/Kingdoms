@@ -20,6 +20,27 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
     policy is added here so M2 changes do not casually rewrite the M1 core.
     """
 
+    def _course1_unwired(self):
+        """Fail early until the original Kingdoms engine is fully profile-aware.
+
+        This is intentionally temporary: the reduced ad/NORTH definition exists,
+        but its VMware VMnet/routing and lifecycle scripts are not wired safely.
+        Never fall through to generic Vagrant and accidentally create a VM.
+        """
+        if self.lab_name != 'NORTH':
+            return False
+        Log.error(
+            'Kingdoms Course 1 source profile exists but the shared provider '
+            'network/lifecycle acceptance gates are not wired yet. '
+            'No Vagrant or VMware operation was attempted.'
+        )
+        return True
+
+    def start(self, vm_name=None):
+        if self._course1_unwired():
+            return False
+        return super().start(vm_name=vm_name)
+
     def _require_cached_sudo(self):
         """Require an already-authenticated sudo timestamp without prompting.
 
@@ -674,6 +695,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def start_vm(self, vm_name):
         """Start one installed guest, plus its router dependency when needed."""
+        if self._course1_unwired():
+            return False
         if self.lab_name != 'GOAD':
             return super().start_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -821,6 +844,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         Windows VM is powered off, and only then return control to GOAD's
         existing hardened ``start()`` path.
         """
+        if self._course1_unwired():
+            return False
         if self.lab_name != 'GOAD':
             return super().reset()
 
@@ -878,6 +903,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def install(self):
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
+        if self._course1_unwired():
+            return False
         if self.lab_name != 'GOAD':
             return super().install()
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
@@ -1400,6 +1427,8 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         return False
 
     def prepare_install(self):
+        if self._course1_unwired():
+            return False
         # This method is the first provider hook executed by the hardened
         # install/start/ws01 paths, before GOAD-ROUTER or any Windows guest is
         # powered on. Refuse to create a duplicate-MAC condition before VMware
