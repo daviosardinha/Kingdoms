@@ -75,10 +75,18 @@ def execute_testable_network_transaction(
     expected_original_sha256: str,
     restart_networks: Callable[[], None],
     verify_live_networks: Callable[[], None],
+    preflight: Callable[[], None] | None = None,
 ) -> dict:
-    """Own the global lock across plan recheck, write, restart and verify."""
+    """Own the global lock across final host checks, write and rollback.
+
+    A live controller must supply a fresh no-guests/no-collisions preflight
+    under the lock, rather than trusting an earlier read-only preview.
+    Existing offline transaction tests may omit that callback.
+    """
     with exclusive_vmnet_lock(backup_root):
         require_reconciled(backup_root)
+        if preflight is not None:
+            preflight()
         return _execute_transaction_locked(
             networking, backup_root, owner_record, provider_dir, layout,
             expected_original_sha256, restart_networks, verify_live_networks,
