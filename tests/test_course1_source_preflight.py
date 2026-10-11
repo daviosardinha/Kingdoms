@@ -36,7 +36,7 @@ class Course1SourcePreflightTests(unittest.TestCase):
         self.assertIn("SOURCE PRECHECK PASS", evidence[-1])
 
     def test_playbook_manifest_missing_blocks_before_vagrant(self):
-        self.edit("playbooks.yml", "NORTH:\\n", "NOT_NORTH:\\n")
+        self.edit("playbooks.yml", "NORTH:\n", "NOT_NORTH:\n")
         with self.assertRaisesRegex(Course1SourceError, "Missing explicit"):
             validate_course1_source(self.root)
 
@@ -47,10 +47,10 @@ class Course1SourcePreflightTests(unittest.TestCase):
 
     def test_external_trust_play_is_rejected_for_course1(self):
         raw = (self.root / "playbooks.yml").read_text()
-        prefix, sep, tail = raw.partition("NORTH:\\n")
+        prefix, sep, tail = raw.partition("NORTH:\n")
         self.assertTrue(sep)
         (self.root / "playbooks.yml").write_text(
-            prefix + sep + "  - ad-trusts.yml\\n" + tail
+            prefix + sep + "  - ad-trusts.yml\n" + tail
         )
         with self.assertRaisesRegex(Course1SourceError, "sequence minus Essos trust"):
             validate_course1_source(self.root)
