@@ -10,6 +10,7 @@ set -Eeuo pipefail
 #  --all       full source+clean-host validation and all-five readiness report
 #  --source    same report, without live host inspection
 #  --plan      immediate source-only readiness report, no test execution
+#  --prepare   validate then create only native NORTH instance metadata (no VMs)
 #  --deploy    fail closed until integration and live acceptance are implemented
 #
 # Adding a live action later requires a reviewed adapter to the existing
@@ -29,6 +30,7 @@ Kingdoms Course 1 — single-entrypoint development and release gate
 Usage:
   bash scripts/course1-rollout.sh --all       # all existing tests + host gate + five-point readiness
   bash scripts/course1-rollout.sh --source    # same, no live clean-host inspection
+  bash scripts/course1-rollout.sh --prepare   # validate and generate only NORTH instance files
   bash scripts/course1-rollout.sh --plan      # fast, read-only engineering status
   bash scripts/course1-rollout.sh --deploy    # BLOCKED until the missing runtime integrations are reviewed
 
@@ -38,7 +40,7 @@ assets, provisions AD, or changes the firewall.
 USAGE
     exit 0
     ;;
-  --all|--source|--plan|--deploy) ;;
+  --all|--source|--plan|--prepare|--deploy) ;;
   *) echo "[ERROR] Unknown mode: $MODE" >&2; exit 2 ;;
 esac
 
@@ -51,10 +53,16 @@ if [[ "$MODE" == --deploy ]]; then
   exit 3
 fi
 
-if [[ "$MODE" == --all ]]; then
+if [[ "$MODE" == --all || "$MODE" == --prepare ]]; then
   bash scripts/validate-course1.sh
 elif [[ "$MODE" == --source ]]; then
   bash scripts/validate-course1.sh --skip-host
+fi
+
+if [[ "$MODE" == --prepare ]]; then
+  # The native Kingdoms CLI creates workspace files only. The provider's
+  # install/start/reset guard remains intact; no VMware host apply here.
+  bash ./goad.sh -t prepare-north -l NORTH -p vmware
 fi
 
 # Review source, not a mutable host flag. Any missing/ambiguous contract
@@ -122,7 +130,7 @@ for label, status, details in items:
     print(f"     {details}")
 print("\n[SAFETY] No VMware, Vagrant, Ansible, IP or systemd modifications performed.")
 print("[RELEASE BLOCKED] NORTH install remains guarded pending full runtime acceptance.")
-if sys.argv[2] in ("--all", "--source"):
+if sys.argv[2] in ("--all", "--source", "--prepare"):
     print("[PASS] The requested source/host validation completed successfully.")
     sys.exit(0)
 sys.exit(3)
