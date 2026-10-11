@@ -769,3 +769,20 @@ The NORTH install/start/reset guard remains enabled.
 Because full test discovery expands past the previously selected 84
 tests, do not claim a predetermined total passing-test count; the
 validator will report the actual count.
+
+### Consolidated validator source/host separation (2026-10-11)
+
+The validator now runs the 10.4 and 10.5 additive vmnet planners against a
+known **offline baseline**, so source-only checks work without VMware network
+configuration being present or clean. When running in default mode, it also
+reads the host's real VMware baseline in a separate late-stage read-only
+check, immediately before the existing live vmnet/IP/VMX collision guard.
+
+This fixes the earlier design issue where source-only mode would fail just
+because a completed lab had already created its networks. The new validator
+has eleven unit tests in tests/test_course1_validation_orchestrator.py,
+and it automatically discovers all existing and future Python unit tests.
+
+**No GitHub-side test runner has executed this new script.** Its source and
+test assertions were inspected; the next acceptance requires the one-shot
+Kali command to pass in full. Failures stop immediately and retain logs.
