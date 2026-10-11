@@ -324,3 +324,26 @@ part of the shared proof before its forced DC Locator queries. Expect
 `NORTH_DNS_CONTAINMENT_OK parent=10.41.20.10 child_status=1355`.
 If any other result occurs, DO NOT run full installation; inspect the
 exact stderr/exit evidence and the local adapter DNS configuration first.
+
+### Live production-guard proof (2026-10-11, 03:05 local screenshot)
+
+The **existing** disposable NORTH `dc02` was tested using the committed
+`ansible/north-child-dns-preflight.yml` and the same production PowerShell
+guard used by `ad-child_domain.yml`. Windows fact collection and the
+static parent/child identity and interface-topology assertions all passed.
+
+The actual guard returned:
+`NORTH_DNS_CONTAINMENT_OK parent=10.41.20.10 child_status=1355`.
+
+Play recap: `dc02 ok=6 changed=0 unreachable=0 failed=0`. This
+demonstrates the Windows PowerShell native-stderr/1355 correction works
+on the real unpromoted NORTH DC02 and parent discovery is confined to
+NORTH's parent DC. The smoke does not prove successful promotion or
+full exercise isolation. Ansible `Install-ADDSDomain`, reboot, local
+DC role/ADWS, AD-integrated child DNS, domain joins and final router/NAT
+isolation are still outstanding. No VMware recreation is indicated.
+
+**Next controlled action:** after the latest canonical offline regression
+is confirmed green, resume `install --non-interactive` against preserved
+instance `6ca91b-north-vmware`. Observe the promotion and local DC proof;
+on failure stop rather than manually modifying AD or the reference lab.
