@@ -6,11 +6,11 @@
   tasks:
     - name: Require the Kingdoms scenario
       ansible.builtin.assert:
-        that: domain_name == 'GOAD'
-        fail_msg: Phase 01 is specific to GOAD Kingdoms.
+        that: domain_name in ['GOAD', 'NORTH']
+        fail_msg: Phase 01 requires the validated Kingdoms full or Course 1 NORTH scenario.
     - name: Load canonical Kingdoms data
       ansible.builtin.include_vars:
-        file: ../ad/GOAD/data/config.json
+        file: "../ad/{{ domain_name }}/data/config.json"
 
 - name: Provision WINTERFELL enumeration lessons
   hosts: dc02
