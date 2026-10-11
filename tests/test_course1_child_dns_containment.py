@@ -88,6 +88,8 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertIn("Status\\s*=\\s*1355\\b", script)
         self.assertIn("ERROR_NO_SUCH_DOMAIN", script)
         self.assertIn("$childStatus = 1355", script)
+        self.assertIn("DomainRole -ne 2 -or $computer.PartOfDomain", script)
+        self.assertIn("child discovery absent but local Windows is not a standalone", script)
         self.assertIn("if ($childStatus -eq 0)", script)
         self.assertIn("childAddresses[0] -ne $ChildDcIp", script)
         self.assertLess(script.index("if ($childStatus -ne 0)"),
