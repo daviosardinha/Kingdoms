@@ -16,7 +16,7 @@ bash scripts/course1-rollout.sh
 
 The default `--all` action runs the established `scripts/validate-course1.sh` suite, including dynamic discovery of every `tests/test_*.py`, both 10.4/10.5 topology variants, the original Kingdoms compatibility gate, and clean-host read-only checks. Then it reports *all five* release-engineering gates in one output. An unimplemented runtime gate produces a **nonzero exit status** by design; do not mistake 19/19 source validation for a deployable NORTH instance.
 
-Other modes: `--source` runs the full source suite without live host inspection; `--plan` prints the five current engineering readiness states quickly without running the regression; `--deploy` is deliberately **blocked** pending runtime adapter and acceptance evidence.
+Other modes: `--source` runs the full source suite without live host inspection; `--plan` prints the five current engineering readiness states quickly without running the regression; `--prepare` runs the complete read-only validation and then uses the existing `./goad.sh -t prepare-north -l NORTH -p vmware` CLI task to generate and register a single genuine NORTH instance **without starting guests or applying VMware networking**; `--deploy` is deliberately **blocked** pending runtime adapter and acceptance evidence. `--prepare` refuses a duplicate registered NORTH instance.
 
 ## Host integration now committed (not live-proven)
 
