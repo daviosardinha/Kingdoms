@@ -42,4 +42,9 @@
           ParentDcFqdn: "{{ lab.hosts.dc01.hostname }}.{{ lab.hosts.dc01.domain }}"
           ChildDomain: "{{ lab.hosts.dc02.domain }}"
           ChildDcIp: "{{ hostvars['dc02'].ansible_host }}"
+      register: north_dns_proof
       changed_when: false
+
+    - name: Display NORTH child DNS containment proof
+      ansible.builtin.debug:
+        var: north_dns_proof.output
