@@ -84,10 +84,11 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             return False
 
         Log.info('GOAD Kingdoms: checking for conflicting running segmented VMware instances')
-        result = subprocess.run(
-            ['bash', guard, os.path.realpath(str(self.path))],
-            check=False,
-        )
+        conflict_args = ['bash', guard]
+        if self.lab_name == 'NORTH':
+            conflict_args.append('--north')
+        conflict_args.append(os.path.realpath(str(self.path)))
+        result = subprocess.run(conflict_args, check=False)
         if result.returncode != 0:
             Log.error(
                 'GOAD Kingdoms: VMware bring-up blocked because another running '
