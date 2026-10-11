@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Course 1 uses the existing Kingdoms setup entrypoint with a profile-scoped
-# read-only stage. Network mutation remains blocked until ownership and
-# rollback acceptance have passed. The original full-Kingdoms setup below
-# is unchanged when --north is omitted.
+# Course 1 reuses this original Kingdoms setup entrypoint.
+# --north plan/check/hostaddr-plan remain read-only; --north apply requires
+# explicit privilege, a reviewed hash and instance identity. No NORTH VM
+# lifecycle is unlocked here. Full-Kingdoms setup below remains unchanged.
 if [[ "${1:-}" == "--north" ]]; then
   readonly KINGDOMS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   shift
