@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from subprocess import CompletedProcess
 
 from goad import course1_routes as routes
 
@@ -51,6 +52,41 @@ class KingdomsCourse1RouteTests(unittest.TestCase):
     def test_correct_owned_route_is_idempotent(self):
         self.assertTrue(routes.check_routes([self.entry], self.plan, True))
         self.assertFalse(routes.check_routes([], self.plan, False))
+
+    def test_kernel_proto_186_is_read_numerically_not_as_bgp(self):
+        # Reproduces the actual Kali route: ip -j reports protocol "bgp"
+        # for our owned proto 186. The -N flag requests the numeric ID.
+        named_route = {
+            **self.entry,
+            "protocol": "bgp",
+            "flags": [],
+        }
+        self.assertFalse(routes.route_matches(named_route, self.plan))
+
+        def emulate_iproute2(*args, **kwargs):
+            route = dict(named_route)
+            if "-N" in args:
+                route["protocol"] = 186
+            return CompletedProcess(args, 0, json.dumps([route]), "")
+
+        with patch.object(routes, "run", side_effect=emulate_iproute2) as inspected:
+            data = routes.route_table()
+        self.assertIn("-N", inspected.call_args.args)
+        self.assertEqual(data[0]["protocol"], 186)
+        self.assertTrue(routes.route_matches(data[0], self.plan))
+        self.assertTrue(routes.check_routes(data, self.plan, True))
+
+    def test_recovered_owned_route_blocks_unowned_or_wrong_protocol(self):
+        route = {**self.entry, "protocol": 186, "flags": []}
+        self.assertTrue(routes.check_routes([route], self.plan, True))
+        with self.assertRaisesRegex(routes.RouteConflict, "no Course 1 ownership"):
+            routes.check_routes([route], self.plan, False)
+        foreign = {**route, "protocol": 187}
+        with self.assertRaisesRegex(routes.RouteConflict, "Foreign/overlapping"):
+            routes.check_routes([foreign], self.plan, True)
+        diverted = {**route, "gateway": "10.4.10.2"}
+        with self.assertRaisesRegex(routes.RouteConflict, "Foreign/overlapping"):
+            routes.check_routes([diverted], self.plan, True)
 
     def test_stale_record_cannot_hide_missing_route(self):
         with self.assertRaisesRegex(routes.RouteConflict, "kernel route is missing"):
