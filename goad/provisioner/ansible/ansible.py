@@ -19,7 +19,10 @@ class Ansible(Provisioner):
         return f'{minutes}m {secs:02d}s'
 
     def _kingdoms_install_profile(self):
-        if self.lab_name != 'GOAD':
+        # The shared profiled VMware provider records fresh successful bring-up
+        # for GOAD and reduced NORTH. Both need the pre-AD bootstrap path until
+        # their first Ansible playbook creates directory services.
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return None
         profile = getattr(self.provider, '_kingdoms_install_profile', None)
         if isinstance(profile, dict) and profile.get('status') == 'awaiting_ansible':
