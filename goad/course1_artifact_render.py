@@ -82,7 +82,7 @@ def render_course1_artifacts(
         # Exact byte equality with our existing Kingdoms-derived source files.
         result = files
     else:
-        if target["network_base"] != baseline["network_base"]:
+        if not is_original:
             assignments = [target["segments"][zone]["vmnet"] for zone in
                            sorted(target["segments"])]
             macs = _mac_map(
@@ -133,7 +133,7 @@ def render_course1_artifacts(
     if any(re.search(r"essos|GOAD-DC03|GOAD-SRV03|vmnet30", doc, re.I)
            for doc in result.values()):
         raise ValueError("Deleted Essos artifacts remain in Course 1 output")
-    if target["network_base"] != baseline["network_base"]:
+    if not is_original:
         old_macs = set(MAC_PATTERN.findall(files["providers/vmware/Vagrantfile"]))
         new_macs = set(MAC_PATTERN.findall(vagrant))
         if len(new_macs) != 7 or old_macs & new_macs:
