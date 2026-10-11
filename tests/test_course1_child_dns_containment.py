@@ -64,6 +64,46 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertEqual(tasks[1]["ansible.windows.win_powershell"]["parameters"]["ParentDns"],
                          "{{ hostvars[dns_domain].ansible_host }}")
 
+    def test_north_locator_captures_native_stderr_without_ps_error_records(self):
+        # Windows PowerShell 5.1 turns a failing native command's stderr
+        # into NativeCommandError with ErrorActionPreference=Stop.
+        # Preserve both streams in a bounded Process instead of issuing
+        # a pipeline command whose failure occurs before LASTEXITCODE.
+        script = self.load(GUARD)[1]["ansible.windows.win_powershell"]["script"]
+        self.assertIn("function Invoke-NorthDcLocator", script)
+        self.assertIn("System32\\nltest.exe", script)
+        self.assertIn("RedirectStandardOutput = $true", script)
+        self.assertIn("RedirectStandardError = $true", script)
+        self.assertIn("WaitForExit(20000)", script)
+        self.assertIn("GetAwaiter().GetResult()", script)
+        self.assertIn("if ($parentLookup.ExitCode -ne 0)", script)
+        self.assertIn("Invoke-NorthDcLocator -Name $ChildDomain", script)
+        self.assertNotIn("& nltest.exe", script)
+        self.assertNotIn("$LASTEXITCODE", script)
+
+    def test_only_expected_missing_child_domain_is_accepted(self):
+        script = self.load(GUARD)[1]["ansible.windows.win_powershell"]["script"]
+        self.assertIn("$childStatus -notin @(1, 1355)", script)
+        self.assertIn("Status\\s*=\\s*1355\\b", script)
+        self.assertIn("ERROR_NO_SUCH_DOMAIN", script)
+        self.assertIn("$childStatus = 1355", script)
+        self.assertIn("if ($childStatus -eq 0)", script)
+        self.assertIn("childAddresses[0] -ne $ChildDcIp", script)
+        self.assertLess(script.index("$childStatus -notin @(1, 1355)"),
+                        script.index("$childStatus = 1355"))
+        self.assertLess(script.index("if ($childStatus -eq 0)"),
+                        script.index("childAddresses[0] -ne $ChildDcIp"))
+
+    def test_never_accept_missing_parent_or_arbitrary_child_failure(self):
+        script = self.load(GUARD)[1]["ansible.windows.win_powershell"]["script"]
+        self.assertIn("current parent-domain DC Locator failed", script)
+        self.assertIn("unexpected child lookup error", script)
+        self.assertIn("$childLookup.Stdout", script)
+        self.assertIn("$childLookup.Stderr", script)
+        self.assertIn("NORTH_DNS_CONTAINMENT_OK parent=$ParentDns child_status=$childStatus", script)
+        self.assertNotIn("$ErrorActionPreference = 'Continue'", script)
+        self.assertNotIn("-ErrorAction SilentlyContinue", script)
+
     def test_north_promotion_uses_local_machine_state_not_foreign_directory(self):
         tasks = self.load(PROMOTION)
         promotion = tasks[0]["ansible.windows.win_powershell"]["script"]
