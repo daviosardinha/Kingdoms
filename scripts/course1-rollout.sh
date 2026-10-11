@@ -9,6 +9,7 @@ set -Eeuo pipefail
 # All validation is read-only; --prepare writes only local NORTH instance files:
 #  --all       full source+clean-host validation and all-five readiness report
 #  --source    same report, without live host inspection
+#  --installed validate code + read-only attestation of an already owned NORTH instance
 #  --plan      immediate source-only readiness report, no test execution
 #  --prepare   validate then create only native NORTH instance metadata (no VMs)
 #  --deploy    fail closed until integration and live acceptance are implemented
@@ -20,7 +21,15 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 MODE="${1:---all}"
-[[ $# -le 1 ]] || { echo '[ERROR] Only one mode is accepted' >&2; exit 2; }
+if [[ "$MODE" == --installed ]]; then
+  [[ $# -eq 2 && "$2" == /* ]] || {
+    echo '[ERROR] --installed requires the absolute existing NORTH provider path' >&2
+    exit 2
+  }
+  INSTALLED_PROVIDER="$2"
+else
+  [[ $# -le 1 ]] || { echo '[ERROR] Only one mode is accepted' >&2; exit 2; }
+fi
 
 case "$MODE" in
   --help|-h)
@@ -30,6 +39,7 @@ Kingdoms Course 1 — single-entrypoint development and release gate
 Usage:
   bash scripts/course1-rollout.sh --all       # all existing tests + host gate + five-point readiness
   bash scripts/course1-rollout.sh --source    # same, no live clean-host inspection
+  bash scripts/course1-rollout.sh --installed /absolute/NORTH/provider  # source tests + read-only live ownership
   bash scripts/course1-rollout.sh --prepare   # validate and generate only NORTH instance files
   bash scripts/course1-rollout.sh --plan      # fast, read-only engineering status
   bash scripts/course1-rollout.sh --deploy    # BLOCKED until the missing runtime integrations are reviewed
@@ -40,7 +50,7 @@ assets, provisions AD, or changes the firewall.
 USAGE
     exit 0
     ;;
-  --all|--source|--plan|--prepare|--deploy) ;;
+  --all|--source|--plan|--prepare|--installed|--deploy) ;;
   *) echo "[ERROR] Unknown mode: $MODE" >&2; exit 2 ;;
 esac
 
@@ -51,6 +61,17 @@ if [[ "$MODE" == --deploy ]]; then
   echo '[BLOCKED] NORTH deployment remains disabled in the shared provider.' >&2
   echo '[NEXT] Finish and test the five runtime contracts before exposing deployment.' >&2
   exit 3
+fi
+
+if [[ "$MODE" == --installed ]]; then
+  # The clean-host preflight intentionally rejects vmnets already owned by
+  # NORTH. Instead use full source tests and root-readable committed-owner
+  # verification. Both paths are READ-ONLY; no install/VM/network writes.
+  bash scripts/validate-course1.sh --skip-host
+  sudo -n bash scripts/setup-vmware-networks.sh --north verify \
+    --provider-dir "$INSTALLED_PROVIDER"
+  printf '[PASS] NORTH source and installed VMnet ownership verified (read-only)\n'
+  exit 0
 fi
 
 if [[ "$MODE" == --all || "$MODE" == --prepare ]]; then
