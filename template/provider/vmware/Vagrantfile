@@ -39,7 +39,7 @@ boxes.append(
   # GOAD_NOMAD: shutdown failures must be bounded and allowed to fall back
   # automatically instead of requiring Ctrl+C from the operator.
   config.vm.boot_timeout = 1200
-{% if lab_name == 'GOAD' %}
+{% if lab_name in ['GOAD', 'NORTH'] %}
   config.vm.box_check_update = false
   config.vm.graceful_halt_timeout = 120
 {% else %}
@@ -56,7 +56,7 @@ boxes.append(
         v.vmx["memsize"] = box[:mem]
         v.vmx["numvcpus"] = box[:cpus]
 
-{% if lab_name == 'GOAD' %}
+{% if lab_name in ['GOAD', 'NORTH'] %}
         # Multi-NIC Windows guests must use the provisioning NAT address for
         # Vagrant management. VMware Tools can otherwise return an exercise NIC
         # first (for example 10.4.30.12), which is intentionally unreachable
