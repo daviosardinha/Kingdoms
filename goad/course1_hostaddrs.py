@@ -1,0 +1,152 @@
+"""Render NORTH-specific .254 address repair from the Kingdoms topology.
+
+Read-only source generation. No systemd or VMware installation here.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import shlex
+
+from goad.kingdoms_topology import load_course1_topology, parse_vmnet_args
+
+HELPER = "/usr/local/sbin/kingdoms-north-vmnet-hostaddrs"
+SERVICE = "kingdoms-north-vmnet-hostaddrs.service"
+TIMER = "kingdoms-north-vmnet-hostaddrs.timer"
+
+
+def hostaddr_plan(layout):
+    zones = layout["segments"]
+    if set(zones) != {"north", "sevenkingdoms", "management"}:
+        raise ValueError("Unexpected Course 1 network segments")
+    if zones["sevenkingdoms"]["host_address"] is not None:
+        raise ValueError("Protected parent network must have no host adapter")
+    result = {}
+    for name in ("north", "management"):
+        zone = zones[name]
+        iface, address, gateway = zone["vmnet"], zone["host_address"], zone["gateway"]
+        prefix = zone["cidr"].split("/")[1]
+        if not iface.startswith("vmnet") or not iface[5:].isdigit():
+            raise ValueError("Invalid VMware interface")
+        if not address or address == gateway:
+            raise ValueError("Invalid host-visible address")
+        result[iface] = {"desired": address + "/" + prefix,
+                         "vmware_default": gateway + "/" + prefix}
+    if len(result) != 2:
+        raise ValueError("Expected exactly two host-visible adapters")
+    return {"interfaces": result, "protected": zones["sevenkingdoms"]["vmnet"]}
+
+
+def repair_decisions(layout, observed):
+    """Decide exact commands, checking ALL interfaces before changing any."""
+    plan = hostaddr_plan(layout)
+    rules = plan["interfaces"]
+    if plan["protected"] in observed or set(observed) != set(rules):
+        raise ValueError("Missing or unexpected VMware host-visible interface")
+    for iface, rule in rules.items():
+        ips = observed[iface]
+        if not isinstance(ips, list) or len(ips) != len(set(ips)):
+            raise ValueError("Bad or duplicated VMware IPv4 inventory")
+        if set(ips) - {rule["desired"], rule["vmware_default"]}:
+            raise ValueError("Unowned IPv4 address on " + iface)
+    actions = []
+    for iface, rule in rules.items():
+        if rule["vmware_default"] in observed[iface]:
+            actions.append(("ip", "-4", "addr", "del", rule["vmware_default"], "dev", iface))
+        if rule["desired"] not in observed[iface]:
+            actions.append(("ip", "-4", "addr", "add", rule["desired"], "dev", iface))
+    return tuple(actions)
+
+
+def render_hostaddr_assets(layout):
+    plan = hostaddr_plan(layout)
+    quote = shlex.quote
+    script = r"""#!/usr/bin/env bash
+set -euo pipefail
+
+# Kingdoms NORTH: no ip addr flush; permit only VMware .1 and owned .254.
+die() { echo "[BLOCKED] Course 1 hostaddr: $*" >&2; exit 1; }
+wait_iface() {
+  local iface="$1" i
+  for i in $(seq 1 20); do
+    ip link show dev "$iface" >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  die "VMware interface absent: $iface"
+}
+validate_iface() {
+  local iface="$1" desired="$2" original="$3" actual
+  wait_iface "$iface"
+  local -a ips=()
+  mapfile -t ips < <(ip -4 -o addr show dev "$iface" | awk '{print $4}')
+  for actual in "${ips[@]}"; do
+    [[ "$actual" == "$desired" || "$actual" == "$original" ]] ||
+      die "Unowned IPv4 address on $iface: $actual"
+  done
+}
+repair_iface() {
+  local iface="$1" desired="$2" original="$3"
+  if ip -4 -o addr show dev "$iface" | awk '{print $4}' | grep -Fxq "$original"; then
+    ip -4 addr del "$original" dev "$iface"
+  fi
+  if ! ip -4 -o addr show dev "$iface" | awk '{print $4}' | grep -Fxq "$desired"; then
+    ip -4 addr add "$desired" dev "$iface"
+  fi
+  ip link set dev "$iface" up
+  ip -4 -o addr show dev "$iface" | awk '{print $4}' | grep -Fxq "$desired" ||
+    die "IPv4 repair failed for $iface"
+}
+"""
+    # First validate every address and the protected zone, then modify.
+    for iface, rule in plan["interfaces"].items():
+        script += "validate_iface " + " ".join(map(quote, (
+            iface, rule["desired"], rule["vmware_default"]
+        ))) + "\n"
+    script += "if ip link show dev " + quote(plan["protected"]) + (
+        ' >/dev/null 2>&1; then die "Protected parent adapter exposed"; fi\n'
+    )
+    for iface, rule in plan["interfaces"].items():
+        script += "repair_iface " + " ".join(map(quote, (
+            iface, rule["desired"], rule["vmware_default"]
+        ))) + "\n"
+    service = f"""[Unit]
+Description=Kingdoms Course 1 host-only IPv4 repair
+After=network.target vmware.service
+
+[Service]
+Type=oneshot
+ExecStart={HELPER}
+"""
+    timer = f"""[Unit]
+Description=Maintain Kingdoms Course 1 VMware host-only IPv4
+After=vmware.service
+
+[Timer]
+OnActiveSec=3s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit={SERVICE}
+
+[Install]
+WantedBy=timers.target
+"""
+    return {"helper": script, "service": service, "timer": timer}
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Read-only NORTH host-address preview")
+    parser.add_argument("--network-base", default=None)
+    parser.add_argument("--vmnet", action="append", default=[])
+    args = parser.parse_args()
+    try:
+        layout = load_course1_topology(args.network_base, parse_vmnet_args(args.vmnet))
+        planned = hostaddr_plan(layout)
+        planned["assets"] = sorted(render_hostaddr_assets(layout))
+        planned["mode"] = "READ-ONLY; no systemd service installed"
+    except (KeyError, ValueError) as exc:
+        parser.error(str(exc))
+    print(json.dumps(planned, sort_keys=True, indent=2))
+
+
+if __name__ == "__main__":
+    main()
