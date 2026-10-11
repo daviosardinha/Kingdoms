@@ -643,3 +643,47 @@ files, `netmap.conf` rollback, systemd .254 address persistence or
 cross-process transaction lock. Those are required before explicitly
 enabling a controlled network-creation action. This stage does not
 authorize a NORTH lab installation.
+
+## 2026-10-11 — 56/56 Kali transaction tests passed; NORTH .254 address persistence
+
+Kali screenshot confirms **56 selected tests PASS** and all five
+read-only live host ownership checks PASS. Three planned North/
+Seven Kingdoms/Management vmnets remain unused on that host. No
+VMware vmnets, host routes, or systemd services were installed.
+
+New source-only work: goad/course1_hostaddrs.py derives exactly two
+host-visible .254/24 interfaces from the selected NORTH topology
+(vmnet10 and vmnet99), and requires protected parent vmnet20 to
+remain absent on Kali. The repair plan allows only the .254/24
+owned address or VMware's known .1/24 replacement, checks BOTH
+interfaces for unrecognized addresses before proposing any change,
+and never calls ip addr flush. It generates a NORTH-only helper,
+oneshot systemd service and recurring 15-second timer definition
+that do not replace the existing full-Kingdoms host-address service.
+
+The same source module provides a read-only live iproute2 JSON
+inspector that rejects missing .254/24, unexpected .1 addresses and
+an exposed parent-domain interface. Both hooks now use the existing
+Kingdoms script entrypoints, without changing full-Kingdoms behavior:
+
+    bash scripts/setup-vmware-networks.sh --north hostaddr-plan
+    bash scripts/check-vmware-networks.sh --north --live
+
+The live check is **expected to refuse until the networks exist**;
+it must not be treated as a prerequisite on a still-clean host.
+Alternative 10.5 configurations also produce coherent read-only
+unit previews when given explicit independent vmnet assignments.
+
+Seventeen newly added tests in tests/test_course1_hostaddrs.py cover
+normal/different network layouts, .1 recovery, foreign IP refusal,
+the hidden parent adapter, Bash helper syntax, service/timer
+rendering, the read-only live command and default/alternate previews.
+
+**Kali execution of these 17 new tests remains pending**. Source-level
+comparison confirms original full Kingdoms network setup and check
+script bodies remain unchanged; the NORTH install/start/reset guard
+remains enabled. No mutating NORTH network action exists yet. Before
+authorizing one, we still need crash-safe ownership lock/journal,
+owned VMware restart/netmap recovery, service/timer transactional
+materialization, multi-instance NORTH service identities and
+disposable-host rollback validation.
