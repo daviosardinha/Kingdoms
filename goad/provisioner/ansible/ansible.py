@@ -162,6 +162,13 @@ class Ansible(Provisioner):
         playbook_list = []
         with open(playbook_organisation_file, 'r') as playbooks:
             data_loaded = yaml.safe_load(playbooks)
+        if lab_name == 'NORTH' and (
+            'NORTH' not in data_loaded or not isinstance(data_loaded['NORTH'], list)
+        ):
+            # Generic Ansible's default fallback would silently deploy a
+            # different lab after a long Windows startup. Never do that for
+            # Kingdoms Course 1.
+            raise ValueError('NORTH requires its explicit Kingdoms playbook manifest')
         if lab_name in data_loaded:
             playbook_datas = data_loaded[lab_name]
         else:
@@ -171,6 +178,8 @@ class Ansible(Provisioner):
         for playbook in playbook_datas:
             playbook_path = GoadPath.get_provisioner_path() + playbook
             if not os.path.isfile(playbook_path):
+                if lab_name == 'NORTH':
+                    raise ValueError(f'NORTH playbook is missing: {playbook}')
                 Log.error(f'{playbook} not valid, file {playbook_path} not found')
             else:
                 playbook_list.append(playbook)
