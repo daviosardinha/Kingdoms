@@ -324,3 +324,46 @@ playbook sequence consumes the selected renderer output end-to-end yet.
 The `_course1_unwired` NORTH install/start/reset/Ansible guard remains
 active, and no deployment should be attempted. The host owner should
 run the new tests before the next wiring phase.
+
+## 2026-10-11 — Kali 78/78 source acceptance; explicit NORTH Ansible cadence
+
+Operator's Kali screenshot confirms **78 tests passed** after the existing
+`LabInstance` generator was connected to the source-only NORTH
+Vagrant/Ansible/router renderer. This accepted the previous source
+integration, not a live installation.
+
+The next committed source-only step adds `NORTH:` to the **existing
+Kingdoms `playbooks.yml`**. Its sequence is the validated 22-play full
+Kingdoms `GOAD:` manifest in identical order **minus exactly the
+external Essos `ad-trusts.yml` step**, leaving 21 existing Kingdoms
+plays, including child-domain creation, WS01 baseline, Phase 01,
+Windows LPE and final AD-health gate. No new Ansible role tree or
+upstream GOAD installation path was introduced.
+
+`ansible/phase01.yml` now accepts only `GOAD` or `NORTH` and
+reads `../ad/{{ domain_name }}/data/config.json`, so it uses the
+selected Kingdoms-owned scenario rather than accidentally importing
+the six-host profile. GOAD's path resolves identically to before.
+
+The `goad/course1_source_preflight.py` gate now validates the explicit
+NORTH playbook mapping, its exact ordering and every referenced file
+BEFORE creating an instance workspace. The original
+`goad/provisioner/ansible/ansible.py` selector is also protected:
+NORTH **cannot silently fall back to `default`**, skip a missing
+playbook or run with an empty/nonmapping manifest. All other labs
+retain the prior selection behavior.
+
+Tests updated:
+- `tests/test_course1_source_preflight.py` now contains nine tests,
+  including missing NORTH stanza, missing referenced playbook and
+  accidentally restored Essos trust.
+- `tests/test_course1_ansible_manifest.py` adds five tests for the
+  exact reduced 21-play cadence, original GOAD preservation,
+  absence of default fallback and explicit Phase 01 data selection.
+
+**NEW TESTS PENDING ON KALI**. This is not permission to install NORTH:
+the existing Kingdoms host networking, provisioning route controller,
+AD/exercise lifecycle and vmnet ownership preflight still hardcode
+the full six-host topology. The NORTH fail-closed install guard
+remains active. Next integrate those runtime components before
+running a single controlled first install.
