@@ -83,13 +83,14 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
 
     def test_only_expected_missing_child_domain_is_accepted(self):
         script = self.load(GUARD)[1]["ansible.windows.win_powershell"]["script"]
-        self.assertIn("$childStatus -notin @(1, 1355)", script)
+        self.assertIn("if ($childStatus -ne 0)", script)
+        self.assertNotIn("$childStatus -notin", script)
         self.assertIn("Status\\s*=\\s*1355\\b", script)
         self.assertIn("ERROR_NO_SUCH_DOMAIN", script)
         self.assertIn("$childStatus = 1355", script)
         self.assertIn("if ($childStatus -eq 0)", script)
         self.assertIn("childAddresses[0] -ne $ChildDcIp", script)
-        self.assertLess(script.index("$childStatus -notin @(1, 1355)"),
+        self.assertLess(script.index("if ($childStatus -ne 0)"),
                         script.index("$childStatus = 1355"))
         self.assertLess(script.index("if ($childStatus -eq 0)"),
                         script.index("childAddresses[0] -ne $ChildDcIp"))
