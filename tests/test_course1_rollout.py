@@ -63,7 +63,7 @@ class Course1RolloutTests(unittest.TestCase):
         self.assertIn("bash scripts/validate-course1.sh\n", self.text)
         self.assertIn("bash scripts/validate-course1.sh --skip-host", self.text)
         self.assertIn("def _course1_unwired(self):", self.text)
-        self.assertIn("return self.lab_name == 'GOAD'", self.text)
+        self.assertIn("return self.lab_name in ('GOAD', 'NORTH')", self.text)
 
     def test_no_live_mutating_commands_exist(self):
         for token in (
