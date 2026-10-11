@@ -101,6 +101,9 @@ class VMwareNetworkRestart:
             raise NorthSetupError(
                 "VMware netmap changed outside this transaction; manual reconciliation"
             )
+        # A failed first startup must still classify the following callback
+        # as rollback; otherwise the second restart skips restoring netmap.
+        self.calls += 1
         run_command(self.executable, "--stop")
         if rolling_back:
             # A VMware stop may itself rewrite netmap; reject ambiguous state.
