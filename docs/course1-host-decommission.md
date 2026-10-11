@@ -141,3 +141,56 @@ explicit teardown manifest. Do not use `rm -rf ~/.vmware`,
 `rm -rf ~/.vagrant.d`, a blanket `vagrant global-status --prune`, or
 deletion of `~/vmware`; those directories could contain surviving
 guest registration state, unrelated VMs, and other projects.
+
+## 2026-10-11 cleanup checkpoint — NORTH destroyed; original VMware guests survive
+
+Operator successfully disabled both host-address persistence timers and ran
+`vagrant destroy -f` from the exact disposable NORTH Vagrant provider
+folder `~/kingdoms-course1-src/workspace/6ca91b-north-vmware/provider`.
+All five disposable VMs (GOAD-DC01, DC02, SRV02, WS01, ROUTER)
+were stopped/deleted by Vagrant. The subsequent `vmrun -T ws list` did
+not include those five paths. Workspace residue, Vagrant cache and
+network state **not yet fully audited/deleted**.
+
+The same post-destroy `vmrun -T ws list` shows **seven running
+original-reference VMs**, all under the previously deleted
+`~/Documents/GOAD_NOMAD/workspace/6fdd5a-goad-vmware/provider/.vagrant/machines`:
+GOAD-DC01, GOAD-DC02, GOAD-DC03, GOAD-SRV02, GOAD-SRV03, GOAD-WS01,
+GOAD-ROUTER. This proves deleting the original repository folder via
+`rm -rf` did not shut down these VMware processes. It does not prove
+their VMX and disk files still exist at their old paths.
+
+`vagrant global-status` ALSO includes seven entries for a different
+workspace, `~/Documents/GOAD_NOMAD_fresh/workspace/22a3c5-goad-vmware/provider`.
+Two are cached as `running` there but **none** appear in `vmrun list`;
+do not trust cached Vagrant state to establish live VMware existence.
+The user's Workstation registry additionally contains
+`~/vmware/KINGDOMS-SQL-CLONE/KINGDOMS-SQL-CLONE.vmx`, an independent
+clone whose ownership must be established explicitly before deletion.
+
+The live host still lists vmnet10, vmnet11, vmnet13 and vmnet99 addresses;
+their present host addresses show `.1`, not the project's historic
+`.254`. Do NOT change global VMware vmnets while the seven original
+guests are running. Other custom vmnets 12/20/30 exist as VMware
+configuration entries even if they lack a host-visible IP interface.
+
+### Next non-destructive evidence request
+
+From the NEW `~/kingdoms-rebuild` checkout on Kali (do not use the
+deleted original checkout or broken linked worktree), examine:
+- physical existence and ownership of each of seven original VMX paths
+  from `vmrun list`, plus whether `~/Documents/GOAD_NOMAD` was truly removed;
+- existence and provider directory state for the distinct
+  `GOAD_NOMAD_fresh` workspace and its Vagrant IDs;
+- status of `KINGDOMS-SQL-CLONE` as a separate VM and its disk files;
+- current running VMware processes and names, **without** global
+  `killall`, `pkill`, `vagrant global-status --prune`, or network resets.
+
+After ownership evidence, stop/delete only exact identified VMware
+guests; if a VMX was unlinked while still running, normal `vmrun stop`
+may fail. Handle that explicitly, never by killing all VMware processes.
+The separate SQL clone may be useful as a course fixture and must not
+be silently treated as one of the seven original VMs.
+
+No machine cleanup beyond the five disposable NORTH VMs and disabling
+the two timers is proved yet.
