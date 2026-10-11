@@ -30,21 +30,31 @@ class NetworkPlanError(ValueError):
 def _existing_network_metadata(original: str) -> tuple[set[int], list[ipaddress.IPv4Network]]:
     occupied: set[int] = set()
     ranges: list[ipaddress.IPv4Network] = []
+    declared: dict[int, dict[str, str]] = {}
     for line in original.splitlines():
         found = KEY.match(line)
         if not found:
             continue
         vmnet, property_name = int(found.group(1)), found.group(2)
         occupied.add(vmnet)
-        if property_name == "HOSTONLY_SUBNET":
-            fields = line.split()
-            if len(fields) != 3:
-                raise NetworkPlanError("Malformed VMware host-only subnet setting")
-            try:
-                network = ipaddress.ip_network(fields[2] + "/24", strict=True)
-            except ValueError as exc:
-                raise NetworkPlanError("Invalid existing VMware host-only subnet") from exc
-            ranges.append(network)
+        fields = line.split()
+        if len(fields) != 3:
+            raise NetworkPlanError("Malformed VMware network setting")
+        if property_name in ("HOSTONLY_SUBNET", "HOSTONLY_NETMASK"):
+            setting = declared.setdefault(vmnet, {})
+            if property_name in setting:
+                raise NetworkPlanError("Duplicate existing VMware subnet or netmask")
+            setting[property_name] = fields[2]
+    for setting in declared.values():
+        subnet = setting.get("HOSTONLY_SUBNET")
+        if subnet is None:
+            continue
+        mask = setting.get("HOSTONLY_NETMASK", "255.255.255.0")
+        try:
+            network = ipaddress.ip_network(f"{subnet}/{mask}", strict=True)
+        except ValueError as exc:
+            raise NetworkPlanError("Invalid existing VMware host-only subnet") from exc
+        ranges.append(network)
     return occupied, ranges
 
 
