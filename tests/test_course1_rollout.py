@@ -47,6 +47,7 @@ class Course1RolloutTests(unittest.TestCase):
         result = self.run_mode("--help")
         self.assertEqual(result.returncode, 0)
         self.assertIn("--all", result.stdout)
+        self.assertIn("--prepare", result.stdout)
         self.assertIn("--source", result.stdout)
         self.assertIn("--plan", result.stdout)
         self.assertIn("--deploy", result.stdout)
@@ -64,6 +65,15 @@ class Course1RolloutTests(unittest.TestCase):
         self.assertIn("bash scripts/validate-course1.sh --skip-host", self.text)
         self.assertIn("def _course1_unwired(self):", self.text)
         self.assertIn("return self.lab_name in ('GOAD', 'NORTH')", self.text)
+
+    def test_prepare_reuses_full_validator_before_existing_instance_manager(self):
+        self.assertIn('--all || "$MODE" == --prepare', self.text)
+        self.assertIn('bash ./goad.sh -t prepare-north -l NORTH -p vmware', self.text)
+        self.assertLess(
+            self.text.index('bash scripts/validate-course1.sh'),
+            self.text.index('bash ./goad.sh -t prepare-north -l NORTH -p vmware'),
+        )
+        self.assertNotIn('--north apply', self.text)
 
     def test_no_live_mutating_commands_exist(self):
         for token in (
