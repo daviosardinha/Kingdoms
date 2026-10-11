@@ -21,20 +21,36 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
     """
 
     def _course1_unwired(self):
-        """Fail early until the original Kingdoms engine is fully profile-aware.
+        """Fail closed unless THIS NORTH instance owns verified host networking.
 
-        This is intentionally temporary: the reduced ad/NORTH definition exists,
-        but its VMware VMnet/routing and lifecycle scripts are not wired safely.
-        Never fall through to generic Vagrant and accidentally create a VM.
+        Use the original Kingdoms lifecycle only after the committed VMware
+        owner, backup, three vmnets and .254 persistence prove ready. No
+        generic Vagrant fallback and no host writes in this attestation.
         """
         if self.lab_name != 'NORTH':
             return False
-        Log.error(
-            'Kingdoms Course 1 source profile exists but the shared provider '
-            'network/lifecycle acceptance gates are not wired yet. '
-            'No Vagrant or VMware operation was attempted.'
-        )
-        return True
+        path = getattr(self, 'path', None)
+        if path is None:
+            Log.error('Course 1: no instance provider path; refusing NORTH lifecycle')
+            return True
+        checker = self._script('setup-vmware-networks.sh')
+        if checker is None:
+            return True
+        try:
+            result = subprocess.run(
+                ['sudo', '-n', 'bash', checker, '--north', 'verify',
+                 '--provider-dir', os.path.realpath(str(path))],
+                check=False, capture_output=True, text=True, timeout=45,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'Course 1: host-network ownership check unavailable: {exc}')
+            return True
+        if result.returncode != 0:
+            Log.error('Course 1: NORTH VMware owner or live host state is not ready')
+            if result.stderr.strip():
+                Log.error(result.stderr.strip())
+            return True
+        return False
 
     def start(self, vm_name=None):
         if self._course1_unwired():
