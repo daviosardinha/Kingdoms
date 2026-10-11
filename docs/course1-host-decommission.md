@@ -104,3 +104,40 @@ dedicated services/timers, orphan headless sessions, DNS redirections or
 firewall rules. VMware still works with its normal defaults; unrelated
 VMs/services stay unchanged; the new source branch is clean, and a fresh
 Course 1 can use 10.4.0.0/16 without conflicts.
+
+## Actual host incident: original source checkout deleted before audit (2026-10-11)
+
+The operator used `rm -rf` on `~/Documents/GOAD_NOMAD`. The separate
+`~/kingdoms-course1-src` is a **linked Git worktree**, whose
+`.git` pointer refers to
+`~/Documents/GOAD_NOMAD/.git/worktrees/kingdoms-course1-src`. As a
+result Git commands there now fail with `fatal: not a git repository`.
+**No claim that installed VMware guests, Vagrant IDs, disks, routes, services
+or vmnets were deleted by that command.** The old reference workspace's
+Vagrant ID files may have been lost, making Workstation's powered-off
+`~/.vmware/inventory.vmls` and Vagrant's global index particularly
+important for ownership reconstruction.
+
+Do NOT run `git fetch/switch` from the broken linked checkout, delete its
+`workspace`, or overwrite that checkout to 'repair' it. Recover the source
+into a **fresh non-worktree clone** at a new path, preserving the broken
+worktree and whatever guest metadata it still holds:
+
+```bash
+test ! -e "$HOME/kingdoms-rebuild" || { echo 'Destination exists'; exit 1; }
+git clone --branch rebuild/course1-from-kingdoms --single-branch \
+  https://github.com/daviosardinha/Kingdoms.git \
+  "$HOME/kingdoms-rebuild"
+cd "$HOME/kingdoms-rebuild"
+python3 -m unittest tests.test_course1_cleanup_audit
+python3 scripts/course1-cleanup-audit.py \
+  --checkout "$HOME/kingdoms-course1-src" \
+  --checkout "$HOME/Documents/GOAD_NOMAD" \
+  --output "$HOME/kingdoms-cleanup-audit-$(date -u +%Y%m%dT%H%M%SZ).json"
+```
+
+This command is NONDESTRUCTIVE. Review the output before preparing the
+explicit teardown manifest. Do not use `rm -rf ~/.vmware`,
+`rm -rf ~/.vagrant.d`, a blanket `vagrant global-status --prune`, or
+deletion of `~/vmware`; those directories could contain surviving
+guest registration state, unrelated VMs, and other projects.
