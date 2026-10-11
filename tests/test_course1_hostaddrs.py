@@ -3,10 +3,11 @@ import json
 import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from goad.course1_hostaddrs import (
     HELPER, SERVICE, TIMER, hostaddr_plan, repair_decisions,
-    render_hostaddr_assets,
+    render_hostaddr_assets, verify_hostaddr_runtime, inspect_live_hostaddrs,
 )
 from goad.kingdoms_topology import load_course1_topology
 
@@ -129,11 +130,66 @@ class Course1HostAddressTests(unittest.TestCase):
         self.assertEqual(data["interfaces"]["vmnet98"]["desired"], "10.5.99.254/24")
         self.assertEqual(data["protected"], "vmnet21")
 
+    def test_runtime_inspector_accepts_only_exact_live_host_interfaces(self):
+        links = [{"ifname": "eth0"}, {"ifname": "vmnet10"}, {"ifname": "vmnet99"}]
+        addrs = [
+            {"ifname": "vmnet10", "addr_info": [
+                {"family": "inet", "local": "10.4.10.254", "prefixlen": 24}
+            ]},
+            {"ifname": "vmnet99", "addr_info": [
+                {"family": "inet", "local": "10.4.99.254", "prefixlen": 24}
+            ]},
+        ]
+        self.assertEqual(len(verify_hostaddr_runtime(self.layout, links, addrs)), 2)
+
+    def test_runtime_inspector_blocks_vmware_reverting_to_one(self):
+        links = [{"ifname": "vmnet10"}, {"ifname": "vmnet99"}]
+        addrs = [
+            {"ifname": "vmnet10", "addr_info": [
+                {"family": "inet", "local": "10.4.10.1", "prefixlen": 24}
+            ]},
+            {"ifname": "vmnet99", "addr_info": [
+                {"family": "inet", "local": "10.4.99.254", "prefixlen": 24}
+            ]},
+        ]
+        with self.assertRaisesRegex(ValueError, "repair is still required"):
+            verify_hostaddr_runtime(self.layout, links, addrs)
+
+    def test_runtime_inspector_blocks_hidden_parent_adapter_exposure(self):
+        with self.assertRaisesRegex(ValueError, "Protected Seven Kingdoms"):
+            verify_hostaddr_runtime(
+                self.layout,
+                [{"ifname": "vmnet10"}, {"ifname": "vmnet20"}, {"ifname": "vmnet99"}],
+                [],
+            )
+
+    def test_live_inspection_invokes_only_read_only_ip_json_commands(self):
+        links = json.dumps([
+            {"ifname": "vmnet10"}, {"ifname": "vmnet99"},
+        ])
+        addrs = json.dumps([
+            {"ifname": "vmnet10", "addr_info": [
+                {"family": "inet", "local": "10.4.10.254", "prefixlen": 24}]},
+            {"ifname": "vmnet99", "addr_info": [
+                {"family": "inet", "local": "10.4.99.254", "prefixlen": 24}]},
+        ])
+        results = [
+            subprocess.CompletedProcess([], 0, stdout=links, stderr=""),
+            subprocess.CompletedProcess([], 0, stdout=addrs, stderr=""),
+        ]
+        with patch("goad.course1_hostaddrs.subprocess.run", side_effect=results) as run:
+            self.assertEqual(len(inspect_live_hostaddrs(self.layout)), 2)
+            self.assertEqual([x.args[0] for x in run.call_args_list], [
+                ("ip", "-j", "link", "show"),
+                ("ip", "-j", "-4", "addr", "show"),
+            ])
+
     def test_no_install_or_systemd_actions_in_asset_renderer(self):
         code = (Path(__file__).resolve().parents[1] /
                 "goad/course1_hostaddrs.py").read_text()
-        for phrase in ("subprocess.run(", "systemctl start", ".write_text(", "sudo ",
-                       "os.replace(", "ip -4 addr flush dev"):
+        for phrase in ("systemctl start", ".write_text(", "sudo ",
+                       "os.replace(", "ip -4 addr flush dev",
+                       '"route", "add"', '"addr", "add"'):
             self.assertNotIn(phrase, code)
 
 
