@@ -1,6 +1,8 @@
 """NORTH-only VMware host address assets, never touching host/systemd."""
 import json
+import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -8,6 +10,7 @@ from unittest.mock import patch
 from goad.course1_hostaddrs import (
     HELPER, SERVICE, TIMER, hostaddr_plan, repair_decisions,
     render_hostaddr_assets, verify_hostaddr_runtime, inspect_live_hostaddrs,
+    verify_hostaddr_asset_sources, inspect_live_hostaddr_assets,
 )
 from goad.kingdoms_topology import load_course1_topology
 
@@ -192,6 +195,77 @@ class Course1HostAddressTests(unittest.TestCase):
                        '"vmware-networks", "--start"'):
             self.assertNotIn(phrase, code)
 
+
+    def test_persistent_assets_require_exact_profile_contents(self):
+        self.assertEqual(len(verify_hostaddr_asset_sources(self.layout, self.assets)), 1)
+        for name in ("helper", "service", "timer"):
+            with self.subTest(name=name):
+                tampered = dict(self.assets)
+                tampered[name] += "# unexpected change\\n"
+                with self.assertRaisesRegex(ValueError, "differs"):
+                    verify_hostaddr_asset_sources(self.layout, tampered)
+        with self.assertRaisesRegex(ValueError, "Incomplete"):
+            verify_hostaddr_asset_sources(self.layout, {"helper": self.assets["helper"]})
+
+    def test_persistent_runtime_inspection_is_read_only_and_requires_timer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            targets = {name: folder / name for name in self.assets}
+            for name, file in targets.items():
+                file.write_text(self.assets[name], encoding="utf-8")
+                file.chmod(0o755 if name == "helper" else 0o644)
+            good = [
+                subprocess.CompletedProcess([], 0, stdout="enabled\\n", stderr=""),
+                subprocess.CompletedProcess([], 0, stdout="active\\n", stderr=""),
+            ]
+            with patch("goad.course1_hostaddrs.subprocess.run", side_effect=good) as run:
+                result = inspect_live_hostaddr_assets(
+                    self.layout, asset_paths=targets, owner_uid=os.getuid(),
+                )
+                self.assertEqual(len(result), 2)
+                self.assertEqual([call.args[0] for call in run.call_args_list], [
+                    ("systemctl", "is-enabled", TIMER),
+                    ("systemctl", "is-active", TIMER),
+                ])
+            inactive = [
+                subprocess.CompletedProcess([], 0, stdout="enabled\\n", stderr=""),
+                subprocess.CompletedProcess([], 3, stdout="inactive\\n", stderr=""),
+            ]
+            with patch("goad.course1_hostaddrs.subprocess.run", side_effect=inactive):
+                with self.assertRaisesRegex(ValueError, "must be active"):
+                    inspect_live_hostaddr_assets(
+                        self.layout, asset_paths=targets, owner_uid=os.getuid(),
+                    )
+
+    def test_persistent_runtime_blocks_missing_and_unsafe_assets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            targets = {name: folder / name for name in self.assets}
+            for name, file in targets.items():
+                file.write_text(self.assets[name], encoding="utf-8")
+                file.chmod(0o755 if name == "helper" else 0o644)
+            targets["timer"].unlink()
+            with self.assertRaisesRegex(ValueError, "missing or unsafe"):
+                inspect_live_hostaddr_assets(
+                    self.layout, asset_paths=targets, owner_uid=os.getuid(),
+                )
+            targets["timer"].write_text(self.assets["timer"], encoding="utf-8")
+            targets["timer"].chmod(0o666)
+            with self.assertRaisesRegex(ValueError, "group/world writable"):
+                inspect_live_hostaddr_assets(
+                    self.layout, asset_paths=targets, owner_uid=os.getuid(),
+                )
+            targets["timer"].chmod(0o644)
+            with self.assertRaisesRegex(ValueError, "ownership is unsafe"):
+                inspect_live_hostaddr_assets(
+                    self.layout, asset_paths=targets, owner_uid=-1,
+                )
+
+    def test_north_live_checker_requires_persistence_as_well_as_ipv4(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  "goad/course1_hostaddrs.py").read_text(encoding="utf-8")
+        self.assertIn("*inspect_live_hostaddr_assets(layout)", source)
+        self.assertIn("inspect_live_hostaddrs(layout)", source)
 
 if __name__ == "__main__":
     unittest.main()
