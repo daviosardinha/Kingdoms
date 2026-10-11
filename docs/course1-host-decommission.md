@@ -124,7 +124,7 @@ into a **fresh non-worktree clone** at a new path, preserving the broken
 worktree and whatever guest metadata it still holds:
 
 ```bash
-test ! -e "$HOME/kingdoms-rebuild" || { echo 'Destination exists'; exit 1; }
+# git clone refuses to overwrite an existing nonempty destination.
 git clone --branch rebuild/course1-from-kingdoms --single-branch \
   https://github.com/daviosardinha/Kingdoms.git \
   "$HOME/kingdoms-rebuild"
