@@ -79,7 +79,7 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
             self.assertEqual(restart.calls, 1)
             restart()
             self.assertEqual(restart.calls, 2)
-        self.assertEqual(self.netmap.read_text(), "ORIGINAL_NETMAP\\n")
+        self.assertEqual(self.netmap.read_text(), "ORIGINAL_NETMAP\n")
 
     def test_full_owned_setup_uses_existing_transaction_with_three_vmnets(self):
         installed = self.launch()
