@@ -145,6 +145,22 @@ class AnsibleProfileTests(unittest.TestCase):
         self.ansible._finalize_provider_provisioning = Mock(return_value=True)
         self.profile = profile
 
+    def test_north_reuses_existing_profiling_and_pre_ad_ansible_bootstrap(self):
+        self.ansible.lab_name = 'NORTH'
+        self.assertIs(self.ansible._kingdoms_install_profile(), self.profile)
+        self.assertTrue(self.ansible.run())
+        self.assertEqual(self.profile['status'], 'completed')
+        self.ansible._prepare_provider_provisioning.assert_called_once_with()
+        self.ansible._finalize_provider_provisioning.assert_called_once_with()
+        self.ansible.command.run_ansible.assert_called_once()
+
+    def test_north_failed_or_finished_provider_profile_is_not_bootstrap(self):
+        self.ansible.lab_name = 'NORTH'
+        self.profile['status'] = 'failed'
+        self.assertIsNone(self.ansible._kingdoms_install_profile())
+        self.profile['status'] = 'completed'
+        self.assertIsNone(self.ansible._kingdoms_install_profile())
+
     def test_retry_attempts_have_individual_outcomes_and_isolated_task_files(self):
         self.ansible.command.run_ansible.side_effect = [False, True]
         original_env = dict(os.environ)
