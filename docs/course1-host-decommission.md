@@ -254,3 +254,41 @@ Before VMware global networking reset, inspect the separately registered
 `~/vmware/KINGDOMS-SQL-CLONE/KINGDOMS-SQL-CLONE.vmx` for references
 to any target vmnets; do not break a foreign guest or remove unrelated
 VMware inventory entries. Re-run clean-state validation after each stage.
+
+## 2026-10-11 — VMware network and separate SQL clone blocker
+
+The operator's latest live read-only audit shows:
+
+- `vmrun -T ws list`: **Total running VMs: 0**; no VMX processes.
+- `~/vmware/KINGDOMS-SQL-CLONE/KINGDOMS-SQL-CLONE.vmx` exists, and its
+  configuration explicitly includes `ethernet1.connectionType = "custom"`
+  and **`ethernet1.vnet = "vmnet10"`**. This standalone clone therefore
+  depends on a network slated for removal. Ethernet0 is also present but
+  no vnet name was visible for it in the displayed filtered output.
+- `/etc/vmware/networking` retains VNET records for **10, 11, 12, 13,
+  20, 30, 99**, with 10.4 and 10.41 segment assignments. VMware host
+  IPv4 connected routes currently exist for vmnet10 (10.4.10.0/24),
+  vmnet99 (10.4.99.0/24), vmnet11 (10.41.10.0/24), and vmnet13
+  (10.41.99.0/24). Host addresses appear as `.1`, not the original
+  intended host-side `.254`.
+- Both `goad-nomad-vmnet-hostaddrs.timer` and
+  `kingdoms-north-vmnet-hostaddrs.timer` are disabled, but the
+  corresponding service/timer **unit files remain installed**.
+- The abandoned linked checkout and `6ca91b-north-vmware` workspace
+  folders still exist. These are residual files after successful VM
+  destruction; do not confuse folder existence with a live Vagrant VM.
+
+**Mandatory next decision:** whether the user explicitly includes the
+separately registered `KINGDOMS-SQL-CLONE` in permanent lab removal.
+Do NOT delete or reconfigure vmnet10 while preserving a VM that uses it.
+If user elects clone deletion, confirm its VMX/disk/snapshot chain and
+any reference by other VMs before targeted deletion. If user elects
+preservation, vmnet10 remains out of scope for cleanup and the result
+cannot be described as a completely empty custom-vmnet host.
+
+Do not run `vmware-networks --stop`, remove VNET keys, flush routes or
+delete systemd helpers merely because all VMware processes are stopped.
+First enumerate all VMX registrations and possible foreign attachments,
+back up the current `/etc/vmware/networking` and `netmap.conf`,
+then use an exact-number VNET delta with rollback and post-reset
+verification preserving vmnet1/vmnet8 and unrelated VMs.
