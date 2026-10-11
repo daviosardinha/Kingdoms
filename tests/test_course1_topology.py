@@ -36,6 +36,27 @@ class Course1TopologyTests(unittest.TestCase):
         self.assertEqual(layout["segments"]["sevenkingdoms"]["vmnet"], "vmnet21")
         self.assertEqual(layout["segments"]["management"]["vmnet"], "vmnet98")
 
+    def test_single_manifest_matches_initial_vagrant_and_ansible_sources(self):
+        layout = load_course1_topology()
+        vagrant = (MANIFEST_PATH.parent / "providers/vmware/Vagrantfile").read_text()
+        provider_inventory = (
+            MANIFEST_PATH.parent / "providers/vmware/inventory"
+        ).read_text()
+        for machine, attrs in layout["windows"].items():
+            self.assertIn(f':name => "{machine}"', vagrant)
+            self.assertIn(f':ip => "{attrs["address"]}"', vagrant)
+            self.assertIn(
+                f'{attrs["inventory"]} ansible_host={attrs["address"]}',
+                provider_inventory,
+            )
+        router = layout["segments"]
+        bootstrap = (MANIFEST_PATH.parent /
+                     "providers/vmware/router/provision.sh").read_text()
+        for name in ("north", "sevenkingdoms", "management"):
+            self.assertIn(f'"{router[name]["gateway"]}"', bootstrap)
+        self.assertEqual(vagrant.count("ethernet3.pcislotnumber"), 1)
+        self.assertNotIn("ethernet4.pcislotnumber", vagrant)
+
     def test_alternate_network_with_default_vmnets_is_blocked(self):
         with self.assertRaisesRegex(ValueError, "explicit independent"):
             load_course1_topology("10.5.0.0/16")
