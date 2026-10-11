@@ -1516,6 +1516,8 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         return True
 
     def set_runtime_mode(self, mode):
+        if self._course1_unwired():
+            return False
         # Re-check immediately before every provisioning/exercise transition.
         # This covers long-running starts where the sudo timestamp may have
         # expired since prepare_install() and prevents the compatibility mode
