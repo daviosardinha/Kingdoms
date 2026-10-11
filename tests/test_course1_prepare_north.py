@@ -83,7 +83,15 @@ class Course1PrepareOnlyTests(unittest.TestCase):
         self.console.do_load = Mock()
         self.console.do_prepare_north = Mock()
         self.assertEqual(self.actions["_dispatch_task"](self.console, self.args), 1)
-        self.console.do_load.assert_called_once_with("existing-id")
+        self.console.do_load.assert_not_called()
+        self.console.do_prepare_north.assert_not_called()
+
+    def test_provisioning_override_rejected_without_loading_or_creation(self):
+        self.args.ansible_only = "true"
+        self.console.do_prepare_north = Mock()
+        self.console.do_load = Mock()
+        self.assertEqual(self.actions["_dispatch_task"](self.console, self.args), 1)
+        self.console.do_load.assert_not_called()
         self.console.do_prepare_north.assert_not_called()
 
     def test_dispatch_and_prepare_do_not_reach_vm_or_network_operations(self):
