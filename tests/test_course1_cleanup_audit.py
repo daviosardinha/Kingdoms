@@ -36,7 +36,7 @@ class CleanupAuditTests(unittest.TestCase):
             ids.mkdir(parents=True)
             vmx = Path(home) / "vm-disks/GOAD-WS01.vmx"
             vmx.parent.mkdir()
-            vmx.write_text('config.version = "8"\\n')
+            vmx.write_text('config.version = "8"\n')
             (ids / "id").write_text(str(vmx))
             metadata = provider.parent / "instance.json"
             metadata.write_text(json.dumps({"lab": "NORTH", "provider": "vmware"}))
@@ -71,10 +71,10 @@ class CleanupAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             cfg = Path(home) / "networking"
             cfg.write_text(
-                "answer VNET_10_HOSTONLY_SUBNET 10.4.10.0\\n"
-                "answer VNET_11_HOSTONLY_SUBNET 10.41.10.0\\n"
-                "answer VNET_8_HOSTONLY_SUBNET 192.168.213.0\\n"
-                "answer VNET_99_DHCP no\\n"
+                "answer VNET_10_HOSTONLY_SUBNET 10.4.10.0\n"
+                "answer VNET_11_HOSTONLY_SUBNET 10.41.10.0\n"
+                "answer VNET_8_HOSTONLY_SUBNET 192.168.213.0\n"
+                "answer VNET_99_DHCP no\n"
             )
             original = Path
             # The network parser targets the system config. Redirect that
@@ -89,7 +89,7 @@ class CleanupAuditTests(unittest.TestCase):
             self.assertNotIn("vmnet8", report["target_network_settings"])
 
     def test_process_audit_never_exposes_args(self):
-        fake = {"exit_code": 0, "stdout": "1234 vmware-vmx\\n5678 python\\n",
+        fake = {"exit_code": 0, "stdout": "1234 vmware-vmx\n5678 python\n",
                 "stderr": ""}
         with patch.object(audit, "run", return_value=fake) as invoke:
             found = audit.process_candidates()
@@ -99,8 +99,8 @@ class CleanupAuditTests(unittest.TestCase):
 
     def test_crontab_audit_reports_lines_not_secrets(self):
         fake = {"exit_code": 0, "stdout": (
-            '*/5 * * * * kingdoms-watch --password=SECRET_VALUE\\n'
-            '0 * * * * unrelated task\\n'
+            '*/5 * * * * kingdoms-watch --password=SECRET_VALUE\n'
+            '0 * * * * unrelated task\n'
         ), "stderr": ""}
         with patch.object(audit, "run", return_value=fake):
             found = audit.cron_candidates()
