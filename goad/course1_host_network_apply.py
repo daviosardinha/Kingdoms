@@ -154,6 +154,9 @@ def apply(provider_dir, reviewed_sha256, networking=NETWORKING, netmap=NETMAP,
     for path in paths.values():
         if path.exists() or path.is_symlink():
             raise NorthSetupError("Existing NORTH systemd asset requires reconciliation")
+    # Reject a stale reviewed plan before creating even the recovery backups.
+    if hashlib.sha256(Path(networking).read_bytes()).hexdigest() != reviewed_sha256:
+        raise NorthSetupError("VMware networking changed since reviewed baseline")
     original, metadata = snapshot_netmap(netmap)
     _safe_directory(Path(networking).parent)
     if not Path(backups).exists():
