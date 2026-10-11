@@ -30,6 +30,31 @@ When future live acceptance is authorized, its reviewed `--north apply` workflow
 
 The original GOAD host setup handles `/etc/vmware/netmap.conf` as **optional**. NORTH's native apply adapter must do the same. An absent file is not a host failure and must never be manufactured just to satisfy an installer prerequisite. If present, it must be a safe regular file and its bytes are backed up; if absent, rollback tracks VMware-created netmap state and refuses unknown or externally modified state. Offline regression tests explicitly cover absent netmap, failed restart, generated-file rollback, foreign changes and symlinks. The host apply remains a separate, explicitly privileged action—never part of `--all` or `--prepare`.
 
+## Installed NORTH post-network gate
+
+After a successful privileged NORTH vmnet apply, use **one read-only command**
+that deliberately replaces the clean-host preflight (which must fail once the
+owned vmnets exist):
+
+```bash
+sudo -v
+bash scripts/course1-rollout.sh --installed "$PWD/workspace/<existing-instance>/provider"
+```
+
+It discovers all existing Python unit tests and the NORTH/GOAD source checks,
+then calls the root-owned committed transaction verifier through the **same
+Kingdoms VMware setup script**. The verifier refuses another instance ID, a
+modified or unowned VMware configuration, missing baseline backups, unresolved
+journals, invalid .254 interfaces, or disabled/mismatched systemd assets. It
+does not apply networking or start Vagrant. The original provider's NORTH
+guard calls this same verifier using non-interactive `sudo -n` before any
+Vagrant launch; operator sudo credentials must be primed. Full GOAD continues
+through the existing native lifecycle unchanged.
+
+This is a host setup acceptance check, **not** proof of AD, child trust,
+MSSQL, or Phase 03 readiness. Start the **existing** prepared instance only
+after the installed check returns green; do not create a second NORTH instance.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
