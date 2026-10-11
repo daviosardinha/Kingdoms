@@ -44,7 +44,7 @@ esac
 
 # The deployment entrypoint is deliberately unavailable while the native
 # shared provider still treats NORTH as an unwired source-only profile.
-# No child process, sudo request, VM/network action may precede this refusal.
+# No child process, privilege prompt, VM/network action may precede this refusal.
 if [[ "$MODE" == --deploy ]]; then
   echo '[BLOCKED] NORTH deployment remains disabled in the shared provider.' >&2
   echo '[NEXT] Finish and test the five runtime contracts before exposing deployment.' >&2
