@@ -202,19 +202,22 @@ def verify_hostaddr_asset_sources(layout, installed):
     return ("NORTH address helper, service and timer match the selected topology",)
 
 
-def inspect_live_hostaddr_assets(layout):
-    """Read-only persistent address repair proof; fail before any VM changes."""
-    targets = {
+def inspect_live_hostaddr_assets(layout, asset_paths=None, owner_uid=0):
+    """Read-only persistent repair proof (paths/uid injectable in offline tests)."""
+    targets = asset_paths if asset_paths is not None else {
         "helper": Path(HELPER),
         "service": Path("/etc/systemd/system") / SERVICE,
         "timer": Path("/etc/systemd/system") / TIMER,
     }
+    if set(targets) != {"helper", "service", "timer"}:
+        raise ValueError("Incomplete NORTH host-address asset paths")
     installed = {}
     for name, path in targets.items():
+        path = Path(path)
         if path.is_symlink() or not path.is_file():
             raise ValueError("NORTH host-address " + name + " is missing or unsafe")
         info = path.stat()
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != 0:
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != owner_uid:
             raise ValueError("NORTH host-address " + name + " ownership is unsafe")
         if stat.S_IMODE(info.st_mode) & 0o022:
             raise ValueError("NORTH host-address " + name + " is group/world writable")
