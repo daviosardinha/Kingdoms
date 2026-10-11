@@ -25,7 +25,7 @@ class Course1SourcePreflightTests(unittest.TestCase):
 
     def test_default_profile_has_every_prerequisite(self):
         evidence = validate_course1_source(self.root)
-        self.assertEqual(len(evidence), 4)
+        self.assertEqual(len(evidence), 5)
         self.assertIn("SOURCE PRECHECK PASS", evidence[-1])
 
     def test_postvagrant_missing_ws01_fails_early(self):
