@@ -67,6 +67,7 @@ def execute_testable_network_transaction(
     networking: Path,
     backup_root: Path,
     owner_record: Path,
+    provider_dir: Path,
     layout: dict,
     expected_original_sha256: str,
     restart_networks: Callable[[], None],
@@ -87,6 +88,10 @@ def execute_testable_network_transaction(
     networking = Path(networking)
     backup_root = Path(backup_root)
     owner_record = Path(owner_record)
+    provider_dir = Path(provider_dir)
+    if not provider_dir.is_absolute() or provider_dir.is_symlink() or not provider_dir.is_dir():
+        raise VmnetTransactionError("Course 1 provider identity is missing or unsafe")
+    provider_identity = str(provider_dir.resolve(strict=True))
     metadata = _plain_regular(networking)
     _safe_directory(networking.parent)
     _safe_directory(backup_root)
@@ -123,6 +128,7 @@ def execute_testable_network_transaction(
             raise VmnetTransactionError("VMware modified networking after verification")
         record = {
             "profile": "NORTH",
+            "provider": provider_identity,
             "network_base": layout["network_base"],
             "vmnets": {name: zone["vmnet"] for name, zone in layout["segments"].items()},
             "baseline_sha256": _digest(original),
