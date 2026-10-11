@@ -413,3 +413,12 @@ A provider and platform combination is supported only when all of the following 
   DNS/DC Locator guard before NORTH SRV02/WS01 domain joins. Canonical
   regression added, **Kali execution and live AD installation not yet proven**.
   Evidence and recovery contract: docs/course1-installer-reliability-audit-20261010.md.
+
+- [x] Repair live NORTH DNS guard native-stderr failure discovered 2026-10-11:
+  before child promotion, `nltest /dsgetdc:north.sevenkingdoms.local /force`
+  reports the expected missing-domain status 1355. PowerShell 5.1
+  `$ErrorActionPreference = 'Stop'` previously treated native stderr as a
+  terminating error before the scripted status handling. A bounded,
+  separate-stream process capture now accepts ONLY explicit 1355 absence,
+  while preserving strict parent/foreign-child lookup validation.
+  Dedicated regression coverage added; **Kali and live DC02 proof pending**.
