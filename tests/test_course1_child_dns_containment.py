@@ -255,7 +255,8 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertIn("north_member_other_interfaces[0].default_gateway", source)
         self.assertIn("NORTH member network evidence is ambiguous", source)
         self.assertIn("HasNat: \"{{ two_adapters | bool }}\"", source)
-        self.assertNotIn("Ethernet0'\n", source)
+        self.assertNotIn('adapter_names: "Ethernet0"', source)
+        self.assertNotIn('DomainAdapter: "Ethernet1"', source)
 
     def test_member_live_preflight_reuses_actual_role_dclocator_without_mutation(self):
         playbook = ROOT / "ansible/north-members-nic-preflight.yml"
