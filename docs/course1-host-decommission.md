@@ -459,3 +459,32 @@ findings with exact ownership evidence. Verify the abandoned
 delete only that named remote branch; preserve `main` and
 `rebuild/course1-from-kingdoms`. Do not purge reusable `~/.goad`
 tooling, unrelated caches or any other project resources without review.
+
+## 2026-10-11 final host scan: orphan user RDP units and ticket caches
+
+Post-cleanup `scripts/course1-cleanup-audit.py` read-only summary showed
+no installed Kingdoms workspace and `VMNET SETTINGS: none observed`.
+The separately performed `systemctl` scans found TWO enabled **user**
+service units: `kingdoms-phase03-rickon.service` and
+`kingdoms-rdp-bot.service`. Both source unit definitions from the retired
+NORTH branch launch Bash scripts under the deleted
+`%h/Documents/GOAD_NOMAD/scripts/`: respectively
+`phase03/rickon-headless.sh` and `rdp-bot-headless.sh`. As the original
+checkout has been removed, both are obsolete and potentially restart
+forever after login. Their actual user FragmentPath/ExecStart must be
+verified on Kali before removing them.
+
+Top-level home listing contains
+`Administrator@cifs_ws01.north.sevenkingdoms.local@NORTH.SEVENKINGDOMS.LOCAL.ccache`
+and `PHASE03RBCD$.ccache`: sensitive Kerberos ticket caches from the
+retired lab; user-approved hygiene should remove only those exact
+artifacts after verifying they are regular files and are not in use.
+`~/.goad` remains and may contain the Ansible/Python provisioning
+environment: preserve pending a dependency review. Keep
+`~/kingdoms-rebuild` and final audit JSON.
+
+Future acceptance: confirm user services disabled/unloaded, caches retired,
+zero custom vmnet/IP routes, no GOAD/NORTH running services/processes, empty
+VMware/Vagrant registries, and delete only the explicitly abandoned
+`feature/course1-reduced-profile-source` remote branch. This is the
+final host hygiene stage before the minimal Course 1 rebuild.
