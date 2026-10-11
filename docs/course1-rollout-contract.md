@@ -26,6 +26,10 @@ The Python unit tests now inject VMware restart, partial systemd activation, fai
 
 When future live acceptance is authorized, its reviewed `--north apply` workflow must be performed on the intended clean Kali host with explicit privilege and reconciled instance identity. It is **not** automatically invoked by `--all`, and it must not be confused with `--deploy`, which is still blocked.
 
+### VMware Workstation netmap compatibility
+
+The original GOAD host setup handles `/etc/vmware/netmap.conf` as **optional**. NORTH's native apply adapter must do the same. An absent file is not a host failure and must never be manufactured just to satisfy an installer prerequisite. If present, it must be a safe regular file and its bytes are backed up; if absent, rollback tracks VMware-created netmap state and refuses unknown or externally modified state. Offline regression tests explicitly cover absent netmap, failed restart, generated-file rollback, foreign changes and symlinks. The host apply remains a separate, explicitly privileged action—never part of `--all` or `--prepare`.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
