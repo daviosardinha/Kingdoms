@@ -31,6 +31,8 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         self.backups = root / "backups"
         self.backups.mkdir(mode=0o700)
         self.state = root / "owner.json"
+        self.provider = root / "kingdoms-instance" / "provider"
+        self.provider.mkdir(parents=True, mode=0o700)
         self.layout = load_course1_topology()
         self.expected = hashlib.sha256(BASELINE.encode()).hexdigest()
         self.calls = []
@@ -42,7 +44,7 @@ class Course1VmnetTransactionTests(unittest.TestCase):
             self.calls.append("verify")
         return execute_testable_network_transaction(
             self.networking, self.backups, self.state,
-            self.layout, digest or self.expected,
+            self.provider, self.layout, digest or self.expected,
             restart or default_restart, verify or default_verify,
         )
 
@@ -55,6 +57,7 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         self.assertEqual(self.calls, ["restart", "verify"])
         self.assertEqual(Path(record["backup"]).read_text(), BASELINE)
         self.assertEqual(json.loads(self.state.read_text()), record)
+        self.assertEqual(record["provider"], str(self.provider.resolve()))
         self.assertEqual(stat.S_IMODE(self.networking.stat().st_mode), 0o640)
         self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o600)
 
@@ -104,6 +107,13 @@ class Course1VmnetTransactionTests(unittest.TestCase):
             self.run_txn()
         self.assertEqual(self.networking.read_text(), BASELINE)
         self.assertEqual(self.state.read_text(), "foreign owner\n")
+
+    def test_missing_instance_provider_refuses_before_any_write(self):
+        self.provider.rename(self.provider.parent / "provider-old")
+        with self.assertRaisesRegex(VmnetTransactionError, "provider identity"):
+            self.run_txn()
+        self.assertEqual(self.networking.read_text(), BASELINE)
+        self.assertEqual(list(self.backups.iterdir()), [])
 
     def test_symlinked_networking_refuses_before_any_write(self):
         target = self.networking.with_suffix(".real")
