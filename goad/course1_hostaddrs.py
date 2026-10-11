@@ -7,7 +7,9 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import stat
 import subprocess
+from pathlib import Path
 
 from goad.kingdoms_topology import load_course1_topology, parse_vmnet_args
 
@@ -188,6 +190,51 @@ WantedBy=timers.target
     return {"helper": script, "service": service, "timer": timer}
 
 
+
+def verify_hostaddr_asset_sources(layout, installed):
+    """Reject stale/foreign helper and systemd unit bytes before guest startup."""
+    expected = render_hostaddr_assets(layout)
+    if set(installed) != set(expected):
+        raise ValueError("Incomplete NORTH host-address asset inventory")
+    for name in ("helper", "service", "timer"):
+        if installed[name] != expected[name]:
+            raise ValueError("NORTH host-address " + name + " differs from selected topology")
+    return ("NORTH address helper, service and timer match the selected topology",)
+
+
+def inspect_live_hostaddr_assets(layout):
+    """Read-only persistent address repair proof; fail before any VM changes."""
+    targets = {
+        "helper": Path(HELPER),
+        "service": Path("/etc/systemd/system") / SERVICE,
+        "timer": Path("/etc/systemd/system") / TIMER,
+    }
+    installed = {}
+    for name, path in targets.items():
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("NORTH host-address " + name + " is missing or unsafe")
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != 0:
+            raise ValueError("NORTH host-address " + name + " ownership is unsafe")
+        if stat.S_IMODE(info.st_mode) & 0o022:
+            raise ValueError("NORTH host-address " + name + " is group/world writable")
+        if name == "helper" and not (stat.S_IMODE(info.st_mode) & 0o100):
+            raise ValueError("NORTH host-address helper is not executable")
+        installed[name] = path.read_text(encoding="utf-8")
+    checked = verify_hostaddr_asset_sources(layout, installed)
+    for action, expected in (("is-enabled", "enabled"), ("is-active", "active")):
+        try:
+            result = subprocess.run(
+                ("systemctl", action, TIMER),
+                capture_output=True, text=True, check=False, timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError("Cannot inspect NORTH host-address timer") from exc
+        if result.returncode != 0 or result.stdout.strip() != expected:
+            raise ValueError("NORTH host-address timer must be " + expected)
+    return (*checked, "NORTH host-address persistence timer is enabled and active")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Read-only NORTH host-address preview")
     parser.add_argument("--live", action="store_true", help="Read-only host IPv4 verification")
@@ -199,12 +246,13 @@ def main():
         planned = hostaddr_plan(layout)
         planned["assets"] = sorted(render_hostaddr_assets(layout))
         if args.live:
-            for line in inspect_live_hostaddrs(layout):
+            for line in (*inspect_live_hostaddrs(layout),
+                         *inspect_live_hostaddr_assets(layout)):
                 print("[PASS] " + line)
             planned["mode"] = "READ-ONLY host inspection; no systemd changes"
         else:
             planned["mode"] = "READ-ONLY; no systemd service installed"
-    except (KeyError, ValueError) as exc:
+    except (KeyError, ValueError, OSError, UnicodeError) as exc:
         parser.error(str(exc))
     print(json.dumps(planned, sort_keys=True, indent=2))
 
