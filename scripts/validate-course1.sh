@@ -132,6 +132,38 @@ check_ruby_source() {
   ruby -c ad/GOAD/providers/vmware/Vagrantfile
 }
 
+# Offline three-vmnet preview; never read a live VMware baseline here.
+preview_offline_vmnet() {
+  python3 - "$@" <<'PY'
+import argparse
+import json
+import sys
+from goad.course1_vmnet_config import network_plan
+from goad.kingdoms_topology import parse_vmnet_args
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--network-base")
+parser.add_argument("--vmnet", action="append", default=[])
+args = parser.parse_args(sys.argv[1:])
+baseline = (
+    "VERSION=1,0\n"
+    "answer VNET_1_HOSTONLY_SUBNET 192.168.56.0\n"
+    "answer VNET_1_HOSTONLY_NETMASK 255.255.255.0\n"
+    "answer VNET_8_NAT yes\n"
+)
+result = network_plan(args.network_base, parse_vmnet_args(args.vmnet), baseline=baseline)
+if len(result["segment_settings"]) != 3:
+    raise SystemExit("Course 1 must define exactly three vmnets")
+print(json.dumps({
+    "network_base": result["network_base"],
+    "segment_settings": result["segment_settings"],
+    "baseline_sha256": result["baseline_sha256"],
+    "proposed_sha256": result["proposed_sha256"],
+    "mode": "OFFLINE; no VMware host configuration inspected or modified",
+}, sort_keys=True))
+PY
+}
+
 alternate=(--network-base 10.5.0.0/16
            --vmnet north=11 --vmnet sevenkingdoms=21
            --vmnet management=98)
@@ -170,10 +202,10 @@ stage "Default parent-domain route preview" \
   bash scripts/provisioning-routes.sh --north plan
 stage "Alternate parent-domain route preview" \
   bash scripts/provisioning-routes.sh --north plan "${alternate[@]}"
-stage "Default additive VMware vmnet configuration preview" \
-  bash scripts/setup-vmware-networks.sh --north plan
-stage "Alternate additive VMware vmnet configuration preview" \
-  bash scripts/setup-vmware-networks.sh --north plan "${alternate[@]}"
+stage "Default additive VMware vmnet configuration preview (offline)" \
+  preview_offline_vmnet
+stage "Alternate additive VMware vmnet configuration preview (offline)" \
+  preview_offline_vmnet "${alternate[@]}"
 stage "Default safe host .254 repair unit preview" \
   bash scripts/setup-vmware-networks.sh --north hostaddr-plan
 stage "Alternate safe host .254 repair unit preview" \
@@ -184,6 +216,8 @@ if (( SKIP_HOST )); then
 else
   # The clean-host gate must be LAST: it is expected to block once an
   # independently owned lab's vmnets exist. Never modify anything here.
+  stage "Read-only live VMware baseline configuration plan" \
+    bash scripts/setup-vmware-networks.sh --north plan
   stage "Live READ-ONLY clean-host vmnet/IP/VMX collision check" \
     python3 -m goad.course1_network_preflight
 fi
