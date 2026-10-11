@@ -194,3 +194,34 @@ be silently treated as one of the seven original VMs.
 
 No machine cleanup beyond the five disposable NORTH VMs and disabling
 the two timers is proved yet.
+
+## 2026-10-11 original Kingdoms orphan process identification
+
+The operator verified **all seven** original GOAD_NOMAD guests have no
+corresponding VMX on disk but remain in `vmrun -T ws list`, and mapped
+every one to a live `vmware-vmx` process by inspecting `/proc/PID/cmdline`.
+Every process points into the **exact**
+`~/Documents/GOAD_NOMAD/workspace/6fdd5a-goad-vmware/provider/.vagrant/machines`
+tree; this is not the new `~/kingdoms-rebuild` checkout:
+
+- GOAD-ROUTER PID 3305649
+- GOAD-DC01 PID 3309414
+- GOAD-DC02 PID 3320884
+- GOAD-DC03 PID 3332796
+- GOAD-SRV02 PID 3342712
+- GOAD-WS01 PID 3396827
+- GOAD-SRV03 PID 3404884
+
+PIDs are **observational, not permanent identities**: revalidate both
+`/proc/<pid>/cmdline` and expected missing VMX, ensure exactly seven
+expected and no foreign VM, then signal those specific processes.
+Prefer TERM first, wait boundedly, and use KILL only for processes still
+verified as those exact original-orphan identities. Never `killall
+vmware-vmx`, `pkill vmware`, or stop `vmware.service` globally.
+
+The SQL clone at `~/vmware/KINGDOMS-SQL-CLONE/` is a separately
+registered VM and is **not** one of these seven orphan PIDs. The previous
+`GOAD_NOMAD_fresh` Vagrant registry references have no surviving
+provider directory. After confirming orphan shutdown, separately audit
+VMware registry and Vagrant index, dedicated host services/timers,
+vmnet10/11/12/13/20/30/99, firewall rules, and user-owned leftovers.
