@@ -75,10 +75,14 @@ class LabInstances:
 
     @staticmethod
     def _is_goad_nomad_segmented(instance):
-        return instance.lab_name == 'GOAD' and instance.provider_name == VMWARE
+        return instance.lab_name in ('GOAD', 'NORTH') and instance.provider_name == VMWARE
 
     def _network_scope(self, instance):
         if self._is_goad_nomad_segmented(instance):
+            if instance.lab_name == 'NORTH':
+                # The instance owns a segmented /16, not the legacy flat /24.
+                # Keep its configured base visible even before install acceptance.
+                return instance.ip_range + '.0/16 (segmented)'
             return self.GOAD_NOMAD_NETWORK_SCOPE
         return instance.ip_range + '.0/24'
 
