@@ -1,4 +1,7 @@
-"""Course 1's reduced source must match original GOAD minus Essos only.
+"""Course 1 must match Kingdoms main scenario data, with Essos omitted only.
+
+The legacy ad/GOAD directory below is part of the Kingdoms repository, not an
+upstream GOAD checkout. Runtime and lifecycle are Kingdoms-engine contracts.
 
 These checks are deliberately offline. Passing never authorizes a live
 Vagrant/Ansible install while the shared provider is still six-host-only.
@@ -117,7 +120,7 @@ class Course1MinimalProfileTests(unittest.TestCase):
         self.assertEqual(ansible.count("domain_name == 'NORTH'"), 2)
         self.assertIn("../ad/GOAD/scripts", ansible)
 
-    def test_working_goad_baseline_is_not_replaced(self):
+    def test_working_kingdoms_full_scenario_is_not_replaced(self):
         vagrant = (GOAD / "providers/vmware/Vagrantfile").read_text()
         self.assertIn('GOAD-DC03', vagrant)
         self.assertIn('GOAD-SRV03', vagrant)
