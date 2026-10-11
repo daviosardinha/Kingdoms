@@ -277,3 +277,50 @@ rendering only. The existing Kingdoms instance generator, host vmnet
 services, provisioning routes and lifecycle still need to consume the
 rendered artifacts. The explicit NORTH install/start guard remains in
 place and must **not** be removed yet.
+
+## 2026-10-11 — Kali 70/70 source acceptance; existing instance generator integration
+
+Kali screenshot verified **70 tests passed in 0.342s**. The source
+preflight produced five PASS messages, including exact AD/inventory
+membership and Vagrant/router topology. The standalone renderer
+produced five artifact PASS messages for the alternate
+`10.5.0.0/16` example. **No VMs or host VMware networks were modified.**
+
+The NEXT integration step is now committed into
+`goad/instance.py`, the **existing Kingdoms `LabInstance` creator**:
+
+- Source integrity and default topology rendering are checked **before**
+  the first instance workspace directory is created.
+- New NORTH instances normalize the legacy default flat setting
+  `192.168.56` into `10.4.0` instance metadata. The full GOAD/
+  Kingdoms instance configuration is unchanged.
+- Exactly the canonical five artifacts feed the existing generated
+  Vagrantfile, provider inventory, post-Vagrant inventory, and
+  instance-scoped router bootstrap/exercise nft policy. The Vagrantfile
+  refers to its new local `router/provision.sh`, not the global source
+  path, so a future selected network is instance-bound.
+- Only the NORTH+VMware branch uses the new render path; all other labs
+  keep the original template/instance generation unchanged.
+- A nondefault `10.5.0` or other alternate `ip_range` currently
+  **fails BEFORE workspace creation**, because instance-scoped vmnet ID
+  persistence, source route policies and collision gates are not yet
+  installed. The 10.5 offline preview is still supported but is NOT
+  yet install enabled.
+- The full Kingdoms VMware Jinja template condition is broadened from
+  `GOAD` to `GOAD` or `NORTH`, preserving all GOAD output while making
+  NORTH use the already hardened WinRM/VMrun and bounded halt behavior.
+- Existing `goad/instances.py` now displays NORTH as segmented /16
+  instead of misleading flat /24, while preserving full GOAD display.
+
+Eight new `tests/test_course1_instance_generation.py` cases validate
+default/alternate instance metadata, failure before directory creation,
+four-host generated Vagrant/inventory/router consistency, inherited
+Kingdoms hardened Jinja output, and both network-scope displays.
+
+**Acceptance stage: source-only integration.** The new eight tests have
+not yet run on Kali. Neither the shared Kingdoms vmnet-creation scripts,
+runtime routing, installed lifecycle controller nor the NORTH Ansible
+playbook sequence consumes the selected renderer output end-to-end yet.
+The `_course1_unwired` NORTH install/start/reset/Ansible guard remains
+active, and no deployment should be attempted. The host owner should
+run the new tests before the next wiring phase.
