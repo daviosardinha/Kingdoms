@@ -201,7 +201,7 @@ class Course1HostAddressTests(unittest.TestCase):
         for name in ("helper", "service", "timer"):
             with self.subTest(name=name):
                 tampered = dict(self.assets)
-                tampered[name] += "# unexpected change\\n"
+                tampered[name] += "# unexpected change\n"
                 with self.assertRaisesRegex(ValueError, "differs"):
                     verify_hostaddr_asset_sources(self.layout, tampered)
         with self.assertRaisesRegex(ValueError, "Incomplete"):
@@ -215,8 +215,8 @@ class Course1HostAddressTests(unittest.TestCase):
                 file.write_text(self.assets[name], encoding="utf-8")
                 file.chmod(0o755 if name == "helper" else 0o644)
             good = [
-                subprocess.CompletedProcess([], 0, stdout="enabled\\n", stderr=""),
-                subprocess.CompletedProcess([], 0, stdout="active\\n", stderr=""),
+                subprocess.CompletedProcess([], 0, stdout="enabled\n", stderr=""),
+                subprocess.CompletedProcess([], 0, stdout="active\n", stderr=""),
             ]
             with patch("goad.course1_hostaddrs.subprocess.run", side_effect=good) as run:
                 result = inspect_live_hostaddr_assets(
@@ -228,8 +228,8 @@ class Course1HostAddressTests(unittest.TestCase):
                     ("systemctl", "is-active", TIMER),
                 ])
             inactive = [
-                subprocess.CompletedProcess([], 0, stdout="enabled\\n", stderr=""),
-                subprocess.CompletedProcess([], 3, stdout="inactive\\n", stderr=""),
+                subprocess.CompletedProcess([], 0, stdout="enabled\n", stderr=""),
+                subprocess.CompletedProcess([], 3, stdout="inactive\n", stderr=""),
             ]
             with patch("goad.course1_hostaddrs.subprocess.run", side_effect=inactive):
                 with self.assertRaisesRegex(ValueError, "must be active"):
