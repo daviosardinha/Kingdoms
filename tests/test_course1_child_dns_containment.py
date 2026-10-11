@@ -208,6 +208,7 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
             ([lab], False, True),
             ([lab, nat], True, True),
             ([lab, nat, {**nat, "connection_name": "Ethernet2"}], True, False),
+            ([lab, {"connection_name": "Ethernet2"}], False, False),
             ([nat], False, False),
             ([], False, False),
         ):
@@ -225,6 +226,7 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
                                north_member_other_interfaces=other_matches)
                 topology_ok = (
                     len(lab_matches) == 1 and len(other_matches) <= 1 and
+                    len(interfaces) == len(lab_matches) + len(other_matches) and
                     bool(lab_matches[0].get("connection_name")) and
                     (len(other_matches) == 0 or
                      (bool(other_matches[0].get("connection_name")) and
@@ -252,6 +254,7 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertIn("ansible_interfaces | selectattr", source)
         self.assertIn("ansible_host", source)
         self.assertIn("north_member_other_interfaces | length <= 1", source)
+        self.assertIn("ansible_interfaces | length == (north_member_lab_interfaces | length + north_member_other_interfaces | length)", source)
         self.assertIn("north_member_other_interfaces[0].default_gateway", source)
         self.assertIn("NORTH member network evidence is ambiguous", source)
         self.assertIn("HasNat: \"{{ two_adapters | bool }}\"", source)
