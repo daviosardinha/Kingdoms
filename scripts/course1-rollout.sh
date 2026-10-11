@@ -77,8 +77,12 @@ try:
     kingdoms = source("goad/provider/vagrant/vmware_kingdoms.py")
     nomad = source("goad/provider/vagrant/vmware_nomad.py")
     validator = source("scripts/validate-course1.sh")
+    vmware_apply = source("goad/course1_host_network_apply.py")
+    asset_install = source("goad/course1_hostaddr_install.py")
     ast.parse(transaction)
     ast.parse(hostaddr)
+    ast.parse(vmware_apply)
+    ast.parse(asset_install)
     ast.parse(kingdoms)
     ast.parse(nomad)
 except (RuntimeError, SyntaxError, OSError) as exc:
@@ -88,18 +92,21 @@ except (RuntimeError, SyntaxError, OSError) as exc:
 print("\n============================================================")
 print("COURSE 1 — ALL FIVE ENGINEERING AND ACCEPTANCE GATES")
 print("============================================================")
-transaction_source = "execute_testable_network_transaction" in transaction
-hostaddr_source = "render_hostaddr_assets" in hostaddr
+transaction_source = ("execute_testable_network_transaction" in transaction
+                      and "execute_testable_network_transaction(" in vmware_apply)
+hostaddr_source = ("render_hostaddr_assets" in hostaddr
+                   and "install_owned_address_assets" in asset_install
+                   and "install_owned_address_assets(" in vmware_apply)
 unwired = "def _course1_unwired(self):" in kingdoms
 native_profile = "return self.lab_name in ('GOAD', 'NORTH')" in nomad
 complete_validation = "unittest discover -s tests -p 'test_*.py'" in validator
 items = (
     ("[01] VMware transaction + restart/rollback",
      "SOURCE READY / LIVE APPLY BLOCKED" if transaction_source else "SOURCE MISSING",
-     "No reviewed live VMware/netmap callback adapter and real rollback acceptance"),
+     "Shared NORTH apply adapter wired; disposable-host VMware/netmap rollback acceptance pending"),
     ("[02] Managed .254 systemd persistence",
      "ASSET RENDERER READY / INSTALL BLOCKED" if hostaddr_source else "SOURCE MISSING",
-     "No verified ownership-aware helper/service/timer installation transaction"),
+     "Owned helper/service/timer transaction wired; live persistence acceptance pending"),
     ("[03] Existing NORTH provider and installer",
      "NATIVE DISPATCH WIRED / INSTALL GUARDED" if native_profile and unwired else "REVIEW REQUIRED",
      "NORTH uses Kingdoms methods; pending host-network ownership and live lifecycle acceptance"),
