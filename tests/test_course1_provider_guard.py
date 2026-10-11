@@ -1,8 +1,10 @@
 """Prove full Kingdoms stays unchanged and unwired NORTH cannot boot."""
 import ast
+import os
 from pathlib import Path
+import subprocess
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from goad.kingdoms_topology import load_course1_topology
 
@@ -118,6 +120,46 @@ class UnsafeInstallGuardTests(unittest.TestCase):
         self.assertIs(provider.set_runtime_mode("exercise"), False)
         self.assertIs(provider.prepare_install(), False)
         self.assertIs(provider.prepare_provisioning(), False)
+        self.assertEqual(provider.calls, [])
+
+    def test_north_unblocks_only_after_its_read_only_owner_attestation_passes(self):
+        cli = Mock()
+        cls = load_class("goad/provider/vagrant/vmware_kingdoms.py",
+                         "GoadKingdomsVmwareProvider", {
+                             "GoadNomadVmwareProvider": GuardBase,
+                             "Log": Mock(),
+                             "os": os, "subprocess": subprocess,
+                         })
+        provider = cls()
+        provider.path = "/fake/kingdoms/north/provider"
+        provider._script = Mock(return_value="/fake/scripts/setup-vmware-networks.sh")
+        with patch("subprocess.run", return_value=subprocess.CompletedProcess(
+                [], 0, stdout="[PASS] verified", stderr="")) as run:
+            self.assertFalse(provider._course1_unwired())
+            self.assertTrue(provider.start())
+        provider._script.assert_called_with("setup-vmware-networks.sh")
+        expected = [
+            "sudo", "-n", "bash", "/fake/scripts/setup-vmware-networks.sh",
+            "--north", "verify", "--provider-dir",
+            "/fake/kingdoms/north/provider",
+        ]
+        self.assertEqual(run.call_args.args[0], expected)
+        self.assertEqual(run.call_args.kwargs["timeout"], 45)
+        self.assertIn("start", provider.calls)
+
+    def test_north_rejects_failed_owner_attestation_before_any_vm_change(self):
+        cls = load_class("goad/provider/vagrant/vmware_kingdoms.py",
+                         "GoadKingdomsVmwareProvider", {
+                             "GoadNomadVmwareProvider": GuardBase,
+                             "Log": Mock(), "os": os, "subprocess": subprocess,
+                         })
+        provider = cls()
+        provider.path = "/fake/kingdoms/north/provider"
+        provider._script = Mock(return_value="/fake/scripts/setup-vmware-networks.sh")
+        with patch("subprocess.run", return_value=subprocess.CompletedProcess(
+                [], 1, stdout="", stderr="owner missing")):
+            self.assertTrue(provider._course1_unwired())
+            self.assertFalse(provider.start())
         self.assertEqual(provider.calls, [])
 
     def test_other_provider_start_still_delegates_normally(self):
