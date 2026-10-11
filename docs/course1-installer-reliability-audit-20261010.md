@@ -347,3 +347,57 @@ isolation are still outstanding. No VMware recreation is indicated.
 is confirmed green, resume `install --non-interactive` against preserved
 instance `6ca91b-north-vmware`. Observe the promotion and local DC proof;
 on failure stop rather than manually modifying AD or the reference lab.
+
+## NORTH member DNS guard failure after successful AD creation (2026-10-11)
+
+Source: actual repeated `ad-members.yml` output from the preserved instance
+`6ca91b-north-vmware`. All four Windows guests were powered on through
+the existing Vagrant/WinRM provider in 47 seconds. The parent and child
+domain playbooks progressed through promotion. During `ad-members.yml`:
+
+- SRV02 successfully passed NORTH child DNS containment, joined or confirmed
+  membership, synchronized using the domain time hierarchy, discovered
+  WINTERFELL at 10.41.10.11, and passed both Netlogon and secure-channel
+  checks.
+- WS01 passed the domain NIC DNS task but failed configuring nonexistent
+  `Ethernet0` through `ansible.windows.win_dns_client`: Windows returned
+  `No MSFT_NetAdapter objects found with property 'Name' equal to 'Ethernet0'`.
+  The playbook retried four times, failing at the same stage.
+- Provider compensating cleanup removed the temporary NORTH provisioning
+  route and applied router exercise policy. Windows NAT and complete
+  exercise isolation remain **UNVERIFIED**. Measured attempt: 26m02s
+  end-to-end (25m14s Ansible, including 6m36s on failed `ad-members.yml`).
+
+**Root cause in source:** the inherited `ansible/data.yml` detects
+`domain_adapter`, `nat_adapter`, and `two_adapters` from the `dc01`
+fact collection using `run_once`. Both NORTH member roles previously
+reused those source-scoped values; a two-NIC DC01 does not establish
+that every Windows guest has `Ethernet0`. WS01's reported actual Windows
+adapter list does not contain that alias; its existence must not be
+fabricated by reconfiguring VMware.
+
+**NORTH-only remedy:** at the *start* of the member guard role on EACH
+host, derive the exercise NIC by exact match against that host's
+`ansible_host`, and count OTHER IPv4 NICs. Assert there is exactly one
+exercise NIC and no more than one other with a named interface and
+default gateway. Set `domain_adapter`, `nat_adapter`, and
+`two_adapters` as this member's host-local facts before DNS
+configuration and before the legacy member/workstation role. Apply NAT
+DNS only if a verified NAT NIC exists. The DC Locator proof always
+checks the exercise NIC; checks NAT too when present, and still requires
+the exact own-child IP 10.41.10.11. The original GOAD data reader and
+AD member roles remain unchanged.
+
+A committed read-only smoke `ansible/north-members-nic-preflight.yml`
+verifies SRV02 and WS01's actual NIC topology and invokes the identical
+production member DNS/DC Locator proof; it does **not** configure DNS,
+join a domain, reboot, or modify VMs (the proof clears each guest's
+volatile DNS cache). Run this BEFORE another full installation attempt.
+Any unexpected interface, unrecognized DNS, or foreign DC result must
+stop the process.
+
+Acceptance outstanding: Kali regression and Ansible syntax, live
+NIC smoke against actual SRV02/WS01, idempotent `ad-members.yml`,
+WS01 child domain join and authenticated network profile, final
+NORTH AD/SQL/Phase03 and exercise isolation. Never mark lab READY
+from SRV02-only completion.
