@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from goad.course1_host_network_apply import apply, inspect_installed_north, NorthSetupError
+from goad.course1_host_network_apply import (apply, diagnose_installed_north, inspect_installed_north, NorthSetupError)
 from goad.course1_vmnet_journal import inspect_vmnet_journals
 
 BASE = (
@@ -285,6 +285,78 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
             runtime.main()
         root.assert_called_once_with()
         check.assert_called_once_with(str(self.provider))
+        apply_vmware.assert_not_called()
+
+    def diagnose(self):
+        return diagnose_installed_north(
+            self.provider, networking=self.networking, owner=self.owner,
+            backups=self.backups, owner_uid=os.getuid(),
+        )
+
+    def test_readonly_diagnose_matches_committed_networking(self):
+        self.launch()
+        before = self.networking.read_bytes()
+        report = self.diagnose()
+        self.assertTrue(report["exact_match"])
+        self.assertEqual(report["vmnet_topology"], "PASS")
+        self.assertEqual(report["diff"], [])
+        self.assertEqual(self.networking.read_bytes(), before)
+
+    def test_readonly_diagnose_reports_post_vmware_foreign_key_without_rebasing_owner(self):
+        self.launch()
+        initial = self.owner.read_bytes()
+        self.networking.write_text(
+            self.networking.read_text()
+            + "answer VNET_1_HOSTONLY_HOSTADDR 192.168.56.1\\n"
+        )
+        report = self.diagnose()
+        self.assertFalse(report["exact_match"])
+        self.assertEqual(report["vmnet_topology"], "PASS")
+        self.assertIn("answer VNET_1_HOSTONLY_HOSTADDR", "\\n".join(report["diff"]))
+        self.assertEqual(self.owner.read_bytes(), initial)
+
+    def test_readonly_diagnose_flags_protected_vmnet_change(self):
+        self.launch()
+        text = self.networking.read_text()
+        self.assertIn("answer VNET_20_VIRTUAL_ADAPTER no", text)
+        self.networking.write_text(text.replace(
+            "answer VNET_20_VIRTUAL_ADAPTER no",
+            "answer VNET_20_VIRTUAL_ADAPTER yes",
+        ))
+        report = self.diagnose()
+        self.assertFalse(report["exact_match"])
+        self.assertTrue(report["vmnet_topology"].startswith("FAIL:"))
+        self.assertIn("VNET_20_VIRTUAL_ADAPTER", "\\n".join(report["diff"]))
+
+    def test_readonly_diagnose_blocks_other_instance(self):
+        self.launch()
+        foreign = self.root / "different-provider"
+        foreign.mkdir()
+        with self.assertRaisesRegex(NorthSetupError, "different instance"):
+            diagnose_installed_north(
+                foreign, networking=self.networking, owner=self.owner,
+                backups=self.backups, owner_uid=os.getuid(),
+            )
+
+    def test_diagnose_cli_never_calls_network_apply(self):
+        import sys
+        import goad.course1_host_network_apply as runtime
+        healthy = {
+            "owned_sha256": self.sha,
+            "observed_sha256": "0" * 64,
+            "exact_match": False,
+            "vmnet_topology": "PASS",
+            "diff": ["+answer VNET_1_X changed"],
+            "diff_truncated": False,
+        }
+        with patch.object(sys, "argv", ["north-host", "diagnose", "--provider-dir",
+                                        str(self.provider)]), \
+             patch.object(runtime, "require_explicit_root"), \
+             patch.object(runtime, "diagnose_installed_north", return_value=healthy), \
+             patch.object(runtime, "apply") as apply_vmware:
+            with self.assertRaises(SystemExit) as error:
+                runtime.main()
+        self.assertEqual(error.exception.code, 2)
         apply_vmware.assert_not_called()
 
     def test_no_implicit_host_apply_in_one_command_validator(self):
