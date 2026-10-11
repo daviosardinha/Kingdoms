@@ -517,7 +517,7 @@ if (
         VMware Tools and the expected KINGDOMS IP are healthy, stale host-side
         telemetry must not trigger unnecessary Tools reinstall/reboot recovery.
         """
-        if self.lab_name != 'GOAD' or machine not in self.goad_nomad_windows:
+        if self.lab_name not in ('GOAD', 'NORTH') or machine not in self.goad_nomad_windows:
             return super()._ensure_vmware_tools(machine)
 
         previous = getattr(self, '_tools_reporting_context', None)
@@ -697,7 +697,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Start one installed guest, plus its router dependency when needed."""
         if self._course1_unwired():
             return False
-        if self.lab_name != 'GOAD':
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().start_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
             Log.error(f'GOAD Kingdoms: unknown instance machine: {vm_name}')
@@ -707,7 +707,9 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def stop_vm(self, vm_name):
         """Stop one instance guest locally; preserve routing for live Windows."""
-        if self.lab_name != 'GOAD':
+        if self._course1_unwired():
+            return False
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
             Log.error(f'GOAD Kingdoms: unknown instance machine: {vm_name}')
@@ -728,7 +730,9 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     def stop(self):
         """Shut down members, then DCs, then the router without Vagrant NAT."""
-        if self.lab_name != 'GOAD':
+        if self._course1_unwired():
+            return False
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop()
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
             Log.error('GOAD Kingdoms: an earlier Vagrant controller was not reaped; refusing concurrent VM changes')
@@ -846,7 +850,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """
         if self._course1_unwired():
             return False
-        if self.lab_name != 'GOAD':
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().reset()
 
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
@@ -905,7 +909,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
         if self._course1_unwired():
             return False
-        if self.lab_name != 'GOAD':
+        if self.lab_name not in ('GOAD', 'NORTH'):
             return super().install()
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
             Log.error('GOAD Kingdoms: previous Vagrant cleanup is incomplete; refusing guest bring-up')
@@ -1454,7 +1458,7 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         """
         profile = getattr(self, '_kingdoms_install_profile', None)
         return (
-            self.lab_name == 'GOAD'
+            self.lab_name in ('GOAD', 'NORTH')
             and self.get_runtime_mode() == 'unknown'
             and isinstance(profile, dict)
             and profile.get('provider_success') is True
