@@ -6,6 +6,7 @@ import time
 import winrm
 
 from goad.goadpath import GoadPath
+from goad.kingdoms_topology import load_course1_topology
 from goad.log import Log
 from goad.provider.vagrant.vmware import VmwareProvider
 
@@ -33,6 +34,24 @@ class GoadNomadVmwareProvider(VmwareProvider):
         'GOAD-SRV03': '10.4.30.23',
         'GOAD-WS01': '10.4.10.31',
     }
+
+    def __init__(self, lab_name):
+        # Keep the original, validated Kingdoms GOAD class defaults untouched.
+        # The reduced Course 1 uses the same provider, changing *only* its
+        # per-instance topology inputs; no alternative provider or installer.
+        super().__init__(lab_name)
+        if lab_name == 'NORTH':
+            topology = load_course1_topology()
+            self.goad_nomad_windows = list(topology['windows'])
+            self.management_hosts = {
+                name: spec['address']
+                for name, spec in topology['windows'].items()
+            }
+            self.network_scope = topology['network_base'] + ' (segmented)'
+            self.network_zones = tuple(
+                (zone.upper(), segment['vmnet'], segment['cidr'])
+                for zone, segment in topology['segments'].items()
+            )
 
     def is_goad_nomad_segmented(self):
         return self.lab_name == 'GOAD'
