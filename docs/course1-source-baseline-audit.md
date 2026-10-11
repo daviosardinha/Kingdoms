@@ -187,3 +187,53 @@ Next gate: adapt the **existing provider** to profile-driven input and
 create a `NORTH:` manifest based on the GOAD sequence, then validate
 all templates and lifecycle behavior offline before ever starting Vagrant.
 Do not invoke `./goad.sh` to install NORTH until that stage passes.
+
+## Implementation checkpoint — original Kingdoms provider receives Course 1 topology inputs
+
+We added `ad/NORTH/topology.json`, a **single declarative planning
+source** for the four existing Windows guests and three retained routing
+segments, and the read-only `goad/kingdoms_topology.py` resolver. It
+derives the exact guest/gateway/host addresses and VMware vmnet mapping
+for default `10.4.0.0/16`; an explicit custom allocation can preview
+`10.5.0.0/16`, e.g.:
+
+```bash
+python3 -m goad.kingdoms_topology
+python3 -m goad.kingdoms_topology --network-base 10.5.0.0/16 \
+  --vmnet north=11 --vmnet sevenkingdoms=21 --vmnet management=98
+```
+
+The **existing** `GoadNomadVmwareProvider` constructor loads this
+profile **only when `lab_name == NORTH`**, initializing per-instance
+four-host roster, management IP map, and network-zone metadata.
+The GOAD/Kingdoms full-lab class defaults are not mutated and retain the
+original six-host/four-zone behavior. No new VMware provider class,
+installer, NIC handler, or lifecycle framework was introduced.
+
+Importantly, this is still **source and provider-metadata integration**
+rather than end-to-end deployment readiness. The existing networking
+helpers, Vagrant template, router scripts, route operations, lifecycle
+program and Windows Ansible group references are not yet parameterized
+from this model for all network bases. To prevent accidental 30-minute
+failures, `GoadKingdomsVmwareProvider` temporarily **refuses NORTH
+install/start/guest start/reset/prepare_install/Ansible provisioning**
+before any Vagrant or Windows action. The full Kingdoms profile remains
+operational via the unchanged runtime paths.
+
+The reduced Vagrant router slot definition was also corrected to have
+exactly three lab NIC PCI-slot assignments (Essos' fourth has gone).
+
+Regression sources added:
+- `tests/test_course1_topology.py`: nine pure topology /16, alternate
+  prefix, address, protection and vmnet identity tests.
+- `tests/test_course1_provider_guard.py`: five class-level tests for
+  original six-host preservation, reduced instance roster and blocked
+  incomplete NORTH lifecycle.
+
+**Required next work:** render selected network settings into Vagrant,
+both Ansible inventories, VMnet preflight/setup, router bootstrap,
+network routes, nftables policies, MAC identity, and lifecycle scripts;
+wire a Course 1 playbook manifest retaining the exact Kingdoms
+provisioning cadence; run the full existing Kingdoms regression suite.
+Only after all these gates pass may the temporary Course 1 install guard
+be removed. Until then, never attempt a live NORTH install.
