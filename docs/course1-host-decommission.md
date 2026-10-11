@@ -410,3 +410,26 @@ Once stale registry cleanup is completed and VMware remains usable,
 repeat the global host audit for systemd/cron/routing/firewall leftovers
 and delete the abandoned GitHub feature branch. The initial registry
 cleanup is **not yet executed**.
+
+## 2026-10-11 — VMware Workstation GUI closed; stale library cleanup prepared
+
+After encountering a safety block (the running VMware GUI used executable
+`/usr/lib/vmware/bin/appLoader`, not the literal `vmware` path), the
+operator verified PID `2233180` owned by `stark`, VM count zero,
+and closed that precise process with TERM. Final operator evidence:
+no `vmware` or `vmware-vmx` process, `vmrun -T ws list`
+**Total running VMs: 0**.
+
+A dedicated two-stage inventory file tool is committed at
+`scripts/course1-cleanup-vmware-library.py` with four source regression
+cases under `tests/test_course1_cleanup_vmware_library.py`. It matches
+exactly GOAD original hosts and the deleted SQL clone, and only slots
+`vmlist4` through `vmlist11`; refuses existing VMX files, mismatching
+slots, any VMware GUI/guest process or active VMs. It backs up
+`~/.vmware/inventory.vmls` before an atomic replacement, preserving
+all other VMware inventory properties/entries.
+
+**Status:** The live Kali execution of these four tests, `plan`, and
+`apply --confirm` is PENDING. Do not claim VMware registry clean yet.
+Run the plan and confirm the eight explicit registrations before apply.
+The Vagrant registry already reports no active environments after prune.
