@@ -113,11 +113,14 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertEqual(len(plays), 1)
         self.assertEqual(plays[0]["hosts"], "dc02")
         tasks = plays[0]["tasks"]
-        self.assertEqual(len(tasks), 4)
-        ps = tasks[-1]["ansible.windows.win_powershell"]
+        self.assertEqual(len(tasks), 5)
+        ps = tasks[3]["ansible.windows.win_powershell"]
         self.assertIn("north_dns_containment.yml", ps["script"])
         self.assertIn("from_yaml", ps["script"])
-        self.assertEqual(tasks[-1]["changed_when"], False)
+        self.assertEqual(tasks[3]["changed_when"], False)
+        self.assertEqual(tasks[3]["register"], "north_dns_proof")
+        self.assertEqual(tasks[4]["ansible.builtin.debug"]["var"],
+                         "north_dns_proof.output")
         self.assertIn("hostvars['dc01'].ansible_host", str(ps["parameters"]))
         self.assertIn("hostvars['dc02'].ansible_host", str(ps["parameters"]))
         self.assertNotIn("win_dns_client", probe.read_text(encoding="utf-8"))
