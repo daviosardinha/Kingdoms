@@ -536,6 +536,12 @@ Examples:
 
 def _dispatch_task(goad, args):
     """Preserve the stock goad.py non-interactive task behaviour."""
+    # Fail before loading any existing instance for the source-only path.
+    if args.task == 'prepare-north' and (
+            args.instance is not None or args.run_playbook is not None
+            or args.ansible_only is not None):
+        Log.error('prepare-north accepts no instance or provisioning override')
+        return 1
     if args.instance is not None:
         goad.do_load(args.instance)
 
@@ -545,9 +551,6 @@ def _dispatch_task(goad, args):
             return 1
 
     if args.task == 'prepare-north':
-        if args.instance is not None:
-            Log.error('prepare-north does not accept an existing instance (-i)')
-            return 1
         return 0 if goad.do_prepare_north() else 1
     if args.task == 'install':
         if args.instance is not None:
