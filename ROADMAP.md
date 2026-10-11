@@ -421,4 +421,8 @@ A provider and platform combination is supported only when all of the following 
   terminating error before the scripted status handling. A bounded,
   separate-stream process capture now accepts ONLY explicit 1355 absence,
   while preserving strict parent/foreign-child lookup validation.
-  Dedicated regression coverage added; **Kali and live DC02 proof pending**.
+  Dedicated regression coverage added. A narrowly scoped, non-provisioning
+  `ansible/north-child-dns-preflight.yml` exercises the exact production
+  PowerShell guard on the existing DC02 without DNS reconfiguration, AD
+  promotion or reboot (it clears only the volatile DNS cache).
+  **Kali and live DC02 proof pending**.
