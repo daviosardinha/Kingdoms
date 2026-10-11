@@ -568,3 +568,30 @@ service and rollback without corrupting foreign networks. The full
 Kingdoms setup remains available through the unchanged legacy path,
 and the NORTH Vagrant/Ansible/install/start/reset guard remains active.
 Exercise-mode lifecycle is also still pending.
+
+## 2026-10-11 — vmnet 45-test run stopped at test-module syntax error
+
+The operator pulled the three-vmnet planning changes and attempted the
+45-test network/route suite. `unittest` stopped during **module import**
+with `SyntaxError: unterminated string literal` at
+`tests/test_course1_vmnet_config.py` line 138. No tests ran: this is
+a damaged generated test file, not a VMware configuration failure.
+The committed file contained a truncated
+`test_original_kingdoms_check_script_preserved_with_explicit_north`
+assertion, followed by duplicated and mispositioned test code/footer.
+
+Commit `8c77e6caf11768dea2afb1d75d6b21c09500c7b5` restored the
+tail from that test method onward. The file now has exactly **16 test
+methods** and one normal module footer. The repaired fragment's
+Python AST was independently checked, but the **complete 45-test run
+is not yet confirmed on Kali**. No production source, VMware networking,
+route or systemd behavior changed in this corrective commit.
+
+Before retrying the suite, compile both new modules to catch syntax
+problems without executing tests:
+```bash
+python3 -m py_compile tests/test_course1_vmnet_config.py goad/course1_vmnet_config.py
+```
+Continue with the same non-mutating 45-test validation and
+`--north plan` plus read-only ownership preflight after compile passes.
+NORTH installation remains blocked.
