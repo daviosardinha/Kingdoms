@@ -99,8 +99,10 @@
         # nonzero result with its exact missing-domain evidence. Never
         # treat timeouts, access failures or foreign DC answers as safe.
         $childError = "$($childLookup.Stdout) $($childLookup.Stderr)"
-        if ($childStatus -notin @(1, 1355) -or
-            $childError -notmatch 'Status\s*=\s*1355\b' -or
+        # The native process exit value varies by nltest build; the
+        # freshly captured Windows status and symbolic error MUST both
+        # prove 1355. We are already in the nonzero-exit branch.
+        if ($childError -notmatch 'Status\s*=\s*1355\b' -or
             $childError -notmatch 'ERROR_NO_SUCH_DOMAIN') {
           throw "NORTH DNS containment: unexpected child lookup error (code=$childStatus)"
         }
