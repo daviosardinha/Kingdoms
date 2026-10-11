@@ -41,7 +41,7 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
         self.events = []
         self.sha = hashlib.sha256(BASE.encode()).hexdigest()
 
-    def launch(self, vmware_behavior=None, extra=None):
+    def launch(self, vmware_behavior=None, extra=None, hostaddr_check=None):
         import goad.course1_host_network_apply as runtime
         def fake_command(*args, **kw):
             self.events.append(tuple(map(str, args)))
@@ -112,6 +112,76 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
         self.assertEqual(self.netmap.read_text(), "ORIGINAL_NETMAP\n")
         self.assertTrue(all(not p.exists() for p in self.paths.values()))
         self.assertTrue(any(item[:2] == ("systemctl", "disable") for item in self.events))
+
+    def test_absent_netmap_is_normal_and_no_dummy_file_is_created(self):
+        self.netmap.unlink()
+        installed = self.launch()
+        self.assertEqual(installed["profile"], "NORTH")
+        self.assertFalse(self.netmap.exists())
+        self.assertTrue(self.owner.is_file())
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"], "COMMITTED")
+
+    def test_absent_netmap_restart_failure_restores_original_networking(self):
+        self.netmap.unlink()
+        starts = []
+        def fail_first_start(args):
+            if args[:2] == (str(self.vmware), "--start"):
+                starts.append(1)
+                if len(starts) == 1:
+                    raise NorthSetupError("simulated startup failure")
+        with self.assertRaisesRegex(RuntimeError, "failed safely"):
+            self.launch(vmware_behavior=fail_first_start)
+        self.assertEqual(self.networking.read_text(), BASE)
+        self.assertFalse(self.netmap.exists())
+        self.assertFalse(self.owner.exists())
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"], "ROLLED_BACK")
+
+    def test_vmware_generated_netmap_is_removed_only_when_owned_during_rollback(self):
+        self.netmap.unlink()
+        starts = []
+        def create_on_first_start(args):
+            if args[:2] == (str(self.vmware), "--start"):
+                starts.append(1)
+                if len(starts) == 1:
+                    self.netmap.write_text("VMWARE_CREATED_MAP\\n")
+        def fail_addr(*args, **kwargs):
+            raise RuntimeError("deliberately fail address verification")
+        with self.assertRaisesRegex(RuntimeError, "failed safely"):
+            self.launch(vmware_behavior=create_on_first_start, hostaddr_check=fail_addr)
+        self.assertEqual(self.networking.read_text(), BASE)
+        self.assertFalse(self.netmap.exists())
+        self.assertFalse(self.owner.exists())
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"], "ROLLED_BACK")
+
+    def test_foreign_netmap_change_after_restart_blocks_unsafe_rollback(self):
+        self.netmap.unlink()
+        starts = []
+        def create_or_change_on_restart(args):
+            if args[:2] == (str(self.vmware), "--start"):
+                starts.append(1)
+                if len(starts) == 1:
+                    self.netmap.write_text("VMWARE_CREATED_MAP\\n")
+            elif args[:2] == (str(self.vmware), "--stop") and starts:
+                self.netmap.write_text("FOREIGN_MAP_CHANGE\\n")
+        def fail_addr(*args, **kwargs):
+            raise RuntimeError("verify failed")
+        with self.assertRaisesRegex(RuntimeError, "network restart failed"):
+            self.launch(vmware_behavior=create_or_change_on_restart,
+                        hostaddr_check=fail_addr)
+        self.assertEqual(self.netmap.read_text(), "FOREIGN_MAP_CHANGE\\n")
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"], "MANUAL_RECONCILIATION")
+
+    def test_symlinked_netmap_is_refused_without_host_writes(self):
+        self.netmap.unlink()
+        target = self.root / "foreign-netmap"
+        target.write_text("UNRELATED\\n")
+        self.netmap.symlink_to(target)
+        with self.assertRaisesRegex(NorthSetupError, "symlink"):
+            self.launch()
+        self.assertEqual(target.read_text(), "UNRELATED\\n")
+        self.assertEqual(self.networking.read_text(), BASE)
+        self.assertFalse(self.backups.exists())
+        self.assertFalse(self.owner.exists())
 
     def test_bad_digest_refuses_before_any_vmware_restart(self):
         self.sha = "0" * 64
