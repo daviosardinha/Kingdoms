@@ -977,6 +977,13 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         # The host has no vmnet20/vmnet30 adapters, so local Ansible must
         # temporarily reach those protected networks through GOAD-ROUTER after
         # Vagrant has brought the complete instance up.
+        if self.lab_name == 'NORTH':
+            # Native reduced topology has exactly one parent-domain route.
+            # Do not run the GOAD helper that adds an Essos route.
+            if not self._enable_provisioning_routes():
+                return False
+            return True
+
         route_script = GoadPath.get_script_file('provisioning-routes.sh')
         if not os.path.isfile(route_script):
             Log.error(f'GOAD_NOMAD provisioning route helper not found: {route_script}')
@@ -1389,16 +1396,24 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
 
             # VMware can recreate the host interfaces during power-on. Repair
             # synchronously, then validate before using the router's .1 address.
+            hostaddr_service = (
+                'kingdoms-north-vmnet-hostaddrs.service'
+                if self.lab_name == 'NORTH'
+                else 'goad-nomad-vmnet-hostaddrs.service'
+            )
             repair = subprocess.run(
                 ['sudo', '-n', 'systemctl', 'restart',
-                 'goad-nomad-vmnet-hostaddrs.service'],
+                 hostaddr_service],
                 check=False, timeout=50,
             )
             checker = self._script('check-vmware-networks.sh')
             ssh = self._script('router-ssh.sh')
             if repair.returncode != 0 or checker is None or ssh is None:
                 return False
-            if subprocess.run(['bash', checker], check=False, timeout=30).returncode != 0:
+            check_args = ['bash', checker]
+            if self.lab_name == 'NORTH':
+                check_args.extend(('--north', '--live'))
+            if subprocess.run(check_args, check=False, timeout=30).returncode != 0:
                 return False
 
             Log.info('GOAD Kingdoms: waiting for router management SSH at 10.4.99.1:22')
