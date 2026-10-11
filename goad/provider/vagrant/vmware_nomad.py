@@ -192,6 +192,25 @@ class GoadNomadVmwareProvider(VmwareProvider):
         if route_script is None:
             return False
 
+        if self.lab_name == 'NORTH':
+            # Use the same Kingdoms script, explicitly selecting its reduced
+            # one-route mode and binding ownership to THIS instance directory.
+            # The install/lifecycle guard still blocks NORTH until all runtime
+            # dependencies (vmnets, router policy and AD lifecycle) are ready.
+            if self.path is None:
+                Log.error('Course 1 route owner cannot be identified')
+                return False
+            result = subprocess.run(
+                ['sudo', '-n', 'bash', route_script, '--north', 'enable',
+                 '--provider-dir', os.path.realpath(str(self.path))],
+                check=False,
+            )
+            if result.returncode != 0:
+                Log.error('Course 1: protected parent-zone route was not enabled')
+                return False
+            Log.success('Course 1: instance-owned parent-zone route ready')
+            return True
+
         result = subprocess.run(
             ['sudo', 'bash', route_script, 'enable'],
             check=False,
