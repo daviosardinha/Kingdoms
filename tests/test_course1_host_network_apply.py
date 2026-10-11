@@ -68,6 +68,19 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
                 library=self.root / "inventory.vmls", vmware_networks=self.vmware,
             )
 
+    def test_vmware_restart_counts_second_callback_as_rollback(self):
+        import goad.course1_host_network_apply as runtime
+        restart = runtime.VMwareNetworkRestart(
+            self.netmap, self.netmap.read_bytes(), self.netmap.stat(),
+            executable=self.vmware,
+        )
+        with patch.object(runtime, "run_command", return_value=None):
+            restart()
+            self.assertEqual(restart.calls, 1)
+            restart()
+            self.assertEqual(restart.calls, 2)
+        self.assertEqual(self.netmap.read_text(), "ORIGINAL_NETMAP\\n")
+
     def test_full_owned_setup_uses_existing_transaction_with_three_vmnets(self):
         installed = self.launch()
         text = self.networking.read_text()
