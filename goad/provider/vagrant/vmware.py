@@ -344,7 +344,7 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
             # Vagrantfile. Never import WS01 or MAC/network assumptions from
             # the six-guest GOAD compatibility migration.
             expected = ('GOAD-DC01', 'GOAD-DC02', 'GOAD-SRV02', 'GOAD-WS01', 'GOAD-ROUTER')
-            if any(text.count('GOAD-DC03') or text.count('GOAD-SRV03') for _ in (0,)):
+            if 'GOAD-DC03' in text or 'GOAD-SRV03' in text:
                 Log.error('Course 1 Vagrantfile includes a retired Essos machine')
                 return False
             if any(text.count(name) == 0 for name in expected):
