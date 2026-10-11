@@ -158,3 +158,35 @@ an already installed forest with identical AD FQDNs.
 
 **Acceptance gate currently OPEN:** source-design phase only. No Course 1
 installation or provisioning changes have been made by this audit.
+
+## Implementation checkpoint — reduced profile source created
+
+The first new, **source-only** Course 1 profile now exists at `ad/NORTH`.
+It was derived from unchanged `ad/GOAD`, not the deleted experimental
+feature branch, and contains:
+
+- Four retained Windows hosts plus router in the VMware Vagrantfile.
+- Two retained AD domain definitions and pruned domain/provider inventories.
+- A three-segment Debian router bootstrap and original policy style,
+  retaining only North-to-parent DC forwarding in exercise mode.
+- CASTELBLACK SQL link to BRAAVOS, parent Essos trust, cross-forest group
+  member, and KINGSLANDING `sidhistory.ps1` (which actually runs
+  `netdom trust ... /d:essos.local`) removed from Course 1.
+- Original GOAD PowerShell scripts referenced from the existing
+  `ansible/vulnerabilities.yml` for `domain_name == NORTH`;
+  GOAD still uses its original per-lab script directory unchanged.
+  No cloned/offshoot lesson script implementations.
+
+`tests/test_course1_minimal_profile_source.py` contains nine focused
+source regressions verifying the exact GOAD-minus-Essos data delta,
+inventories, Vagrant roster, router policy, source scripts and original
+GOAD preservation. A separate static GitHub source pass verified eleven
+required files and source invariants.
+
+**IMPORTANT: NOT YET INSTALLABLE.** This source profile is intentionally
+not wired to a `NORTH:` playbook manifest. The existing segmented
+provider still contains six-host/GOAD-name/10.4-network assumptions.
+Next gate: adapt the **existing provider** to profile-driven input and
+create a `NORTH:` manifest based on the GOAD sequence, then validate
+all templates and lifecycle behavior offline before ever starting Vagrant.
+Do not invoke `./goad.sh` to install NORTH until that stage passes.
