@@ -232,9 +232,37 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
                 foreign, networking=self.networking, owner=self.owner,
                 backups=self.backups, owner_uid=os.getuid(), inspect_host=False,
             )
-        self.networking.write_text(self.networking.read_text() + "# changed\n")
-        with self.assertRaisesRegex(NorthSetupError, "differs from owned"):
+        self.networking.write_text(self.networking.read_text().replace(
+            "answer VNET_20_VIRTUAL_ADAPTER no",
+            "answer VNET_20_VIRTUAL_ADAPTER yes",
+        ))
+        with self.assertRaisesRegex(ValueError, "mismatch"):
             self.attest()
+
+    def test_attest_accepts_vmware_rewrite_without_changing_committed_owner(self):
+        extended = (
+            BASE
+            + "answer VNET_8_HOSTONLY_SUBNET 192.168.213.0\n"
+            + "answer VNET_8_HOSTONLY_NETMASK 255.255.255.0\n"
+            + "answer VNET_8_DHCP_CFG_HASH " + "A" * 40 + "\n"
+        )
+        self.networking.write_text(extended)
+        self.sha = hashlib.sha256(extended.encode()).hexdigest()
+        self.launch()
+        before_owner = self.owner.read_bytes()
+        before_journal = inspect_vmnet_journals(self.backups)
+        current = self.networking.read_text()
+        current = current.replace("A" * 40, "B" * 40)
+        current = current.replace(
+            "answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\n", "")
+        current = current.replace(
+            "answer VNET_99_HOSTONLY_HOSTADDR 10.4.99.254\n", "")
+        current += "add_nat_portfwd 8 tcp 55985 192.168.213.244 5985\n"
+        self.networking.write_text(current)
+        proofs = self.attest()
+        self.assertEqual(len(proofs), 2)
+        self.assertEqual(self.owner.read_bytes(), before_owner)
+        self.assertEqual(inspect_vmnet_journals(self.backups), before_journal)
 
     def test_owner_attestation_rejects_untrusted_record(self):
         self.launch()
