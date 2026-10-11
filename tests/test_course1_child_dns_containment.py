@@ -105,6 +105,25 @@ class NorthChildDnsContainmentTests(unittest.TestCase):
         self.assertNotIn("$ErrorActionPreference = 'Continue'", script)
         self.assertNotIn("-ErrorAction SilentlyContinue", script)
 
+    def test_live_preflight_reuses_exact_guard_without_dns_changes_or_ad_promotion(self):
+        probe = ROOT / "ansible/north-child-dns-preflight.yml"
+        plays = self.load(probe)
+        self.assertEqual(len(plays), 1)
+        self.assertEqual(plays[0]["hosts"], "dc02")
+        tasks = plays[0]["tasks"]
+        self.assertEqual(len(tasks), 4)
+        ps = tasks[-1]["ansible.windows.win_powershell"]
+        self.assertIn("north_dns_containment.yml", ps["script"])
+        self.assertIn("from_yaml", ps["script"])
+        self.assertEqual(tasks[-1]["changed_when"], False)
+        self.assertIn("hostvars['dc01'].ansible_host", str(ps["parameters"]))
+        self.assertIn("hostvars['dc02'].ansible_host", str(ps["parameters"]))
+        self.assertNotIn("win_dns_client", probe.read_text(encoding="utf-8"))
+        self.assertNotIn("Install-ADDSDomain", str(ps))
+        self.assertNotIn("win_reboot:", probe.read_text(encoding="utf-8"))
+        self.assertNotIn("include_tasks:", probe.read_text(encoding="utf-8"))
+        self.assertEqual(plays[0]["gather_facts"], True)
+
     def test_north_promotion_uses_local_machine_state_not_foreign_directory(self):
         tasks = self.load(PROMOTION)
         promotion = tasks[0]["ansible.windows.win_powershell"]["script"]
