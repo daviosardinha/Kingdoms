@@ -182,7 +182,7 @@ def apply(provider_dir, reviewed_sha256, networking=NETWORKING, netmap=NETMAP,
             inspect_live_hostaddr_assets(layout)
         lease = install_owned_address_assets(
             layout, paths, systemd_activate, systemd_disable,
-            systemd_reload, verify_addr, owner_uid=0,
+            systemd_reload, verify_addr, owner_uid=os.geteuid(),
         )
 
     try:
