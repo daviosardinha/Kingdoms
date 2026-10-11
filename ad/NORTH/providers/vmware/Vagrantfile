@@ -82,8 +82,7 @@ boxes = [
       "ethernet0.pcislotnumber" => "160",
       "ethernet1.pcislotnumber" => "224",
       "ethernet2.pcislotnumber" => "256",
-      "ethernet3.pcislotnumber" => "1184",
-      "ethernet4.pcislotnumber" => "1216"
+      "ethernet3.pcislotnumber" => "1184"
     },
     :vmware_network_adapters => [
       { :slot => 1, :vnet => "vmnet10", :mac => "00:50:56:10:10:01" },
