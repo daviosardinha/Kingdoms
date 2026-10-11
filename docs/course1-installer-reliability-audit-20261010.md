@@ -380,7 +380,9 @@ fabricated by reconfiguring VMware.
 host, derive the exercise NIC by exact match against that host's
 `ansible_host`, and count OTHER IPv4 NICs. Assert there is exactly one
 exercise NIC and no more than one other with a named interface and
-default gateway. Set `domain_adapter`, `nat_adapter`, and
+default gateway, and that **every Windows fact-reported adapter is
+accounted for**. An unaddressed/IPv6-only/unexpected adapter is rejected
+rather than silently assuming it cannot use foreign DNS. Set `domain_adapter`, `nat_adapter`, and
 `two_adapters` as this member's host-local facts before DNS
 configuration and before the legacy member/workstation role. Apply NAT
 DNS only if a verified NAT NIC exists. The DC Locator proof always
