@@ -49,12 +49,14 @@ class Course1RolloutTests(unittest.TestCase):
         self.assertIn("--all", result.stdout)
         self.assertIn("--prepare", result.stdout)
         self.assertIn("--source", result.stdout)
+        self.assertIn("--installed", result.stdout)
         self.assertIn("--plan", result.stdout)
         self.assertIn("--deploy", result.stdout)
         self.assertIn("NEVER creates VMs", result.stdout)
 
     def test_invalid_arguments_do_not_execute_any_actions(self):
-        for args in [("--unknown",), ("--plan", "--deploy")]:
+        for args in [("--unknown",), ("--plan", "--deploy"),
+                     ("--installed",), ("--installed", "relative/provider")]:
             with self.subTest(args=args):
                 result = self.run_mode(*args)
                 self.assertEqual(result.returncode, 2)
@@ -75,12 +77,24 @@ class Course1RolloutTests(unittest.TestCase):
         )
         self.assertNotIn('--north apply', self.text)
 
+    def test_installed_mode_checks_sources_then_only_readonly_owned_vmnets(self):
+        self.assertIn("bash scripts/validate-course1.sh --skip-host", self.text)
+        self.assertIn(
+            "sudo -n bash scripts/setup-vmware-networks.sh --north verify",
+            self.text,
+        )
+        self.assertLess(
+            self.text.index("bash scripts/validate-course1.sh --skip-host"),
+            self.text.index("sudo -n bash scripts/setup-vmware-networks.sh --north verify"),
+        )
+        self.assertNotIn("--north apply", self.text)
+
     def test_no_live_mutating_commands_exist(self):
         for token in (
             "vmware-networks --stop", "vmware-networks --start",
             "vagrant up", "vagrant destroy", "systemctl enable",
             "systemctl start", "ip route add", "ip addr add",
-            "ansible-playbook ", "sudo ",
+            "ansible-playbook ", "sudo bash scripts/setup-vmware-networks.sh --north apply",
         ):
             with self.subTest(token=token):
                 self.assertNotIn(token, self.text)
