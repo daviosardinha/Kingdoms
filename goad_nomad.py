@@ -235,6 +235,16 @@ class GoadNomad(BaseGoad):
         if self.lab_manager.get_current_instance() is not None:
             Log.error('A lab instance is already selected; refusing to create another')
             return False
+        # Rerunning --prepare must never accumulate duplicate NORTH instances.
+        existing = [
+            instance_id
+            for instance_id, item in self.lab_manager.lab_instances.instances.items()
+            if item.lab_name == 'NORTH' and item.provider_name == 'vmware'
+        ]
+        if existing:
+            Log.error('NORTH is already registered; use its existing instance: '
+                      + ', '.join(sorted(existing)))
+            return False
         if not self.lab_manager.create_instance():
             Log.error('NORTH source-only instance preparation failed')
             return False
