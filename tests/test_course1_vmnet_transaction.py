@@ -10,7 +10,7 @@ from pathlib import Path
 from goad.course1_vmnet_transaction import (
     VmnetTransactionError, execute_testable_network_transaction,
 )
-from goad.course1_vmnet_journal import inspect_vmnet_journals
+from goad.course1_vmnet_journal import (VmnetJournalError, exclusive_vmnet_lock, inspect_vmnet_journals)
 from goad.kingdoms_topology import load_course1_topology
 
 BASELINE = (
@@ -38,7 +38,7 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         self.expected = hashlib.sha256(BASELINE.encode()).hexdigest()
         self.calls = []
 
-    def run_txn(self, restart=None, verify=None, digest=None):
+    def run_txn(self, restart=None, verify=None, digest=None, preflight=None):
         def default_restart():
             self.calls.append("restart")
         def default_verify():
@@ -47,7 +47,29 @@ class Course1VmnetTransactionTests(unittest.TestCase):
             self.networking, self.backups, self.state,
             self.provider, self.layout, digest or self.expected,
             restart or default_restart, verify or default_verify,
+            preflight=preflight,
         )
+
+    def test_locked_live_preflight_blocks_foreign_vm_before_any_host_write(self):
+        def foreign_guest():
+            raise RuntimeError("VMware foreign VM started after the plan preview")
+        with self.assertRaisesRegex(RuntimeError, "foreign VM"):
+            self.run_txn(preflight=foreign_guest)
+        self.assertEqual(self.networking.read_text(), BASELINE)
+        self.assertEqual(list(self.backups.glob("north-*")), [])
+        self.assertFalse(self.state.exists())
+        self.assertEqual(self.calls, [])
+
+    def test_live_preflight_runs_under_the_global_vmnet_lock(self):
+        calls = []
+        def verify_stable_host():
+            with self.assertRaisesRegex(VmnetJournalError, "owns the lock"):
+                with exclusive_vmnet_lock(self.backups):
+                    pass
+            calls.append("preflight")
+        self.run_txn(preflight=verify_stable_host)
+        self.assertEqual(calls, ["preflight"])
+        self.assertEqual(self.calls, ["restart", "verify"])
 
     def test_success_preserves_foreign_config_and_records_backup(self):
         record = self.run_txn()
