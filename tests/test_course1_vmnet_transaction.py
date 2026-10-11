@@ -10,6 +10,7 @@ from pathlib import Path
 from goad.course1_vmnet_transaction import (
     VmnetTransactionError, execute_testable_network_transaction,
 )
+from goad.course1_vmnet_journal import inspect_vmnet_journals
 from goad.kingdoms_topology import load_course1_topology
 
 BASELINE = (
@@ -60,13 +61,16 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         self.assertEqual(record["provider"], str(self.provider.resolve()))
         self.assertEqual(stat.S_IMODE(self.networking.stat().st_mode), 0o640)
         self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o600)
+        history = inspect_vmnet_journals(self.backups)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["state"], "COMMITTED")
 
     def test_outdated_reviewed_hash_never_changes_anything(self):
         with self.assertRaisesRegex(VmnetTransactionError, "changed after plan"):
             self.run_txn(digest="bad-hash")
         self.assertEqual(self.networking.read_text(), BASELINE)
         self.assertFalse(self.state.exists())
-        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertEqual(list(self.backups.glob("north-*")), [])
 
     def test_failed_restart_restores_original_and_retains_backup(self):
         def fail_restart():
@@ -78,7 +82,9 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         self.assertEqual(self.networking.read_text(), BASELINE)
         self.assertEqual(self.calls, ["restart", "restart"])
         self.assertFalse(self.state.exists())
-        self.assertEqual(len(list(self.backups.iterdir())), 1)
+        self.assertEqual(len(list(self.backups.glob("north-*"))), 1)
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"],
+                         "ROLLED_BACK")
 
     def test_failed_verification_restores_original_without_owner_record(self):
         def fail_verify():
@@ -97,9 +103,11 @@ class Course1VmnetTransactionTests(unittest.TestCase):
             self.run_txn(verify=foreign_edit_then_fail)
         self.assertEqual(self.networking.read_text(), "FOREIGN CHANGE\n")
         self.assertFalse(self.state.exists())
-        folders = list(self.backups.iterdir())
+        folders = list(self.backups.glob("north-*"))
         self.assertEqual(len(folders), 1)
         self.assertEqual((folders[0] / "networking.original").read_text(), BASELINE)
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"],
+                         "MANUAL_RECONCILIATION")
 
     def test_existing_owner_record_blocks_another_transaction(self):
         self.state.write_text("foreign owner\n")
@@ -113,7 +121,7 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(VmnetTransactionError, "provider identity"):
             self.run_txn()
         self.assertEqual(self.networking.read_text(), BASELINE)
-        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertEqual(list(self.backups.glob("north-*")), [])
 
     def test_symlinked_networking_refuses_before_any_write(self):
         target = self.networking.with_suffix(".real")
@@ -122,7 +130,32 @@ class Course1VmnetTransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(VmnetTransactionError, "regular file"):
             self.run_txn()
         self.assertEqual(target.read_text(), BASELINE)
-        self.assertEqual(list(self.backups.iterdir()), [])
+        self.assertEqual(list(self.backups.glob("north-*")), [])
+
+    def test_incomplete_prior_journal_blocks_next_attempt(self):
+        first = self.backups / "north-deadbeef-stale"
+        first.mkdir(mode=0o700)
+        (first / "journal.json").write_text(json.dumps({
+            "state": "WRITTEN", "provider": str(self.provider),
+            "backup": str(first / "networking.original"),
+            "baseline_sha256": self.expected,
+            "proposed_sha256": "a" * 64,
+        }))
+        with self.assertRaisesRegex(RuntimeError, "manual ownership reconciliation"):
+            self.run_txn()
+        self.assertEqual(self.networking.read_text(), BASELINE)
+        self.assertEqual(len(list(self.backups.glob("north-*"))), 1)
+
+    def test_previous_clean_rollback_does_not_block_retry(self):
+        def fail_verify():
+            raise RuntimeError("simulate temporary vmnet failure")
+        with self.assertRaisesRegex(VmnetTransactionError, "failed safely"):
+            self.run_txn(verify=fail_verify)
+        self.assertEqual(inspect_vmnet_journals(self.backups)[0]["state"],
+                         "ROLLED_BACK")
+        result = self.run_txn()
+        self.assertEqual(result["profile"], "NORTH")
+        self.assertEqual(self.networking.read_text().count("VNET_10_DHCP no"), 1)
 
     def test_transaction_module_has_no_host_apply_entrypoint(self):
         file = Path(__file__).resolve().parents[1] / "goad/course1_vmnet_transaction.py"
