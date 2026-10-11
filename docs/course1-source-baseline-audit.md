@@ -513,3 +513,58 @@ configuration, routes or guests were changed. **Kali confirmation
 pending**: rerun the 29 tests, `bash -n` and read-only NORTH route
 `plan` before proceeding to host-vmnet/exercise-lifecycle work.
 The NORTH install/start guard remains in effect.
+
+## 2026-10-11 — Kali 29/29 route acceptance; additive NORTH VMware network plan
+
+Kali screenshot confirms **29/29 route/network-preflight/provider-dispatch
+tests PASS** in 0.021 seconds. The read-only shared Kingdoms
+`scripts/provisioning-routes.sh --north plan` confirms exactly
+`10.4.20.0/24 via 10.4.10.1 dev vmnet10`, host address
+`10.4.10.254/24`, and Linux protocol 186. This does **not** mean the
+route has been installed.
+
+The next source-only checkpoint extends the **existing** Kingdoms
+`scripts/setup-vmware-networks.sh` and
+`scripts/check-vmware-networks.sh` with an explicit `--north`
+dispatcher. Source comparison against Kingdoms `main` confirms the
+original full-lab setup and check script bodies remain **byte-for-byte
+identical** after the dispatcher.
+
+`goad/course1_vmnet_config.py` is a pure, read-only planner, using
+`ad/NORTH/topology.json` for three requested host-side vmnets only:
+
+- vmnet10 North `10.4.10.0/24`: host-visible .254, DHCP/NAT off
+- vmnet20 Seven Kingdoms `10.4.20.0/24`: NO host adapter, DHCP/NAT off
+- vmnet99 Management `10.4.99.0/24`: host-visible .254, DHCP/NAT off
+
+It preserves every line of the existing VMware networking file,
+appending only the three Course 1 segments. It rejects any requested
+vmnet ID already configured, foreign VMware subnet overlaps, malformed
+subnets, or an exposed Seven Kingdoms host adapter. The same model can
+**preview** alternate 10.X ranges with distinct vmnet numbers.
+The `--north check` command validates only the config-level desired
+state (exact DHCP, NAT, subnet, netmask and host-adapter policy) and
+does NOT assert the live Linux interfaces or persistence service exists.
+
+**Only these commands are implemented and safe to run now:**
+
+```bash
+python3 -m unittest tests.test_course1_vmnet_config
+bash -n scripts/setup-vmware-networks.sh
+bash -n scripts/check-vmware-networks.sh
+bash scripts/setup-vmware-networks.sh --north plan
+python3 -m goad.course1_network_preflight
+```
+
+The new regression module has **16 tests**, not yet executed on Kali.
+`scripts/check-vmware-networks.sh --north` should be used **only
+after** managed vmnets have been installed; a missing configuration
+is expected to block now.
+
+**No mutating NORTH vmnet setup action is enabled yet**: the next
+engineering gate must implement owned-only changes, exact VMware
+config backup/atomic apply/restart verification, address-persistence
+service and rollback without corrupting foreign networks. The full
+Kingdoms setup remains available through the unchanged legacy path,
+and the NORTH Vagrant/Ansible/install/start/reset guard remains active.
+Exercise-mode lifecycle is also still pending.
