@@ -55,6 +55,8 @@ def load_course1_topology(network_base=None, vmnets=None, manifest_path=MANIFEST
         raise ValueError("Invalid vmnet ID (default VMware vmnet1/vmnet8 are reserved)")
     if len(ids) != len(set(ids)):
         raise ValueError("Multiple Course 1 segments cannot share a VMware vmnet")
+    if subnet != default and set(ids) & set(defaults.values()):
+        raise ValueError("Alternate /16 may not reuse default Kingdoms vmnet10/20/99 IDs")
 
     second_octet = subnet.network_address.packed[1]
     segments = {}
