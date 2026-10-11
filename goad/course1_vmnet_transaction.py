@@ -16,6 +16,9 @@ from pathlib import Path
 from typing import Callable
 
 from goad.course1_vmnet_config import render_vmnet_config
+from goad.course1_vmnet_journal import (
+    exclusive_vmnet_lock, require_reconciled, record_journal,
+)
 
 
 class VmnetTransactionError(RuntimeError):
@@ -73,6 +76,25 @@ def execute_testable_network_transaction(
     restart_networks: Callable[[], None],
     verify_live_networks: Callable[[], None],
 ) -> dict:
+    """Own the global lock across plan recheck, write, restart and verify."""
+    with exclusive_vmnet_lock(backup_root):
+        require_reconciled(backup_root)
+        return _execute_transaction_locked(
+            networking, backup_root, owner_record, provider_dir, layout,
+            expected_original_sha256, restart_networks, verify_live_networks,
+        )
+
+
+def _execute_transaction_locked(
+    networking: Path,
+    backup_root: Path,
+    owner_record: Path,
+    provider_dir: Path,
+    layout: dict,
+    expected_original_sha256: str,
+    restart_networks: Callable[[], None],
+    verify_live_networks: Callable[[], None],
+) -> dict:
     """Execute a single, callback-driven atomic transaction on testable paths.
 
     Safety contract:
@@ -116,13 +138,27 @@ def execute_testable_network_transaction(
         output.flush()
         os.fsync(output.fileno())
 
+    journal = {
+        "state": "PREPARED",
+        "provider": provider_identity,
+        "baseline_sha256": _digest(original),
+        "proposed_sha256": _digest(proposed),
+        "backup": str(backup),
+    }
+    record_journal(backup_folder, journal)
     changed = False
+    owner_created = False
+    record = None
     try:
         if networking.read_bytes() != original:
             raise VmnetTransactionError("VMware config changed during backup")
         _atomic_bytes(networking, proposed, metadata)
         changed = True
+        journal["state"] = "WRITTEN"
+        record_journal(backup_folder, journal)
         restart_networks()
+        journal["state"] = "VERIFYING"
+        record_journal(backup_folder, journal)
         verify_live_networks()
         if networking.read_bytes() != proposed:
             raise VmnetTransactionError("VMware modified networking after verification")
@@ -141,12 +177,27 @@ def execute_testable_network_transaction(
             json.dump(record, output, sort_keys=True)
             output.flush()
             os.fsync(output.fileno())
+        owner_created = True
+        journal["state"] = "COMMITTED"
+        record_journal(backup_folder, journal)
         return record
     except Exception as original_error:
+        if owner_created:
+            # Remove only the exact record THIS transaction just created.
+            expected = json.dumps(record, sort_keys=True)
+            if owner_record.is_symlink() or owner_record.read_text(encoding="utf-8") != expected:
+                journal["state"] = "MANUAL_RECONCILIATION"
+                record_journal(backup_folder, journal)
+                raise VmnetTransactionError(
+                    "Owner record changed concurrently; refusing unsafe rollback"
+                ) from original_error
+            owner_record.unlink()
         if changed:
-            # Do not destroy changes made by VMware or another administrator.
-            # Save the backup for manual diagnosis if exact restoration is unsafe.
+            # VMware or another administrator may have modified the file.
+            # Never overwrite their changes just to claim successful rollback.
             if networking.read_bytes() != proposed:
+                journal["state"] = "MANUAL_RECONCILIATION"
+                record_journal(backup_folder, journal)
                 raise VmnetTransactionError(
                     f"Concurrent/VMware mutation detected; original preserved at {backup}; "
                     "refusing unsafe automatic rollback"
@@ -155,9 +206,13 @@ def execute_testable_network_transaction(
             try:
                 restart_networks()
             except Exception as restore_error:
+                journal["state"] = "MANUAL_RECONCILIATION"
+                record_journal(backup_folder, journal)
                 raise VmnetTransactionError(
                     f"Configuration restored but network restart failed; backup: {backup}"
                 ) from restore_error
+        journal["state"] = "ROLLED_BACK"
+        record_journal(backup_folder, journal)
         raise VmnetTransactionError(
             f"VMware setup transaction failed safely; backup preserved at {backup}"
         ) from original_error
