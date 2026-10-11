@@ -272,3 +272,40 @@ that can discover another forest with the same domain names.
 
 Do not modify the original reference environment, manually create child
 DNS records, manually join the old forest, or start a duplicate instance.
+
+## Live run 2026-10-11 — expected child-domain absence raised as PowerShell error
+
+On the preserved NORTH instance, the first three Ansible playbooks
+(`build.yml`, `ad-servers.yml`, `ad-parent_domain.yml`) completed
+successfully. DC02's `Ethernet0` VMware NAT DNS was pinned to the current
+parent DC; the pre-promotion containment task then stopped four successive
+`ad-child_domain.yml` attempts **before** Install-ADDSDomain.
+
+The specific error was `nltest.exe /dsgetdc:north.sevenkingdoms.local
+/force` returning `Status = 1355 0x54b ERROR_NO_SUCH_DOMAIN` on a
+not-yet-created child domain. This is the **expected absence** state for a
+new child forest; the original `$ErrorActionPreference = 'Stop'` plus
+PowerShell 5.1's native stderr handling emitted a terminating
+`NativeCommandError` before the script could inspect `$LASTEXITCODE`.
+The parent DC identity checks earlier in the same task did not raise.
+
+NORTH-only remediation: run `nltest.exe` via a bounded .NET
+`System.Diagnostics.Process` capture of separate stdout/stderr streams,
+with explicit exit-code handling. Parent discovery still MUST succeed
+and return exactly the current parent DC IP. Child discovery MUST either
+return the exact current NORTH child DC address **and** verified local DC
+state, or return a nonzero `nltest` status explicitly indicating 1355
+`ERROR_NO_SUCH_DOMAIN`. All other statuses, timeouts and foreign addresses
+remain fatal; never disable global PowerShell error handling or skip DNS
+containment. The reference GOAD tasks and VMnet configuration remain unchanged.
+
+The provider correctly removed the temporary host route and applied
+restrictive router forwarding after the four attempts. Windows NAT/exercise
+isolation remains UNVERIFIED and this installed NORTH instance is NOT READY.
+
+**Validation remaining:** execute the new 12-case
+`tests.test_course1_child_dns_containment` and full expected 388-case
+offline source suite from GitHub on Kali. These are source contracts, not
+live PowerShell tests; only then resume the preserved instance to observe
+`NORTH_DNS_CONTAINMENT_OK ... child_status=1355` followed by actual
+`Install-ADDSDomain` and post-reboot local DC proof.
