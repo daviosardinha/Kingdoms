@@ -488,3 +488,20 @@ zero custom vmnet/IP routes, no GOAD/NORTH running services/processes, empty
 VMware/Vagrant registries, and delete only the explicitly abandoned
 `feature/course1-reduced-profile-source` remote branch. This is the
 final host hygiene stage before the minimal Course 1 rebuild.
+
+## 2026-10-11 — user RDP services removed and backed up
+
+Operator successfully ran the exact file/ExecStart ownership verification
+for `kingdoms-phase03-rickon.service` and `kingdoms-rdp-bot.service`.
+Both passed verification. `systemctl --user disable --now` removed their
+`default.target.wants` links; the installed unit files were removed and
+systemd user daemon reloaded. Output confirmed
+`[PASS] Old Kingdoms RDP units removed`.
+
+Backup directory: `/home/stark/kingdoms-cleanup-user-units-20261011T164927Z`.
+
+**Still outstanding:** safely retire exactly the two legacy Kerberos
+ticket caches from the user's home directory, delete only the abandoned
+`feature/course1-reduced-profile-source` remote branch, and repeat final
+read-only host checks. Preserve `main`, `rebuild/course1-from-kingdoms`,
+`~/kingdoms-rebuild`, shared VMware/Vagrant tooling, and cleanup backups.
