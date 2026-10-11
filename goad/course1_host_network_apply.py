@@ -128,11 +128,15 @@ def systemd_reload():
     run_command("systemctl", "daemon-reload")
 
 
+def require_explicit_root():
+    if os.geteuid() != 0:
+        raise NorthSetupError("Explicit sudo/root permission is required")
+
+
 def apply(provider_dir, reviewed_sha256, networking=NETWORKING, netmap=NETMAP,
           backups=BACKUPS, owner=OWNER, library=None, vmware_networks=VMWARE_NETWORKS):
     """One guarded VMware transaction; all callbacks run inside its lock."""
-    if os.geteuid() != 0:
-        raise NorthSetupError("Explicit sudo/root permission is required")
+    require_explicit_root()
     if not re.fullmatch(r"[0-9a-f]{64}", reviewed_sha256 or ""):
         raise NorthSetupError("Supply the reviewed 64-digit lowercase baseline SHA-256")
     if not Path(provider_dir).is_absolute():
