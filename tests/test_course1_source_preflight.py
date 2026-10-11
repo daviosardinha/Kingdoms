@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 from goad.course1_source_preflight import Course1SourceError, validate_course1_source
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +18,11 @@ class Course1SourcePreflightTests(unittest.TestCase):
         self.root = Path(self.folder.name)
         shutil.copytree(ROOT / "ad/NORTH", self.root / "ad/NORTH")
         shutil.copytree(ROOT / "ad/GOAD/scripts", self.root / "ad/GOAD/scripts")
+        shutil.copy2(ROOT / "playbooks.yml", self.root / "playbooks.yml")
+        (self.root / "ansible").mkdir()
+        manifest = yaml.safe_load((ROOT / "playbooks.yml").read_text())
+        for play in manifest["NORTH"]:
+            shutil.copy2(ROOT / "ansible" / play, self.root / "ansible" / play)
 
     def edit(self, relative, before, after):
         target = self.root / relative
@@ -25,8 +32,28 @@ class Course1SourcePreflightTests(unittest.TestCase):
 
     def test_default_profile_has_every_prerequisite(self):
         evidence = validate_course1_source(self.root)
-        self.assertEqual(len(evidence), 5)
+        self.assertEqual(len(evidence), 6)
         self.assertIn("SOURCE PRECHECK PASS", evidence[-1])
+
+    def test_playbook_manifest_missing_blocks_before_vagrant(self):
+        self.edit("playbooks.yml", "NORTH:\\n", "NOT_NORTH:\\n")
+        with self.assertRaisesRegex(Course1SourceError, "Missing explicit"):
+            validate_course1_source(self.root)
+
+    def test_missing_ansible_playbook_blocks_before_vagrant(self):
+        (self.root / "ansible/ad-child_domain.yml").unlink()
+        with self.assertRaisesRegex(Course1SourceError, "missing or invalid Ansible"):
+            validate_course1_source(self.root)
+
+    def test_external_trust_play_is_rejected_for_course1(self):
+        raw = (self.root / "playbooks.yml").read_text()
+        prefix, sep, tail = raw.partition("NORTH:\\n")
+        self.assertTrue(sep)
+        (self.root / "playbooks.yml").write_text(
+            prefix + sep + "  - ad-trusts.yml\\n" + tail
+        )
+        with self.assertRaisesRegex(Course1SourceError, "sequence minus Essos trust"):
+            validate_course1_source(self.root)
 
     def test_postvagrant_missing_ws01_fails_early(self):
         target = "ad/NORTH/data/inventory_disable_vagrant"
