@@ -91,7 +91,7 @@ print("============================================================")
 transaction_source = "execute_testable_network_transaction" in transaction
 hostaddr_source = "render_hostaddr_assets" in hostaddr
 unwired = "def _course1_unwired(self):" in kingdoms
-goad_only = "return self.lab_name == 'GOAD'" in nomad
+native_profile = "return self.lab_name in ('GOAD', 'NORTH')" in nomad
 complete_validation = "unittest discover -s tests -p 'test_*.py'" in validator
 items = (
     ("[01] VMware transaction + restart/rollback",
@@ -101,8 +101,8 @@ items = (
      "ASSET RENDERER READY / INSTALL BLOCKED" if hostaddr_source else "SOURCE MISSING",
      "No verified ownership-aware helper/service/timer installation transaction"),
     ("[03] Existing NORTH provider and installer",
-     "BLOCKED" if unwired or goad_only else "REVIEW REQUIRED",
-     "NORTH guard and GOAD-only lifecycle must not be bypassed"),
+     "NATIVE DISPATCH WIRED / INSTALL GUARDED" if native_profile and unwired else "REVIEW REQUIRED",
+     "NORTH uses Kingdoms methods; pending host-network ownership and live lifecycle acceptance"),
     ("[04] Full source and clean-host validation",
      "AUTOMATED" if complete_validation else "CONTRACT MISSING",
      "Run --all to execute; source/host checks do not prove deployed AD"),
