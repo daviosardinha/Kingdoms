@@ -12,6 +12,7 @@
     that:
       - north_member_lab_interfaces | length == 1
       - north_member_other_interfaces | length <= 1
+      - ansible_interfaces | length == (north_member_lab_interfaces | length + north_member_other_interfaces | length)
       - north_member_lab_interfaces[0].connection_name | length > 0
       - north_member_other_interfaces | length == 0 or (north_member_other_interfaces[0].connection_name | length > 0 and north_member_other_interfaces[0].default_gateway is defined and north_member_other_interfaces[0].default_gateway is not none)
     fail_msg: "NORTH member network evidence is ambiguous; refuse DNS and domain-join changes"
