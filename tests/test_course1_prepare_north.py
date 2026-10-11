@@ -33,6 +33,7 @@ class Course1PrepareOnlyTests(unittest.TestCase):
             instance_provider_path="/fake/workspace/north/provider",
         )
         self.manager = Mock()
+        self.manager.lab_instances.instances = {}
         self.manager.get_current_lab_name.return_value = "NORTH"
         self.manager.get_current_provider_name.return_value = "vmware"
         self.manager.get_current_instance.side_effect = [None, self.instance]
@@ -67,6 +68,11 @@ class Course1PrepareOnlyTests(unittest.TestCase):
     def test_existing_selected_instance_is_blocked(self):
         self.manager.get_current_instance.side_effect = None
         self.manager.get_current_instance.return_value = self.instance
+        self.assertFalse(self.actions["do_prepare_north"](self.console))
+        self.manager.create_instance.assert_not_called()
+
+    def test_existing_registered_north_blocks_duplicate_creation(self):
+        self.manager.lab_instances.instances = {"already-north": self.instance}
         self.assertFalse(self.actions["do_prepare_north"](self.console))
         self.manager.create_instance.assert_not_called()
 
