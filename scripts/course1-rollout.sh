@@ -6,7 +6,7 @@ set -Eeuo pipefail
 # This is an orchestrator, not an alternate installer. NEVER bypass the
 # existing Kingdoms VMware provider or its NORTH fail-closed guard.
 #
-# The current revision intentionally supports read-only work only:
+# All validation is read-only; --prepare writes only local NORTH instance files:
 #  --all       full source+clean-host validation and all-five readiness report
 #  --source    same report, without live host inspection
 #  --plan      immediate source-only readiness report, no test execution
