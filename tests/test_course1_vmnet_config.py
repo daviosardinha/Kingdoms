@@ -126,10 +126,10 @@ class Course1VmnetPlanTests(unittest.TestCase):
     def test_vmware_optional_hostaddr_normalization_rejects_foreign_edits(self):
         proposed = render_vmnet_config(BASELINE, self.layout).encode()
         only_north = proposed.replace(
-            b"answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\\n", b""
+            b"answer VNET_10_HOSTONLY_HOSTADDR 10.4.10.254\n", b""
         )
         both = only_north.replace(
-            b"answer VNET_99_HOSTONLY_HOSTADDR 10.4.99.254\\n", b""
+            b"answer VNET_99_HOSTONLY_HOSTADDR 10.4.99.254\n", b""
         )
         for variant in (proposed, only_north, both):
             with self.subTest(variant=len(variant)):
@@ -137,7 +137,7 @@ class Course1VmnetPlanTests(unittest.TestCase):
                     proposed, variant, self.layout,
                 ))
         self.assertFalse(known_vmware_hostaddr_normalization(
-            proposed, both + b"# another administrator changed VMware settings\\n", self.layout,
+            proposed, both + b"# another administrator changed VMware settings\n", self.layout,
         ))
         self.assertFalse(known_vmware_hostaddr_normalization(
             proposed, proposed.replace(b"VNET_20_VIRTUAL_ADAPTER no",
