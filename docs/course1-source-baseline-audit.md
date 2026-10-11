@@ -687,3 +687,42 @@ authorizing one, we still need crash-safe ownership lock/journal,
 owned VMware restart/netmap recovery, service/timer transactional
 materialization, multi-instance NORTH service identities and
 disposable-host rollback validation.
+
+## 2026-10-11 — 73/73 host-address tests accepted; crash recovery staged
+
+The user's Kali screenshot confirms **73/73 tests passed**, and the
+read-only default NORTH host-address preview showed the two precise
+host-visible interfaces vmnet10=10.4.10.254/24 and
+vmnet99=10.4.99.254/24, with only VMware's known .1/24 as a repair
+candidate. Seven Kingdoms vmnet20 remains hidden. No systemd units
+or vmnets were installed by this verification.
+
+The next code-only stage adds goad/course1_vmnet_journal.py and
+integrates it into the existing goad/course1_vmnet_transaction.py.
+A stable inode at backup_root/.north-network.lock is protected by
+nonblocking fcntl flock; every transaction requires this lock throughout
+its baseline recheck, atomic file replacement, supplied VMware restart,
+and supplied validation callback. A locked/untrustworthy inode refuses
+a second transaction rather than guessing ownership.
+
+A 0700 transaction backup directory now contains a durable,
+atomic journal.json file. Stages are PREPARED (written before any
+networking file change), WRITTEN, VERIFYING, COMMITTED, ROLLED_BACK,
+or MANUAL_RECONCILIATION. Interrupted stages block future attempts
+until reviewed; a fully journaled rollback permits a clean retry.
+An unexpected concurrent edit preserves the original backup and
+marks manual reconciliation instead of overwriting it. The owner
+record is bound to the selected instance provider and only written
+after supplied live verification passes.
+
+New offline tests: 9 in tests/test_course1_vmnet_journal.py;
+the existing transaction module now has 11 tests (2 extra).
+This brings the focused source network+route+hostaddr+transaction
+target from **73 to 84 tests**. All simulate file changes in temporary
+directories. The original full Kingdoms setup source remains intact.
+
+**The 84 tests have not yet run on Kali**. The transaction still has no
+live host-applying entrypoint: VMware restart/netmap recovery, managed
+systemd asset installation, active VMX ownership recheck and exercise
+lifecycle must be bound and accepted before an install action exists.
+The NORTH install/start/reset guard remains active.
