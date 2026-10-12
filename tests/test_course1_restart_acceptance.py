@@ -52,6 +52,18 @@ class Course1RestartAcceptanceTests(unittest.TestCase):
         self.assertNotIn("vmrun -T ws revertToSnapshot", source)
         self.assertNotIn("vmrun -T ws snapshot", source)
 
+    def test_native_lifecycle_cannot_kill_vmware_process_group_on_timeout(self):
+        source = RUN.read_text()
+        # Any native start/stop/reset failure is owned by provider's bounded
+        # VMware/Vagrant implementation, not a surrounding GNU timeout group.
+        native = source.split("native() {", 1)[1].split("\n}", 1)[0]
+        self.assertIn('bash ./goad.sh -t "$task"', native)
+        self.assertNotIn('timeout ', native)
+        self.assertNotIn('kill -', native)
+        self.assertNotIn('step "$name"', native)
+        # Probes are still bounded, but no VM lifecycle is run via step().
+        self.assertIn('step "$name-readiness" 900', source)
+
     def test_refuses_missing_or_ambiguous_snapshots(self):
         source = RUN.read_text()
         self.assertIn("for machine in GOAD-DC01 GOAD-DC02 GOAD-SRV02 GOAD-WS01 GOAD-ROUTER;", source)
