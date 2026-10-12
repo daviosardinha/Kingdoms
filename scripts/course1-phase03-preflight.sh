@@ -7,8 +7,19 @@ umask 077
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [[ $# -ne 1 || ! "$1" =~ ^[a-zA-Z0-9_-]+-north-vmware$ ]]; then
-  echo 'Usage: bash scripts/course1-phase03-preflight.sh <existing-NORTH-instance-id>' >&2
+# Default keeps the strict online Git source attestation. The --pinned-head
+# variant is ONLY for repeat checks within an already-online-attested native
+# recovery run. It still checks exact local SHA, clean worktree, tracked
+# upstream and LIVE installed VMnet owner without requiring GitHub DNS.
+PINNED_HEAD=""
+if [[ ! "${1:-}" =~ ^[a-zA-Z0-9_-]+-north-vmware$ ]]; then
+  echo 'Usage: bash scripts/course1-phase03-preflight.sh <NORTH-instance-id> [--pinned-head <40-hex-SHA>]' >&2
+  exit 2
+fi
+if [[ $# == 3 && "$2" == --pinned-head && "$3" =~ ^[0-9a-f]{40}$ ]]; then
+  PINNED_HEAD="$3"
+elif [[ $# != 1 ]]; then
+  echo '[BLOCKED] Invalid Phase 03 source attestation arguments' >&2
   exit 2
 fi
 
@@ -138,8 +149,13 @@ echo "Instance : $INSTANCE"
 echo "Evidence : $EVIDENCE"
 echo 'Scope    : Preconditions only; no exploitation or state-changing validation'
 
-audit_stage 00-owner 'NORTH source + installed network ownership' required \
-  bash scripts/course1-rollout.sh --installed "$PROVIDER"
+if [[ -n "$PINNED_HEAD" ]]; then
+  audit_stage 00-owner 'NORTH pinned local source + live installed network ownership' required \
+    bash scripts/course1-pinned-installed-owner.sh "$PROVIDER" "$PINNED_HEAD"
+else
+  audit_stage 00-owner 'NORTH source + installed network ownership' required \
+    bash scripts/course1-rollout.sh --installed "$PROVIDER"
+fi
 
 # Refuse to query guests if source/ownership was not verified.
 if (( FAIL != 0 )); then
