@@ -815,6 +815,34 @@ proven S4U or executed rollback. RBCD stays
 chain and independent rollback both pass. Do not run the legacy
 `scripts/phase03/rollback-rbcd.sh` against NORTH.
 
+### Course 1 Module 04 — WS01 LPE readiness checkpoint (2026-10-12)
+
+The source audit confirms that the explicit `NORTH` install manifest
+seeds `ws01-lpe-install.yml` with the already-promoted `full-lpe`
+profile after vulnerability provisioning. The original Kingdoms
+20-technique WS01 framework was fully live-validated on 2026-09-03,
+including scoped resets and reapply. The rebuilt NORTH instance
+retains the same twenty scenario files; this proves source parity,
+not current live vulnerable-state acceptance after VMware restore.
+
+The old WS01/LPE runtime test scripts still hardcode GOAD inventories;
+the full runtime gate also intentionally resets/reapplies scenarios.
+Use the new `scripts/course1-phase04-acceptance.sh` instead: `--plan`
+is inert, while a separately confirmed validation uses only exact
+NORTH inventories and checks Rickon's low-privilege RDP foothold,
+WS01 host controls and all 20 vulnerable-state markers. It does not
+reset/reapply any scenario. Its stored RunAs validation temporarily
+adds/restores SeBatchLogonRight; **do not run it while Phase 03 is
+active**. Tests: `tests/test_course1_phase04_source.py` and
+`tests/test_course1_phase04_acceptance.py`. Audit details:
+`docs/course1-phase04-lpe-readiness.md`.
+
+**Status:** source prepared; new tests and live NORTH acceptance
+`NOT_TESTED`. After Phase 03, confirm live runtime health and a
+separate Rickon-to-SYSTEM teaching example before calling Module 04
+fully ready. No reinstall, reconfiguration or Notion change required
+by the source audit.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
