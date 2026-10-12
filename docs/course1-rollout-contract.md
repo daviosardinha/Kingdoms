@@ -723,6 +723,39 @@ scenario at a time before entering the unattended batch. The existing
 verified mutation-disabled HTTP→LDAPS relay. Do not run other attack
 wrappers directly merely because their inventories are now configurable.
 
+### 2026-10-12 — NORTH RBCD private baseline capture gate
+
+The operator source validation after RBCD path hardening passed 85/85 tests.
+The next guarded checkpoint adds `--prepare-rbcd --confirm` to the existing
+Phase 03 acceptance dispatcher. This is deliberately **evidence only**:
+it runs the installed NORTH/read-only prerequisite gate, takes the same
+provider lock as HTTP→LDAPS acceptance, repeats WS01$ RBCD neutral-state
+checks, captures an exact baseline in a fresh private evidence directory
+and verifies its identity, NORTH DN, owner/mode and SHA-256.
+
+The selected baseline is passed through
+`KINGDOMS_PHASE03_RBCD_BASELINE` to both the capture shell wrapper and
+Ansible playbook. Existing shared baselines are not overwritten. No
+computer account is created, no delegation is changed, no relay runs, and
+no S4U request is attempted.
+
+Operator checkpoint (after GitHub source validation):
+
+```bash
+cd "$HOME/kingdoms-rebuild" && git pull --ff-only
+python3 -m unittest tests.test_course1_rbcd_baseline_paths tests.test_phase03_overlay_source
+bash scripts/course1-phase03-acceptance.sh ac9fda-north-vmware --plan
+sudo -v
+bash scripts/course1-phase03-acceptance.sh ac9fda-north-vmware --prepare-rbcd --confirm
+```
+
+The capture may report `PHASE03_RBCD_BASELINE_CAPTURE=PASS` but
+`PHASE03_RBCD_ACTIVE_ACCEPTANCE=NOT_TESTED` remains mandatory. Before
+enabling RBCD attack automation, implement process ownership, Stage 1
+candidate proof, Stage 2 exact descriptor modification, S4U consequence,
+independent cleanup and interruption-safe restoration against the
+per-run baseline. No legacy wrappers should be executed individually.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
