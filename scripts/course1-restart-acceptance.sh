@@ -41,7 +41,13 @@ step() {
   echo "PASS | $name | seconds=$((SECONDS-start))" | tee -a "$SUMMARY"
 }
 sudo -n -v >/dev/null 2>&1 || { echo '[BLOCKED] Run sudo -v first' >&2; exit 2; }
+# Strict online Git/source validation is performed ONCE, before any power or
+# snapshot operation. Rechecks later in this same run use this exact SHA plus
+# the live owner, so a transient external DNS outage cannot hide AD readiness.
 step 00-installed 650 bash scripts/course1-rollout.sh --installed "$PROVIDER"
+PINNED_HEAD="$(git rev-parse --verify HEAD)"
+[[ "$PINNED_HEAD" =~ ^[0-9a-f]{40}$ ]] || fail 'Could not pin initial verified checkout'
+echo "source_pin=$PINNED_HEAD" | tee -a "$SUMMARY"
 
 # Require a single, unambiguous snapshot per guest before any VM power change.
 for machine in GOAD-DC01 GOAD-DC02 GOAD-SRV02 GOAD-WS01 GOAD-ROUTER; do
@@ -63,7 +69,7 @@ readiness() {
     grep -Eqi '^[[:space:]]*ethernet0\.startConnected[[:space:]]*=[[:space:]]*"FALSE"[[:space:]]*$' "$vmx" ||
       fail "$name $machine NAT persists as connected"
   done
-  step "$name-readiness" 900 bash scripts/course1-phase03-preflight.sh "$INSTANCE"
+  step "$name-readiness" 900 bash scripts/course1-phase03-preflight.sh "$INSTANCE" --pinned-head "$PINNED_HEAD"
   grep -Fq 'PHASE03_READONLY_ACCEPTANCE=PASS' "$EVIDENCE/$name-readiness.log" ||
     fail "$name readiness failed"
 }
