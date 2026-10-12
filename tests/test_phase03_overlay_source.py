@@ -65,6 +65,66 @@ class Phase03OverlaySourceTests(unittest.TestCase):
                 self.assertIn(marker, script)
         self.assertIn("WARN=$((WARN+1))", script)
 
+    def test_course1_phase03_active_acceptance_shell_and_explicit_optin(self):
+        path = ROOT / "scripts/course1-phase03-acceptance.sh"
+        script = path.read_text()
+        check = subprocess.run(["bash", "-n", str(path)],
+                               capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertIn("--plan", script)
+        self.assertIn("--run-http-ldaps --confirm", script)
+        self.assertIn("PHASE03_FULL_ATTACK_ACCEPTANCE=NOT_TESTED", script)
+        self.assertIn('[[ -f "$MODE"', script)
+        self.assertIn('flock -n 9', script)
+        self.assertIn('scripts/course1-phase03-preflight.sh', script)
+        self.assertIn('START_ATTEMPTED=1', script)
+        self.assertIn('trap finalize EXIT', script)
+        self.assertIn('export WORK="$EVIDENCE/http-ldaps-runtime"', script)
+        self.assertIn("PHASE03_HTTP_LDAPS_ACTIVE_ACCEPTANCE=PASS", script)
+        for forbidden in (
+            "rollback-rbcd.sh", "rollback-shadow.sh",
+            "start-rbcd-stage1-add-computer.sh", "start-shadow-relay.sh",
+            "apply-adidns-proof.sh", "apply-webdav-shortcut-proof.sh",
+            "diagnostics/start-mitm6-ws01.sh",
+            "scripts/lab-mode.sh provisioning", "vagrant snapshot",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, script)
+
+    def test_course1_http_ldaps_stage_has_proof_and_scoped_cleanup_guards(self):
+        script = (ROOT / "scripts/course1-phase03-acceptance.sh").read_text()
+        required = (
+            "PHASE03_READONLY_ACCEPTANCE=PASS",
+            "PHASE03_HTTP_LDAPS_CALLBACK_CLEAN=True",
+            "PHASE03_HTTP_LDAPS_PREFLIGHT_COMPLETE=True",
+            "PHASE03_HTTP_LDAPS_RUNTIME_READY=True",
+            "PHASE03_HTTP_LDAPS_TRIGGER_COMPLETE=True",
+            "PHASE03_HTTP_LDAPS_PROVEN=True",
+            "PHASE03_HTTP_LDAPS_RUNTIME_STOPPED=True",
+        )
+        for marker in required:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, script)
+        self.assertLess(script.index("run_step 01-callback-before"),
+                        script.index("START_ATTEMPTED=1"))
+        self.assertLess(script.index("run_step 05-proof"),
+                        script.index("PROOF=PASS"))
+        self.assertIn("cleanup_failure=1", script)
+        self.assertIn("Do not run further attack scenarios", script)
+
+    def test_course1_http_callback_and_cleanup_use_exact_north_inventories(self):
+        for path in (
+            "scripts/phase03/trigger-http-ldaps-readonly-relay.sh",
+            "scripts/phase03/verify-http-ldaps-callback-clean.sh",
+        ):
+            with self.subTest(path=path):
+                script = (ROOT / path).read_text()
+                self.assertIn("KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory", script)
+                self.assertIn("KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory", script)
+                self.assertIn('[[ -f "$DATA_INVENTORY" && -f "$PROVIDER_INVENTORY" ]]', script)
+                self.assertIn('-i "$DATA_INVENTORY"', script)
+                self.assertIn('-i "$PROVIDER_INVENTORY"', script)
+
     def test_course1_phase03_batch_preflight_is_one_command_and_readonly(self):
         script_path = ROOT / "scripts/course1-phase03-preflight.sh"
         script = script_path.read_text()
