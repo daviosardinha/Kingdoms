@@ -125,6 +125,12 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             "capture-adidns-baseline.sh",
             "verify-adidns-proof.sh",
             "rollback-adidns.sh",
+            "capture-webdav-dns-baseline.sh",
+            "capture-webdav-shortcut-baseline.sh",
+            "verify-webdav-shortcut-proof.sh",
+            "rollback-webdav-shortcut.sh",
+            "rollback-webdav-dns-support.sh",
+            "verify-wpad-reset.sh",
         )
         for name in wrappers:
             with self.subTest(name=name):
