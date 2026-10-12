@@ -69,7 +69,13 @@ check_markers() {
       grep -Fq 'PHASE03_ADIDNS_NODE=phase03-adidns;EXISTS=False' "$log"
       ;;
     05-webdav)
-      grep -Fq 'PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True' "$log"
+      grep -Fq 'PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True' "$log" &&
+      grep -Fq 'PHASE03_WEBDAV_WEBCLIENT_EXISTS=True' "$log" &&
+      grep -Fq 'PHASE03_WEBDAV_RICKON_PROFILE_EXISTS=True' "$log" &&
+      grep -Fq 'PHASE03_WEBDAV_RICKON_DESKTOP_EXISTS=True' "$log" &&
+      grep -Fq 'PHASE03_WEBDAV_CANDIDATE_LNK_EXISTS=False' "$log" &&
+      grep -Fq 'PHASE03_WEBDAV_CANDIDATE_URL_EXISTS=False' "$log" &&
+      grep -Eq 'PHASE03_WEBDAV_QUSER_STATUS=(NO_ACTIVE_SESSIONS|SESSIONS_PRESENT)' "$log"
       ;;
     06-rdp-cert)
       grep -Eq 'RDP_SHA256=[0-9A-Fa-f]{64}' "$log"
@@ -152,6 +158,15 @@ audit_stage 04-adidns 'ADIDNS dynamic DNS and controlled record baseline' requir
   north_playbook phase03-adidns-preflight.yml
 audit_stage 05-webdav 'WebDAV/WebClient and Rickon desktop state inspection' required \
   north_playbook phase03-webdav-shortcut-preflight.yml
+
+# A missing interactive Explorer/RDP session is not a WebDAV fixture failure.
+# Keep the prereq audit green while clearly separating interactive readiness.
+if grep -Fq 'PASS | 05-webdav |' "$SUMMARY" &&
+    grep -Fq 'PHASE03_WEBDAV_RICKON_EXPLORER=False' "$EVIDENCE/05-webdav.log"; then
+  printf '[WARN] No live Rickon Explorer session; WebDAV victim-interaction proof still pending\n'
+  printf 'WARN | 05-webdav-session | Rickon desktop interaction not active\n' >> "$SUMMARY"
+  WARN=$((WARN+1))
+fi
 audit_stage 06-rdp-cert 'WS01 RDP certificate read-only inspection' required \
   north_playbook phase03-read-ws01-rdp-cert.yml
 audit_stage 07-wpad-tools 'mitm6 / WPAD / relay runtime CLI capabilities' required \
