@@ -52,8 +52,7 @@
           $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -ErrorAction SilentlyContinue
           $candidateMatches = ([bool]($null -ne $candidate) -eq [bool]$baseline.CandidateExisted)
           if ($baseline.CandidateExisted -and $null -ne $candidate) {
-              $candidateMatches = $candidateMatches -and
-                  [string]::Equals($candidate.DistinguishedName, $baseline.CandidateDN, [System.StringComparison]::OrdinalIgnoreCase)
+              $candidateMatches = $candidateMatches -and [string]::Equals($candidate.DistinguishedName, $baseline.CandidateDN, [System.StringComparison]::OrdinalIgnoreCase)
           }
 
           Write-Output "PHASE03_RBCD_NEUTRAL_DN_MATCH=$dnMatches"
