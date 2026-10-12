@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
-BASELINE="${BASELINE:-$HOME/.config/kingdoms/phase03-rbcd-baseline.json}"
+BASELINE="${BASELINE:-${KINGDOMS_PHASE03_RBCD_BASELINE:-$HOME/.config/kingdoms/phase03-rbcd-baseline.json}}"
 SECRET_FILE="${SECRET_FILE:-$HOME/.config/kingdoms/phase03-rbcd-password}"
 WORK="${WORK:-/tmp/kingdoms-phase03-rbcd-s4u}"
 PLAYBOOK="$ROOT/ansible/phase03-rbcd-rollback.yml"
@@ -22,6 +22,10 @@ find_ansible_playbook() {
 }
 
 cd "$ROOT" || exit 1
+[[ "$BASELINE" == /* && -f "$BASELINE" && ! -L "$BASELINE" ]] || {
+  echo 'FAIL: rollback baseline must be an existing, absolute regular file' >&2; exit 1
+}
+export KINGDOMS_PHASE03_RBCD_BASELINE="$BASELINE"
 
 echo '===== RBCD ROLLBACK PREFLIGHT ====='
 test -f "$BASELINE" || {
