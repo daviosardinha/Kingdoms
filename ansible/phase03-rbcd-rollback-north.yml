@@ -7,7 +7,7 @@
     rbcd_ownership_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_OWNERSHIP') }}"
     rbcd_baseline: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | from_json }}"
     rbcd_receipt: "{{ lookup('ansible.builtin.file', rbcd_ownership_path) | from_json }}"
-    rbcd_baseline_sha256: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | hash('sha256') }}"
+    rbcd_baseline_sha256: "{{ lookup('ansible.builtin.file', rbcd_baseline_path, rstrip=False) | hash('sha256') }}"
   tasks:
     - name: Require clean NORTH baseline linked to the Stage 1 receipt
       ansible.builtin.assert:
