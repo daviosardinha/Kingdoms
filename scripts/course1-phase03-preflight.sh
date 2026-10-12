@@ -121,6 +121,10 @@ north_playbook() {
     "$ROOT/ansible/$name"
 }
 
+north_readiness() {
+  EVIDENCE="$EVIDENCE/phase03-readiness" bash scripts/validate-phase03-readiness.sh
+}
+
 echo '============================================================'
 echo 'NORTH — PHASE 03 ALL-IN-ONE READ-ONLY PREFLIGHT'
 echo '============================================================'
@@ -139,7 +143,7 @@ if (( FAIL != 0 )); then
 fi
 
 audit_stage 01-baseline 'Phase 03 network, poisoning, SMB/LDAP and MSSQL baseline' required \
-  bash scripts/validate-phase03-readiness.sh
+  north_readiness
 audit_stage 02-rbcd 'RBCD WS01$ rights + clean baseline' required \
   north_playbook phase03-rbcd-preflight.yml
 audit_stage 03-shadow 'Shadow Credentials WS01$ + KDC certificate' required \
