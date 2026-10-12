@@ -38,6 +38,52 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(f"hosts: {forbidden}", text)
 
+    def test_course1_phase03_batch_preflight_is_one_command_and_readonly(self):
+        script_path = ROOT / "scripts/course1-phase03-preflight.sh"
+        script = script_path.read_text()
+        syntax = subprocess.run(
+            ["bash", "-n", str(script_path)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
+        self.assertIn("phase03-batch-", script)
+        self.assertIn('PHASE03_LAB_INVENTORY', (
+            ROOT / "scripts/validate-phase03-readiness.sh"
+        ).read_text())
+        self.assertIn('LAB_INVENTORY="$ROOT/ad/NORTH/data/inventory"', script)
+        self.assertIn('INSTANCE_INVENTORY="$ROOT/workspace/$INSTANCE/inventory"', script)
+        self.assertIn('PHASE03_ATTACK_CHAIN_ACCEPTANCE=NOT_TESTED', script)
+        self.assertIn('PHASE03_READONLY_ACCEPTANCE=PASS', script)
+        self.assertIn('PHASE03_READONLY_ACCEPTANCE=FAIL', script)
+        for fixture in (
+            "phase03-rbcd-preflight.yml",
+            "phase03-shadow-preflight.yml",
+            "phase03-adidns-preflight.yml",
+            "phase03-webdav-shortcut-preflight.yml",
+            "phase03-read-ws01-rdp-cert.yml",
+        ):
+            with self.subTest(fixture=fixture):
+                self.assertIn(fixture, script)
+        for capability in (
+            "validate-phase03-readiness.sh",
+            "check-wpad-runtime-capabilities.sh",
+            "check-ldap-readonly-relay.sh",
+            "check-http-ldaps-readonly-relay.sh",
+            "check-rickon-prereqs.sh",
+        ):
+            with self.subTest(capability=capability):
+                self.assertIn(capability, script)
+        for forbidden in (
+            "apply-phase03.sh", "reset-phase03.sh",
+            "phase03-webdav-service-probe.yml",
+            "phase03-wpad-baseline.yml",
+            "phase03-webdav-dns-baseline.yml",
+            "phase03-rbcd-rollback.yml",
+            "phase03-shadow-rollback.yml",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, script)
+
     def test_readonly_phase03_readiness_selects_north_inventory_explicitly(self):
         script = (ROOT / "scripts/validate-phase03-readiness.sh").read_text()
         self.assertIn("KINGDOMS_PHASE03_PROFILE:-GOAD", script)
