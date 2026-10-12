@@ -172,6 +172,44 @@ After `--installed` source + live owner validation returns green:
 This explicitly does **not** invoke Vagrant `up` or rebuild the two domains.
 `-t install` would repeat earlier playbooks and is not the correct recovery
 for a 17-playbook-complete fixture-copy failure.
+## Batch Phase 03 prerequisite acceptance for installed NORTH
+
+The first live NORTH installation completed, and Module 01, Module 02 and
+the Phase 03 baseline checks returned **22/22**, **117/117** and **58/58**
+respectively. Fresh RBCD and Shadow Credentials Ansible preflights also
+confirmed clean WS01$ baseline attributes, the intended SELF privileges,
+and WINTERFELL KDC certificate availability. Those are prerequisites, not
+an executed attack path.
+
+To avoid per-scenario terminal sessions, the repository now provides a
+single **non-destructive** Phase 03 preflight runner for the installed
+five-VM NORTH instance:
+
+```bash
+cd "$HOME/kingdoms-rebuild"
+git pull --ff-only
+sudo -v
+bash scripts/course1-phase03-preflight.sh ac9fda-north-vmware
+```
+
+The runner checks exact instance ownership first; then Phase 03 baseline,
+RBCD, Shadow Credentials, ADIDNS, WebDAV and WS01 RDP certificate state,
+mitm6/WPAD tooling, and SMB/HTTP→LDAPS relay prerequisites. It reuses
+existing original Kingdoms scripts or read-only Ansible playbooks but
+forces `ad/NORTH/data/inventory` plus the current instance inventory.
+Headless Rickon client checks are reported separately as optional local
+configuration because private credential and certificate pin files are
+intentionally not checked into Git. All logs and a `summary.txt` live
+under `~/Kingdoms-evidence/phase03-batch-<timestamp>/` with owner-only
+file modes. Every required stage must pass for `PHASE03_READONLY_ACCEPTANCE=PASS`.
+
+No poisoning, outbound coerced authentication, relay session, AD mutation,
+RBCD/Shadow proof, rollback or Windows service toggle runs in this audit.
+`PHASE03_ATTACK_CHAIN_ACCEPTANCE=NOT_TESTED` remains explicit even on a
+completely green preflight. Baseline-capture scripts that overwrite
+local JSON snapshots and the old six-VM state-changing regression are
+deliberately excluded. Runtime apply/prove/reset acceptance is a separate
+future gate, not a claim made by the prerequisite runner.
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
