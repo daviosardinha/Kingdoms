@@ -759,8 +759,8 @@ per-run baseline. No legacy wrappers should be executed individually.
 ### 2026-10-12 — Independent RBCD neutral-state acceptance
 
 The operator confirmed the captured exact NORTH baseline, source regression
-(88/88), and \`PHASE03_RBCD_BASELINE_CAPTURE=PASS\`. Active RBCD remains
-\`NOT_TESTED\`.
+(88/88), and `PHASE03_RBCD_BASELINE_CAPTURE=PASS`. Active RBCD remains
+`NOT_TESTED`.
 
 A separate, *read-only* verifier now checks the same captured file independently
 of the rollback playbook. It requires the exact operator-supplied baseline path
@@ -769,17 +769,17 @@ ownership/modes, takes the shared Phase 03 acceptance lock, checks the installed
 NORTH instance gate, then queries WINTERFELL to compare WS01$ DN, raw RBCD
 descriptor and PHASE03RBCD$ candidate state against the captured JSON.
 No AD edits or rollback are performed. A matching result is only
-\`PHASE03_RBCD_NEUTRAL_ACCEPTANCE=PASS\`; this is not an active proof.
+`PHASE03_RBCD_NEUTRAL_ACCEPTANCE=PASS`; this is not an active proof.
 
 Operator verification of the **existing** captured baseline:
 
-\`\`\`bash
+```bash
 cd "$HOME/kingdoms-rebuild" && git pull --ff-only
 python3 -m unittest tests.test_course1_rbcd_neutral tests.test_course1_rbcd_baseline_paths tests.test_phase03_overlay_source
 sudo -v
 BASELINE="$HOME/Kingdoms-evidence/phase03-rbcd-baseline-20261012-171041-P1Gm2EcN/rbcd-baseline.json"
 bash scripts/course1-phase03-acceptance.sh ac9fda-north-vmware --verify-rbcd "$BASELINE"
-\`\`\`
+```
 
 Do not run the original RBCD launchers directly. The next gated development
 is a single owning state machine for listener lifetime, two separate mutation
