@@ -703,6 +703,26 @@ contracts are adapted to NORTH and verified. Raw relay logs and any
 secret-bearing evidence stay owner-only under
 `~/Kingdoms-evidence/phase03-active-<timestamp>/`, never in GitHub.
 
+### NORTH Phase 03 wrapper compatibility checkpoint
+
+After the **nine-stage** HTTP→LDAPS active proof and scoped cleanup passed on
+the installed NORTH instance, the remaining script integration proceeded as
+a **source-only** change. The legacy RBCD, Shadow Credentials, ADIDNS,
+WebDAV and WPAD baseline/verification/rollback **Ansible wrappers** now
+accept `KINGDOMS_PHASE03_DATA_INVENTORY` and
+`KINGDOMS_PHASE03_PROVIDER_INVENTORY`, while keeping the original
+`ad/GOAD` defaults for full Kingdoms. Their shell syntax and literal
+inventory wiring are guarded by `tests.test_phase03_overlay_source`.
+
+This does **not** promote the active RBCD, Shadow, ADIDNS, WPAD or WebDAV
+attacks to `PASS`: foreground listeners, local credential/certificate
+contexts, stateful attack preflights, cleanup after interruption, and
+independent proof verification remain to be wired and validated one
+scenario at a time before entering the unattended batch. The existing
+`course1-phase03-acceptance.sh` still executes **only** the previously
+verified mutation-disabled HTTP→LDAPS relay. Do not run other attack
+wrappers directly merely because their inventories are now configurable.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
