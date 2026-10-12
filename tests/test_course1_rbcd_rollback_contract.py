@@ -54,6 +54,18 @@ class NorthRBCDRollbackContractTests(unittest.TestCase):
         ):
             self.assertIn(token, owner)
 
+    def test_receipt_hashes_include_trailing_json_newline(self):
+        for playbook in (OWNER, RESTORE):
+            with self.subTest(playbook=playbook):
+                source = playbook.read_text()
+                self.assertIn(
+                    "lookup('ansible.builtin.file', rbcd_baseline_path, rstrip=False) | hash('sha256')",
+                    source,
+                )
+        register = REGISTER.read_text()
+        self.assertIn("hashlib.sha256(baseline_path.read_bytes()).hexdigest()", register)
+        self.assertIn("PHASE03_RBCD_STAGE1_OWNERSHIP_REGISTERED=True", register)
+
     def test_rollback_checks_all_provenance_before_writes(self):
         src = RESTORE.read_text()
         read_section, writes = src.split("          if ($rbcdPresent) {\n              Set-ADComputer", 1)
