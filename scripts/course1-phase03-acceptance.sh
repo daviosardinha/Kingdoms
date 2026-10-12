@@ -13,9 +13,11 @@ Usage:
   bash scripts/course1-phase03-acceptance.sh <NORTH-instance-id> --plan
   bash scripts/course1-phase03-acceptance.sh <NORTH-instance-id> --run-http-ldaps --confirm
   bash scripts/course1-phase03-acceptance.sh <NORTH-instance-id> --prepare-rbcd --confirm
+  bash scripts/course1-phase03-acceptance.sh <NORTH-instance-id> --verify-rbcd <captured-baseline.json>
 
 --plan is read-only.
 --prepare-rbcd captures a private RBCD baseline; no AD changes or relay.
+--verify-rbcd independently compares the live state with a captured baseline.
 --run-http-ldaps validates NORTH, performs exactly one mutation-disabled
 HTTP->LDAPS relay and checks scoped cleanup. All other attack paths remain NOT_TESTED.
 USAGE
@@ -30,6 +32,7 @@ case "$ACTION" in
   --plan) [[ $# == 2 ]] || { usage >&2; exit 2; } ;;
   --run-http-ldaps) [[ $# == 3 && "$3" == --confirm ]] || { usage >&2; exit 2; } ;;
   --prepare-rbcd) [[ $# == 3 && "$3" == --confirm ]] || { usage >&2; exit 2; } ;;
+  --verify-rbcd) [[ $# == 3 ]] || { usage >&2; exit 2; } ;;
   *) usage >&2; exit 2 ;;
 esac
 
@@ -65,6 +68,11 @@ fi
 # It does not enter the HTTP relay execution or finalizer below.
 if [[ "$ACTION" == --prepare-rbcd ]]; then
   exec bash scripts/course1-phase03-rbcd-baseline.sh "$INSTANCE" --capture --confirm
+fi
+
+# Independent neutral-state audit uses the captured baseline; no AD changes.
+if [[ "$ACTION" == --verify-rbcd ]]; then
+  exec bash scripts/course1-phase03-rbcd-neutral.sh "$INSTANCE" "$3"
 fi
 
 [[ -f "$MODE" && "$(tr -d '[:space:]' < "$MODE")" == exercise ]] || {
