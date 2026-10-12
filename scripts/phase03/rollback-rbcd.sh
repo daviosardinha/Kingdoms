@@ -8,8 +8,8 @@ BASELINE="${BASELINE:-$HOME/.config/kingdoms/phase03-rbcd-baseline.json}"
 SECRET_FILE="${SECRET_FILE:-$HOME/.config/kingdoms/phase03-rbcd-password}"
 WORK="${WORK:-/tmp/kingdoms-phase03-rbcd-s4u}"
 PLAYBOOK="$ROOT/ansible/phase03-rbcd-rollback.yml"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+DATA_INVENTORY="${KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 
 find_ansible_playbook() {
   local c
