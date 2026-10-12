@@ -60,12 +60,44 @@ export ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg"
 export KINGDOMS_PHASE03_RBCD_BASELINE="$BASELINE"
 export KINGDOMS_PHASE03_RBCD_OWNERSHIP="$RECEIPT"
 
-"$ANSIBLE" -i "$ROOT/ad/NORTH/data/inventory" \
+if ! "$ANSIBLE" -i "$ROOT/ad/NORTH/data/inventory" \
   -i "$ROOT/workspace/$INSTANCE/inventory" \
-  ansible/phase03-rbcd-record-ownership-north.yml
+  ansible/phase03-rbcd-record-ownership-north.yml >"$EVIDENCE/register-stage1.log" 2>&1 ||
+  ! grep -Fq 'PHASE03_RBCD_STAGE1_OWNERSHIP_REGISTERED=True' "$EVIDENCE/register-stage1.log"; then
+  echo "[FAIL] Stage 1 ownership registration rejected. Evidence: $EVIDENCE/register-stage1.log" >&2
+  exit 1
+fi
 
 [[ -f "$RECEIPT" && ! -L "$RECEIPT" ]] ||
   { echo '[FAIL] Missing Stage 1 ownership receipt' >&2; exit 1; }
+
+python3 - "$BASELINE" "$RECEIPT" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+
+baseline_path, receipt_path = map(Path, sys.argv[1:])
+base = json.loads(baseline_path.read_text(encoding="utf-8"))
+receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+if (receipt.get("CandidateName") != "PHASE03RBCD$"
+        or receipt.get("TargetDN") != base["TargetDN"]
+        or receipt.get("BaselineSHA256") != hashlib.sha256(baseline_path.read_bytes()).hexdigest()):
+    raise SystemExit("FAIL: Stage 1 receipt does not match the exact baseline")
+if not re.fullmatch(r"S-1-5-21-(?:[0-9]+-){3}[0-9]+", receipt.get("CandidateSID", "")):
+    raise SystemExit("FAIL: Stage 1 SID invalid")
+if not re.fullmatch(r"[0-9a-fA-F-]{36}", receipt.get("CandidateGUID", "")):
+    raise SystemExit("FAIL: Stage 1 GUID invalid")
+if not receipt.get("CandidateDN", "").lower().endswith("dc=north,dc=sevenkingdoms,dc=local"):
+    raise SystemExit("FAIL: Stage 1 candidate outside NORTH")
+created = datetime.fromisoformat(receipt["CandidateCreatedAtUtc"].replace("Z", "+00:00"))
+captured = datetime.fromisoformat(base["CapturedAtUtc"].replace("Z", "+00:00"))
+if not created > captured:
+    raise SystemExit("FAIL: Stage 1 candidate predates baseline")
+PY
+
 sha256sum "$RECEIPT" >"$EVIDENCE/rbcd-ownership.sha256"
 chmod 600 "$EVIDENCE/rbcd-ownership.sha256"
 echo 'PHASE03_RBCD_STAGE1_OWNERSHIP_CAPTURE=PASS'
