@@ -210,6 +210,42 @@ completely green preflight. Baseline-capture scripts that overwrite
 local JSON snapshots and the old six-VM state-changing regression are
 deliberately excluded. Runtime apply/prove/reset acceptance is a separate
 future gate, not a claim made by the prerequisite runner.
+## 2026-10-12 NORTH snapshot/start domain-time regression
+
+After 11 required Phase 03 preflight gates passed (one optional Rickon
+desktop-session warning), the operator invoked the native `snapshot`
+operation. During its subsequent `start`, `GOAD-SRV02`/CASTELBLACK
+authenticated to the domain but W32Time remained on `Local CMOS Clock`
+instead of `winterfell.north.sevenkingdoms.local`. The existing bounded
+NT5DS rediscover/resync was attempted once, but returned
+`KINGDOMS_MEMBER_TIME_REPAIR_FAILED|stage=rediscover` with zero
+command-level return codes and an unchanged clock source. The provider
+correctly refused to certify restart readiness, and exercise isolation
+restoration aborted during the SRV02 verification; the full post-failure
+adapter/router state must therefore be audited, not assumed.
+
+**Do not** retry snapshot/start/reset, force-enable NAT, replace secure
+channel passwords or weaken the domain-time readiness gate until the
+actual cause has been proven. The original read-only diagnostics for
+CASTELBLACK, WINTERFELL and KINGSLANDING are reused through the
+explicit NORTH inventory adapters and a one-command evidence collector:
+
+```bash
+cd "$HOME/kingdoms-rebuild" && git pull --ff-only
+sudo -v
+python3 -m unittest tests.test_course1_time_diagnostics
+bash scripts/course1-diagnose-domain-time.sh ac9fda-north-vmware
+```
+
+This checks the current `lab-mode.sh status` router policy, protected
+routes and persistent VM NIC settings, plus W32Time source/config/peers,
+DC Locator TIMESERV/GTIMESERV, Netlogon secure channel, UDP/123
+stripchart, event logs, and parent/child time advertising. Evidence stays
+in owner-only `~/Kingdoms-evidence/north-domain-time-<timestamp>/` logs.
+The diagnostic collector does not repair time, start/stop VMs or change
+router/AD/VMware configuration. Its PASS indicates **evidence collection**
+only, not restored domain-time readiness. Fix and regression must follow
+the diagnostic evidence.
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
