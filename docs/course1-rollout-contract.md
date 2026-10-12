@@ -289,6 +289,35 @@ KINGSLANDING time synchronization over the DC-to-DC router exception.
 The forest-root diagnostic transport failure is not proof that
 KINGSLANDING is damaged.
 
+### Recovery checkpoint — subsequent installed NORTH start
+
+After the failed snapshot-triggered cold start, the operator passively captured
+one native NTPv3 request `10.4.10.22:123 -> 10.4.10.11:123` and its matching
+server response in the opposite direction on `vmnet10`; both packets were
+observed, zero kernel drops. This falsifies the initial simple UDP/123
+connectivity-block hypothesis, **not** every possible packet-validation or
+timing problem.
+
+A later read-only `w32tm /query /source; /status; /peers` on CASTELBLACK
+confirmed `winterfell.north.sevenkingdoms.local`, leap indicator `0`,
+stratum `3`, reference IP `10.4.10.11` and active WINTERFELL peer.
+No manual W32Time repair was applied after the passive capture.
+
+The existing instance was recovered using **start**, not reinstall, reset
+or snapshot. The screenshot showed all four Windows AD dependency contracts
+proven, final exercise isolation clean, and
+`GOAD_NOMAD: segmented lab started and readiness verified in 1m 41s
+(mode: exercise)`.
+
+**Release status:** existing deployment has recovered and is usable in
+exercise mode. The earlier initial cold-start stall remains a **restart
+reliability regression** until a clean repeated cold-start/restore
+acceptance proves otherwise. Do not change domain trust, disable time
+readiness checks, or claim the prior snapshot operation itself succeeded
+without enumerating snapshots. First verify the snapshot actually exists
+per VM, then investigate and test native W32Time cold-boot convergence.
+This checkpoint does not certify the full Phase 03 active attack chain.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
