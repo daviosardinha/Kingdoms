@@ -246,6 +246,49 @@ The diagnostic collector does not repair time, start/stop VMs or change
 router/AD/VMware configuration. Its PASS indicates **evidence collection**
 only, not restored domain-time readiness. Fix and regression must follow
 the diagnostic evidence.
+
+### First collected restart evidence (20261012-113745)
+
+The operator uploaded all four diagnostic logs for the existing NORTH instance.
+The collected state is **exercise mode**, protected host route **ABSENT**,
+router forwarding **policy drop** with only DC01↔DC02 exception and
+established flows, and all Windows ethernet0 adapters **persistent OFF**.
+GOAD-DC01, GOAD-DC02 and GOAD-SRV02 remain powered on; GOAD-WS01 was
+powered off when restart aborted. Status-collection PASS is not full
+exercise-mode or startup readiness.
+
+CASTELBLACK confirms DNS, domain secure channel, domain account
+translation and Netlogon are healthy. W32Time runs with `Type=NT5DS`,
+`ResolvePeerBackoffMinutes=1` and `ResolvePeerBackoffMaxTimes=0`,
+but reports `Local CMOS Clock`, `LeapIndicator=3`, `Stratum=0` and
+`LastSyncError=1`; its peer WINTERFELL is Active but stratum 0 from
+this client's perspective. Two Event ID 24 warnings say the peer did
+not respond after eight attempts. WINTERFELL independently advertises
+TIMESERV and GTIMESERV, responds to NTP probes and synchronizes from
+KINGSLANDING, stratum 2. WINTERFELL's W32Time NtpServer is enabled.
+
+**Key diagnostic distinction:** `w32tm /stripchart` succeeded from
+CASTELBLACK to WINTERFELL with ~5 ms offsets, but uses an *ephemeral
+UDP source port*. The Windows Time synchronization client uses
+*source UDP/123*, so stripchart is not proof that the native W32Time
+port-specific path is permitted. Microsoft's Windows Time tools
+documentation states this distinction explicitly:
+https://learn.microsoft.com/en-us/windows-server/networking/windows-time-service/windows-time-service-tools-and-settings
+The next discriminating check is a *passive* NTP capture on the NORTH
+segment filtered to 10.4.10.22 ↔ 10.4.10.11 UDP/123 while waiting for
+natural client polls. That can establish whether W32Time requests and
+replies are visible from the host; if no frames are observed, VMware
+virtual switching may prevent host observation and absence is not
+proof that no traffic exists. Do not change W32Time, AD trust or router
+policy before evidence distinguishes the source-port/firewall path.
+
+The forest-root diagnostic reported dc01 unreachable over Kali WinRM
+at 10.4.20.10:5986, consistent with the intentionally absent
+protected host route. WINTERFELL independently confirmed healthy
+KINGSLANDING time synchronization over the DC-to-DC router exception.
+The forest-root diagnostic transport failure is not proof that
+KINGSLANDING is damaged.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
