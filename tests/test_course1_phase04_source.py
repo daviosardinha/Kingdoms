@@ -52,9 +52,17 @@ class Course1Phase04SourceTests(unittest.TestCase):
         for technique in catalog:
             text = (TASKS / f"{technique}.yml").read_text(encoding="utf-8")
             self.assertIn("windows_lpe_action", text, technique)
-            self.assertIn("'apply'", text, technique)
-            self.assertIn("'reset'", text, technique)
-            self.assertIn("'validate'", text, technique)
+            if technique == "stored_runas_credentials":
+                # Apply/validate/reset actions live in the PowerShell helper,
+                # while the role file delegates under Rickon's context.
+                helper = (
+                    ROOT / "ansible/roles/windows_lpe/files/stored_runas/30_lifecycle.ps1"
+                ).read_text(encoding="utf-8")
+                for action in ("apply", "reset", "validate"):
+                    self.assertIn(f"$Action -eq '{action}'", helper)
+            else:
+                for action in ("apply", "reset", "validate"):
+                    self.assertIn(f"'{action}'", text, technique)
         document = CATALOG.read_text(encoding="utf-8")
         self.assertIn("20 techniques Implemented", document)
         self.assertIn("APPLIED / VULNERABLE", document)
