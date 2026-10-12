@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import re
 import yaml
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from goad.kingdoms_topology import load_course1_topology
 
@@ -105,7 +105,41 @@ def validate_course1_source(root: Path = ROOT) -> tuple[str, ...]:
         for script in host.get("scripts", []):
             if not (root / "ad/GOAD/scripts" / script).is_file():
                 raise Course1SourceError(f"Missing retained Kingdoms script for {host_key}")
-    messages.append("Retained Kingdoms scenario hosts and script references are valid")
+    # NORTH preserves original Kingdoms file fixtures, including the full
+    # CASTELBLACK IIS binary/site tree. The source mapping must be explicit:
+    # silently looking for ad/NORTH/files will fail after ~20 minutes of AD
+    # provisioning, despite the same fixture existing under ad/GOAD/files.
+    role = root / "ansible/roles/vulns/files/tasks/main.yml"
+    role_text = role.read_text(encoding="utf-8")
+    if not ("domain_name == 'NORTH'" in role_text
+            and "'../ad/GOAD/files'" in role_text
+            and "item.value.src" in role_text):
+        raise Course1SourceError("NORTH file-copy role must reuse existing Kingdoms fixtures")
+    assets = root / "ad/GOAD/files"
+    for host_key, host in lab["hosts"].items():
+        refs = host.get("vulns_vars", {}).get("files", {})
+        if "files" in host.get("vulns", []) and not refs:
+            raise Course1SourceError(f"Missing file fixture declarations for {host_key}")
+        if not isinstance(refs, dict):
+            raise Course1SourceError(f"Invalid file fixture declarations for {host_key}")
+        for fixture_name, fixture in refs.items():
+            src = fixture.get("src") if isinstance(fixture, dict) else None
+            if not isinstance(src, str):
+                raise Course1SourceError(f"Invalid retained file reference for {host_key}/{fixture_name}")
+            relative = PurePosixPath(src)
+            if (relative.is_absolute() or not relative.parts
+                    or any(part in (".", "..") for part in relative.parts)
+                    or "\\" in src):
+                raise Course1SourceError(f"Unsafe retained file reference for {host_key}/{fixture_name}")
+            target = assets.joinpath(*relative.parts)
+            if not target.exists() or target.is_symlink() or not (
+                target.is_file() or (target.is_dir() and
+                                     any(child.is_file() for child in target.rglob("*")))
+            ):
+                raise Course1SourceError(
+                    f"Missing retained Kingdoms file fixture for {host_key}/{fixture_name}"
+                )
+    messages.append("Retained Kingdoms scenario scripts and vulnerability file assets are valid")
 
     expected = {spec["inventory"]: spec["address"] for spec in topo["windows"].values()}
     for filename in ("providers/vmware/inventory", "data/inventory_disable_vagrant"):
