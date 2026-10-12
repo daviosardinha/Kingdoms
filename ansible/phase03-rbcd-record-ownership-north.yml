@@ -1,0 +1,98 @@
+---
+- name: Register NORTH RBCD Stage 1 account identity without changing AD
+  hosts: dc02
+  gather_facts: false
+  vars:
+    rbcd_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_BASELINE') }}"
+    rbcd_receipt_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_OWNERSHIP') }}"
+    rbcd_baseline: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | from_json }}"
+    rbcd_baseline_sha256: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | hash('sha256') }}"
+  tasks:
+    - name: Refuse to register without a clean fresh baseline and new receipt path
+      ansible.builtin.assert:
+        that:
+          - rbcd_baseline.Target == 'WS01$'
+          - rbcd_baseline.CandidateName == 'PHASE03RBCD$'
+          - not rbcd_baseline.RBCDPresent | bool
+          - not rbcd_baseline.CandidateExisted | bool
+          - rbcd_baseline.CapturedAtUtc is defined
+          - rbcd_receipt_path | length > 0
+        fail_msg: "NORTH Stage 1 ownership requires a fresh clean baseline"
+      delegate_to: localhost
+
+    - name: Reject an existing ownership receipt before registering
+      ansible.builtin.stat:
+        path: "{{ rbcd_receipt_path }}"
+        follow: false
+      register: rbcd_receipt_stat
+      delegate_to: localhost
+
+    - name: Prevent evidence overwrite
+      ansible.builtin.assert:
+        that:
+          - not rbcd_receipt_stat.stat.exists
+        fail_msg: "Stage 1 ownership receipt already exists; refusing overwrite"
+      delegate_to: localhost
+
+    - name: Verify newly created candidate against original AD baseline
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          Import-Module ActiveDirectory
+
+          $baseline = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String('{{ (rbcd_baseline | to_json) | b64encode }}')
+          ) | ConvertFrom-Json
+
+          $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -Properties ObjectSid,ObjectGUID,whenCreated,DistinguishedName
+          if ($null -eq $candidate) { throw 'PHASE03RBCD$ was not created' }
+
+          $target = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,msDS-AllowedToActOnBehalfOfOtherIdentity
+          if (-not [string]::Equals($target.DistinguishedName, $baseline.TargetDN, [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'WS01 DN differs from pre-attack baseline'
+          }
+          if ($null -ne $target.'msDS-AllowedToActOnBehalfOfOtherIdentity') {
+              throw 'Stage 1 ownership capture must precede any RBCD delegation change'
+          }
+
+          $created = ([datetime]$candidate.whenCreated).ToUniversalTime()
+          $baselineTime = ([datetime]::Parse($baseline.CapturedAtUtc)).ToUniversalTime()
+          $now = (Get-Date).ToUniversalTime()
+          if ($created -le $baselineTime -or $created -gt $now.AddMinutes(2)) {
+              throw 'Candidate creation does not follow fresh baseline'
+          }
+          if (-not $candidate.DistinguishedName.EndsWith('DC=north,DC=sevenkingdoms,DC=local', [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Candidate outside the NORTH domain'
+          }
+          if ([string]::IsNullOrWhiteSpace($candidate.ObjectSid.Value) -or
+              [string]::IsNullOrWhiteSpace([string]$candidate.ObjectGUID)) {
+              throw 'Candidate has no stable SID or GUID'
+          }
+
+          $Ansible.Result = [ordered]@{
+              CandidateName = 'PHASE03RBCD$'
+              CandidateDN = $candidate.DistinguishedName
+              CandidateSID = $candidate.ObjectSid.Value
+              CandidateGUID = [string]$candidate.ObjectGUID
+              CandidateCreatedAtUtc = $created.ToString('o')
+              TargetDN = $target.DistinguishedName
+              BaselineSHA256 = '{{ rbcd_baseline_sha256 }}'
+          }
+      register: rbcd_owned
+
+    - name: Save exact candidate identity in owner-only evidence
+      ansible.builtin.copy:
+        dest: "{{ rbcd_receipt_path }}"
+        content: "{{ rbcd_owned.result | to_nice_json }}\n"
+        mode: '0600'
+        force: false
+      delegate_to: localhost
+
+    - name: Emit Stage 1 ownership capture markers
+      ansible.builtin.debug:
+        msg:
+          - "PHASE03_RBCD_STAGE1_OWNERSHIP_REGISTERED=True"
+          - "PHASE03_RBCD_STAGE1_CANDIDATE_SID={{ rbcd_owned.result.CandidateSID }}"
+          - "PHASE03_RBCD_STAGE1_RECEIPT={{ rbcd_receipt_path }}"
+      changed_when: false
