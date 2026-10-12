@@ -1,0 +1,122 @@
+---
+- name: NORTH RBCD rollback bound to exact Stage 1 ownership evidence
+  hosts: dc02
+  gather_facts: false
+  vars:
+    rbcd_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_BASELINE') }}"
+    rbcd_ownership_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_OWNERSHIP') }}"
+    rbcd_baseline: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | from_json }}"
+    rbcd_receipt: "{{ lookup('ansible.builtin.file', rbcd_ownership_path) | from_json }}"
+    rbcd_baseline_sha256: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | hash('sha256') }}"
+  tasks:
+    - name: Require clean NORTH baseline linked to the Stage 1 receipt
+      ansible.builtin.assert:
+        that:
+          - rbcd_baseline.Target == 'WS01$'
+          - rbcd_baseline.CandidateName == 'PHASE03RBCD$'
+          - not rbcd_baseline.RBCDPresent | bool
+          - not rbcd_baseline.CandidateExisted | bool
+          - rbcd_baseline.CapturedAtUtc is defined
+          - rbcd_receipt.CandidateName == 'PHASE03RBCD$'
+          - rbcd_receipt.BaselineSHA256 == rbcd_baseline_sha256
+          - rbcd_receipt.TargetDN == rbcd_baseline.TargetDN
+        fail_msg: "NORTH rollback blocked: baseline or ownership provenance mismatch"
+      delegate_to: localhost
+
+    - name: Undo only the observed NORTH RBCD changes
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module ActiveDirectory
+          $Ansible.Changed = $false
+          $changed = $false
+
+          $baseline = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String('{{ (rbcd_baseline | to_json) | b64encode }}')
+          ) | ConvertFrom-Json
+          $receipt = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String('{{ (rbcd_receipt | to_json) | b64encode }}')
+          ) | ConvertFrom-Json
+
+          # Evaluate every identity and ACL invariant BEFORE ANY AD WRITE.
+          if ($baseline.Target -ne 'WS01$' -or $baseline.CandidateName -ne 'PHASE03RBCD$' -or
+              [bool]$baseline.RBCDPresent -or [bool]$baseline.CandidateExisted) {
+              throw 'Rollback requires a clean NORTH pre-attack baseline'
+          }
+          if ($receipt.CandidateName -ne 'PHASE03RBCD$' -or
+              -not [string]::Equals($receipt.TargetDN, $baseline.TargetDN, [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Stage 1 ownership receipt target mismatch'
+          }
+          if ($receipt.CandidateSID -notmatch '^S-1-5-21-(?:[0-9]+-){3}[0-9]+$') {
+              throw 'Invalid Stage 1 candidate SID'
+          }
+          if ($receipt.CandidateGUID -notmatch '^[0-9a-fA-F-]{36}$') {
+              throw 'Invalid Stage 1 candidate GUID'
+          }
+          if (-not $baseline.TargetDN.EndsWith('DC=north,DC=sevenkingdoms,DC=local', [StringComparison]::OrdinalIgnoreCase) -or
+              -not $receipt.CandidateDN.EndsWith('DC=north,DC=sevenkingdoms,DC=local', [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Rollback identity is outside NORTH'
+          }
+          if ([datetime]::Parse($receipt.CandidateCreatedAtUtc).ToUniversalTime() -le
+              [datetime]::Parse($baseline.CapturedAtUtc).ToUniversalTime()) {
+              throw 'Candidate predates the captured clean baseline'
+          }
+
+          $target = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,msDS-AllowedToActOnBehalfOfOtherIdentity
+          if (-not [string]::Equals($target.DistinguishedName, $baseline.TargetDN, [StringComparison]::OrdinalIgnoreCase)) {
+              throw 'WS01 DN changed since baseline; refusing rollback'
+          }
+          $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -Properties ObjectSid,ObjectGUID,whenCreated,DistinguishedName
+          if ($null -ne $candidate) {
+              if ($candidate.ObjectSid.Value -ne $receipt.CandidateSID -or
+                  -not [string]::Equals([string]$candidate.ObjectGUID, $receipt.CandidateGUID, [StringComparison]::OrdinalIgnoreCase) -or
+                  -not [string]::Equals($candidate.DistinguishedName, $receipt.CandidateDN, [StringComparison]::OrdinalIgnoreCase) -or
+                  ([datetime]$candidate.whenCreated).ToUniversalTime().ToString('o') -ne $receipt.CandidateCreatedAtUtc) {
+                  throw 'PHASE03RBCD$ no longer matches the recorded Stage 1 object; refusing deletion'
+              }
+          }
+
+          $raw = $target.'msDS-AllowedToActOnBehalfOfOtherIdentity'
+          $rbcdPresent = $null -ne $raw -and $raw.Length -gt 0
+          if ($rbcdPresent) {
+              if ($raw -is [System.DirectoryServices.ActiveDirectorySecurity]) {
+                  $bytes = $raw.GetSecurityDescriptorBinaryForm()
+              } elseif ($raw -is [byte[]]) {
+                  $bytes = [byte[]]$raw
+              } else {
+                  throw "Unexpected WS01 RBCD descriptor type: $($raw.GetType().FullName)"
+              }
+              $sd = [System.Security.AccessControl.RawSecurityDescriptor]::new($bytes, 0)
+              $aces = @($sd.DiscretionaryAcl)
+              if ($aces.Count -ne 1 -or $null -eq $aces[0].SecurityIdentifier -or
+                  $aces[0].SecurityIdentifier.Value -ne $receipt.CandidateSID) {
+                  throw 'RBCD contains unexpected delegation entries; refusing destructive replacement'
+              }
+          }
+
+          if ($rbcdPresent) {
+              Set-ADComputer -Identity 'WS01' -Clear 'msDS-AllowedToActOnBehalfOfOtherIdentity'
+              $changed = $true
+          }
+          if ($null -ne $candidate) {
+              Remove-ADComputer -Identity $candidate.DistinguishedName -Confirm:$false
+              $changed = $true
+          }
+
+          # This immediate read does NOT substitute for the independent verifier.
+          $targetAfter = Get-ADComputer -Identity 'WS01' -Properties msDS-AllowedToActOnBehalfOfOtherIdentity
+          $candidateAfter = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -ErrorAction SilentlyContinue
+          if ($null -ne $targetAfter.'msDS-AllowedToActOnBehalfOfOtherIdentity' -or $null -ne $candidateAfter) {
+              throw 'Post-rollback AD state is not neutral'
+          }
+
+          Write-Output 'PHASE03_RBCD_ROLLBACK_ATTRIBUTE_CLEARED=True'
+          Write-Output 'PHASE03_RBCD_ROLLBACK_CANDIDATE_REMOVED=True'
+          Write-Output 'PHASE03_RBCD_ROLLBACK_COMPLETE=True'
+          $Ansible.Changed = $changed
+      register: north_rbcd_rollback
+
+    - name: Emit rollback output
+      ansible.builtin.debug:
+        msg: "{{ north_rbcd_rollback.output | default([]) }}"
+      changed_when: false
