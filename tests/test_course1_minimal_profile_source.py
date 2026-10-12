@@ -120,6 +120,35 @@ class Course1MinimalProfileTests(unittest.TestCase):
         self.assertEqual(ansible.count("domain_name == 'NORTH'"), 2)
         self.assertIn("../ad/GOAD/scripts", ansible)
 
+    def test_all_north_file_assets_reuse_existing_kingdoms_source(self):
+        role = (ROOT / "ansible/roles/vulns/files/tasks/main.yml").read_text()
+        self.assertIn("domain_name == 'NORTH'", role)
+        self.assertIn("../ad/GOAD/files", role)
+        expected = {
+            "dc02/bot_rdp.ps1",
+            "dc02/sysvol_scripts/script.ps1",
+            "dc02/sysvol_scripts/secret.ps1",
+            "srv02/wwwroot",
+            "srv02/all/arya.txt",
+        }
+        actual = {
+            fixture["src"]
+            for host in self.north["hosts"].values()
+            for fixture in host.get("vulns_vars", {}).get("files", {}).values()
+        }
+        self.assertEqual(actual, expected)
+        for source in sorted(actual):
+            with self.subTest(source=source):
+                path = GOAD / "files" / source
+                self.assertTrue(path.exists(), source)
+                if path.is_dir():
+                    self.assertTrue(any(child.is_file() for child in path.rglob("*")),
+                                    source)
+                else:
+                    self.assertTrue(path.is_file(), source)
+        self.assertFalse((NORTH / "files").exists(),
+                         "NORTH should not duplicate large GOAD assets")
+
     def test_working_kingdoms_full_scenario_is_not_replaced(self):
         vagrant = (GOAD / "providers/vmware/Vagrantfile").read_text()
         self.assertIn('GOAD-DC03', vagrant)
