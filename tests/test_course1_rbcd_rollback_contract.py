@@ -54,6 +54,20 @@ class NorthRBCDRollbackContractTests(unittest.TestCase):
         ):
             self.assertIn(token, owner)
 
+    def test_clean_baseline_and_neutral_checks_never_miss_security_descriptor_object(self):
+        baseline = BASELINE.read_text()
+        self.assertEqual(baseline.count("- name: Capture NORTH RBCD baseline"), 1)
+        self.assertEqual(baseline.count("      changed_when: false"), 1)
+        self.assertIn("Target = 'WS01$'", baseline)
+        self.assertIn("CapturedAtUtc = (Get-Date).ToUniversalTime()", baseline)
+        self.assertIn("if ($rbcd -is [byte[]]) { $rbcdPresent = $rbcd.Length -gt 0 }", baseline)
+        preflight = (ROOT / "ansible/phase03-rbcd-preflight.yml").read_text()
+        neutral = NEUTRAL.read_text()
+        restore = RESTORE.read_text()
+        self.assertIn("if ($rbcd -is [byte[]]) { $rbcdPresent = $rbcd.Length -gt 0 }", preflight)
+        self.assertIn("if ($current -is [byte[]]) { $isPresent = $current.Length -gt 0 }", neutral)
+        self.assertIn("if ($raw -is [byte[]]) { $rbcdPresent = $raw.Length -gt 0 }", restore)
+
     def test_receipt_hashes_include_trailing_json_newline(self):
         for playbook in (OWNER, RESTORE):
             with self.subTest(playbook=playbook):
