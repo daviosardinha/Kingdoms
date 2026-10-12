@@ -67,10 +67,19 @@ readiness() {
   grep -Fq 'PHASE03_READONLY_ACCEPTANCE=PASS' "$EVIDENCE/$name-readiness.log" ||
     fail "$name readiness failed"
 }
+# Do not wrap native start/stop/reset in GNU timeout. It sends signals to
+# a process group and may kill vmware-vmx guests spawned by Vagrant. The native
+# Kingdoms provider owns its bounded VMware/Vagrant calls and PID-safe cleanup.
 native() {
-  local task="$1" name="$2"
+  local task="$1" name="$2" started="$SECONDS" rc=0
   sudo -n -v >/dev/null 2>&1 || fail "$name sudo credentials expired"
-  step "$name" 1800 bash ./goad.sh -t "$task" -l NORTH -p vmware -i "$INSTANCE"
+  echo "[RUN] $name"
+  bash ./goad.sh -t "$task" -l NORTH -p vmware -i "$INSTANCE" \
+    >"$EVIDENCE/$name.log" 2>&1 || rc=$?
+  if (( rc != 0 )); then
+    fail "$name rc=$rc log=$EVIDENCE/$name.log"
+  fi
+  echo "PASS | $name | seconds=$((SECONDS-started))" | tee -a "$SUMMARY"
 }
 readiness initial
 for cycle in 1 2; do
