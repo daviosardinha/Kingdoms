@@ -4,8 +4,8 @@ set -uo pipefail
 
 ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
 PLAYBOOK="$ROOT/ansible/phase03-rbcd-baseline.yml"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+DATA_INVENTORY="${KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 
 find_ansible_playbook() {
   local c
