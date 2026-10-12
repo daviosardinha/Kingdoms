@@ -112,6 +112,39 @@ class Phase03OverlaySourceTests(unittest.TestCase):
         self.assertIn("cleanup_failure=1", script)
         self.assertIn("Do not run further attack scenarios", script)
 
+    def test_course1_mutation_proof_and_rollback_wrappers_select_exact_north_inventory(self):
+        # These are source-only adaptations; active attack stages remain gated.
+        wrappers = (
+            "capture-rbcd-baseline.sh",
+            "verify-rbcd-stage1.sh",
+            "verify-rbcd-stage2.sh",
+            "rollback-rbcd.sh",
+            "capture-shadow-baseline.sh",
+            "verify-shadow-mutation.sh",
+            "rollback-shadow.sh",
+            "capture-adidns-baseline.sh",
+            "verify-adidns-proof.sh",
+            "rollback-adidns.sh",
+        )
+        for name in wrappers:
+            with self.subTest(name=name):
+                path = ROOT / "scripts/phase03" / name
+                source = path.read_text()
+                self.assertIn(
+                    "KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory",
+                    source,
+                )
+                self.assertIn(
+                    "KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory",
+                    source,
+                )
+                self.assertIn('-i "$DATA_INVENTORY"', source)
+                self.assertIn('-i "$PROVIDER_INVENTORY"', source)
+                result = subprocess.run(
+                    ["bash", "-n", str(path)], capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_course1_http_callback_and_cleanup_use_exact_north_inventories(self):
         for path in (
             "scripts/phase03/trigger-http-ldaps-readonly-relay.sh",
