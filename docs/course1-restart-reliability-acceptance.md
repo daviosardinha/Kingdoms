@@ -22,9 +22,13 @@ A separate start must not be appended.
 
 The reset permanently discards guest changes made after each stored snapshot.
 The scripts do not create snapshots, change AD trusts, weaken time checks,
-repair the domain or automatically retry on failure. Any failure blocks
-release acceptance and retains exact stage logs. An operator must review
-the selected snapshots before authorizing the destructive stage.
+repair the domain or automatically retry on failure. Native lifecycle
+start/stop/reset operations are deliberately NOT wrapped in an external GNU
+timeout: process-group termination could unintentionally signal VMware guest
+monitors. The provider's existing bounded operations and PID-safe cleanup
+remain authoritative. Any failure blocks release acceptance and retains exact
+stage logs. An operator must review the selected snapshots before
+authorizing the destructive stage.
 
 ## Read-only operator command
 
