@@ -12,8 +12,10 @@ usage() {
 Usage:
   bash scripts/course1-phase03-acceptance.sh <NORTH-instance-id> --plan
   bash scripts/course1-phase03-acceptance.sh <NORTH-instance-id> --run-http-ldaps --confirm
+  bash scripts/course1-phase03-acceptance.sh <NORTH-instance-id> --prepare-rbcd --confirm
 
 --plan is read-only.
+--prepare-rbcd captures a private RBCD baseline; no AD changes or relay.
 --run-http-ldaps validates NORTH, performs exactly one mutation-disabled
 HTTP->LDAPS relay and checks scoped cleanup. All other attack paths remain NOT_TESTED.
 USAGE
@@ -27,6 +29,7 @@ ACTION="$2"
 case "$ACTION" in
   --plan) [[ $# == 2 ]] || { usage >&2; exit 2; } ;;
   --run-http-ldaps) [[ $# == 3 && "$3" == --confirm ]] || { usage >&2; exit 2; } ;;
+  --prepare-rbcd) [[ $# == 3 && "$3" == --confirm ]] || { usage >&2; exit 2; } ;;
   *) usage >&2; exit 2 ;;
 esac
 
@@ -56,6 +59,12 @@ echo 'PHASE03_FULL_ATTACK_ACCEPTANCE=NOT_TESTED'
 if [[ "$ACTION" == --plan ]]; then
   echo 'PLAN_ONLY=True'
   exit 0
+fi
+
+# RBCD preparation has its own exact-owner lock and evidence-only run contract.
+# It does not enter the HTTP relay execution or finalizer below.
+if [[ "$ACTION" == --prepare-rbcd ]]; then
+  exec bash scripts/course1-phase03-rbcd-baseline.sh "$INSTANCE" --capture --confirm
 fi
 
 [[ -f "$MODE" && "$(tr -d '[:space:]' < "$MODE")" == exercise ]] || {
