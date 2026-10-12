@@ -369,12 +369,12 @@ class GoadNomad(BaseGoad):
         if start_playbook not in manifest:
             Log.error('NORTH resume starting playbook is not in the configured manifest')
             return False
-        # The existing host-network owner check is read-only and fail-closed.
-        if provider._course1_unwired():
-            Log.error('NORTH resume refused by host-network ownership check')
-            return False
-
         def resume():
+            # First prime sudo through the established installer keepalive;
+            # then inspect this exact instance's root-owned network journal.
+            if provider._course1_unwired():
+                Log.error('NORTH resume refused by host-network ownership check')
+                return False
             self._install_phase = f'NORTH Ansible resume from {start_playbook}'
             Log.info(f'NORTH: resuming existing instance from {start_playbook}; '
                      'no Vagrant VM bring-up will be repeated')
