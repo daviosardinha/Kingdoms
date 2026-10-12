@@ -1,0 +1,71 @@
+---
+- name: Verify exact RBCD state independently of rollback
+  hosts: dc02
+  gather_facts: false
+  vars:
+    phase03_rbcd_baseline_path: "{{ lookup('env', 'KINGDOMS_PHASE03_RBCD_BASELINE') }}"
+  tasks:
+    - name: Require explicitly selected baseline
+      ansible.builtin.assert:
+        that:
+          - phase03_rbcd_baseline_path | length > 0
+        fail_msg: "NORTH neutral verification requires an explicit baseline path"
+      delegate_to: localhost
+
+    - name: Compare live AD state against exact captured baseline
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          Import-Module ActiveDirectory
+
+          $rawJson = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String('{{ (lookup("ansible.builtin.file", phase03_rbcd_baseline_path) | from_json | to_json) | b64encode }}')
+          )
+          $baseline = $rawJson | ConvertFrom-Json
+
+          if ($baseline.Target -ne 'WS01$' -or $baseline.CandidateName -ne 'PHASE03RBCD$') {
+              throw 'Unexpected RBCD target or candidate in baseline'
+          }
+          if (-not $baseline.TargetDN.EndsWith('DC=north,DC=sevenkingdoms,DC=local', [System.StringComparison]::OrdinalIgnoreCase)) {
+              throw 'Baseline target is not in NORTH'
+          }
+
+          $target = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,msDS-AllowedToActOnBehalfOfOtherIdentity
+          $dnMatches = [string]::Equals($target.DistinguishedName, $baseline.TargetDN, [System.StringComparison]::OrdinalIgnoreCase)
+          $current = $target.'msDS-AllowedToActOnBehalfOfOtherIdentity'
+          $isPresent = ($null -ne $current -and $current.Length -gt 0)
+          $rbcdMatches = $false
+          if (-not [bool]$baseline.RBCDPresent) {
+              $rbcdMatches = -not $isPresent
+          } elseif ($isPresent) {
+              if ($current -is [System.DirectoryServices.ActiveDirectorySecurity]) {
+                  $bytes = $current.GetSecurityDescriptorBinaryForm()
+              } elseif ($current -is [byte[]]) {
+                  $bytes = [byte[]]$current
+              } else {
+                  throw "Unexpected RBCD type: $($current.GetType().FullName)"
+              }
+              $rbcdMatches = ([Convert]::ToBase64String($bytes) -ceq $baseline.RBCDBase64)
+          }
+
+          $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -ErrorAction SilentlyContinue
+          $candidateMatches = ([bool]($null -ne $candidate) -eq [bool]$baseline.CandidateExisted)
+          if ($baseline.CandidateExisted -and $null -ne $candidate) {
+              $candidateMatches = $candidateMatches -and
+                  [string]::Equals($candidate.DistinguishedName, $baseline.CandidateDN, [System.StringComparison]::OrdinalIgnoreCase)
+          }
+
+          Write-Output "PHASE03_RBCD_NEUTRAL_DN_MATCH=$dnMatches"
+          Write-Output "PHASE03_RBCD_NEUTRAL_DESCRIPTOR_MATCH=$rbcdMatches"
+          Write-Output "PHASE03_RBCD_NEUTRAL_CANDIDATE_MATCH=$candidateMatches"
+          if (-not ($dnMatches -and $rbcdMatches -and $candidateMatches)) {
+              throw 'RBCD state differs from the selected captured baseline'
+          }
+          Write-Output 'PHASE03_RBCD_NEUTRAL_VERIFIED=True'
+      register: neutral
+
+    - name: Emit independent verification markers
+      ansible.builtin.debug:
+        msg: "{{ neutral.output | default([]) }}"
+      changed_when: false
