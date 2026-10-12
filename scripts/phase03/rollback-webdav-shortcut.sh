@@ -6,8 +6,8 @@ ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
 BASELINE="${BASELINE:-$HOME/.config/kingdoms/phase03-webdav-baseline.json}"
 WORK="${WORK:-$HOME/.config/kingdoms/phase03-webdav}"
 PLAYBOOK="$ROOT/ansible/phase03-webdav-shortcut-rollback.yml"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+DATA_INVENTORY="${KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 
 find_ansible_playbook() {
   local candidate_file
