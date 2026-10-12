@@ -34,7 +34,8 @@
           $target = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,msDS-AllowedToActOnBehalfOfOtherIdentity
           $dnMatches = [string]::Equals($target.DistinguishedName, $baseline.TargetDN, [System.StringComparison]::OrdinalIgnoreCase)
           $current = $target.'msDS-AllowedToActOnBehalfOfOtherIdentity'
-          $isPresent = ($null -ne $current -and $current.Length -gt 0)
+          $isPresent = $null -ne $current
+          if ($current -is [byte[]]) { $isPresent = $current.Length -gt 0 }
           $rbcdMatches = $false
           if (-not [bool]$baseline.RBCDPresent) {
               $rbcdMatches = -not $isPresent
