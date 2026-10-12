@@ -3,7 +3,11 @@
 The retained NORTH profile consists of KINGSLANDING, WINTERFELL,
 CASTELBLACK, WS01 and GOAD-ROUTER. The previous 1m41s successful restart
 did not prove repeatability. The earlier CASTELBLACK/NT5DS cold-start
-stall remains an open reliability regression pending live repeat acceptance.
+stall is now **closed for recovery reliability**, based on two passing cold-start
+cycles and independently reconciled post-snapshot readiness (2026-10-12).
+Startup-duration optimization remains separate: cold-start 1 required 351s,
+whereas cold-start 2 required 54s. Neither duration should be misrepresented
+as a guaranteed cold-start SLA.
 
 ## Source-controlled gates
 
@@ -115,6 +119,49 @@ prints `NORTH_REPEATED_COLD_START=PASS`,
 `NORTH_POST_RESTORE_READINESS=PASS`, and
 `RECOVERY_EVIDENCE_RECONCILIATION=PASS`. Only then mark the
 restart/restore release acceptance formally closed. No new reset is needed.
+
+## 2026-10-12 — FINAL RECOVERY ACCEPTANCE: CLOSED
+
+**Status: ACCEPTED / CLOSED** for existing instance `ac9fda-north-vmware`
+on `rebuild/course1-from-kingdoms`.
+
+The operator performed the final, non-mutating reconciliation after
+correcting the post-restore Phase 03 evidence timestamp. The prior
+source regression run passed **19/19 tests**, and the reconciler emitted:
+
+```text
+instance=ac9fda-north-vmware
+original_run=/home/stark/Kingdoms-evidence/north-restart-acceptance-HG00FGjo
+successful_post_restore_batch=/home/stark/Kingdoms-evidence/phase03-batch-20261012-190138
+original_failure=external_github_dns_during_repeated_online_source_fetch
+NORTH_REPEATED_COLD_START=PASS
+NORTH_SNAPSHOT_RESTORE=PASS
+NORTH_POST_RESTORE_READINESS=PASS
+RESTART_RESTORE_RELIABILITY=PASS
+RECOVERY_EVIDENCE_RECONCILIATION=PASS
+```
+
+**Evidence artifact on operator Kali:**
+`/home/stark/Kingdoms-evidence/north-restart-acceptance-HG00FGjo/reconciled-recovery-acceptance.txt`.
+This artifact references the original cold-start/snapshot logs and the later
+11-PASS/0-FAIL read-only Phase 03 post-restore audit (one optional Rickon
+interactive Explorer warning).
+
+The original acceptance run's `NOT_CERTIFIED` marker is intentionally
+preserved, because it reflects its initial GitHub DNS-source-gate failure.
+The independent reconciler establishes the full recovery acceptance without
+rewriting or falsifying the original logs.
+
+**Scope of closure:** repeat cold-start health, native snapshot restoration,
+post-restore AD/Phase 03 prerequisites, and recovery network ownership/isolation
+for this NORTH instance. **Not included:** full Phase 03 active attack-chain
+acceptance, Rickon interactive WebDAV proof, startup speed optimization, or
+course publication readiness.
+
+No additional VM reset, reprovision, snapshot creation or repair is required
+for this checkpoint. Future changes to VMware/AD lifecycle may require rerunning
+relevant acceptance evidence; do not merge the broader rebuild merely on this
+single checkpoint.
 
 ## Course compatibility review
 
