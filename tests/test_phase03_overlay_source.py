@@ -38,6 +38,20 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(f"hosts: {forbidden}", text)
 
+    def test_readonly_phase03_readiness_selects_north_inventory_explicitly(self):
+        script = (ROOT / "scripts/validate-phase03-readiness.sh").read_text()
+        self.assertIn("KINGDOMS_PHASE03_PROFILE:-GOAD", script)
+        self.assertIn('PHASE03_LAB_INVENTORY="$ROOT/ad/NORTH/data/inventory"', script)
+        self.assertIn('PHASE03_INSTANCE_INVENTORY="$(dirname "$PROVIDER")/inventory"', script)
+        self.assertIn('-i "$PHASE03_LAB_INVENTORY"', script)
+        self.assertIn('-i "$PHASE03_INSTANCE_INVENTORY"', script)
+        self.assertIn("ad/NORTH/data/config.json", script)
+        self.assertIn("No poisoning, relay, coercion, directory modification", script)
+
+    def test_readonly_phase03_readiness_preserves_original_goad_defaults(self):
+        script = (ROOT / "scripts/validate-phase03-readiness.sh").read_text()
+        self.assertIn('PHASE03_LAB_INVENTORY="$ROOT/ad/GOAD/data/inventory"', script)
+        self.assertIn('PHASE03_INSTANCE_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"', script)
     def test_apply_fails_closed_and_runs_readiness_first(self):
         text = APPLY.read_text()
         self.assertIn("--confirm", text)
