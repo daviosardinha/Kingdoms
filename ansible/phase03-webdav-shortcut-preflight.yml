@@ -89,10 +89,34 @@
 
           Write-Output "PHASE03_WEBDAV_RICKON_EXPLORER=$explorerFound"
 
-          $sessions = & quser.exe 2>&1
-          foreach ($line in $sessions) {
-              if (-not [string]::IsNullOrWhiteSpace([string]$line)) {
-                  Write-Output "PHASE03_WEBDAV_QUSER=$([string]$line)"
+          # quser writes "No User exists for *" to stderr (exit 1) when
+          # there is no interactive logon. Windows PowerShell 5.1 with
+          # ErrorActionPreference=Stop treats that as NativeCommandError.
+          # Route the native stderr to stdout inside cmd, then check both
+          # its exit code and its diagnostic instead of aborting the audit.
+          $sessions = @(& cmd.exe /d /c 'quser.exe 2>&1')
+          $sessionExitCode = $LASTEXITCODE
+          if ($sessionExitCode -ne 0) {
+              $noSessions = @($sessions | Where-Object {
+                  [string]$_ -match 'No User exists for'
+              }).Count -gt 0
+
+              if ($noSessions) {
+                  Write-Output 'PHASE03_WEBDAV_QUSER_STATUS=NO_ACTIVE_SESSIONS'
+              }
+              else {
+                  foreach ($line in $sessions) {
+                      Write-Output "PHASE03_WEBDAV_QUSER_ERROR=$([string]$line)"
+                  }
+                  throw "quser.exe unexpectedly failed (exit $sessionExitCode)"
+              }
+          }
+          else {
+              Write-Output 'PHASE03_WEBDAV_QUSER_STATUS=SESSIONS_PRESENT'
+              foreach ($line in $sessions) {
+                  if (-not [string]::IsNullOrWhiteSpace([string]$line)) {
+                      Write-Output "PHASE03_WEBDAV_QUSER=$([string]$line)"
+                  }
               }
           }
 
