@@ -74,7 +74,7 @@ The operator completed the explicitly authorized recovery run on the existing
 A separate read-only verification after external DNS recovered passed the
 same installed NORTH owner gate and all **11 required** Phase 03 prerequisite
 checks (1 optional Rickon Explorer-session warning, 0 failures).
-Evidence: `~/Kingdoms-evidence/phase03-batch-20261012-191038/`.
+Evidence: `~/Kingdoms-evidence/phase03-batch-20261012-190138/`.
 This establishes restored infrastructure readiness without repeating
 destructive VM restoration; it does **not** prove the optional Rickon
 interactive victim-session state or active attack chains.
@@ -105,7 +105,7 @@ Operator after pulling the new GitHub branch:
       -name 'north-restart-acceptance-*' -printf '%T@ %p\n' \
       | sort -nr | head -1 | cut -d' ' -f2-)"
     echo "Selected original run: $RUN"
-    POST="$HOME/Kingdoms-evidence/phase03-batch-20261012-191038"
+    POST="$HOME/Kingdoms-evidence/phase03-batch-20261012-190138"
     bash scripts/course1-restart-finalize.sh "$RUN" "$POST"
 
 If the actual RUN path differs, use the one printed by the initial runner;
