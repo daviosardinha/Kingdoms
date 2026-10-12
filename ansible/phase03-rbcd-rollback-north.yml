@@ -77,7 +77,8 @@
           }
 
           $raw = $target.'msDS-AllowedToActOnBehalfOfOtherIdentity'
-          $rbcdPresent = $null -ne $raw -and $raw.Length -gt 0
+          $rbcdPresent = $null -ne $raw
+          if ($raw -is [byte[]]) { $rbcdPresent = $raw.Length -gt 0 }
           if ($rbcdPresent) {
               if ($raw -is [System.DirectoryServices.ActiveDirectorySecurity]) {
                   $bytes = $raw.GetSecurityDescriptorBinaryForm()
