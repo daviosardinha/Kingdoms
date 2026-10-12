@@ -17,7 +17,52 @@
           $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -ErrorAction SilentlyContinue
 
           $baseline = [ordered]@{
-              Target = 'WS01$'
+              Target = 'WS01              TargetDN = $target.DistinguishedName
+              RBCDPresent = [bool]($null -ne $rbcd -and $rbcd.Length -gt 0)
+              RBCDBase64 = $null
+              CandidateName = 'PHASE03RBCD$'
+              CandidateExisted = [bool]($null -ne $candidate)
+              CandidateDN = if ($null -ne $candidate) { $candidate.DistinguishedName } else { $null }
+          }
+
+          if ($baseline.RBCDPresent) {
+              if ($rbcd -is [System.DirectoryServices.ActiveDirectorySecurity]) {
+                  $rbcdBytes = $rbcd.GetSecurityDescriptorBinaryForm()
+              } elseif ($rbcd -is [byte[]]) {
+                  $rbcdBytes = [byte[]]$rbcd
+              } else {
+                  throw "Unexpected RBCD descriptor type: $($rbcd.GetType().FullName)"
+              }
+              $baseline.RBCDBase64 = [Convert]::ToBase64String($rbcdBytes)
+          }
+
+          $Ansible.Result = $baseline
+      register: rbcd_baseline
+
+    - name: Ensure local Kingdoms config directory exists
+      ansible.builtin.file:
+        path: "{{ phase03_rbcd_baseline_path | dirname }}"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+
+    - name: Save exact RBCD baseline locally
+      ansible.builtin.copy:
+        dest: "{{ phase03_rbcd_baseline_path }}"
+        content: "{{ rbcd_baseline.result | to_nice_json }}\n"
+        mode: '0600'
+      delegate_to: localhost
+
+    - name: Emit baseline markers
+      ansible.builtin.debug:
+        msg:
+          - "PHASE03_RBCD_BASELINE_FILE={{ phase03_rbcd_baseline_path }}"
+          - "PHASE03_RBCD_BASELINE_TARGET={{ rbcd_baseline.result.Target }}"
+          - "PHASE03_RBCD_BASELINE_EXISTING={{ rbcd_baseline.result.RBCDPresent }}"
+          - "PHASE03_RBCD_BASELINE_CANDIDATE_EXISTS={{ rbcd_baseline.result.CandidateExisted }}"
+      changed_when: false
+
+              CapturedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
               TargetDN = $target.DistinguishedName
               RBCDPresent = [bool]($null -ne $rbcd -and $rbcd.Length -gt 0)
               RBCDBase64 = $null
