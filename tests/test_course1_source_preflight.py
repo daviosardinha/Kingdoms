@@ -38,7 +38,6 @@ class Course1SourcePreflightTests(unittest.TestCase):
         (self.root / role).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / role, self.root / role)
         shutil.copy2(ROOT / "playbooks.yml", self.root / "playbooks.yml")
-        (self.root / "ansible").mkdir()
         manifest = yaml.safe_load((ROOT / "playbooks.yml").read_text())
         for play in manifest["NORTH"]:
             shutil.copy2(ROOT / "ansible" / play, self.root / "ansible" / play)
