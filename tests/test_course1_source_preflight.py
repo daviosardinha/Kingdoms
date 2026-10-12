@@ -1,4 +1,5 @@
 """Catch missing Course 1 assets before any VM, network, or AD operation."""
+import json
 import shutil
 import tempfile
 import unittest
@@ -18,6 +19,24 @@ class Course1SourcePreflightTests(unittest.TestCase):
         self.root = Path(self.folder.name)
         shutil.copytree(ROOT / "ad/NORTH", self.root / "ad/NORTH")
         shutil.copytree(ROOT / "ad/GOAD/scripts", self.root / "ad/GOAD/scripts")
+        # Mirror only the declared DC02/SRV02 fixtures; the actual compiled
+        # IIS tree remains in the repository and must not be copied into
+        # every isolated test fixture.
+        lab = json.loads((ROOT / "ad/NORTH/data/config.json").read_text())["lab"]
+        for host in lab["hosts"].values():
+            for fixture in host.get("vulns_vars", {}).get("files", {}).values():
+                rel = Path(fixture["src"])
+                original = ROOT / "ad/GOAD/files" / rel
+                target = self.root / "ad/GOAD/files" / rel
+                if original.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    (target / "Default.aspx").write_text("website fixture", encoding="utf-8")
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(original, target)
+        role = "ansible/roles/vulns/files/tasks/main.yml"
+        (self.root / role).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / role, self.root / role)
         shutil.copy2(ROOT / "playbooks.yml", self.root / "playbooks.yml")
         (self.root / "ansible").mkdir()
         manifest = yaml.safe_load((ROOT / "playbooks.yml").read_text())
@@ -75,6 +94,28 @@ class Course1SourcePreflightTests(unittest.TestCase):
         self.edit("ad/NORTH/data/inventory", "[dc]\ndc01\ndc02",
                   "[dc]\ndc01\ndc02\ndc03")
         with self.assertRaisesRegex(Course1SourceError, "Wrong domain-controller group"):
+            validate_course1_source(self.root)
+
+    def test_missing_retained_dc02_script_blocks_before_install(self):
+        (self.root / "ad/GOAD/files/dc02/bot_rdp.ps1").unlink()
+        with self.assertRaisesRegex(Course1SourceError, "Missing retained Kingdoms file fixture"):
+            validate_course1_source(self.root)
+
+    def test_missing_castelblack_website_blocks_before_install(self):
+        (self.root / "ad/GOAD/files/srv02/wwwroot/Default.aspx").unlink()
+        with self.assertRaisesRegex(Course1SourceError, "Missing retained Kingdoms file fixture"):
+            validate_course1_source(self.root)
+
+    def test_file_copy_role_cannot_point_north_back_to_nonexistent_path(self):
+        path = "ansible/roles/vulns/files/tasks/main.yml"
+        self.edit(path, "../ad/GOAD/files", "../ad/NORTH/files")
+        with self.assertRaisesRegex(Course1SourceError, "file-copy role"):
+            validate_course1_source(self.root)
+
+    def test_unsafe_retained_file_reference_fails_source_gate(self):
+        self.edit("ad/NORTH/data/config.json",
+                  "dc02/bot_rdp.ps1", "../../missing/secret.ps1")
+        with self.assertRaisesRegex(Course1SourceError, "Unsafe retained file reference"):
             validate_course1_source(self.root)
 
     def test_missing_kingdoms_script_is_detected(self):
