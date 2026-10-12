@@ -340,6 +340,53 @@ class GoadNomad(BaseGoad):
         self.refresh_prompt()
         return provision_result
 
+    def do_resume_north(self, start_playbook):
+        """Resume the existing NORTH playbook sequence without Vagrant up.
+
+        This is deliberately separate from fresh install. The original
+        Ansible.run_from owns AD-aware management preparation and final
+        exercise isolation. Existing Kingdoms provider checks and the sudo
+        keepalive remain active; no stale instance status is trusted.
+        """
+        if (self.lab_manager.get_current_lab_name() != 'NORTH'
+                or self.lab_manager.get_current_provider_name() != 'vmware'):
+            Log.error('NORTH resume requires selected NORTH/VMware profile')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        provider = self.lab_manager.get_current_instance_provider()
+        provisioner = self.lab_manager.get_current_instance_provisioner()
+        if instance is None or provider is None or provisioner is None:
+            Log.error('NORTH resume requires an already-created instance')
+            return False
+        if not isinstance(start_playbook, str) or not start_playbook:
+            Log.error('NORTH resume requires a starting playbook')
+            return False
+        try:
+            manifest = provisioner.get_playbook_list('NORTH')
+        except (OSError, ValueError, KeyError) as exc:
+            Log.error(f'NORTH resume manifest is invalid: {exc}')
+            return False
+        if start_playbook not in manifest:
+            Log.error('NORTH resume starting playbook is not in the configured manifest')
+            return False
+        # The existing host-network owner check is read-only and fail-closed.
+        if provider._course1_unwired():
+            Log.error('NORTH resume refused by host-network ownership check')
+            return False
+
+        def resume():
+            self._install_phase = f'NORTH Ansible resume from {start_playbook}'
+            Log.info(f'NORTH: resuming existing instance from {start_playbook}; '
+                     'no Vagrant VM bring-up will be repeated')
+            if not provisioner.run_from(start_playbook):
+                Log.error('NORTH Ansible resume failed; instance remains incomplete')
+                return False
+            instance.set_status(READY)
+            self.refresh_prompt()
+            return True
+
+        return bool(self._run_with_install_timer(resume))
+
     def do_provision_lab(self, arg=''):
         """Provision through the GOAD_NOMAD lifecycle and set READY only on success.
 
@@ -519,7 +566,7 @@ class GoadNomad(BaseGoad):
 
 
 def parse_args():
-    task_help = 'tasks available: prepare-north/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
+    task_help = 'tasks available: prepare-north/install/resume-north/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='goad_nomad.py',
         description='GOAD_NOMAD lab management console.',
@@ -539,7 +586,7 @@ Examples:
     parser.add_argument('-i', '--instance', help='use a specific instance (use default if not selected)', required=False)
     parser.add_argument('-e', '--extensions', help='extensions to use', action='append', required=False)
     parser.add_argument('-a', '--ansible_only', help='run only provisioning (ansible) on instance (-i) (for task install only)', required=False)
-    parser.add_argument('-r', '--run_playbook', help='run only one ansible playbook on instance (-i) (for task install only)', required=False)
+    parser.add_argument('-r', '--run_playbook', help='run one playbook with install, or resume NORTH from this playbook with resume-north (requires -i)', required=False)
     parser.add_argument('-d', '--disable_dependencies', help='disable_dependencies', action='append', required=False)
     return parser.parse_args()
 
@@ -560,6 +607,12 @@ def _dispatch_task(goad, args):
             Log.error('Instance must be selected (-i) to use --run_playbook (-r) or --ansible_only (-a)')
             return 1
 
+    if args.task == 'resume-north':
+        if (args.instance is None or args.run_playbook is None
+                or args.ansible_only is not None):
+            Log.error('resume-north requires -i <existing-instance> -r <starting-playbook>; no -a')
+            return 1
+        return 0 if goad.do_resume_north(args.run_playbook) else 1
     if args.task == 'prepare-north':
         return 0 if goad.do_prepare_north() else 1
     if args.task == 'install':
