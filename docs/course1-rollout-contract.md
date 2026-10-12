@@ -787,6 +787,34 @@ stages, positive S4U consequence, per-run credentials, and independently
 verified rollback on all exit paths. Any failed neutral check blocks RBCD
 execution and must be diagnosed before repair.
 
+### 2026-10-12 NORTH RBCD rollback contract — source implemented; active proof pending
+
+The separate NORTH RBCD contract is documented in
+[`docs/course1-rbcd-rollback-contract.md`](course1-rbcd-rollback-contract.md).
+It leaves the shared GOAD rollback wrapper unmodified. The NORTH operator
+workflow captures a **fresh post-restore** DC-timestamped, clean WS01$
+baseline, records the controlled PHASE03RBCD$ computer SID, GUID, DN and
+creation time immediately after Stage 1, and binds that record to the
+exact baseline SHA-256. The ownership receipt is not a substitute for
+independently proving creation through the Stage 1 relay.
+
+No rollback is allowed merely because an account has the expected name.
+The NORTH-only rollback requires matching exact object provenance,
+refuses unrelated RBCD ACEs and refuses lost/corrupted evidence before any
+AD write. Its final acceptance must come from the independent live
+WS01/PHASE03RBCD$ neutral-state verifier, not only the mutation playbook.
+Interrupted registration with no SID/GUID receipt blocks unattended
+cleanup until ownership is investigated.
+
+The code and source regression were committed on
+`rebuild/course1-from-kingdoms`, but **live Kali unit tests and Ansible
+syntax checks still need operator validation**. This checkpoint has not
+started any RBCD relay, created a candidate account, written delegation,
+proven S4U or executed rollback. RBCD stays
+`PHASE03_RBCD_ACTIVE_ACCEPTANCE=NOT_TESTED` until the complete active
+chain and independent rollback both pass. Do not run the legacy
+`scripts/phase03/rollback-rbcd.sh` against NORTH.
+
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
