@@ -137,6 +137,41 @@ sudo bash scripts/provisioning-routes.sh --north status --provider-dir "$PWD/wor
 Expect route status OWNED while provision mode still retains the
 temporary parent-route. This is not authorization to delete/recreate
 routes manually or replace the owned route with another protocol.
+### First NORTH Ansible run: reuse retained vulnerability files and resume
+
+First live NORTH installation completed all four Windows VMware boots and
+17 Ansible playbooks through the domain health stage. The next playbook,
+`vulnerabilities.yml`, failed in the generic `vulns/files` role because it
+constructed `../ad/NORTH/files/...`. All five referenced artifacts already
+exist in the original Kingdoms repository under `ad/GOAD/files/`:
+three DC02 PowerShell/SYSVOL scripts, SRV02 IIS `wwwroot` (including binaries),
+and the Arya share letter. The scenario JSON is correct and unchanged.
+
+The generic file role now selects `ad/GOAD/files` **only for NORTH**, just
+as the existing vulnerabilities playbook selects retained GOAD PowerShell
+scripts for NORTH. Other lab profiles retain their original relative paths.
+The source preflight checks the role mapping and every declared retained file
+or populated directory before Vagrant starts. No binaries are duplicated,
+no VM is recreated, and no finished AD stages need to be replayed.
+
+For a completed 17/21 partial provisioning state, use the native Ansible
+`run_from` implementation through the guarded `resume-north` CLI. It primes
+the existing 60-second sudo keepalive, checks the exact installed NORTH
+network owner, uses the standard AD-aware provisioning network preparation,
+then runs `vulnerabilities.yml`, `phase01.yml`, `ws01-lpe-install.yml`, and
+`kingdoms-health-final.yml` in manifest order. The original provisioner
+finalizes exercise isolation; READY is recorded **only on full success**.
+
+After `--installed` source + live owner validation returns green:
+
+```bash
+./goad.sh -t resume-north -l NORTH -p vmware \
+  -i ac9fda-north-vmware -r vulnerabilities.yml
+```
+
+This explicitly does **not** invoke Vagrant `up` or rebuild the two domains.
+`-t install` would repeat earlier playbooks and is not the correct recovery
+for a 17-playbook-complete fixture-copy failure.
 ## Five contracts before enabling deployment
 
 1. **VMware host networking**: connect `execute_testable_network_transaction()` to reviewed stop/restart/live-verification callbacks, with exact installed-VM and registered-VMX exclusion, reviewed baseline SHA-256, ownership, durable global lock, journal, and recovery of both `/etc/vmware/networking` and VMware-generated netmap state. A failure must restore only owned bytes and must not silently overwrite other clients' changes. Disposable Kali acceptance is mandatory.
