@@ -1,0 +1,45 @@
+---
+- name: Audit Course 1 NORTH WS01 LPE foothold without changing guest state
+  hosts: ws01
+  gather_facts: false
+  tasks:
+    - name: Inspect exact Rickon low-privilege foothold and host security
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          $system = Get-CimInstance Win32_ComputerSystem
+          if ($system.Name -ne 'WS01') { throw "Wrong host: $($system.Name)" }
+          if (-not $system.PartOfDomain -or $system.Domain -ne 'north.sevenkingdoms.local') {
+              throw "Unexpected domain state: $($system.Domain)"
+          }
+          if (-not (Test-ComputerSecureChannel)) { throw 'WS01 secure channel failed' }
+
+          $rickon = 'north\rickon.stark'
+          $rdpMembers = @(Get-LocalGroupMember -Group 'Remote Desktop Users' |
+              ForEach-Object { $_.Name.ToLowerInvariant() })
+          if ($rdpMembers.Count -ne 1 -or $rdpMembers[0] -ne $rickon) {
+              throw 'Rickon is not the sole Remote Desktop Users member'
+          }
+          $admins = @(Get-LocalGroupMember -Group 'Administrators' |
+              ForEach-Object { $_.Name.ToLowerInvariant() })
+          if ($admins -contains $rickon) { throw 'Rickon is a local administrator' }
+
+          $uac = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System').EnableLUA
+          if ($uac -ne 1) { throw 'UAC has been disabled' }
+          $firewall = @(Get-NetFirewallProfile | Where-Object { -not $_.Enabled })
+          if ($firewall.Count -gt 0) { throw 'One or more Windows Firewall profiles are disabled' }
+          $defender = Get-MpComputerStatus
+          if (-not $defender.AntivirusEnabled -or -not $defender.RealTimeProtectionEnabled) {
+              throw 'Defender protection is not active'
+          }
+
+          Write-Output 'PHASE04_WS01_NORTH_DOMAIN=PASS'
+          Write-Output 'PHASE04_WS01_RICKON_NONADMIN_RDP=PASS'
+          Write-Output 'PHASE04_WS01_SECURITY_CONTROLS=PASS'
+      register: phase04_foothold
+
+    - name: Emit inspected foothold markers
+      ansible.builtin.debug:
+        msg: "{{ phase04_foothold.output | default([]) }}"
+      changed_when: false
