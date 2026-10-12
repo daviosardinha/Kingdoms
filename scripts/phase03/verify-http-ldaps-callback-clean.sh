@@ -4,8 +4,8 @@ set -euo pipefail
 
 ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
 PLAYBOOK="$ROOT/ansible/phase03-http-ldaps-callback-clean.yml"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+DATA_INVENTORY="${KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 
 find_ansible_playbook() {
   local c
@@ -18,6 +18,12 @@ find_ansible_playbook() {
     return 0
   done
   return 1
+}
+
+# Fail before any WS01 interaction if an explicitly selected inventory is missing.
+[[ -f "$DATA_INVENTORY" && -f "$PROVIDER_INVENTORY" ]] || {
+  echo 'FAIL: Phase 03 inventory input is missing' >&2
+  exit 2
 }
 
 cd "$ROOT"
