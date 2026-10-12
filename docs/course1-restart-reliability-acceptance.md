@@ -101,7 +101,10 @@ Operator after pulling the new GitHub branch:
     cd "$HOME/kingdoms-rebuild"
     git pull --ff-only
     python3 -m unittest tests.test_course1_restart_preflight tests.test_course1_restart_acceptance tests.test_course1_restart_pinned_source tests.test_course1_restart_finalize
-    RUN="$HOME/Kingdoms-evidence/north-restart-acceptance-HG00FGjo"
+    RUN="$(find "$HOME/Kingdoms-evidence" -maxdepth 1 -type d \
+      -name 'north-restart-acceptance-*' -printf '%T@ %p\n' \
+      | sort -nr | head -1 | cut -d' ' -f2-)"
+    echo "Selected original run: $RUN"
     POST="$HOME/Kingdoms-evidence/phase03-batch-20261012-191038"
     bash scripts/course1-restart-finalize.sh "$RUN" "$POST"
 
