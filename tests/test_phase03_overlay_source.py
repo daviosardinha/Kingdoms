@@ -38,6 +38,33 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(f"hosts: {forbidden}", text)
 
+    def test_webdav_preflight_handles_absent_interactive_session_without_masking_errors(self):
+        preflight = (ROOT / "ansible/phase03-webdav-shortcut-preflight.yml").read_text()
+        self.assertIn("& cmd.exe /d /c 'quser.exe 2>&1'", preflight)
+        self.assertIn("No User exists for", preflight)
+        self.assertIn("PHASE03_WEBDAV_QUSER_STATUS=NO_ACTIVE_SESSIONS", preflight)
+        self.assertIn("PHASE03_WEBDAV_QUSER_STATUS=SESSIONS_PRESENT", preflight)
+        self.assertIn('throw "quser.exe unexpectedly failed', preflight)
+        self.assertIn("PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True", preflight)
+        self.assertNotIn("$sessions = & quser.exe 2>&1", preflight)
+        self.assertIn("$Ansible.Changed = $false", preflight)
+
+    def test_webdav_batch_requires_fixture_evidence_and_warns_on_absent_victim_session(self):
+        script = (ROOT / "scripts/course1-phase03-preflight.sh").read_text()
+        for marker in (
+            "PHASE03_WEBDAV_WEBCLIENT_EXISTS=True",
+            "PHASE03_WEBDAV_RICKON_PROFILE_EXISTS=True",
+            "PHASE03_WEBDAV_RICKON_DESKTOP_EXISTS=True",
+            "PHASE03_WEBDAV_CANDIDATE_LNK_EXISTS=False",
+            "PHASE03_WEBDAV_CANDIDATE_URL_EXISTS=False",
+            "PHASE03_WEBDAV_QUSER_STATUS=",
+            "PHASE03_WEBDAV_RICKON_EXPLORER=False",
+            "WARN | 05-webdav-session",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, script)
+        self.assertIn("WARN=$((WARN+1))", script)
+
     def test_course1_phase03_batch_preflight_is_one_command_and_readonly(self):
         script_path = ROOT / "scripts/course1-phase03-preflight.sh"
         script = script_path.read_text()
