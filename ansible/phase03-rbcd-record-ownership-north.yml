@@ -6,7 +6,7 @@
     rbcd_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_BASELINE') }}"
     rbcd_receipt_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_OWNERSHIP') }}"
     rbcd_baseline: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | from_json }}"
-    rbcd_baseline_sha256: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | hash('sha256') }}"
+    rbcd_baseline_sha256: "{{ lookup('ansible.builtin.file', rbcd_baseline_path, rstrip=False) | hash('sha256') }}"
   tasks:
     - name: Refuse to register without a clean fresh baseline and new receipt path
       ansible.builtin.assert:
