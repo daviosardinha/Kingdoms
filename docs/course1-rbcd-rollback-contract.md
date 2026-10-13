@@ -53,6 +53,58 @@ Stage 1 registration is interrupted before writing the SID/GUID receipt,
 the automated NORTH rollback **must refuse deletion**. Investigate and
 establish object provenance first; do not bypass the guard.
 
+## Special recovery: Attack 14 already complete, Stage 1 receipt was never captured
+
+The operator's 2026-10-13 read-only RBCD preflight on
+`ac9fda-north-vmware` confirmed
+`PHASE03_RBCD_EXISTING=True`,
+`PHASE03_RBCD_CANDIDATE_EXISTS=True`,
+and `PHASE03_RBCD_SELF_CAN_WRITE=True`.
+Two pre-attack baseline files exist, but neither directory contains a
+Stage 1 `rbcd-ownership.json` or associated checksum. The original
+Stage 1 registrar cannot be run now because Stage 2 already modified
+WS01's RBCD descriptor. DO NOT fabricate a retroactive Stage 1 receipt.
+
+A separate **strictly read-only** post-attack forensic inspector is
+prepared in source:
+`ansible/phase03-rbcd-postattack-inspect-north.yml`
+and `scripts/course1-phase03-rbcd-postattack-inspect.sh`.
+It binds itself to an owner-only pre-attack baseline and its SHA-256,
+validates exact NORTH source/host identity, reads current WS01 and
+candidate state from WINTERFELL and records candidate SID, GUID, DN,
+creation time, optional machine creator SID, and all RBCD ACE identities.
+It checks whether the ONLY RBCD ACE is an allow entry for the candidate
+SID, and whether the account was created after the baseline. It reports
+`PHASE03_RBCD_RECOVERY_INSPECTION=PASS` only for a consistent post-attack
+picture, then emits `PHASE03_RBCD_RECOVERY_APPROVAL=REQUIRED`.
+This remains **corroborative evidence**, not contemporaneous ownership
+proof and not authorization to delete the object.
+
+Source-only + live **read-only inspection** (no AD writes):
+```bash
+cd "$HOME/kingdoms-rebuild" && git pull --ff-only
+python3 -m unittest tests.test_course1_rbcd_postattack_inspect
+"$HOME/.goad/.venv/bin/python" -c "import yaml; yaml.safe_load(open('ansible/phase03-rbcd-postattack-inspect-north.yml'))"
+sudo -v
+bash scripts/course1-phase03-rbcd-postattack-inspect.sh \
+  ac9fda-north-vmware \
+  "$HOME/Kingdoms-evidence/phase03-rbcd-baseline-20261012-211731-UhWpSMIs/rbcd-baseline.json" \
+  --inspect
+```
+
+The older baseline `phase03-rbcd-baseline-20261012-171041-P1Gm2EcN`
+predates the snapshot restore and must not be selected.
+
+**No targeted post-attack cleanup is implemented or approved at this
+checkpoint.** After the operator reviews the live evidence, develop a
+separate one-time guarded recovery plan that identifies *exactly* which
+RBCD ACE and AD object may be removed, requires explicit operator
+authorization, verifies all identity/provenance invariants before
+writes, and independently validates neutral state. If any identity is
+ambiguous, choose the previously validated coordinated snapshot
+recovery after reviewing the data-loss impact instead. Do not weaken
+the existing Stage 1 rollback contract or silently run its apply path.
+
 ## Operator validation — before any attack
 
 ```bash
@@ -113,10 +165,9 @@ blindly remove arbitrary local ticket directories or instructor files.
 
 ## Notion alignment
 
-The published Attack 14 guide currently says `PHASE03RBCD$` remains
-for later housekeeping. Once this NORTH rollback is live-accepted, update
-that passage: the instructor-side fixture is removed under exact-object
-provenance checks, while the learner sees the attribute-level cleanup and
-the independent return to baseline. Avoid exposing protected instructor
-provisioning credentials or suggesting an attacker can delete arbitrary
-AD objects without the required privileges.
+Attack 14's Notion write-up now distinguishes demonstrated RBCD
+exploitation from pending cleanup, and specifically warns that the
+missing Stage 1 provenance receipt blocks automated object deletion.
+Once the instructor-side recovery is independently accepted, update only
+the actual demonstrated cleanup evidence; never imply students possess
+the AD administrative privileges needed for instructor recovery.
