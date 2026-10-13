@@ -1,0 +1,111 @@
+---
+- name: NORTH RBCD post-attack forensic inspection without AD modification
+  hosts: dc02
+  gather_facts: false
+  vars:
+    rbcd_baseline_path: "{{ lookup('env', 'KINGDOMS_PHASE03_RBCD_BASELINE') }}"
+    rbcd_baseline: "{{ lookup('ansible.builtin.file', rbcd_baseline_path) | from_json }}"
+  tasks:
+    - name: Restrict inspection to the recorded clean NORTH baseline
+      ansible.builtin.assert:
+        that:
+          - rbcd_baseline.Target == 'WS01$'
+          - rbcd_baseline.CandidateName == 'PHASE03RBCD$'
+          - not (rbcd_baseline.RBCDPresent | bool)
+          - not (rbcd_baseline.CandidateExisted | bool)
+          - rbcd_baseline.CapturedAtUtc is defined
+          - rbcd_baseline.TargetDN is defined
+        fail_msg: "Post-attack inspection requires the exact original clean NORTH baseline"
+      delegate_to: localhost
+
+    - name: Read candidate identity and parse the WS01 RBCD descriptor (NO AD writes)
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          Import-Module ActiveDirectory
+
+          $baseline = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String('{{ (rbcd_baseline | to_json) | b64encode }}')
+          ) | ConvertFrom-Json
+          $baselineTime = ([datetime]::Parse($baseline.CapturedAtUtc)).ToUniversalTime()
+          $now = (Get-Date).ToUniversalTime()
+
+          $target = Get-ADComputer -Identity 'WS01' -Properties ObjectSid,DistinguishedName,msDS-AllowedToActOnBehalfOfOtherIdentity
+          $targetMatches = [string]::Equals($target.DistinguishedName, $baseline.TargetDN, [StringComparison]::OrdinalIgnoreCase)
+          $targetSid = $target.ObjectSid.Value
+
+          $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -Properties ObjectSid,ObjectGUID,whenCreated,DistinguishedName,'mS-DS-CreatorSID' -ErrorAction SilentlyContinue
+          $candidateExists = $null -ne $candidate
+          $candidateSid = if ($candidateExists) { [string]$candidate.ObjectSid.Value } else { $null }
+          $candidateGuid = if ($candidateExists) { [string]$candidate.ObjectGUID } else { $null }
+          $candidateDn = if ($candidateExists) { [string]$candidate.DistinguishedName } else { $null }
+          $created = if ($candidateExists) { ([datetime]$candidate.whenCreated).ToUniversalTime() } else { $null }
+          $createdAfterBaseline = ($candidateExists -and $created -gt $baselineTime -and $created -le $now.AddMinutes(2))
+          $candidateInNorth = ($candidateExists -and
+              $candidateDn.EndsWith('DC=north,DC=sevenkingdoms,DC=local', [StringComparison]::OrdinalIgnoreCase))
+
+          # This optional AD field is corroboration only. It can legitimately be absent.
+          $creatorSid = $null
+          if ($candidateExists) {
+              $creatorRaw = $candidate.'mS-DS-CreatorSID'
+              if ($creatorRaw -is [System.Security.Principal.SecurityIdentifier]) {
+                  $creatorSid = $creatorRaw.Value
+              } elseif ($creatorRaw -is [byte[]] -and $creatorRaw.Length -gt 0) {
+                  $creatorSid = ([System.Security.Principal.SecurityIdentifier]::new([byte[]]$creatorRaw, 0)).Value
+              }
+          }
+
+          $raw = $target.'msDS-AllowedToActOnBehalfOfOtherIdentity'
+          $rbcdPresent = $null -ne $raw
+          if ($raw -is [byte[]]) { $rbcdPresent = $raw.Length -gt 0 }
+          $aces = @()
+          if ($rbcdPresent) {
+              if ($raw -is [System.DirectoryServices.ActiveDirectorySecurity]) {
+                  $bytes = $raw.GetSecurityDescriptorBinaryForm()
+              } elseif ($raw -is [byte[]]) {
+                  $bytes = [byte[]]$raw
+              } else {
+                  throw "Unexpected RBCD descriptor type $($raw.GetType().FullName)"
+              }
+              $descriptor = [System.Security.AccessControl.RawSecurityDescriptor]::new($bytes, 0)
+              if ($null -ne $descriptor.DiscretionaryAcl) {
+                  foreach ($ace in $descriptor.DiscretionaryAcl) {
+                      $aceSid = if ($null -ne $ace.SecurityIdentifier) { $ace.SecurityIdentifier.Value } else { $null }
+                      $aceType = [string]$ace.AceType
+                      $aces += [pscustomobject]@{ SID = $aceSid; Type = $aceType; AccessMask = $ace.AccessMask }
+                  }
+              }
+          }
+          $soleControlledAce = ($rbcdPresent -and $candidateExists -and
+              $aces.Count -eq 1 -and $aces[0].SID -eq $candidateSid -and
+              $aces[0].Type -match '^AccessAllowed')
+
+          Write-Output "PHASE03_RBCD_POST_ATTACK_WS01_DN_MATCH=$targetMatches"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_TARGET_SID=$targetSid"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CANDIDATE_PRESENT=$candidateExists"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CANDIDATE_SID=$candidateSid"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CANDIDATE_GUID=$candidateGuid"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CANDIDATE_DN=$candidateDn"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CANDIDATE_CREATED_UTC=$created"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CREATED_AFTER_BASELINE=$createdAfterBaseline"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CANDIDATE_IN_NORTH=$candidateInNorth"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CREATOR_SID=$creatorSid"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CREATOR_IS_WS01=$($null -ne $creatorSid -and $creatorSid -eq $targetSid)"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_DESCRIPTOR_PRESENT=$rbcdPresent"
+          Write-Output "PHASE03_RBCD_POST_ATTACK_ACE_COUNT=$($aces.Count)"
+          foreach ($entry in $aces) {
+              Write-Output "PHASE03_RBCD_POST_ATTACK_ACE=SID=$($entry.SID);TYPE=$($entry.Type);MASK=$($entry.AccessMask)"
+          }
+          Write-Output "PHASE03_RBCD_POST_ATTACK_ONLY_CONTROLLED_ACE=$soleControlledAce"
+          $consistent = $targetMatches -and $candidateExists -and $createdAfterBaseline -and
+              $candidateInNorth -and $soleControlledAce
+          Write-Output "PHASE03_RBCD_POST_ATTACK_CONSISTENT=$consistent"
+          Write-Output 'PHASE03_RBCD_POST_ATTACK_READ_ONLY=True'
+          $Ansible.Result = @{ Consistent = [bool]$consistent; ReadOnly = $true }
+      register: rbcd_inspection
+
+    - name: Show only bounded inspection markers
+      ansible.builtin.debug:
+        msg: "{{ rbcd_inspection.output | default([]) }}"
+      changed_when: false
