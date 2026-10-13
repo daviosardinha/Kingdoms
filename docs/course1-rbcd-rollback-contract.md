@@ -171,3 +171,46 @@ missing Stage 1 provenance receipt blocks automated object deletion.
 Once the instructor-side recovery is independently accepted, update only
 the actual demonstrated cleanup evidence; never imply students possess
 the AD administrative privileges needed for instructor recovery.
+
+## 2026-10-13 — Post-attack read-only inspection completed
+
+**Evidence:** `/home/stark/Kingdoms-evidence/phase03-rbcd-postattack-S9qKLfLj/inspection.log`
+**Original clean baseline:** `/home/stark/Kingdoms-evidence/phase03-rbcd-baseline-20261012-211731-UhWpSMIs/rbcd-baseline.json`
+
+The operator ran the new read-only inspector on `ac9fda-north-vmware`. Four source
+tests passed, and live inspection emitted
+`PHASE03_RBCD_RECOVERY_INSPECTION=PASS`,
+`PHASE03_RBCD_POST_ATTACK_CONSISTENT=True`,
+`PHASE03_RBCD_POST_ATTACK_READ_ONLY=True`, and
+`PHASE03_RBCD_RECOVERY_APPROVAL=REQUIRED`.
+
+Observed exact object evidence:
+- WS01 computer SID ends in `-1106`; candidate creator SID **matches** it.
+- PHASE03RBCD$ object SID ends in `-1602`, GUID
+  `c3cca34d-a871-414c-9e3c-4e08db14ef7e`.
+- Candidate DN is `CN=PHASE03RBCD,CN=Computers,DC=north,DC=sevenkingdoms,DC=local`.
+- The object was created 2026-10-12 at **21:38:55 UTC**, after the clean
+  pre-attack baseline.
+- WS01 RBCD attribute contains **exactly one** `AccessAllowed` ACE,
+  mask `983551`, referencing the candidate SID and no other recorded trustee.
+
+**Interpretation:** Strong, corroborating post-attack evidence supports a
+narrowly scoped recovery. This is not the missing contemporaneous Stage 1
+ownership receipt, so the normal `course1-phase03-rbcd-rollback.sh` contract
+must remain unchanged and fail closed. Attack 14's exploitation is proven;
+rollback is **NOT_TESTED**.
+
+**Recovery decision boundary:** Before any guest mutation, independently
+recheck the exact live target DN/SID, candidate SID/GUID/DN/creator and
+creation time, and the unique RBCD ACE against the captured baseline and
+this dated evidence. A mismatch or additional ACE is a STOP condition.
+On explicit operator authorization, a separate tightly scoped recovery
+should restore the original WS01 RBCD state, remove only the identity-matched
+exercise computer, and run `ansible/phase03-rbcd-verify-neutral.yml`.
+Do not claim success until the independent checker proves both the
+attribute and candidate state match the original baseline. Already-issued
+Kerberos tickets can survive attribute restoration until their expiration.
+A clean coordinated snapshot restore is the fallback only after reviewing
+the impact on all intervening guest changes.
+
+No mutation was executed or authorized by this read-only checkpoint.
