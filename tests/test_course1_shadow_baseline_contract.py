@@ -67,7 +67,7 @@ class Course1ShadowBaselineContractTests(unittest.TestCase):
     def test_playbook_explicit_env_is_backward_compatible(self):
         src = PLAYBOOK.read_text(encoding="utf-8")
         self.assertIn("lookup('env','KINGDOMS_PHASE03_SHADOW_BASELINE')", src)
-        self.assertIn("'/ .config/kingdoms/phase03-shadow-baseline.json'".replace('/ ', '/'), src)
+        self.assertIn("'/.config/kingdoms/phase03-shadow-baseline.json'", src)
         self.assertIn('dest: "{{ phase03_shadow_baseline_path }}"', src)
         self.assertIn('path: "{{ phase03_shadow_baseline_path | dirname }}"', src)
         self.assertIn("PHASE03_SHADOW_BASELINE_FILE={{ phase03_shadow_baseline_path }}", src)
