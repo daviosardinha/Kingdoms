@@ -1,6 +1,6 @@
 # Course 1 NORTH — Attack 15 Shadow Credentials baseline contract
 
-**Status:** source staged, Kali unit test and live capture pending.
+**Status:** NORTH baseline **live captured** on 2026-10-14; exact-fingerprint rollback and independent verifier **source-staged, Kali tests and live rollback acceptance pending**.
 
 ## Why this is necessary
 
@@ -54,19 +54,84 @@ Require `PHASE03_SHADOW_BASELINE_NEUTRAL=True` and
 **Retain that exact path** for this exercise; no blanket use of
 `~/.config/kingdoms/phase03-shadow-baseline.json`.
 
-## Recovery boundary
+## Live capture evidence — 2026-10-14
+
+The operator pulled source checkpoint `15ab136`, passed **4 source tests** and
+parsed the capture YAML. Live NORTH baseline capture then returned:
+
+```text
+PHASE03_SHADOW_BASELINE_NEUTRAL=True
+PHASE03_SHADOW_BASELINE_TARGET=WS01$
+PHASE03_SHADOW_BASELINE_KCL_COUNT=0
+PHASE03_SHADOW_BASELINE_CAPTURE=PASS
+PHASE03_SHADOW_ACTIVE_ACCEPTANCE=NOT_TESTED
+```
+
+**Exact private baseline:**
+`/home/stark/Kingdoms-evidence/phase03-shadow-baseline-y9Z23fYy/shadow-baseline.json`
+
+Only one previously empty `msDS-KeyCredentialLink` attribute was captured.
+The old September 25 baseline remains untouched.
+
+## NORTH rollback design (staged, not live-accepted)
+
+The new wrapper `scripts/course1-phase03-shadow-rollback.sh` is scoped
+to exactly one current NORTH instance and one owner-only per-run baseline.
+It validates the JSON contents and SHA-256, locks against other Phase 03
+acceptance operations, requires an installed network owner/source check,
+and never touches the original September baseline.
+
+- `--plan` is read-only. It checks the live WS01 DN/SID against the
+  selected baseline, rejects **more than one KeyCredential entry**, and
+  prints the SHA-256 fingerprint of the *single* present value without
+  exporting raw key material. When no KCL exists it reports
+  `PHASE03_SHADOW_ROLLBACK_PLAN=ALREADY_NEUTRAL`.
+- `--apply --confirm <64hex-fingerprint>` is a **mutating operator
+  action** that requires the fingerprint from the reviewed plan. It
+  refuses any extra KCL values, changed fingerprint, unexpected WS01
+  identity, active relay or poisoning process, invalid baseline or
+  owner mismatch. It clears the *sole* matching KCL entry, and reads
+  back immediately. Only under these exact checks is clearing the
+  whole attribute safe: the baseline was empty and there is exactly
+  one expected newly introduced value.
+- After mutation, the wrapper runs a *different*, read-only playbook,
+  `ansible/phase03-shadow-verify-neutral-north.yml`, comparing
+  WS01's exact SID/DN and empty KCL against the baseline.
+  `PHASE03_SHADOW_ROLLBACK_ACCEPTANCE=PASS` requires this verifier.
+- `--verify` runs that independent read-only verification alone.
+  The runner never automatically erases PFX/private key artifacts or
+  performs snapshot restore. Locally generated secrets must be
+  handled as separate exercise-owned evidence.
+- `tests/test_course1_shadow_rollback_contract.py` checks syntax,
+  exact NORTH scoping and the explicit authorization and fail-closed
+  boundaries; **these tests and the Ansible YAML parser have not yet
+  run on Kali for the new rollback implementation.**
+
+Operator source-only check and safe plan **before any attack**:
+
+```bash
+cd "$HOME/kingdoms-rebuild" && git pull --ff-only
+python3 -m unittest tests.test_course1_shadow_baseline_contract tests.test_course1_shadow_rollback_contract
+"$HOME/.goad/.venv/bin/python" -c "import yaml; [yaml.safe_load(open('ansible/' + n)) for n in ('phase03-shadow-rollback-north.yml','phase03-shadow-verify-neutral-north.yml')]"
+sudo -v
+bash scripts/course1-phase03-shadow-rollback.sh ac9fda-north-vmware \
+  "$HOME/Kingdoms-evidence/phase03-shadow-baseline-y9Z23fYy/shadow-baseline.json" --plan
+```
+
+This initial plan should report `ALREADY_NEUTRAL` and leave the lab
+unchanged. Before later applying rollback, repeat `--plan` **after**
+the controlled Shadow attack, review its exact single-value fingerprint,
+then explicitly authorize the exact plan. Never reuse a stale fingerprint
+or select the GOAD baseline. If plan finds two or more values, stop.
+
+**No active Shadow relay, PKINIT consequence or rollback has yet been
+demonstrated on the rebuilt NORTH instance.** The source guard is not
+live acceptance. A coordinated restore of the five consistent VMware
+snapshots remains fallback if the target has unexplained changes.
+
+## Legacy GOAD boundaries
 
 The legacy `scripts/phase03/rollback-shadow.sh` and
 `ansible/phase03-shadow-rollback.yml` still default to the original
-GOAD inventories and legacy global baseline. They must **not** be run
-unchanged on the current NORTH instance. Before the first Shadow
-Credentials write, stage and source-test a NORTH-specific, exact-baseline
-recovery that independently compares WS01's DN/SID, original KCL
-values and only the attack-owned addition. Reject concurrent or
-unexpected KCL changes; never wipe the attribute simply because a
-generic helper reports success. Independently verify restored state and
-clean up only exercise-owned local key/certificate artifacts.
-
-If recovery cannot be proven safely, a separately approved coordinated
-VMware snapshot restore is the fallback, with the known consequences
-for all guest changes since the snapshot.
+GOAD inventories and the September global baseline. Do **not** use
+them directly on NORTH.
