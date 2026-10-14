@@ -1,6 +1,6 @@
 # Course 1 NORTH — Attack 15 Shadow Credentials baseline contract
 
-**Status:** NORTH baseline **live captured** on 2026-10-14; exact-fingerprint rollback and independent verifier **source-staged, Kali tests and live rollback acceptance pending**.
+**Status:** Attack 15 manual exploitation PASS; independent post-cleanup NORTH Shadow neutral verification PASS on 2026-10-14. The old mutating apply task failed an internal readback after attempting the attribute clear; its corrected readback has not been retested via a second mutation.
 
 ## Why this is necessary
 
@@ -124,9 +124,7 @@ the controlled Shadow attack, review its exact single-value fingerprint,
 then explicitly authorize the exact plan. Never reuse a stale fingerprint
 or select the GOAD baseline. If plan finds two or more values, stop.
 
-**No active Shadow relay, PKINIT consequence or rollback has yet been
-demonstrated on the rebuilt NORTH instance.** The source guard is not
-live acceptance. A coordinated restore of the five consistent VMware
+**Pre-attack status superseded by the dated live evidence below.** The source test suite does not establish acceptance of a second mutating apply. A coordinated restore of the five consistent VMware
 snapshots remains fallback if the target has unexplained changes.
 
 ## Legacy GOAD boundaries
@@ -135,6 +133,26 @@ The legacy `scripts/phase03/rollback-shadow.sh` and
 `ansible/phase03-shadow-rollback.yml` still default to the original
 GOAD inventories and the September global baseline. Do **not** use
 them directly on NORTH.
+
+## 2026-10-14 — Independent Shadow neutral verification PASS
+
+The operator fast-forwarded the NORTH branch to `8977a11`, ran five rollback unit tests (OK), parsed the rollback YAML and executed the existing read-only independent verifier against the exact private pre-attack NORTH Shadow baseline.
+
+Observed output:
+
+```text
+[RUN] Independent read-only neutral verification
+PHASE03_SHADOW_NEUTRAL_ACCEPTANCE=PASS
+PHASE03_SHADOW_ACTIVE_ACCEPTANCE=NOT_TESTED
+```
+
+Evidence: `/home/stark/Kingdoms-evidence/phase03-shadow-rollback-cDcoIZJ2`.
+
+**Interpretation:** WS01's exact DN/SID and now-empty `msDS-KeyCredentialLink` match the original clean baseline. The earlier authorized apply attempted the AD clear, then failed an unreliable internal null-based readback. The independent verifier confirms **AD recovery is complete without a VM reset or second apply**. Do not rerun `--apply`.
+
+**Status distinction:** Manual NTLM-to-LDAPS relay, KCL injection, independent KCL verification and certificate PKINIT TGT proof: PASS. Independent neutral state: PASS. Original mutating wrapper completion marker: FAILED. Corrected readback source exists but **has not been retested through an additional mutation**. Automated active attack acceptance remains NOT_TESTED.
+
+**Remaining hygiene:** Private exercise-owned PFX and password artifacts remain under `phase03-shadow-attack-AhK4e7Ut`; preserve privately or remove only those artifacts after saving redacted documentation. WS01 WebClient was temporarily changed from Stopped/Manual to Running/Manual; restore runtime state before the next attack if no longer needed. Do not publish the generated PFX password.
 
 ## 2026-10-14 — First live rollback readback failure
 
