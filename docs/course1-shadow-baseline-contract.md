@@ -135,3 +135,46 @@ The legacy `scripts/phase03/rollback-shadow.sh` and
 `ansible/phase03-shadow-rollback.yml` still default to the original
 GOAD inventories and the September global baseline. Do **not** use
 them directly on NORTH.
+
+## 2026-10-14 — First live rollback readback failure
+
+Attack 15's first LDAPS relay inserted one KCL value on WS01$, independently
+verified as the single entry with SHA-256
+\`37d6f52a023e988df4f5d57c3ef975ae91dc36a51709a76c130fabd12bbc04e0\`.
+Certipy authenticated as \`WS01$\` through PKINIT and reported a TGT, without
+requesting an NT hash or persisting the ticket cache. The SHA-matched
+\`--plan\` passed and \`--apply --confirm\` was explicitly requested.
+
+The Ansible rollback task **failed after attempting the AD clear**:
+\`KeyCredentialLink rollback failed internal readback; independent verifier required\`.
+The log shows the expected plan/identity/fingerprint evidence but task error
+\`changed: true\`. The prior post-write readback used
+\`$null -ne $after.'msDS-KeyCredentialLink'\`; this is not a reliable presence
+test for an AD multi-valued property because PowerShell can return an
+empty \`ADPropertyValueCollection\` rather than \`$null\`. A source fix
+replaced that check with \`$afterValues.Count -ne 0\` and added explicit
+readback identity/count diagnostic markers and a regression source test.
+
+**Current live cleanup status is UNKNOWN until independent verification.**
+The first \`--apply\` must **not** be rerun. Obtain a fresh exact-state
+reading using:
+\`\`\`bash
+cd "$HOME/kingdoms-rebuild" && git pull --ff-only
+python3 -m unittest tests.test_course1_shadow_rollback_contract
+"$HOME/.goad/.venv/bin/python" -c "import yaml; yaml.safe_load(open('ansible/phase03-shadow-rollback-north.yml'))"
+sudo -v
+bash scripts/course1-phase03-shadow-rollback.sh \\
+  ac9fda-north-vmware \\
+  "$HOME/Kingdoms-evidence/phase03-shadow-baseline-y9Z23fYy/shadow-baseline.json" \\
+  --verify
+\`\`\`
+
+If \`PHASE03_SHADOW_NEUTRAL_ACCEPTANCE=PASS\`, the directory has already
+returned to its original empty KCL state and no further mutation is needed;
+record this as an independent recovery acceptance (not a successful original
+apply task). If verification fails, preserve logs and inspect the current
+read-only \`--plan\` output before any further decision. Do not reset the
+lab or retry apply simply because the initial task returned an error.
+
+The existing protected exercise baseline and original private PFX evidence
+must remain intact while recovery status is being resolved.
