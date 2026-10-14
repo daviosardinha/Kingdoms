@@ -83,6 +83,18 @@ class ShadowRollbackContractTests(unittest.TestCase):
         for dangerous in ('-Replace', 'Remove-ADComputer', 'Set-ADObject', 'Remove-ADObject'):
             self.assertNotIn(dangerous, script)
 
+    def test_internal_readback_counts_values_not_property_nullness(self):
+        # After clearing an AD multi-valued attribute, Get-ADComputer may
+        # return an empty ADPropertyValueCollection rather than $null.
+        # The old '$null -ne $after.<attribute>' check wrongly failed.
+        source = PLAYBOOK.read_text(encoding="utf-8")
+        self.assertIn("$afterValues = @()", source)
+        self.assertIn("$afterValues = @($after.'msDS-KeyCredentialLink')", source)
+        self.assertIn("$afterValues.Count -ne 0", source)
+        self.assertIn("PHASE03_SHADOW_ROLLBACK_READBACK_KCL_COUNT=", source)
+        self.assertIn("PHASE03_SHADOW_ROLLBACK_READBACK_IDENTITY_MATCH=", source)
+        self.assertNotIn("                      $null -ne $after.'msDS-KeyCredentialLink') {", source)
+
     def test_independent_verifier_no_mutation_and_exact_identity_baseline(self):
         source = NEUTRAL.read_text(encoding="utf-8")
         for marker in (
