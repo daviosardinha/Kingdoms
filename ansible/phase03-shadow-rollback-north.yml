@@ -75,9 +75,20 @@
                   Set-ADComputer -Identity $target.DistinguishedName -Clear 'msDS-KeyCredentialLink'
                   $Ansible.Changed = $true
                   $after = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,ObjectSid,msDS-KeyCredentialLink
-                  if (-not [string]::Equals($after.DistinguishedName,$baseline.TargetDN,[StringComparison]::OrdinalIgnoreCase) -or
-                      $after.ObjectSid.Value -ne $baseline.TargetSID -or
-                      $null -ne $after.'msDS-KeyCredentialLink') {
+                  # AD can return an empty ADPropertyValueCollection instead of $null
+                  # for a cleared, multi-valued LDAP attribute. Compare the actual
+                  # values, exactly as the independent neutral verifier does.
+                  $afterValues = @()
+                  if ($null -ne $after.'msDS-KeyCredentialLink') {
+                      $afterValues = @($after.'msDS-KeyCredentialLink')
+                  }
+                  $afterIdentityMatches = (
+                      [string]::Equals($after.DistinguishedName,$baseline.TargetDN,[StringComparison]::OrdinalIgnoreCase) -and
+                      $after.ObjectSid.Value -eq $baseline.TargetSID
+                  )
+                  Write-Output "PHASE03_SHADOW_ROLLBACK_READBACK_IDENTITY_MATCH=$afterIdentityMatches"
+                  Write-Output "PHASE03_SHADOW_ROLLBACK_READBACK_KCL_COUNT=$($afterValues.Count)"
+                  if (-not $afterIdentityMatches -or $afterValues.Count -ne 0) {
                       throw 'KeyCredentialLink rollback failed internal readback; independent verifier required'
                   }
                   Write-Output 'PHASE03_SHADOW_ROLLBACK_APPLIED=True'
