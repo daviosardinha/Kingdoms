@@ -192,6 +192,10 @@ class WindowsLpeVmwareBackendTests(unittest.TestCase):
         provider.mkdir(parents=True)
         (provider / "index_uuid").write_text("vagrant-index", encoding="utf-8")
         def inspect_only(args, **kwargs):
+            # Track the attempted subprocess before returning, including a
+            # deliberately failed Vagrant up. The previous mock returned
+            # early and hid the invocation from the safety assertion.
+            self.calls.append((tuple(args), kwargs))
             if args[0] == "ruby":
                 output = "Syntax OK"
             elif args[1:] == ["plugin", "list"]:
@@ -206,7 +210,6 @@ class WindowsLpeVmwareBackendTests(unittest.TestCase):
                 return SimpleNamespace(returncode=1, stdout="", stderr="")
             else:
                 self.fail("unexpected command " + repr(args))
-            self.calls.append((tuple(args), kwargs))
             return SimpleNamespace(returncode=0, stdout=output, stderr="")
         self.adapter._runner = inspect_only
         result = self.adapter.create_guest(confirmed=True)
