@@ -190,7 +190,7 @@ class GoadNomad(BaseGoad):
                 and self._course_selection() is not None
                 and self._course_selection().slug == 'windows-lpe'
             ):
-                allowed.add('install')
+                allowed.add(action)
             if action not in allowed:
                 Log.error(
                     'WSLPE full installation and lifecycle remain locked. '
