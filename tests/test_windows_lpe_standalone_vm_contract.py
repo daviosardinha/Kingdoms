@@ -53,6 +53,17 @@ class KingdomsWindowsLpeVmContractTests(unittest.TestCase):
         ):
             self.assertIn(term, self.architecture)
 
+    def test_operator_control_plane_is_not_learner_access(self) -> None:
+        for boundary in (
+            "operator-only control plane",
+            "Learners (untrusted lab users)",
+            "installer, hypervisor APIs",
+            "never the operator installer directly",
+            "future AWS-backed Windows LPE course",
+        ):
+            self.assertIn(boundary, self.architecture)
+
+
 
 if __name__ == "__main__":
     unittest.main()
