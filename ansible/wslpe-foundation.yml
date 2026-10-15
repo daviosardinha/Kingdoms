@@ -33,6 +33,9 @@
           $ErrorActionPreference = 'Stop'
           $os = Get-CimInstance Win32_OperatingSystem
           $computer = Get-CimInstance Win32_ComputerSystem
+          if ($env:COMPUTERNAME -ne 'WSLPE-WS01') {
+            throw 'WSLPE foundation must target the exact standalone guest'
+          }
           if ($os.ProductType -ne 1) {
             throw 'WSLPE requires a Windows client OS'
           }
@@ -53,6 +56,12 @@
           Write-Output ('WSLPE_WINDOWS_BUILD=' + $os.BuildNumber)
           Write-Output 'WSLPE_WINDOWS_STANDALONE=PASS'
       changed_when: false
+
+    - name: Preserve canonical WSLPE hostname using the proven Windows role
+      ansible.builtin.import_role:
+        name: settings/hostname
+      vars:
+        hostname: WSLPE-WS01
 
     # Reuse the already deployed NORTH WS01 evaluation role, not a second
     # licensing implementation. Runs only in WSLPE's operator provisioning
