@@ -8,15 +8,52 @@ be absent from VMware's running inventory and Vagrant must explicitly report
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
+import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 
 from goad.goadpath import GoadPath
 from goad.log import Log
 from goad.utils import PROVIDED
 
 GUEST = "WSLPE-WS01"
+
+
+@contextmanager
+def direct_winrm_resume_file(provider_dir: Path):
+    """Use direct WinRM only for an existing registered WSLPE guest's resume.
+
+    Fresh Stage-1 bootstrap retains the normal NAT communicator while Windows
+    configures its private NIC. The original instance Vagrantfile is untouched.
+    """
+    source_file = provider_dir / "Vagrantfile"
+    if source_file.is_symlink() or not source_file.is_file():
+        raise ValueError("WSLPE Vagrantfile missing or symlinked")
+    source = source_file.read_text(encoding="utf-8")
+    needle = 'target.vm.communicator = "winrm"'
+    if (source.count(needle) != 1
+        or source.count(':name => "WSLPE-WS01"') != 1
+        or source.count('target.vm.network :private_network, ip: box[:ip]') != 1
+        or "target.winrm.host =" in source):
+        raise ValueError("WSLPE WinRM resume configuration is ambiguous")
+    # box[:ip] comes from this instance's validated private exercise prefix,
+    # never a hardcoded operator-machine address or NORTH management network.
+    replacement = (needle + '\n'
+                   '        target.winrm.host = box[:ip]\n'
+                   '        target.winrm.port = 5985')
+    fd, temporary = tempfile.mkstemp(
+        prefix="Vagrantfile.wslpe-resume-", dir=str(provider_dir)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(source.replace(needle, replacement, 1))
+        yield Path(temporary).name
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
 
 
 def inspect_powered_off(manager) -> tuple[object, Path] | None:
@@ -121,11 +158,21 @@ def resume_existing_wslpe(manager, *, confirmed: bool) -> bool:
         return False
     provider, vmx = inspected
     try:
-        # Reuse the proven Kingdoms Vagrant execution infrastructure.
-        # --no-provision is essential: Stage 2 and the learner are not ready.
-        started = bool(provider.command.run_vagrant(
-            ["up", GUEST, "--no-provision"], provider.path
-        ))
+        # The original Vagrantfile stays unchanged for fresh Stage-1 bootstrap.
+        # Scope the proven direct WinRM communicator to this resume subprocess.
+        # Keep the canonical command executor and --no-provision safeguard.
+        with direct_winrm_resume_file(Path(str(provider.path))) as filename:
+            previous = os.environ.get("VAGRANT_VAGRANTFILE")
+            try:
+                os.environ["VAGRANT_VAGRANTFILE"] = filename
+                started = bool(provider.command.run_vagrant(
+                    ["up", GUEST, "--no-provision"], provider.path
+                ))
+            finally:
+                if previous is None:
+                    os.environ.pop("VAGRANT_VAGRANTFILE", None)
+                else:
+                    os.environ["VAGRANT_VAGRANTFILE"] = previous
     except Exception as exc:
         Log.error(f"WSLPE resume failed: {type(exc).__name__}; no automatic retry")
         return False
