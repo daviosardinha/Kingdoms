@@ -207,3 +207,23 @@ After the operator confirmed one permitted evaluation rearm, the existing `setti
 **Updated decision:** The prior licensing blocker is resolved for time-limited *private development*. This does not establish redistribution rights, a license suitable for a paid learner environment, or readiness after expiration. WSLPE remains `PROVIDED`, **NOT READY**.
 
 **Remaining blocking gates:** independently prove operator-controlled direct HTTPS WinRM and intended learner RDP path, guest-to-host/hypervisor and neighboring-VM isolation, safe bounded exercise-mode NAT disconnect/rollback, persistent protection against wildcard NAT forwarding exposure, learner non-admin account provisioning, and scenario-level acceptance. Do not disconnect NAT or expose the VM to learners merely because the Stage 2 Windows baseline passed. NORTH's networking and guest lifecycle were not modified.
+
+
+
+## 2026-10-15: Reusing NORTH WS01 access checks for WSLPE
+
+A later ad-hoc WSLPE query mistakenly attempted `winrm.exe` as an executable, causing the PowerShell request to stop before RDP configuration was inspected. Direct TCP to WSLPE `5985`, `5986` and `3389` was open, but TCP reachability alone does not prove certificate validity, TLS trust, authenticated HTTPS or effective RDP login.
+
+**Reference implementation:** NORTH's `vagrant/ConfigureRemotingForAnsible.ps1` uses `Get-ChildItem WSMan:\localhost\Listener` and `New-WSManInstance` during provisioning; `scripts/rdp-host-evidence.ps1` inspects `TermService`, `fDenyTSConnections` and `RDP-Tcp.UserAuthentication` with tests. NORTH's domain membership and Rickon logon-right rules must **not** be transplanted into WSLPE's standalone local-account model.
+
+WSLPE now has a **read-only source-based audit**, `ansible/wslpe-access-audit.yml`, a native-instance-only wrapper `scripts/wslpe-access-audit.sh`, and `tests/test_wslpe_access_audit.py`. It inspects the native WSMan provider and listener metadata, locally bound HTTPS certificate presence/time validity, WinRM and TermService states, RDP/NLA policy, and TCP listen status. It fails closed if a required preliminary configuration is absent, without modifying listeners, certificates, Windows Firewall, user accounts, VMware or NORTH.
+
+Operator check (after updating from the feature branch):
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git pull --ff-only
+bash scripts/wslpe-access-audit.sh
+```
+
+This preliminary audit is **not** proof of trusted HTTPS authentication, effective non-admin learner RDP login, guest-to-host restrictions, or safe NAT disconnect. Those remain explicit future acceptance gates. The new audit and tests have been committed, but have **not yet been run on the operator's Kali/WSLPE runtime**.
