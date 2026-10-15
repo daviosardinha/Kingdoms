@@ -21,6 +21,7 @@ SPEC.loader.exec_module(STAGE2)
 def guest_data():
     return {
         "Name": "WSLPE-WS01", "ProductType": 1,
+        "OSCaption": "Microsoft Windows 10 Pro",
         "WindowsVersion": "10.0.19045", "WindowsBuild": "19045",
         "DomainJoined": False, "UAC": 1,
         "Firewall": [
@@ -187,6 +188,12 @@ ethernet2.connectionType = "nat"
         self.assertTrue(any("firewall" in text.lower() for text in failed))
         self.assertTrue(any("default" in text.lower() for text in failed))
         self.assertTrue(passed)
+
+    def test_other_windows_versions_cannot_masquerade_as_win10(self):
+        guest = guest_data()
+        guest["OSCaption"] = "Microsoft Windows 11 Pro"
+        _, failed = STAGE2.evaluate_windows(guest, "172.28.231")
+        self.assertTrue(any("Windows 10" in x for x in failed))
 
     def test_guest_wrong_ip_and_disabled_defender_block(self):
         guest = guest_data()
