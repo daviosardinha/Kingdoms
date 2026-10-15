@@ -152,7 +152,19 @@ class GoadNomad(BaseGoad):
         return False
 
     def onecmd(self, line):
-        """Block all legacy lab commands under an unavailable course selection."""
+        """Prevent an unapproved WSLPE lab from using any legacy lifecycle."""
+        if self.lab_manager.get_current_lab_name() == 'WSLPE':
+            cmd = (line or '').strip().split(maxsplit=1)
+            action = cmd[0].lower() if cmd else ''
+            allowed = {'', 'courses', 'select_course', 'course', 'status',
+                       'course_preflight', 'course_vm_status',
+                       'help', '?', 'exit', 'eof'}
+            if action not in allowed:
+                Log.error(
+                    'WSLPE installation is locked until native instance '
+                    'and provisioning acceptance gates pass.'
+                )
+                return False
         if self._course_is_not_ready():
             command = (line or '').strip().split(maxsplit=1)
             name = command[0].lower() if command else ''
@@ -339,6 +351,13 @@ class GoadNomad(BaseGoad):
         A command-line -t install is already an explicit operator action and
         must not block or silently abort because stdin is not a TTY.
         """
+        if self.lab_manager.get_current_lab_name() == 'WSLPE':
+            Log.error(
+                'WSLPE is a registered Kingdoms lab recipe, but installation '
+                'is locked until the native provider and local-account '
+                'acceptance gates pass. No instance was created.'
+            )
+            return False
         if arg != '--non-interactive':
             return super().do_create(arg)
 
@@ -361,7 +380,10 @@ class GoadNomad(BaseGoad):
     def do_install(self, arg=''):
         """Route interactive Windows LPE stage-1 bootstrap away from NORTH."""
         selected = self._course_selection()
-        if selected is not None and selected.slug == 'windows-lpe':
+        if (
+            (selected is not None and selected.slug == 'windows-lpe')
+            or self.lab_manager.get_current_lab_name() == 'WSLPE'
+        ):
             Log.error(
                 'WSLPE native Kingdoms instance integration is pending. '
                 'No VM was created. Direct Vagrant boot was retired to avoid '
@@ -688,6 +710,15 @@ Kingdoms course name. Course installation controls are never given to learners.
 
 def _dispatch_task(goad, args):
     """Preserve legacy task behavior while rejecting unavailable course actions."""
+    # The operator may still type -l WSLPE without -c windows-lpe.
+    # Do not bypass the course registry's unready state in that case.
+    if getattr(args, 'lab', None) == 'WSLPE':
+        if args.task not in ('courses', 'status'):
+            Log.error(
+                'WSLPE is discoverable but installation/lifecycle are '
+                'not approved. Refusing legacy -l WSLPE mutation.'
+            )
+            return 1
     course_slug = getattr(args, 'course', None)
     if course_slug is not None:
         course = get_course(course_slug)
