@@ -15,8 +15,9 @@ echo "KINGDOMS WSLPE | NORTH WS01 SOURCE PARITY (READ ONLY)"
     tests.test_wslpe_https_trust_audit \
     tests.test_wslpe_https_auth_audit \
     tests.test_wslpe_p1c_topology_audit \
+    tests.test_wslpe_isolation_policy \
     tests.test_windows_lpe_learner_adapters
 "$PY" scripts/windows-lpe-standalone-audit.py --strict
 echo "[PASS] WSLPE/NORTH source contract"
-echo "[NOT VERIFIED] Runtime HTTPS trust, learner RDP, exercise isolation, scenario exploitation"
+echo "[NOT VERIFIED] Operator-only segment, learner RDP, exercise isolation, scenario exploitation"
 echo "[NO CHANGES] VM state, Windows, VMware, NAT and NORTH remain untouched"
