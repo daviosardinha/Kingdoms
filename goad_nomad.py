@@ -17,6 +17,7 @@ import time
 from goad.log import Log
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
+from kingdoms.course_registry import COURSES, get_course, catalog_lines
 
 
 _upstream = runpy.run_path(
@@ -25,11 +26,83 @@ _upstream = runpy.run_path(
 )
 
 BaseGoad = _upstream['Goad']
-print_logo = _upstream['print_logo']
+def print_logo():
+    """Display Kingdoms' operator-side identity without learner controls."""
+    print('KINGDOMS | OPERATOR CONSOLE')
+    print('Private training infrastructure management. Not for learners.')
 
 
 class GoadNomad(BaseGoad):
     """GOAD console plus GOAD_NOMAD segmented-network lifecycle commands."""
+
+    def _course_selection(self):
+        slug = getattr(self, '_selected_course', None)
+        return get_course(slug) if slug else None
+
+    def _course_is_not_ready(self):
+        selection = self._course_selection()
+        return selection is not None and not selection.lifecycle_ready
+
+    def do_courses(self, arg=''):
+        """List operator-managed Kingdoms courses and release states."""
+        Log.info('Kingdoms operator course catalogue:')
+        for line in catalog_lines():
+            Log.info(f'  {line}')
+        Log.info('Learners have access only to deployed vulnerable machines.')
+
+    def do_select_course(self, arg=''):
+        """Select a course without provisioning or changing loaded VM instances."""
+        candidate = get_course(arg)
+        if candidate is None:
+            Log.error('Unknown Kingdoms course. Run courses to see supported names.')
+            return False
+        if candidate.lifecycle_ready:
+            current_lab = self.lab_manager.get_current_lab_name()
+            if current_lab != candidate.legacy_lab:
+                Log.error(
+                    f'Cannot select {candidate.title} while legacy lab {current_lab} '
+                    f'is configured; use the existing lab selection first.'
+                )
+                return False
+        self._selected_course = candidate.slug
+        Log.info(f'Selected Kingdoms course: {candidate.title} [{candidate.state}]')
+        if not candidate.lifecycle_ready:
+            Log.warning(
+                'Deployment adapter is not validated. Only course inspection, '
+                'help and switching courses are permitted. Lifecycle commands '
+                'are blocked to protect any loaded NORTH instance.'
+            )
+        return True
+
+    def complete_select_course(self, text, line, begidx, endidx):
+        options = [course.slug for course in COURSES]
+        return [option for option in options if option.startswith(text)]
+
+    def do_course(self, arg=''):
+        """Inspect the selected operator course without inspecting a loaded VM."""
+        course = self._course_selection()
+        if course is None:
+            Log.info('No explicit course selected. Legacy lab lifecycle is unchanged.')
+            Log.info('Run courses, then select_course <slug>.')
+        else:
+            Log.info(f'Course: {course.title}; state={course.state}')
+            if not course.lifecycle_ready:
+                Log.warning('Course adapter pending. Installation and lifecycle disabled.')
+
+    def onecmd(self, line):
+        """Block all legacy lab commands under an unavailable course selection."""
+        if self._course_is_not_ready():
+            command = (line or '').strip().split(maxsplit=1)
+            name = command[0].lower() if command else ''
+            allowed = {'', 'courses', 'select_course', 'course', 'status',
+                       'help', '?', 'exit', 'eof'}
+            if name not in allowed:
+                Log.error(
+                    'This course has no validated deployment adapter. '
+                    'Command blocked; the loaded NORTH instance was not touched.'
+                )
+                return False
+        return super().onecmd(line)
 
     @staticmethod
     def _format_elapsed(seconds):
@@ -383,6 +456,15 @@ class GoadNomad(BaseGoad):
         return True
 
     def do_help(self, arg):
+        if self._course_is_not_ready():
+            print_menu_title('Kingdoms operator course commands')
+            print_menu_entry('courses', 'list available and planned courses')
+            print_menu_entry('select_course <slug>', 'select course without deploying it')
+            print_menu_entry('course', 'show selected course and adapter readiness')
+            print_menu_entry('status', 'inspect selected course state (read-only)')
+            print_menu_entry('exit', 'leave operator console')
+            Log.warning('Unavailable course: provisioning and lifecycle are disabled.')
+            return
         super().do_help(arg)
         if self._nomad_provider() is not None:
             print_menu_title('GOAD_NOMAD Network')
@@ -467,6 +549,9 @@ class GoadNomad(BaseGoad):
         return bool(provider.destroy())
 
     def do_status(self, arg=''):
+        if self._course_is_not_ready():
+            self.do_course()
+            return
         super().do_status(arg)
         provider = self._nomad_provider(require_instance=True)
         if provider is not None:
@@ -482,7 +567,7 @@ class GoadNomad(BaseGoad):
 
 
 def parse_args():
-    task_help = 'tasks available: install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
+    task_help = 'tasks available: courses/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='goad_nomad.py',
         description='GOAD_NOMAD lab management console.',
@@ -495,7 +580,8 @@ Examples:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument('-t', '--task', help=task_help, required=False)
-    parser.add_argument('-l', '--lab', help='lab to use (default: GOAD)', default='GOAD', required=False)
+    parser.add_argument('-l', '--lab', help='legacy lab identifier (default: GOAD)', default='GOAD', required=False)
+    parser.add_argument('-c', '--course', help='Kingdoms operator course slug (optional)', default=None)
     parser.add_argument('-p', '--provider', help='provider to use (default: vmware)', default='vmware', required=False)
     parser.add_argument('-ip', '--ip_range', help='legacy flat-network prefix; ignored by segmented GOAD/VMware', default='', required=False)
     parser.add_argument('-m', '--method', help='deploy method to use (default: local)', default='local', required=False)
@@ -508,7 +594,35 @@ Examples:
 
 
 def _dispatch_task(goad, args):
-    """Preserve the stock goad.py non-interactive task behaviour."""
+    """Preserve legacy task behavior while rejecting unavailable course actions."""
+    course_slug = getattr(args, 'course', None)
+    if course_slug is not None:
+        course = get_course(course_slug)
+        if course is None:
+            Log.error('Unknown Kingdoms course. Use -t courses to list courses.')
+            return 1
+        if not course.lifecycle_ready:
+            if args.task == 'courses':
+                goad.do_courses()
+                return 0
+            if args.task == 'status':
+                Log.info(f'{course.title}: {course.state}; deployment not available')
+                return 0
+            Log.error(
+                f'{course.title} has no approved operator deployment adapter. '
+                'Refusing command before loading or mutating a NORTH instance.'
+            )
+            return 1
+        if getattr(args, 'lab', None) != course.legacy_lab:
+            Log.error(
+                f'{course.title} requires internal lab {course.legacy_lab}; '
+                'refusing mismatched lab parameters.'
+            )
+            return 1
+
+    if args.task == 'courses':
+        goad.do_courses()
+        return 0
     if args.instance is not None:
         goad.do_load(args.instance)
 
