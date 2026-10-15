@@ -52,10 +52,11 @@ class WslpeNetworkPortabilityTests(unittest.TestCase):
         for forbidden in ("vmnet8", "vmnet10", "vmnet99", "VNET_", "ec2.amazonaws"):
             self.assertNotIn(forbidden, self.role)
 
-    def test_unapproved_wslpe_install_remains_locked(self):
-        self.assertIn("WSLPE native Kingdoms instance integration is pending", self.console)
+    def test_full_wslpe_course_install_remains_locked(self):
+        self.assertIn("bootstrap_native_wslpe(", self.console)
         self.assertIn("WSLPE is a registered Kingdoms lab recipe", self.console)
         self.assertIn("legacy -l WSLPE mutation", self.console)
+        self.assertIn("WSLPE full installation and lifecycle remain locked", self.console)
 
     def test_cloud_portability_is_not_misrepresented_as_deployed(self):
         self.assertIn("only a VMware provider definition", self.contract)
