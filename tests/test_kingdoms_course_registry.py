@@ -94,7 +94,7 @@ class OperatorSelectionTests(unittest.TestCase):
         )
 
     def test_windows_lpe_is_selectable_for_inspection_only(self):
-        self.assertTrue(self.console.do_select_course("windows-lpe"))
+        self.assertTrue(self.console._set_course_selection("windows-lpe"))
         self.assertEqual(self.console._selected_course, "windows-lpe")
         for command in (
             "install", "destroy", "destroy_vm target", "reset", "snapshot",
@@ -110,20 +110,26 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertEqual(self.console.legacy_calls, [])
         self.assertTrue(any("adapter pending" in str(line).lower() for line in StubLog.output))
 
+    def test_interactive_course_selection_never_exits_command_loop(self):
+        self.assertFalse(self.console.do_select_course("windows-lpe"))
+        self.assertEqual(self.console._selected_course, "windows-lpe")
+        self.assertFalse(self.console.do_select_course("north"))
+        self.assertEqual(self.console._selected_course, "north")
+
     def test_course_switching_and_legacy_console_compatibility(self):
         self.console.do_select_course("windows-lpe")
-        self.assertTrue(self.console.do_select_course("north"))
+        self.assertTrue(self.console._set_course_selection("north"))
         self.assertEqual(self.console.onecmd("start"), "LEGACY")
         self.assertEqual(self.console.legacy_calls, ["start"])
 
     def test_reject_north_selection_if_other_lab_is_configured(self):
         self.console.lab_manager.get_current_lab_name = lambda: "GOAD-Light"
-        self.assertFalse(self.console.do_select_course("north"))
+        self.assertFalse(self.console._set_course_selection("north"))
         self.assertIsNone(getattr(self.console, "_selected_course", None))
 
     def test_unknown_selection_keeps_previous_guard(self):
         self.console.do_select_course("windows-lpe")
-        self.assertFalse(self.console.do_select_course("invalid-course"))
+        self.assertFalse(self.console._set_course_selection("invalid-course"))
         self.assertEqual(self.console._selected_course, "windows-lpe")
 
     def test_no_course_selected_retains_legacy_command_dispatch(self):
@@ -171,7 +177,7 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
 
     def test_main_applies_explicit_course_before_repl(self):
         self.assertIn(
-            "args.course is not None and not goad.do_select_course(args.course)",
+            "args.course is not None and not goad._set_course_selection(args.course)",
             SOURCE,
         )
         self.assertIn("parser.add_argument('-c', '--course'", SOURCE)
