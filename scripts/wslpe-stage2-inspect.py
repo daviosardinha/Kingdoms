@@ -184,6 +184,52 @@ def inspect_management_port_binding(port: int) -> str:
     return ", ".join(sorted(set(listeners)))
 
 
+def inspect_management_access(port: int) -> str:
+    """Require either a loopback listener or a verified exact nft INPUT drop.
+
+    vmnet-nat may listen on 0.0.0.0 despite Vagrant's host_ip=127.0.0.1.
+    Accept a compensating WSLPE-only firewall rule ONLY after checking live
+    nftables JSON and privileged proof that the wildcard owner is vmnet-nat.
+    Do not describe the actual socket as loopback-bound in that case.
+    """
+    try:
+        bind = inspect_management_port_binding(port)
+        return f"loopback listener ({bind})"
+    except ValueError as exc:
+        if "appears exposed beyond host loopback" not in str(exc):
+            raise
+    import os
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from kingdoms.wslpe_winrm_guard import (
+        TABLE, require_vmware_nat_owner, verify_firewall_json,
+    )
+    command = ["nft"] if os.geteuid() == 0 else ["sudo", "-n", "nft"]
+    try:
+        nft_json = read_command(
+            command + ["-j", "list", "table", "inet", TABLE], timeout=15,
+        )
+        owner_cmd = ["ss"] if os.geteuid() == 0 else ["sudo", "-n", "ss"]
+        listeners = read_command(
+            owner_cmd + ["-H", "-lntp"], timeout=15,
+        )
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(
+            "WSLPE WinRM wildcard listener remains unverified. A privileged "
+            "live firewall/owner audit is required (sudo -v may be needed)."
+        ) from exc
+    if not verify_firewall_json(nft_json, port):
+        raise ValueError(
+            "WSLPE WinRM wildcard listener lacks the exact dedicated "
+            "non-loopback nftables INPUT restriction."
+        )
+    if not require_vmware_nat_owner(listeners, port):
+        raise ValueError(
+            "WSLPE forwarding socket ownership changed or cannot be proved."
+        )
+    return f"wildcard vmnet-nat listener, nftables non-loopback TCP/{port} drop verified"
+
+
 def windows_probe(port: int) -> dict:
     try:
         import winrm
@@ -264,7 +310,7 @@ def main() -> int:
         if len(adapters) < 2:
             raise ValueError("WSLPE VMX does not expose separate management and exercise NICs")
         port = forwarded_winrm_port(instance_dir)
-        bind = inspect_management_port_binding(port)
+        access = inspect_management_access(port)
         info = windows_probe(port)
         passed, failed = evaluate_windows(info, prefix)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
@@ -275,7 +321,7 @@ def main() -> int:
     print(f"[PASS] Native instance: {manifest['id']} | state=PROVIDED (ready for provisioning)")
     print(f"[PASS] Registered VMware guest: {vmx.name}")
     print(f"[PASS] WinRM: read-only query through 127.0.0.1:{port}")
-    print(f"[PASS] Bootstrap WinRM forwarded port bound only to loopback ({bind})")
+    print(f"[PASS] Bootstrap WinRM management access restricted: {access}")
     print(f"[INFO] VMware network adapters discovered: {len(adapters)}")
     if args.show_adapters:
         for a in adapters:
