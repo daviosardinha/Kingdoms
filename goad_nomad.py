@@ -94,10 +94,11 @@ class GoadNomad(BaseGoad):
         Log.info(f'Selected Kingdoms course: {candidate.title} [{candidate.state}]')
         if candidate.slug == 'windows-lpe':
             Log.warning(
-                'Windows LPE development: install now supports ONLY the native '
-                'Kingdoms WSLPE Stage 1 guest boot with explicit confirmation. '
-                'Full provisioning, other lifecycle actions and learner access '
-                'remain locked.'
+                'Windows LPE development: install is limited to initial '
+                'Stage 1 guest creation; resume can start ONLY the existing '
+                'powered-off WSLPE guest with explicit confirmation. '
+                'Full provisioning, other lifecycle actions and learner '
+                'access remain locked.'
             )
         elif not candidate.lifecycle_ready:
             Log.warning(
