@@ -6,6 +6,7 @@ provider's single-machine "vagrant up WSLPE-WS01 --no-provision" adapter.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -29,7 +30,10 @@ class WslpeNativeResumeTests(unittest.TestCase):
         self.vmx.write_text("displayName = WSLPE-WS01", encoding="utf-8")
         (self.vmx.parent.parent / "id").write_text(str(self.vmx), encoding="utf-8")
         (self.provider_dir / "Vagrantfile").write_text(
-            'boxes = [{:name => "WSLPE-WS01"}]', encoding="utf-8"
+            ('boxes = [{:name => "WSLPE-WS01", :ip => "172.28.231.31"}]\n'
+             'target.vm.communicator = "winrm"\n'
+             'target.vm.network :private_network, ip: box[:ip]\n'),
+            encoding="utf-8"
         )
         self.command = SimpleNamespace(run_vagrant=Mock(return_value=True))
         self.provider = SimpleNamespace(
@@ -90,6 +94,46 @@ class WslpeNativeResumeTests(unittest.TestCase):
         )
         self.assertEqual(calls.call_count, 3)
         self.assertEqual(self.instance.get_status(), PROVIDED)
+
+    def test_resume_uses_temporary_direct_winrm_and_restores_environment(self):
+        original_file = self.provider_dir / "Vagrantfile"
+        original_source = original_file.read_text(encoding="utf-8")
+        prior_override = os.environ.get("VAGRANT_VAGRANTFILE")
+
+        def check_command(args, cwd):
+            self.assertEqual(args, ["up", "WSLPE-WS01", "--no-provision"])
+            self.assertEqual(cwd, str(self.provider_dir))
+            temporary_name = os.environ.get("VAGRANT_VAGRANTFILE")
+            self.assertTrue(temporary_name)
+            temporary = self.provider_dir / temporary_name
+            self.assertTrue(temporary.is_file())
+            source = temporary.read_text(encoding="utf-8")
+            self.assertIn("target.winrm.host = box[:ip]", source)
+            self.assertIn("target.winrm.port = 5985", source)
+            self.assertNotIn("target.winrm.host =", original_file.read_text())
+            return True
+
+        self.command.run_vagrant.side_effect = check_command
+        stack, _ = self.context()
+        with stack:
+            self.assertTrue(RESUME.resume_existing_wslpe(
+                self.manager, confirmed=True
+            ))
+        self.assertEqual(original_file.read_text(), original_source)
+        self.assertEqual(os.environ.get("VAGRANT_VAGRANTFILE"), prior_override)
+        self.assertEqual(list(self.provider_dir.glob("Vagrantfile.wslpe-resume-*")), [])
+
+    def test_resume_does_not_use_ambiguous_vagrantfile(self):
+        (self.provider_dir / "Vagrantfile").write_text(
+            'boxes = [{:name => "WSLPE-WS01"}]', encoding="utf-8"
+        )
+        stack, _ = self.context()
+        with stack:
+            self.assertFalse(RESUME.resume_existing_wslpe(
+                self.manager, confirmed=True
+            ))
+        self.command.run_vagrant.assert_not_called()
+        self.assertEqual(list(self.provider_dir.glob("Vagrantfile.wslpe-resume-*")), [])
 
     def test_missing_confirmation_never_looks_at_vm_or_provider(self):
         self.assertFalse(RESUME.resume_existing_wslpe(
