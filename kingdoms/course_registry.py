@@ -35,7 +35,7 @@ COURSES: Tuple[Course, ...] = (
     ),
     Course(
         slug="windows-lpe",
-        title="Windows Local Privilege Escalation (title pending)",
+        title="Windows Local Privilege Escalation",
         state="development",
         standalone=True,
     ),
