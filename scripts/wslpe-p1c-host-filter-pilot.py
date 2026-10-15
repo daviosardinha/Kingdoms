@@ -84,10 +84,10 @@ def absent_before_pilot() -> None:
 
 
 def installed_exact_policy(vmnet: str | None = None) -> bool:
-    try:
-        entries = nft_json("table", "inet", TABLE)
-    except ValueError:
+    # A failed privileged query is NOT proof that the table is absent.
+    if not scoped_objects(nft_json("ruleset")):
         return False
+    entries = nft_json("table", "inet", TABLE)
     found = scoped_objects(entries)
     tables = [obj for kind, obj in found if kind == "table"]
     chains = [obj for kind, obj in found if kind == "chain"]
