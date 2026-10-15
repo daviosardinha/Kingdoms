@@ -43,7 +43,7 @@
           if ([int]$uac -ne 1) {
             throw 'WSLPE baseline requires UAC enabled'
           }
-          if (@(Get-NetFirewallProfile | Where-Object { -not $_.Enabled }).Count -gt 0) {
+          if (@(Get-NetFirewallProfile | Where-Object { ([string]$_.Enabled) -ne 'True' }).Count -gt 0) {
             throw 'WSLPE baseline requires all Windows Firewall profiles enabled'
           }
           $defender = Get-MpComputerStatus
