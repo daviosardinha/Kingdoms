@@ -48,7 +48,7 @@ class KingdomsWindowsLpeVmContractTests(unittest.TestCase):
         for term in (
             "The Fall of the North",
             "Title not yet confirmed",
-            "Title to be chosen",
+            "Windows Local Privilege Escalation",
             "courses/windows-lpe/standalone/",
         ):
             self.assertIn(term, self.architecture)
