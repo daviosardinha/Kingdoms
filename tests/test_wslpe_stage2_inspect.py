@@ -145,6 +145,33 @@ ethernet2.connectionType = "nat"
             ["vagrant", "port", "WSLPE-WS01"],
         )
 
+    def test_winrm_forwarding_bound_only_to_loopback(self):
+        listeners = (
+            "LISTEN 0 128 127.0.0.1:55985 0.0.0.0:*\n"
+            "LISTEN 0 128 [::1]:55985 [::]:*\n"
+        )
+        with patch.object(STAGE2, "read_command",
+                          return_value=listeners) as command:
+            scope = STAGE2.inspect_management_port_binding(55985)
+            self.assertIn("127.0.0.1", scope)
+            self.assertIn("::1", scope)
+            command.assert_called_once_with(["ss", "-H", "-ltn"])
+
+    def test_winrm_wildcard_binding_fails_closed(self):
+        for host in ("0.0.0.0", "*", "[::]", "192.168.76.160"):
+            with self.subTest(host=host), patch.object(
+                STAGE2, "read_command",
+                return_value=f"LISTEN 0 128 {host}:55985 0.0.0.0:*\n",
+            ):
+                with self.assertRaisesRegex(ValueError, "exposed"):
+                    STAGE2.inspect_management_port_binding(55985)
+
+    def test_unproven_winrm_port_bind_fails_closed(self):
+        with patch.object(STAGE2, "read_command",
+                          return_value="LISTEN 0 128 127.0.0.1:44000 0.0.0.0:*"):
+            with self.assertRaisesRegex(ValueError, "Cannot establish"):
+                STAGE2.inspect_management_port_binding(55985)
+
     def test_guest_baseline_and_distinct_nat_exercise_ips_pass(self):
         ok, failed = STAGE2.evaluate_windows(guest_data(), "172.28.231")
         self.assertEqual(failed, [])
