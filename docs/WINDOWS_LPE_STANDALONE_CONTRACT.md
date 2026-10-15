@@ -1,5 +1,8 @@
 # Windows LPE standalone contract (design gate)
 
+> **Current implementation path:** The standalone lab is now **WSLPE**, a native Kingdoms lab recipe under `ad/WSLPE/`, with its own instance/provider inventory and a domain-free foundation playbook. This document preserves the acceptance contract, but the former `courses/windows-lpe/standalone/` Vagrant prototype is **not** the authoritative installation route. See [WSLPE core integration plan](WSLPE_CORE_INTEGRATION_PLAN.md). Installation is still locked pending real guest acceptance and scenario tests.
+
+
 Status: **OPERATOR PREFLIGHT AVAILABLE / NOT DEPLOYED**. This document defines acceptance criteria. It does not claim a standalone VM has been created or that the 20 existing Kingdoms exercises work outside NORTH.
 
 ## Objective and deployment split
