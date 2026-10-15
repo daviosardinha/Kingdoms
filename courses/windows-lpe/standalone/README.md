@@ -1,5 +1,10 @@
 # Kingdoms Windows Local Privilege Escalation: standalone lab
 
+> **SUPERSEDED ENGINEERING PROTOTYPE. DO NOT BOOT OR INSTALL THROUGH THIS DIRECTORY.**
+>
+> Kingdoms will deploy the Windows LPE course as a first-class `WSLPE` lab instance using the existing Kingdoms installer, provider and Ansible framework. The earlier standalone Vagrantfile, direct bootstrap and install instructions below are retained only as historical design context, **not current operator instructions**. The original prototype may contain inspection-generated Vagrant state, which must not be removed or reused without a read-only state review. See [WSLPE core integration plan](../../../docs/WSLPE_CORE_INTEGRATION_PLAN.md).
+
+
 **Status: independent VMware backend definition ready for validation, not yet deployed. Kingdoms' operator-only course selector is present on the feature branch, but the Windows LPE deployment adapter is not implemented.**
 
 This is one independently managed Windows workstation used to develop and verify the shared Kingdoms Windows LPE scenarios. It is not a copy of the NORTH course instance, it does not join Active Directory, and it does not configure any vulnerability on first boot.
