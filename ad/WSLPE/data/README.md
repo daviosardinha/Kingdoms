@@ -9,6 +9,7 @@ WSLPE is a **first-class Kingdoms lab**, not an extension of NORTH. The existing
 - The initial Ansible run reads `data/inventory` and the rendered provider inventory. The post-Vagrant `data/inventory_disable_vagrant` is a separate lifecycle artifact. Both inventories must contain the WSLPE local Windows host group.
 - The `inventory_disable_vagrant` file currently holds *bootstrap* Vagrant credentials for management and will need to be replaced with a dedicated operator-only identity before learner access is released.
 - No domain join, DC, router, domain GPO or cross-host service is part of WSLPE.
+- No VMware vmnet index is fixed in the native WSLPE recipe. This workstation's management NAT may be vmnet8, but future VMware hosts must discover their available networks. Non-VMware VPS/cloud installations will need a provider-specific adapter. See `docs/WSLPE_NETWORK_PORTABILITY.md`.
 - The lab can be **discovered** before it is approved for **installation**. Keep the course registry marked `development` until native provisioning, isolation, 20 existing scenario regression and 15 candidate scenario gates pass.
 - Learners receive the vulnerable guest only, not Kingdoms source or provider control.
 
