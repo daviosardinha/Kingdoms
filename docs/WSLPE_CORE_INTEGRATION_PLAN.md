@@ -17,6 +17,16 @@ The new files reuse the existing Kingdoms instance generation:
 
 **This is a source milestone, not a finished installation.** No WSLPE VM has been created or tested through the native instance lifecycle, no Windows learner has been provisioned and none of the original 20 scenarios has been exercised on WSLPE yet. Preserve the operator's running NORTH instances and any prior prototype Vagrant metadata.
 
+## Current WSLPE management-port remediation and NORTH-derived NIC gates
+
+The operator has now proved that VMware's **vmnet-nat** daemon (PID observed `2162896`) owns the wildcard TCP/2210 WinRM forward for WSLPE. This is specific to the current running instance, not a universal port or PID. The **NORTH design** has a separate NAT provisioning NIC and a dedicated exercise NIC, with NAT persistently disconnected in exercise mode. We are adopting those lifecycle **invariants** without invoking NORTH's domain/router lifecycle.
+
+Added the WSLPE-only nftables guard (`kingdoms/wslpe_winrm_guard.py` and `scripts/wslpe-winrm-firewall.py`), exact owner/port/rule verification in Stage 2, and the independent exercise-NIC preflight (`kingdoms/wslpe_nic_contract.py`, `scripts/wslpe-exercise-network-preflight.py`). A wildcard-bound listener will be accepted at Stage 2 **only if** a dedicated, exact, live non-loopback INPUT drop and the current `vmnet-nat` process owner are both proven. Never claim the socket is loopback-bound. The rule is temporary, is not a complete student isolation boundary, and must be revalidated after a host restart. We did **not** restart VMware NAT, alter NORTH or disconnect WSLPE's NAT interface.
+
+**No automatic exercise-mode cutover has been enabled.** We must first validate the real VMware host-only vmnet assigned to Ethernet1, the guest's direct authenticated WinRM on that network, and a WSLPE-scoped rollback plan. See [WSLPE network lifecycle](WSLPE_NETWORK_LIFECYCLE.md) for the operator audit/apply procedure, known limitations and next checks.
+
+The new source and regression tests have been committed to GitHub but **have not yet been executed on the operator's local Kali host**. No host firewall rule has yet been applied by the assistant.
+
 ## Native Kingdoms Stage 1 guest boot (operator-confirmed, runtime pending)
 
 The operator's consolidated preboot gate has passed **13/13** for candidate network `172.28.231.0/24` at the present workstation. The feature branch now offers a guarded **Stage 1 boot**, separate from a finished Windows LPE course:
@@ -40,7 +50,7 @@ On a failed first boot, **do not automatically retry or destroy**. Inspect `work
 
 The operator has confirmed the first native WSLPE Stage 1 boot completed successfully. Kingdoms reported the independently registered Windows VM running as `windows_10.vmx` and set the WSLPE instance status to `PROVIDED` (persisted value `ready for provisioning`). The course is **not ready** and no learner or Windows LPE vulnerabilities have been provisioned.
 
-The next operator step is the **single read-only Stage 2 inspector**, `scripts/wslpe-stage2-inspect.py`. It discovers exactly one native `WSLPE` instance from the current checkout, resolves its specific Vagrant machine registration to the running VMware VMX, enumerates VMX adapters, retrieves the WinRM forwarded port, verifies the management port is bound only to loopback, and uses the existing WinRM management channel for a read-only Windows audit. It checks the exact Windows machine name, Windows client type, no AD domain membership, UAC, three enabled firewall profiles, Defender services, the configured `<instance-prefix>.31/24` exercise address, and no default outbound route via that exercise interface.
+The next operator step is the **single read-only Stage 2 inspector**, `scripts/wslpe-stage2-inspect.py`. It discovers exactly one native `WSLPE` instance from the current checkout, resolves its specific Vagrant machine registration to the running VMware VMX, enumerates VMX adapters, retrieves the WinRM forwarded port, requires either an actual loopback-bound socket or a verified WSLPE-only host firewall rule plus current VMware NAT owner, and uses the existing WinRM management channel for a read-only Windows audit. It checks the exact Windows machine name, Windows client type, no AD domain membership, UAC, three enabled firewall profiles, Defender services, the configured `<instance-prefix>.31/24` exercise address, and no default outbound route via that exercise interface.
 
 The checker **does not configure Windows networking**, provision the learner, run LPE exploits, reboot the VM, create/destroy instances or mark anything `READY`. VMX adapter enumeration alone does not prove isolation or precise NIC-to-vmnet assignment. It therefore always reports that **complete VMware network isolation and learner access remain unverified**, even when the Windows baseline passes. If WinRM, NICs or a Windows security check fails, the tool reports the failure and exits nonzero without modifying anything.
 
@@ -52,26 +62,26 @@ git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-fo
 bash scripts/wslpe-stage2-acceptance.sh
 ```
 
-The `scripts/wslpe-stage2-acceptance.sh` wrapper runs the Stage 2 mock regression suite and the actual runtime inspection in a single command. It fails closed on missing bootstrap WinRM connectivity or if the forwarded WinRM port listens beyond loopback. It also requires the guest to identify as a Windows 10 client and match the native instance's actual subnet. A failure does **not** authorize disabling Defender, UAC or Windows Firewall merely to pass the test. The guest's NIC-to-vmnet mapping must still be independently accepted before learner provisioning.
+The `scripts/wslpe-stage2-acceptance.sh` wrapper runs the Stage 2 mock regression suite and the actual runtime inspection in a single command. It fails closed on missing bootstrap WinRM connectivity or if a wildcard-bound listener lacks the exact live WSLPE-only nftables INPUT rule and privileged vmnet-nat owner proof. It also requires the guest to identify as a Windows 10 client and match the native instance's actual subnet. A failure does **not** authorize disabling Defender, UAC or Windows Firewall merely to pass the test. The guest's NIC-to-vmnet mapping must still be independently accepted before learner provisioning.
 
-The operator has **not yet run these new Stage 2 checks**. The pinned candidate range remains host-specific, and Stage 2 reads the actual prefix from the Kingdoms native instance rather than hardcoding it. The bootstrap `vagrant` credentials are still development-only, and must not be exposed to course learners. NAT must not be confused with an isolated student training network.
+The operator ran Stage 2 and confirmed 15 original tests passing, but the live audit blocked on the wildcard management forward. The new guarded recheck is still pending. The pinned candidate range remains host-specific, and Stage 2 reads the actual prefix from the Kingdoms native instance rather than hardcoding it. The bootstrap `vagrant` credentials are still development-only, and must not be exposed to course learners. NAT must not be confused with an isolated student training network.
 
 ## Stage 2 finding: WinRM forwarded socket exposed beyond loopback
 
 ### Root-cause lead: VMware Workstation NAT forwarding
 
-The operator's WSLPE-specific live diagnostic reports **4/4 fixture tests PASS** and the concrete mapping **guest TCP/5985 → host TCP/2210**. The actual host listener is **`0.0.0.0:2210`**, with no PID/process available from the unprivileged `ss` output. The rendered instance Vagrantfile has no explicit WinRM forwarding override. This is evidence of a wildcard-bound listener, **not proof of internet reachability or the identity of the process**.
+The operator's WSLPE-specific live diagnostic reports **4/4 fixture tests PASS** and the concrete mapping **guest TCP/5985 → host TCP/2210**. The actual host listener is **`0.0.0.0:2210`**, with no owner in the initial unprivileged `ss` output. Privileged `ss` and `lsof` later confirmed the owner as **vmnet-nat** (observed PID 2162896). The rendered instance Vagrantfile has no explicit WinRM forwarding override. This is evidence of a wildcard-bound listener, **not proof of internet reachability or the identity of the process**.
 
 There is a known VMware Workstation/Vagrant VMware provider limitation where `vmnet-natd` binds forwarded host ports to wildcard even when a Vagrant `host_ip` is supplied; see [Vagrant community report](https://groups.google.com/g/vagrant-up/c/jL8MBGr3dOU). HashiCorp also documents that NAT port forwarding reconfiguration can restart VMware NAT and temporarily disconnect other running VMs: [VMware known issues](https://developer.hashicorp.com/vagrant/docs/providers/vmware/known-issues). Do **not** globally restart VMware NAT or alter shared vmnet8 before proving listener ownership and understanding NORTH's dependencies.
 
-**Next read-only owner proof on the Kali operator host:**
+**Owner confirmation already completed on the Kali operator host:**
 
 ```bash
 sudo ss -H -lntp '( sport = :2210 )'
 sudo lsof -nP -iTCP:2210 -sTCP:LISTEN
 ```
 
-If the owner is `vmnet-natd`, the preferred remediation is a **WSLPE port-specific host firewall restriction to the trusted operator path**, followed by real firewall/reachability verification. The current Stage 2 checker deliberately requires loopback binding, so it should **not** be marked passing based on a firewall assertion alone. A later expanded guard would need concrete, independently verified effective access restrictions before it could accept a wildcard-bound listener. Any fix and any stage-2 guard modification must remain scoped to WSLPE, not NORTH.
+The owner was confirmed as `vmnet-nat`. The current remediation is an operator-approved, **WSLPE-port-specific** nftables INPUT drop for traffic arriving off loopback. Stage 2 no longer equates a wildcard socket with loopback: it requires live nftables JSON rule verification and privileged process-owner evidence, otherwise it stays blocked. No learner access is allowed on the strength of this compensating control alone.
 
 
 The operator confirmed all **15 Stage 2 regression tests PASS**, but the live check stopped at `[BLOCKED] WSLPE bootstrap WinRM port appears exposed beyond host loopback`. No guest or infrastructure changes occurred. **Do not expose this VM to learners.**
@@ -87,7 +97,7 @@ python3 -m unittest discover -s tests -p 'test_wslpe_winrm_forwarding_diagnose.p
 python3 scripts/wslpe-winrm-forwarding-diagnose.py
 ```
 
-The diagnostic reads only the existing WSLPE instance's Vagrant port mapping, matching Linux TCP listeners with optional process labels, and selected nonsecret Vagrant forwarding lines. It does **not** run `vagrant up`, reload networking, restart the machine, touch NORTH or change Windows security controls. Do not weaken Stage 2's bind-scope assertion; any eventual fix must be scoped to WSLPE and validated against the **actual** host listening address. This diagnostic has not yet been executed on the operator's workstation.
+The diagnostic has been executed and confirmed the host-side wildcard listener. It is read-only and does **not** run `vagrant up`, reload networking, restart the machine, touch NORTH or change Windows security controls. See the new WSLPE-only lifecycle document for the compensating guard and proof required before future NAT isolation.
 
 ## One-command operator preboot acceptance
 
