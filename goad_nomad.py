@@ -109,7 +109,7 @@ class GoadNomad(BaseGoad):
         else:
             Log.info(f'Course: {course.title}; state={course.state}')
             if not course.lifecycle_ready:
-                Log.warning('Installation and lifecycle remain disabled until the course adapter passes validation.')
+                Log.warning('Only interactive Stage 1 VM bootstrap is available through install. Full course provisioning and other lifecycle actions remain disabled until the course adapter passes validation.')
 
     def _inspect_selected_windows_lpe(self, operation):
         """Perform inspection only, never dispatch a legacy lab lifecycle."""
@@ -176,7 +176,7 @@ class GoadNomad(BaseGoad):
                 allowed.add('install')
             if name not in allowed:
                 Log.error(
-                    'This course has no validated deployment adapter. '
+                    'This course has no validated full deployment adapter. '
                     'Command blocked; the loaded NORTH instance was not touched.'
                 )
                 return False
@@ -578,7 +578,7 @@ class GoadNomad(BaseGoad):
                 print_menu_entry('install', 'bootstrap isolated VM only; no scenarios yet')
             print_menu_entry('course_vm_create CREATE windows-lpe', 'legacy guest-only diagnostic')
             print_menu_entry('exit', 'leave operator console')
-            Log.warning('Unavailable course: provisioning and lifecycle are disabled.')
+            Log.warning('Full course provisioning and other lifecycle actions remain disabled.')
             return
         super().do_help(arg)
         print_menu_title('Kingdoms Courses (operators only)')
