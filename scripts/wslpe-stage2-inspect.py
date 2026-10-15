@@ -90,7 +90,7 @@ def find_instance(workspace: Path) -> tuple[Path, dict]:
         info.get("id") != directory.name
         or info.get("provider") != "vmware"
         or info.get("provisioner") != "local"
-        or info.get("status") != "provided"
+        or info.get("status") != "ready for provisioning"
         or info.get("extensions")
     ):
         raise ValueError("WSLPE instance identity, status or provider contract mismatch")
@@ -243,9 +243,10 @@ def main() -> int:
         print("[NO CHANGES] Existing WSLPE and NORTH instances were not modified")
         return 1
 
-    print(f"[PASS] Native instance: {manifest['id']} | state=provided")
+    print(f"[PASS] Native instance: {manifest['id']} | state=PROVIDED (ready for provisioning)")
     print(f"[PASS] Registered VMware guest: {vmx.name}")
-    print(f"[PASS] WinRM: operator-only 127.0.0.1 forwarded port {port}")
+    print(f"[PASS] WinRM: read-only query through 127.0.0.1:{port}")
+    print("[NOT VERIFIED] Forwarded WinRM port listening/bind scope; do not expose this bootstrap service")
     print(f"[INFO] VMware network adapters discovered: {len(adapters)}")
     if args.show_adapters:
         for a in adapters:
