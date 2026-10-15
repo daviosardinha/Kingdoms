@@ -60,7 +60,7 @@ Run the non-mutating diagnostic:
 python3 scripts/windows-lpe-standalone-audit.py --json
 ```
 
-Add `--strict` to return nonzero while direct domain/network references remain in the shared role. The initial result is expected to be **blocked** because the current role contains `NORTH\rickon.stark` references. This is a starting-point audit, **not** a proof of standalone readiness. It scans the shared role only. Later runtime tests must also inspect provisioning playbooks, Ansible inventory, any local account creation, session context, OS/build, outbound traffic and every new fixture.
+Add `--strict` to fail when direct domain/network references remain in the shared role. The initial audit identified 10 indicators, all from 5 learner-identity settings. The shared role now uses `windows_lpe_learner_account` and `windows_lpe_learner_password`, while both existing Kingdoms entrypoints explicitly retain Rickon's original values. A clean strict scan only proves those **source indicators** are absent from the shared role. It does not prove standalone readiness. It scans the shared role only. Later runtime tests must also inspect provisioning playbooks, Ansible inventory, any local account creation, session context, OS/build, outbound traffic and every new fixture.
 
 ## Standalone guest preflight (read-only)
 
@@ -77,7 +77,7 @@ This task checks the guest is a Windows client on the explicitly pinned build, i
 ## First implementation sequence
 
 1. Create a **standalone-specific Windows base provisioner** with a pinned image, local administrator for provisioning, and local non-administrator learner. Do not import the Kingdoms domain-join playbook.
-2. Parameterize learner identity and credential-artifact owner in the shared role. Preserve a domain adapter that supplies existing values, then make the source-only audit strict-clean.
+2. Validate the initial parameterization: shared role identity bindings and NORTH adapters are in this PR. Run `python3 -m unittest discover -s tests -p 'test_windows_lpe_*adapter*.py' -v` and the domain-dependency audit. Verify the existing 20-scenario runtime on a safe test clone before claiming this refactor is behavior-preserving.
 3. Validate each original scenario on the separate, disconnected standalone VM and ensure exact resets. Leave the domain-joined original untouched.
 4. Implement scenario 21 (`se_restore_privilege`) as the first new Candidate, validate learner-side exploitation and local-only rollback, then repeat for the remainder of the approved 15.
 5. Only after successful standalone promotion, run a controlled compatibility/regression pass on Kingdoms WS01. Do not silently promote changes into Kingdoms or modify its deployed guest during standalone development.
