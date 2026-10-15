@@ -34,7 +34,17 @@ def print_logo():
 
 
 class GoadNomad(BaseGoad):
-    """GOAD console plus GOAD_NOMAD segmented-network lifecycle commands."""
+    """Kingdoms operator console with preserved NORTH lifecycle."""
+
+    def refresh_prompt(self):
+        """Display the selected Kingdoms course without changing lab state."""
+        course = self._course_selection()
+        if course is not None and course.slug == 'windows-lpe':
+            self.prompt = '\nKINGDOMS/windows-lpe > '
+        elif course is not None and not course.lifecycle_ready:
+            self.prompt = f'\nKINGDOMS/{course.slug} > '
+        else:
+            super().refresh_prompt()
 
     def _course_selection(self):
         slug = getattr(self, '_selected_course', None)
@@ -66,12 +76,18 @@ class GoadNomad(BaseGoad):
                 )
                 return False
         self._selected_course = candidate.slug
+        self.refresh_prompt()
         Log.info(f'Selected Kingdoms course: {candidate.title} [{candidate.state}]')
-        if not candidate.lifecycle_ready:
+        if candidate.slug == 'windows-lpe':
             Log.warning(
-                'Deployment adapter is not validated. Course inspection and '
-                'read-only Windows LPE preflight/status are permitted. Lifecycle '
-                'commands remain blocked to protect any loaded NORTH instance.'
+                'Stage 1 only: type install to bootstrap the independent Windows '
+                'guest. Local learner accounts and LPE scenarios are not yet '
+                'configured. Other lifecycle actions remain blocked.'
+            )
+        elif not candidate.lifecycle_ready:
+            Log.warning(
+                'No course deployment adapter available. Installation and '
+                'lifecycle actions are blocked.'
             )
         return True
 
@@ -156,6 +172,8 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
+            if self._course_selection().slug == 'windows-lpe':
+                allowed.add('install')
             if name not in allowed:
                 Log.error(
                     'This course has no validated deployment adapter. '
@@ -356,7 +374,39 @@ class GoadNomad(BaseGoad):
 
         return self.do_install_instance()
     def do_install(self, arg=''):
-        """Run a full install and return success only for an installed instance."""
+        """Route interactive Windows LPE stage-1 bootstrap away from NORTH."""
+        selected = self._course_selection()
+        if selected is not None and selected.slug == 'windows-lpe':
+            if arg.strip():
+                Log.error(
+                    'Windows LPE interactive installation takes no arguments. '
+                    'Select windows-lpe and enter install.'
+                )
+                return False
+            Log.warning(
+                'Windows LPE Stage 1: create only the isolated Windows VM. '
+                'No vulnerabilities, local learner or course access will be installed.'
+            )
+            try:
+                confirmation = input(
+                    'Create the standalone Windows LPE VM? [y/N]: '
+                )
+            except (EOFError, KeyboardInterrupt):
+                print()
+                Log.warning('Windows LPE guest bootstrap cancelled.')
+                return False
+            if confirmation.strip().lower() != 'y':
+                Log.info('Windows LPE guest bootstrap cancelled.')
+                return False
+            result = self._create_selected_windows_lpe_guest(confirmed=True)
+            if result:
+                Log.info(
+                    'Stage 1 guest bootstrap complete. Full Windows LPE course '
+                    'installation is still pending learner and scenario validation.'
+                )
+            # Returning True would exit the interactive cmd.Cmd session.
+            return False
+
         result = self._run_with_install_timer(lambda: self.do_create(arg))
         if result is False:
             return False
@@ -524,7 +574,9 @@ class GoadNomad(BaseGoad):
             print_menu_entry('status', 'inspect selected course state (read-only)')
             print_menu_entry('course_preflight', 'inspect standalone VM tooling, do not boot')
             print_menu_entry('course_vm_status', 'inspect standalone Vagrant state')
-            print_menu_entry('course_vm_create CREATE windows-lpe', 'create guest ONLY; no scenarios')
+            if self._course_selection().slug == 'windows-lpe':
+                print_menu_entry('install', 'bootstrap isolated VM only; no scenarios yet')
+            print_menu_entry('course_vm_create CREATE windows-lpe', 'legacy guest-only diagnostic')
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Unavailable course: provisioning and lifecycle are disabled.')
             return
@@ -535,7 +587,7 @@ class GoadNomad(BaseGoad):
         print_menu_entry('course', 'inspect selected course and readiness')
         print_menu_entry('course_preflight', 'inspect Windows LPE tools without boot')
         print_menu_entry('course_vm_status', 'inspect Windows LPE VM status')
-        print_menu_entry('course_vm_create CREATE windows-lpe', 'operator guest-only creation')
+        print_menu_entry('course_vm_create CREATE windows-lpe', 'developer guest-only diagnostic')
         if self._nomad_provider() is not None:
             print_menu_title('GOAD_NOMAD Network')
             print_menu_entry('network', 'show the segmented network profile')
