@@ -262,6 +262,54 @@ ethernet2.connectionType = "nat"
         self.assertEqual(failed, [])
         self.assertGreaterEqual(len(ok), 7)
 
+    def test_firewall_cim_enum_true_strings_are_accepted(self):
+        """A Windows CIM GpoBoolean value can serialize as JSON text."""
+        guest = guest_data()
+        for profile in guest["Firewall"]:
+            profile["Enabled"] = "True"
+        guest["NetworkProfiles"] = [{
+            "InterfaceAlias": "Ethernet1", "NetworkCategory": "Public"
+        }]
+        ok, evidence = STAGE2.firewall_profile_evidence(guest)
+        self.assertTrue(ok)
+        self.assertEqual(len([x for x in evidence if "Firewall " in x]), 3)
+        self.assertTrue(any("category=Public" in x for x in evidence))
+        _, failed = STAGE2.evaluate_windows(guest, "172.28.231")
+        self.assertEqual(failed, [])
+
+    def test_firewall_false_strings_do_not_pass_through_python_truthiness(self):
+        guest = guest_data()
+        guest["Firewall"][2]["Enabled"] = "False"
+        ok, details = STAGE2.firewall_profile_evidence(guest)
+        self.assertFalse(ok)
+        self.assertTrue(any("Public: Enabled=False" in x for x in details))
+        _, failed = STAGE2.evaluate_windows(guest, "172.28.231")
+        self.assertIn("All Windows firewall profiles enabled", failed)
+
+    def test_firewall_notconfigured_missing_and_duplicate_profiles_fail_closed(self):
+        for value in ("NotConfigured", "", None, 1, 0):
+            with self.subTest(value=value):
+                guest = guest_data()
+                guest["Firewall"][0]["Enabled"] = value
+                self.assertFalse(STAGE2.firewall_profile_evidence(guest)[0])
+        for replacement in (
+            [guest_data()["Firewall"][0]] * 3,
+            guest_data()["Firewall"][:2],
+            None,
+        ):
+            with self.subTest(replacement=replacement):
+                guest = guest_data()
+                guest["Firewall"] = replacement
+                self.assertFalse(STAGE2.firewall_profile_evidence(guest)[0])
+
+    def test_firewall_details_are_read_only_and_include_each_profile(self):
+        raw = STAGE2.WINDOWS_READ_ONLY
+        self.assertIn("Get-NetFirewallProfile", raw)
+        self.assertIn("Get-NetConnectionProfile", raw)
+        self.assertIn("DefaultInboundAction", raw)
+        self.assertNotIn("Set-NetFirewallProfile", raw)
+        self.assertNotIn("Enable-NetFirewallRule", raw)
+
     def test_guest_domain_join_firewall_and_exercise_default_route_block(self):
         guest = guest_data()
         guest["DomainJoined"] = True
