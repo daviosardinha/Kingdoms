@@ -63,6 +63,12 @@ class WslpeNativeLabContractTests(unittest.TestCase):
         self.assertIn('ws01 ansible_host={{ip_range}}.31', self.provider)
         self.assertIn('ansible_connection=winrm', self.inventory)
         self.assertIn('ansible_connection=winrm', self.initial_inventory)
+        for source in (self.initial_inventory, self.inventory):
+            # WinRM's default is HTTPS/5986. The standalone WSLPE
+            # operator-accessible private NIC is currently HTTP/5985.
+            self.assertEqual(source.count('ansible_port=5985'), 1)
+            self.assertEqual(source.count('ansible_winrm_scheme=http'), 1)
+            self.assertIn('ansible_winrm_transport=ntlm', source)
         self.assertIn('[wslpe]\nws01', self.initial_inventory)
         self.assertIn('[windows_lpe_standalone]\nws01', self.initial_inventory)
         self.assertIn('ansible_user=vagrant', self.inventory)
