@@ -188,3 +188,22 @@ The live read-only postboot acceptance on 2026-10-15 confirmed:
 - **Stage 2 Windows baseline: 8 PASS / 1 FAIL**. Licensing reported `TIMEBASED_EVAL`, `LicenseStatus=5`, `GracePeriodRemaining=0`; one historical Windows License Monitoring shutdown event was present
 
 **Current gating decision:** WSLPE remains `PROVIDED`, **NOT READY**. The Windows evaluation is expired and cannot be released to learners. The existing NORTH `settings/eval_rearm` role is already imported before learner creation in `ansible/wslpe-foundation.yml`, but it runs a mutating rearm and reboot. Do not invoke it automatically: first inspect the guest's `SoftwareLicensingService.RemainingWindowsReArmCount` read-only, confirm entitlement/authorization, and select either approved time-limited evaluation maintenance or an appropriately licensed Windows image. No changes to NORTH, VMware NAT, guest licensing, or learner accounts have been performed in this checkpoint. Exercise-mode NAT cutover, direct HTTPS management and learner/scenario acceptance remain locked.
+
+
+
+## 2026-10-15: Stage 2 live Windows baseline recovered — 9 PASS / 0 FAIL
+
+The operator resumed the exact registered WSLPE-WS01 guest using the guarded native Kingdoms `resume` flow (no provisioning). The new temporary direct WinRM override was exercised successfully in a live Vagrant resume: the communicator used `172.28.231.31:5985`, Windows booted, and the registered VMX was confirmed running. Ansible's WSLPE-only inventories now explicitly specify HTTP/5985 instead of default HTTPS/5986; `ansible.windows.win_ping` returned `pong`.
+
+After the operator confirmed one permitted evaluation rearm, the existing `settings/eval_rearm` role ran only against WSLPE-WS01, rebooted it, and completed its post-reboot validation: Ansible reported `ok=4 changed=3 unreachable=0 failed=0`. The subsequent **read-only** `bash scripts/wslpe-network-acceptance.sh` run produced:
+
+- Stage 2 Windows baseline **9 PASS / 0 FAIL**
+- Evaluation channel `TIMEBASED_EVAL`, `LicenseStatus=1`, `GracePeriodRemaining=129598` minutes (approximately 90 days). Two historical WLMS shutdown events remain; neither proves the current evaluation is expired
+- Authenticated direct WinRM via `172.28.231.31:5985`; WSLPE-only nftables non-loopback guard still verified for wildcard host NAT forward `2210`
+- All Windows firewall profiles, UAC, and Defender enabled; standalone Windows 10 identity; no AD join
+- Dedicated `vmnet2` `172.28.231.0/24` matched the native WSLPE instance and the guest exercise NIC; no default route over that exercise NIC
+- Source and fixture regression gates passed in the corresponding run
+
+**Updated decision:** The prior licensing blocker is resolved for time-limited *private development*. This does not establish redistribution rights, a license suitable for a paid learner environment, or readiness after expiration. WSLPE remains `PROVIDED`, **NOT READY**.
+
+**Remaining blocking gates:** independently prove operator-controlled direct HTTPS WinRM and intended learner RDP path, guest-to-host/hypervisor and neighboring-VM isolation, safe bounded exercise-mode NAT disconnect/rollback, persistent protection against wildcard NAT forwarding exposure, learner non-admin account provisioning, and scenario-level acceptance. Do not disconnect NAT or expose the VM to learners merely because the Stage 2 Windows baseline passed. NORTH's networking and guest lifecycle were not modified.
