@@ -35,7 +35,7 @@ python3 -m unittest discover -s tests -p 'test_wslpe_host_network.py' -v
 python3 scripts/wslpe-check-host-network.py --ip-range 172.28.231
 ```
 
-The prefix above is **only a candidate observed to be outside the previously shared address list**, not a universal default. This checker never installs/configures a vmnet or VM and reports `[NOT VERIFIED]` for the actual future guest adapter, other VMs' static IP assignments, NAT/firewall policy and learner isolation. A `[PASS]` does **not** authorize installation. The WSLPE installer remains locked pending the remaining network and guest runtime gates.
+The prefix above is **only a candidate observed to be outside the previously shared address list**, not a universal default. This checker never installs/configures a vmnet or VM and reports `[NOT VERIFIED]` for the actual future guest adapter, other VMs' static IP assignments, NAT/firewall policy and learner isolation. A `[PASS]` by itself does **not** authorize a full installation. The private operator can explicitly approve a guarded Stage 1 guest boot only after the complete 13-gate preboot acceptance passes. Learner provisioning and full course installation remain locked.
 
 A future Windows VMware host or VPS/cloud provider needs an equivalent **provider-specific** network preflight, not `/etc/vmware/networking`.
 
@@ -51,7 +51,7 @@ The same WSLPE recipe should be portable to a compatible clean VMware workstatio
 6. When provisioning completes, test that learner-side LPE exercises work with management NAT disconnected and cannot reach the operator control plane or other learners' VMs.
 7. Fail closed if a requested network cannot be isolated, even if an alternative NAT interface is present.
 
-These runtime checks are **not yet implemented as a complete pre-install automated gate**. WSLPE installation remains locked until they are validated.
+These checks are **not yet implemented as a complete Windows/learner/runtime acceptance gate**. Only a Stage 1 native guest boot is available after complete source and host preboot checks; subsequent course provisioning remains locked.
 
 ## Future VPS or AWS installation
 
@@ -69,7 +69,7 @@ The present `WSLPE` recipe has **only a VMware provider definition**. A future A
 - `WSLPE`'s recipe must never hard-code `vmnet8`, `vmnet10` or a particular development-machine IP prefix.
 - Provider defaults must remain provider-specific. Do **not** modify NORTH's provider networking in the name of WSLPE portability.
 - The shared `windows_lpe` role must remain free of VMware/vmnet/cloud provider assumptions.
-- The WSLPE operator console must keep `install` disabled until the native provider/network isolation gates are proven.
+- The WSLPE operator console must restrict `install` to an operator-confirmed native Stage 1 guest-only boot until actual VMware network isolation, Windows and learner security gates are independently proven. Full deployment remains unavailable.
 - A later clean-host test must demonstrate installation **without NORTH**. A separate cloud-provider test is mandatory before calling WSLPE portable to AWS/VPS.
 
 See [WSLPE core integration plan](WSLPE_CORE_INTEGRATION_PLAN.md).
