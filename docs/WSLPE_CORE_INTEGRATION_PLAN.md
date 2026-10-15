@@ -56,6 +56,23 @@ The `scripts/wslpe-stage2-acceptance.sh` wrapper runs the Stage 2 mock regressio
 
 The operator has **not yet run these new Stage 2 checks**. The pinned candidate range remains host-specific, and Stage 2 reads the actual prefix from the Kingdoms native instance rather than hardcoding it. The bootstrap `vagrant` credentials are still development-only, and must not be exposed to course learners. NAT must not be confused with an isolated student training network.
 
+## Stage 2 finding: WinRM forwarded socket exposed beyond loopback
+
+The operator confirmed all **15 Stage 2 regression tests PASS**, but the live check stopped at `[BLOCKED] WSLPE bootstrap WinRM port appears exposed beyond host loopback`. No guest or infrastructure changes occurred. **Do not expose this VM to learners.**
+
+Vagrant's built-in Windows WinRM port forwarding normally uses `host_ip: 127.0.0.1`, but that does not prove the underlying VMware NAT socket is bound locally. The actual port and owning process must be inspected before changing configuration.
+
+Read-only diagnosis:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+python3 -m unittest discover -s tests -p 'test_wslpe_winrm_forwarding_diagnose.py' -v
+python3 scripts/wslpe-winrm-forwarding-diagnose.py
+```
+
+The diagnostic reads only the existing WSLPE instance's Vagrant port mapping, matching Linux TCP listeners with optional process labels, and selected nonsecret Vagrant forwarding lines. It does **not** run `vagrant up`, reload networking, restart the machine, touch NORTH or change Windows security controls. Do not weaken Stage 2's bind-scope assertion; any eventual fix must be scoped to WSLPE and validated against the **actual** host listening address. This diagnostic has not yet been executed on the operator's workstation.
+
 ## One-command operator preboot acceptance
 
 The previously separate source, provider, native-render and network checks are now bundled in `scripts/wslpe-acceptance.py`. This is the **preferred operator entry point** to save time and avoid repeatedly requesting separate test results. It runs 13 non-deployment check groups, captures individual logs, and prints a concise PASS/FAIL summary, with detailed output only for failures.
