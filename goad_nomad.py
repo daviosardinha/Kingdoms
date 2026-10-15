@@ -112,6 +112,32 @@ class GoadNomad(BaseGoad):
                 Log.info(item)
         return result.ready
 
+    def _create_selected_windows_lpe_guest(self, confirmed=False):
+        """Create only the standalone VMware guest, not an installed course."""
+        selection = self._course_selection()
+        if selection is None or selection.slug != 'windows-lpe':
+            Log.error('Select windows-lpe before creating its standalone guest.')
+            return False
+        result = WindowsLpeVmwareAdapter().create_guest(confirmed=confirmed)
+        for line in result.checks:
+            if line.startswith('FAIL'):
+                Log.error(line)
+            else:
+                Log.info(line)
+        return result.ready
+
+    def do_course_vm_create(self, arg=''):
+        """Operator-only guest creation. Never install scenarios or touch NORTH."""
+        if arg.strip() != 'CREATE windows-lpe':
+            Log.error(
+                'Creation requires deliberate confirmation: '
+                'course_vm_create CREATE windows-lpe'
+            )
+            return False
+        self._create_selected_windows_lpe_guest(confirmed=True)
+        # cmd.Cmd treats a True return as an instruction to exit.
+        return False
+
     def do_course_preflight(self, arg=''):
         """Read-only source/tool inspection; does not create a virtual machine."""
         self._inspect_selected_windows_lpe('preflight')
@@ -129,7 +155,7 @@ class GoadNomad(BaseGoad):
             name = command[0].lower() if command else ''
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
-                       'help', '?', 'exit', 'eof'}
+                       'course_vm_create', 'help', '?', 'exit', 'eof'}
             if name not in allowed:
                 Log.error(
                     'This course has no validated deployment adapter. '
@@ -498,6 +524,7 @@ class GoadNomad(BaseGoad):
             print_menu_entry('status', 'inspect selected course state (read-only)')
             print_menu_entry('course_preflight', 'inspect standalone VM tooling, do not boot')
             print_menu_entry('course_vm_status', 'inspect standalone Vagrant state')
+            print_menu_entry('course_vm_create CREATE windows-lpe', 'create guest ONLY; no scenarios')
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Unavailable course: provisioning and lifecycle are disabled.')
             return
@@ -508,6 +535,7 @@ class GoadNomad(BaseGoad):
         print_menu_entry('course', 'inspect selected course and readiness')
         print_menu_entry('course_preflight', 'inspect Windows LPE tools without boot')
         print_menu_entry('course_vm_status', 'inspect Windows LPE VM status')
+        print_menu_entry('course_vm_create CREATE windows-lpe', 'operator guest-only creation')
         if self._nomad_provider() is not None:
             print_menu_title('GOAD_NOMAD Network')
             print_menu_entry('network', 'show the segmented network profile')
@@ -609,7 +637,7 @@ class GoadNomad(BaseGoad):
 
 
 def parse_args():
-    task_help = 'tasks available: courses/course-preflight/course-vm-status/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
+    task_help = 'tasks available: courses/course-preflight/course-vm-status/course-vm-create/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='kingdoms-operator',
         description='Kingdoms private operator course and lab management console.',
@@ -630,6 +658,8 @@ Kingdoms course name. Course installation controls are never given to learners.
     parser.add_argument('-t', '--task', help=task_help, required=False)
     parser.add_argument('-l', '--lab', help='legacy lab identifier (default: GOAD)', default='GOAD', required=False)
     parser.add_argument('-c', '--course', help='Kingdoms operator course slug (optional)', default=None)
+    parser.add_argument('--confirm-vm-create', action='store_true',
+                        help='explicitly authorize guest-only Windows LPE VM creation')
     parser.add_argument('-p', '--provider', help='provider to use (default: vmware)', default='vmware', required=False)
     parser.add_argument('-ip', '--ip_range', help='legacy flat-network prefix; ignored by segmented GOAD/VMware', default='', required=False)
     parser.add_argument('-m', '--method', help='deploy method to use (default: local)', default='local', required=False)
@@ -650,6 +680,27 @@ def _dispatch_task(goad, args):
             Log.error('Unknown Kingdoms course. Use -t courses to list courses.')
             return 1
         if not course.lifecycle_ready:
+            if args.task == 'course-vm-create':
+                if course.slug != 'windows-lpe':
+                    Log.error('Only windows-lpe supports guest-only creation.')
+                    return 1
+                if not getattr(args, 'confirm_vm_create', False):
+                    Log.error(
+                        'Guest creation requires --confirm-vm-create; '
+                        'full Windows LPE course installation is still disabled.'
+                    )
+                    return 1
+                if args.instance is not None:
+                    Log.error(
+                        'Guest creation uses an isolated course project; '
+                        'do not supply a legacy NORTH instance (-i).'
+                    )
+                    return 1
+                if not goad._set_course_selection(course.slug):
+                    return 1
+                return 0 if goad._create_selected_windows_lpe_guest(
+                    confirmed=True
+                ) else 1
             if args.task in ('course-preflight', 'course-vm-status'):
                 if course.slug != 'windows-lpe':
                     Log.error('Only windows-lpe has an independent VM backend.')
