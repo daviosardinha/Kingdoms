@@ -47,7 +47,15 @@ def load_unit(name):
         x for x in tree.body
         if isinstance(x, (ast.ClassDef, ast.FunctionDef)) and x.name == name
     )
+    class FakeVmAdapter:
+        def preflight(self):
+            return types.SimpleNamespace(ready=True, checks=("PASS: mock-only preflight",))
+
+        def vm_status(self):
+            return types.SimpleNamespace(ready=True, checks=("INFO: mock-only status",))
+
     scope = {
+        "WindowsLpeVmwareAdapter": FakeVmAdapter,
         "BaseGoad": LegacyConsole,
         "Log": StubLog,
         "COURSES": COURSES,
@@ -116,6 +124,13 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertFalse(self.console.do_select_course("north"))
         self.assertEqual(self.console._selected_course, "north")
 
+    def test_read_only_windows_lpe_backend_checks_keep_console_open(self):
+        self.console.do_select_course("windows-lpe")
+        self.assertFalse(self.console.do_course_preflight())
+        self.assertFalse(self.console.do_course_vm_status())
+        self.assertEqual(self.console.legacy_calls, [])
+        self.assertTrue(any("mock-only preflight" in x[1] for x in StubLog.output))
+
     def test_course_switching_and_legacy_console_compatibility(self):
         self.console.do_select_course("windows-lpe")
         self.assertTrue(self.console._set_course_selection("north"))
@@ -145,6 +160,8 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
             do_load=lambda *args: self.calls.append(("load", args)),
             do_install=lambda *args: self.calls.append(("install", args)) or False,
             do_courses=lambda *args: self.calls.append(("courses", args)),
+            _set_course_selection=lambda slug: self.calls.append(("select", (slug,))) or True,
+            _inspect_selected_windows_lpe=lambda action: self.calls.append(("inspect", (action,))) or True,
         )
 
     @staticmethod
@@ -163,6 +180,22 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
         self.assertEqual(dispatch_task(self.console, self.args("courses", "windows-lpe")), 0)
         self.assertEqual(dispatch_task(self.console, self.args("status", "windows-lpe")), 0)
         self.assertEqual(self.calls, [("courses", ())])
+
+    def test_windows_lpe_backend_cli_inspection_is_scoped_and_read_only(self):
+        self.assertEqual(dispatch_task(self.console, self.args("course-preflight", "windows-lpe")), 0)
+        self.assertEqual(dispatch_task(self.console, self.args("course-vm-status", "windows-lpe")), 0)
+        self.assertEqual(
+            self.calls,
+            [
+                ("select", ("windows-lpe",)),
+                ("inspect", ("preflight",)),
+                ("select", ("windows-lpe",)),
+                ("inspect", ("status",)),
+            ],
+        )
+        self.calls.clear()
+        self.assertEqual(dispatch_task(self.console, self.args("course-preflight", "course-2")), 1)
+        self.assertEqual(self.calls, [])
 
     def test_unrecognized_and_mismatched_cli_course_fail_closed(self):
         self.assertEqual(dispatch_task(self.console, self.args("install", "fake")), 1)
