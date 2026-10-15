@@ -128,3 +128,45 @@ bootstrap vagrant identity remains temporary; final operator isolation and
 bootstrap secret rotation are separate P1-C gates. This new P1-B audit has
 not yet run against the operator's live WSLPE machine. The instance remains
 `PROVIDED`, not `READY`.
+
+
+## 2026-10-15: P1-B live authenticated HTTPS PASS; P1-C host boundary pending
+
+The operator executed `tests.test_wslpe_https_auth_audit` (**6/6 PASS**) and
+then `scripts/wslpe-https-auth-audit.py`, which reported:
+
+- `[PASS] WSLPE-only TLS pin, chain, SNI and SAN: WSLPE-WS01 @ 172.28.231.31:5986`
+- `[PASS] WSLPE_AUTHENTICATED_HTTPS=TRUE`
+- `[PASS] WSLPE_DOMAIN_FREE=TRUE`
+
+**P1-B is closed:** HTTPS transport and remote local machine identity were
+successfully authenticated with scoped TLS verification, without changing DNS,
+the host trust store, VMware, Windows, the firewall or NORTH.
+
+**P1-C remains unverified and mandatory.** The operator channel is currently
+on the future learner exercise NIC. VMware Ethernet0 provisioning NAT remains
+connected. The VMware custom host-only exercise vmnet exposes the **host-side
+interface** to the guest unless *external* filtering prevents traffic.
+Learner SYSTEM rights are an intended exercise outcome; guest-only firewall
+and restricted user tokens therefore are not isolation boundaries.
+
+Added `scripts/wslpe-p1c-topology-audit.py` and its source regression.
+This command only reads the **one exact registered WSLPE VMX**, the local
+host's VMware vmnet definitions, its interface IPv4 and its route to the
+WSLPE guest. It does not ping or connect to NORTH, and does not modify the
+host/guest. It intentionally reports `[RELEASE BLOCKED]` even with
+correct VMX mapping because it does not prove the external firewall,
+NAT/forwarding removal, outage recovery or guest-to-host/NORTH denial.
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" -m unittest -v tests.test_wslpe_p1c_topology_audit
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-p1c-topology-audit.py
+```
+
+**Operator authorization before any future mutations:** choose and prove
+independent out-of-band console rollback, guest-to-host drop enforcement,
+persistent host firewall guard, expected learner RDP reachability, and
+a WSLPE-only NAT cutover. Never rely on interface metadata alone. Do not
+assume P1-C is complete after its passive topology audit.
