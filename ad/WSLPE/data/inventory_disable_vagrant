@@ -2,6 +2,10 @@
 ; WSLPE local management: standalone Windows, no Active Directory.
 domain_name=WSLPE
 ansible_connection=winrm
+; WSLPE management uses HTTP/5985 on its trusted operator-only subnet.
+; VMware NAT forwarding may be unreachable even when guest WinRM is healthy.
+ansible_port=5985
+ansible_winrm_scheme=http
 ansible_user=vagrant
 ansible_password=vagrant
 ansible_winrm_transport=ntlm
