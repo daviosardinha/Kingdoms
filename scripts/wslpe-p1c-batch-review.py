@@ -21,32 +21,57 @@ from kingdoms.wslpe_isolation_policy import TABLE, render_host_filter
 
 PLAN = ROOT / "scripts/wslpe-p1c-isolation-plan.py"
 STATUS: list[tuple[str, str, str]] = []
-READ_ONLY = {
-    "vmrun", "ip", "ss", "nft", "iptables-save", "ip6tables-save",
-    "systemctl", "bash", str(Path(sys.executable)),
-    str(Path.home() / ".goad/.venv/bin/ansible-playbook"),
-}
 MARKERS = ("[PASS]", "[FAIL]", "[BLOCKED]", "[WARN]", "[NOT VERIFIED]",
            "[RELEASE BLOCKED]", "[INFO]", "PLAY RECAP", "WSLPE STAGE 2 WINDOWS BASELINE")
 
 
+def approved_read_only(args: list[str]) -> bool:
+    """Explicit argument allowlist. Never generalize this into command execution."""
+    if not args:
+        return False
+    if args == ["vmrun", "-T", "ws", "list"]:
+        return True
+    if args == ["systemctl", "is-enabled", "nftables"]:
+        return True
+    if args in (
+        ["sudo", "-n", "nft", "-c", "-f", "-"],
+        ["sudo", "-n", "nft", "-j", "list", "ruleset"],
+        ["sudo", "-n", "ss", "-H", "-lntup"],
+        ["sudo", "-n", "iptables-save"],
+        ["sudo", "-n", "ip6tables-save"],
+    ):
+        return True
+    if len(args) == 2 and args[0] == "bash":
+        allowed = {
+            str(ROOT / "scripts/wslpe-network-acceptance.sh"),
+            str(ROOT / "scripts/wslpe-access-audit.sh"),
+        }
+        return args[1] in allowed
+    if len(args) == 4 and args[:2] == [
+        sys.executable, str(ROOT / "scripts/wslpe-https-auth-audit.py")
+    ]:
+        return args[2] == "--expected-thumbprint" and bool(
+            re.fullmatch(r"[0-9a-fA-F]{40}", args[3])
+        )
+    ansible = str(Path.home() / ".goad/.venv/bin/ansible-playbook")
+    if len(args) == 10 and args[0] == ansible:
+        return (
+            args[1] == "-i"
+            and args[3:5] == ["-i", str(ROOT / "ad/WSLPE/data/inventory_disable_vagrant")]
+            and args[5:7] == ["--limit", "ws01"]
+            and args[7] == str(ROOT / "ansible/wslpe-p1c-guest-review.yml")
+        )
+    return False
+
+
 def run(args: list[str], *, input_data: str | None = None, timeout: int = 60
         ) -> subprocess.CompletedProcess:
-    """Allowlisted command runner: only existing read-only diagnostic paths."""
-    if not args or args[0] not in READ_ONLY and args[:2] != ["sudo", "-n"]:
-        raise ValueError("Non-read-only or unexpected command rejected")
-    if args[:2] == ["sudo", "-n"]:
-        if len(args) < 3 or args[2] not in ("nft", "ss", "iptables-save", "ip6tables-save"):
-            raise ValueError("Privileged command not on WSLPE read-only allowlist")
-        if args[2] == "nft" and (
-            args[3:5] not in (["-j", "list"], ["-c", "-f"])
-            or (args[3:5] == ["-c", "-f"] and args[5:] != ["-"])
-        ):
-            raise ValueError("Unsupported privileged nft operation")
+    """Fixed read-only process allowlist. Never run unapproved commands."""
+    if not approved_read_only(args):
+        raise ValueError("Unexpected or non-read-only WSLPE audit command rejected")
     return subprocess.run(args, cwd=str(ROOT), input=input_data,
                           capture_output=True, text=True, check=False,
                           timeout=timeout)
-
 
 def result(section: str, level: str, note: str) -> None:
     STATUS.append((section, level, note))
