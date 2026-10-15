@@ -87,15 +87,16 @@ def main() -> int:
         print(f"[INFO] Guest WinRM TCP 5985 -> VMware NAT host TCP {port}")
         print(f"[INFO] vmnet-nat exact wildcard listener confirmed: {owner_verified}")
         print(f"[INFO] Dedicated WSLPE nftables rule verified: {guarded}")
+        if not owner_verified:
+            raise ValueError(
+                "Expected a unique vmnet-nat IPv4 wildcard listener. "
+                "Ownership changed or is unproven; refusing acceptance."
+            )
         if guarded:
             print("[PASS] Non-loopback traffic to this specific host port is dropped")
             print("[NOT VERIFIED] External independent reachability; reboot persistence")
             print("[NO CHANGES] Existing firewall, VMware and NORTH unchanged")
             return 0
-        if not owner_verified:
-            raise ValueError(
-                "Expected a unique vmnet-nat IPv4 wildcard listener. No guard installed."
-            )
         if not args.apply:
             print("[BLOCKED] Live wildcard WinRM forward is not restricted")
             print(f"[NEXT] sudo python3 scripts/wslpe-winrm-firewall.py "
