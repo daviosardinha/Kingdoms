@@ -174,7 +174,7 @@ ethernet2.connectionType = "nat"
                 STAGE2.inspect_management_port_binding(55985)
 
     def test_guarded_vmnet_nat_wildcard_accepted_only_with_verified_live_evidence(self):
-        from tests.test_wslpe_winrm_guard import nft_fixture
+        from test_wslpe_winrm_guard import nft_fixture
         listener = ('LISTEN 0 20 0.0.0.0:2210 0.0.0.0:* '
                     'users:(("vmnet-nat",pid=2162896,fd=9))')
         # First read_command: unprivileged ss listing used by the strict
@@ -187,7 +187,7 @@ ethernet2.connectionType = "nat"
         self.assertEqual(call.call_count, 3)
 
     def test_wildcard_listener_without_exact_firewall_rule_stays_blocked(self):
-        from tests.test_wslpe_winrm_guard import nft_fixture
+        from test_wslpe_winrm_guard import nft_fixture
         listener = ('LISTEN 0 20 0.0.0.0:2210 0.0.0.0:* '
                     'users:(("vmnet-nat",pid=2162896,fd=9))')
         with patch.object(
@@ -198,7 +198,7 @@ ethernet2.connectionType = "nat"
                 STAGE2.inspect_management_access(2210)
 
     def test_wildcard_rule_not_accepted_if_owner_is_unknown(self):
-        from tests.test_wslpe_winrm_guard import nft_fixture
+        from test_wslpe_winrm_guard import nft_fixture
         listener = "LISTEN 0 20 0.0.0.0:2210 0.0.0.0:*"
         with patch.object(
             STAGE2, "read_command",
