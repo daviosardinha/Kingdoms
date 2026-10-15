@@ -10,8 +10,15 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import re
+import sys
 import tempfile
 from pathlib import Path
+
+# Direct operator execution (`python scripts/wslpe-preview-native-instance.py`)
+# otherwise puts scripts/ rather than the repository root on sys.path.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from jinja2 import Environment, FileSystemLoader
 from goad.instance import LabInstance
