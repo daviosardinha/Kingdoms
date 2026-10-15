@@ -54,6 +54,42 @@
           Write-Output 'WSLPE_WINDOWS_STANDALONE=PASS'
       changed_when: false
 
+    # Reuse the already deployed NORTH WS01 evaluation role, not a second
+    # licensing implementation. Runs only in WSLPE's operator provisioning
+    # context. It rearms exclusively expired TIMEBASED_EVAL installations and
+    # verifies remaining grace after the role-controlled reboot.
+    - name: Maintain approved Windows evaluation grace before learner creation
+      ansible.builtin.import_role:
+        name: settings/eval_rearm
+
+    - name: Require enough Windows evaluation grace for a training session
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $products = @(Get-CimInstance SoftwareLicensingProduct -ErrorAction Stop |
+              Where-Object { $_.Name -like 'Windows*' -and $_.PartialProductKey })
+          $eval = @($products | Where-Object {
+              $_.Description -match 'TIMEBASED_EVAL'
+          } | Select-Object -First 1)
+          if ($eval.Count -gt 0) {
+            $grace = [int64]$eval[0].GracePeriodRemaining
+            if ($grace -lt 1440) {
+              throw "WSLPE time-based Windows evaluation has less than 24h of grace ($grace minutes). Do not release to learners."
+            }
+            Write-Output "WSLPE_LICENSE=TIMEBASED_EVAL"
+            Write-Output "WSLPE_LICENSE_GRACE_MINUTES=$grace"
+          }
+          elseif (@($products | Where-Object {
+              [int]$_.LicenseStatus -eq 1
+          }).Count -gt 0) {
+            Write-Output 'WSLPE_LICENSE=LICENSED_NON_EVAL'
+          }
+          else {
+            throw 'WSLPE Windows licensing is unverified or not activated'
+          }
+          Write-Output 'WSLPE_LICENSE_READY=PASS'
+      changed_when: false
+
     - name: Create standard local WSLPE learner
       ansible.windows.win_user:
         name: "{{ wslpe_learner_name }}"
