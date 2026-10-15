@@ -103,7 +103,7 @@ class WslpeFullReviewTests(unittest.TestCase):
     def test_no_uncontrolled_output_or_mutating_calls(self):
         src = SCRIPT.read_text()
         for marker in ("check_vm_membership", "check_firewall", "check_listeners",
-                       "check_persistence", "existing_readonly(", "WSLPE guest local access",
+                       "check_persistence", "existing_readonly(", "Windows guest local access",
                        "Authenticated pinned WinRM HTTPS", "[RELEASE BLOCKED]"):
             self.assertIn(marker, src)
         for term in ("nft -f", "iptables -A", "vmrun start", "vmrun stop",
