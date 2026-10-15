@@ -18,6 +18,7 @@ from goad.log import Log
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
 from kingdoms.course_registry import COURSES, get_course, catalog_lines
+from kingdoms.windows_lpe_vmware import WindowsLpeVmwareAdapter
 
 
 _upstream = runpy.run_path(
@@ -94,12 +95,40 @@ class GoadNomad(BaseGoad):
             if not course.lifecycle_ready:
                 Log.warning('Course adapter pending. Installation and lifecycle disabled.')
 
+    def _inspect_selected_windows_lpe(self, operation):
+        """Perform inspection only, never dispatch a legacy lab lifecycle."""
+        if self._course_selection() is None or self._course_selection().slug != 'windows-lpe':
+            Log.error('Select windows-lpe before inspecting its independent VM backend.')
+            return False
+        adapter = WindowsLpeVmwareAdapter()
+        result = (
+            adapter.preflight() if operation == 'preflight'
+            else adapter.vm_status()
+        )
+        for item in result.checks:
+            if item.startswith('FAIL'):
+                Log.error(item)
+            else:
+                Log.info(item)
+        return result.ready
+
+    def do_course_preflight(self, arg=''):
+        """Read-only source/tool inspection; does not create a virtual machine."""
+        self._inspect_selected_windows_lpe('preflight')
+        return False
+
+    def do_course_vm_status(self, arg=''):
+        """Read-only VM status scoped exclusively to the standalone course."""
+        self._inspect_selected_windows_lpe('status')
+        return False
+
     def onecmd(self, line):
         """Block all legacy lab commands under an unavailable course selection."""
         if self._course_is_not_ready():
             command = (line or '').strip().split(maxsplit=1)
             name = command[0].lower() if command else ''
             allowed = {'', 'courses', 'select_course', 'course', 'status',
+                       'course_preflight', 'course_vm_status',
                        'help', '?', 'exit', 'eof'}
             if name not in allowed:
                 Log.error(
@@ -467,6 +496,8 @@ class GoadNomad(BaseGoad):
             print_menu_entry('select_course <slug>', 'select course without deploying it')
             print_menu_entry('course', 'show selected course and adapter readiness')
             print_menu_entry('status', 'inspect selected course state (read-only)')
+            print_menu_entry('course_preflight', 'inspect standalone VM tooling, do not boot')
+            print_menu_entry('course_vm_status', 'inspect standalone Vagrant state')
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Unavailable course: provisioning and lifecycle are disabled.')
             return
@@ -475,6 +506,8 @@ class GoadNomad(BaseGoad):
         print_menu_entry('courses', 'show available and planned training courses')
         print_menu_entry('select_course <slug>', 'select operator course (no VM changes)')
         print_menu_entry('course', 'inspect selected course and readiness')
+        print_menu_entry('course_preflight', 'inspect Windows LPE tools without boot')
+        print_menu_entry('course_vm_status', 'inspect Windows LPE VM status')
         if self._nomad_provider() is not None:
             print_menu_title('GOAD_NOMAD Network')
             print_menu_entry('network', 'show the segmented network profile')
@@ -576,7 +609,7 @@ class GoadNomad(BaseGoad):
 
 
 def parse_args():
-    task_help = 'tasks available: courses/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
+    task_help = 'tasks available: courses/course-preflight/course-vm-status/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='kingdoms-operator',
         description='Kingdoms private operator course and lab management console.',
@@ -616,6 +649,14 @@ def _dispatch_task(goad, args):
             Log.error('Unknown Kingdoms course. Use -t courses to list courses.')
             return 1
         if not course.lifecycle_ready:
+            if args.task in ('course-preflight', 'course-vm-status'):
+                if course.slug != 'windows-lpe':
+                    Log.error('Only windows-lpe has an independent VM backend.')
+                    return 1
+                if not goad._set_course_selection(course.slug):
+                    return 1
+                action = 'preflight' if args.task == 'course-preflight' else 'status'
+                return 0 if goad._inspect_selected_windows_lpe(action) else 1
             if args.task == 'courses':
                 goad.do_courses()
                 return 0
