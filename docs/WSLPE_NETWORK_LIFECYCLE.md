@@ -97,6 +97,22 @@ bash scripts/wslpe-network-acceptance.sh
 
 This will rerun the source tests and the live Windows/firewall + dedicated NIC checks. Record the `[INFO] Windows Firewall` lines and the final Stage 2 summary. **Do not run `Set-NetFirewallProfile` or change Windows settings based on an unevidenced type mismatch.** If any actual profile is disabled, assess the source Vagrant image and scenario prerequisites before making an explicit WSLPE-only change. The firewall host guard is not reboot-persistent and guest-to-host isolation, direct HTTPS WinRM and learner access remain unverified.
 
+## New blocker: registered WSLPE VMX not in the running VMware inventory
+
+The operator reran the combined read-only WSLPE network acceptance after the firewall profile reporting update. The Stage 2 tests passed **25/25**, but **all three** live runtime checks stopped at `Exact registered WSLPE VMX is not uniquely running`, before reaching WinRM, Windows Firewall or the exercise NIC. Prior evidence had confirmed this native VMX running, so the immediate question is whether VMware has powered it off, ceased reporting it, or the registered Vagrant VMX path no longer matches the actual running file. **Do not conclude that Windows Firewall is still failing.** No change to NORTH was reported.
+
+A single new operator-only diagnostic identifies the exact reason without starting, destroying or reloading VMs:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+"$HOME/.goad/.venv/bin/python" -m unittest discover \
+  -s tests -p 'test_wslpe_vm_state_diagnose.py' -v
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-vm-state-diagnose.py
+```
+
+The script checks the WSLPE native `instance.json`, the read-only `.vagrant/machines/WSLPE-WS01/vmware_desktop/id` registration path, and the actual output of `vmrun -T ws list` plus `vagrant status WSLPE-WS01` from the **existing operator** Vagrant project. It distinguishes a stopped/non-listed guest, an altered VMX path and an ambiguous duplicate. It performs **no host or Windows mutations** and deliberately exits nonzero when the VM is not proven running. No automatic reboot or state repair may be attempted before examining this evidence. The newly committed diagnostic and fixture tests are awaiting operator execution.
+
 ## Planned WSLPE-specific exercise handoff, NOT IMPLEMENTED YET
 
 We must validate the following gates before disconnecting WSLPE's NAT adapter:
