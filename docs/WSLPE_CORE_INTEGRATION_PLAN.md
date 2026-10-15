@@ -49,9 +49,10 @@ Run in the private operator checkout, using the same Kingdoms Python virtual env
 ```bash
 cd "$HOME/kingdoms-lpe-standalone"
 git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
-python3 -m unittest discover -s tests -p 'test_wslpe_stage2_inspect.py' -v
-"$HOME/.goad/.venv/bin/python" scripts/wslpe-stage2-inspect.py --show-adapters
+bash scripts/wslpe-stage2-acceptance.sh
 ```
+
+The `scripts/wslpe-stage2-acceptance.sh` wrapper runs the Stage 2 mock regression suite and the actual runtime inspection in a single command. It fails closed on missing bootstrap WinRM connectivity or if the forwarded WinRM port listens beyond loopback. It also requires the guest to identify as a Windows 10 client and match the native instance's actual subnet. A failure does **not** authorize disabling Defender, UAC or Windows Firewall merely to pass the test. The guest's NIC-to-vmnet mapping must still be independently accepted before learner provisioning.
 
 The operator has **not yet run these new Stage 2 checks**. The pinned candidate range remains host-specific, and Stage 2 reads the actual prefix from the Kingdoms native instance rather than hardcoding it. The bootstrap `vagrant` credentials are still development-only, and must not be exposed to course learners. NAT must not be confused with an isolated student training network.
 
