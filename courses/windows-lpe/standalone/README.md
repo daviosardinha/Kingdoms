@@ -1,6 +1,6 @@
 # Kingdoms Windows Local Privilege Escalation: standalone lab
 
-**Status: machine definition ready for validation, not yet deployed.**
+**Status: VMware backend definition ready for validation, not yet deployed. Kingdoms interactive installer integration is pending.**
 
 This is one independently managed Windows workstation used to develop and verify the shared Kingdoms Windows LPE scenarios. It is not a copy of the NORTH course instance, it does not join Active Directory, and it does not configure any vulnerability on first boot.
 
@@ -15,6 +15,12 @@ This is one independently managed Windows workstation used to develop and verify
 - **Later requirement**: verify offline operation with the NAT interface disconnected once the local learner is configured
 
 A single NAT interface for provisioning does **not** prove network isolation. Inspect the resulting VMX and Windows adapters. Never allow this VM to attach to the NORTH exercise network or assume its host management IP is the course exercise IP.
+
+## How this should be installed
+
+**Normal Kingdoms workflow:** select the Windows LPE course in the unified interactive installer and run `install`. The installer must manage the unique VM, learner provisioning, scenario preparation and lifecycle. **The course selector and adapter do not exist yet.** Until they are implemented, do not present the manual Vagrant path below as the official user installation workflow.
+
+The Vagrant project in this directory remains the course's low-level VMware backend and a narrow **developer test harness**. It is useful for verifying one guest before wiring its lifecycle into the console, but it must not replace centralized Kingdoms installation or expose any NORTH-specific operations.
 
 ## Prerequisites
 
@@ -33,7 +39,7 @@ vagrant status
 
 Do not run these commands from the existing NORTH provider directory.
 
-## Deliberate first boot
+## Deliberate developer-only first boot
 
 Only after the read-only validation succeeds:
 
