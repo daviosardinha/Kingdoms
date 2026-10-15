@@ -471,6 +471,10 @@ class GoadNomad(BaseGoad):
             Log.warning('Unavailable course: provisioning and lifecycle are disabled.')
             return
         super().do_help(arg)
+        print_menu_title('Kingdoms Courses (operators only)')
+        print_menu_entry('courses', 'show available and planned training courses')
+        print_menu_entry('select_course <slug>', 'select operator course (no VM changes)')
+        print_menu_entry('course', 'inspect selected course and readiness')
         if self._nomad_provider() is not None:
             print_menu_title('GOAD_NOMAD Network')
             print_menu_entry('network', 'show the segmented network profile')
