@@ -79,6 +79,24 @@ python3 scripts/wslpe-exercise-network-preflight.py
 
 The Windows baseline and exercise NIC checks are separate. The exercise-network preflight intentionally fails if Vagrant's generated private network did not map to a **dedicated, unshared** host-only VMware vmnet, if its configured subnet is not the WSLPE instance subnet, or if there is no matching host interface. **Do not fix that by moving WSLPE onto vmnet8 or a NORTH VMnet.**
 
+## Latest live Stage 2 evidence: firewall profile ambiguity
+
+The operator confirmed **90/90 WSLPE regression tests PASS** and successfully applied the WSLPE-specific temporary nftables protection for guest WinRM TCP/5985 forwarded to host TCP/2210. The subsequent live acceptance confirmed the exact VMX, registered WSLPE instance, VMware NAT and dedicated `vmnet2` exercise interfaces, `172.28.231.31/24` guest IP, no AD join, enabled UAC, and running Defender. The exercise NIC's actual VMware subnet matches `172.28.231.0/24`. NORTH remained untouched.
+
+The live Windows audit reported **7 PASS / 1 FAIL**. The sole failing assertion was `All Windows firewall profiles enabled`. **This is not yet proof a profile is disabled:** `Get-NetFirewallProfile` may serialize its `Enabled` CIM/GpoBoolean property as strings such as `"True"` or `"False"`, whereas the initial Python evaluator required literal JSON boolean `true` for every profile.
+
+The read-only inspector now prints the exact Domain, Private and Public `Enabled` values and JSON data types, together with active interface network classifications. It accepts only explicit boolean `true` or the string `"True"` and still rejects `false`, `"False"`, `NotConfigured`, missing profiles, duplicates and unknown values. The future WSLPE learner foundation uses the same explicit `[string]$_.Enabled -eq 'True'` semantics. Additional mocked regression cases exercise all these inputs.
+
+**Next operator command, read-only:**
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+bash scripts/wslpe-network-acceptance.sh
+```
+
+This will rerun the source tests and the live Windows/firewall + dedicated NIC checks. Record the `[INFO] Windows Firewall` lines and the final Stage 2 summary. **Do not run `Set-NetFirewallProfile` or change Windows settings based on an unevidenced type mismatch.** If any actual profile is disabled, assess the source Vagrant image and scenario prerequisites before making an explicit WSLPE-only change. The firewall host guard is not reboot-persistent and guest-to-host isolation, direct HTTPS WinRM and learner access remain unverified.
+
 ## Planned WSLPE-specific exercise handoff, NOT IMPLEMENTED YET
 
 We must validate the following gates before disconnecting WSLPE's NAT adapter:
