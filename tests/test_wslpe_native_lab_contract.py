@@ -15,6 +15,7 @@ PROVIDER_INVENTORY = LAB / "providers/vmware/inventory"
 LAB_INVENTORY = LAB / "data/inventory_disable_vagrant"
 ROUTING = ROOT / "playbooks.yml"
 FOUNDATION = ROOT / "ansible/wslpe-foundation.yml"
+LPE_HARNESS = ROOT / "ansible/wslpe-lpe-test.yml"
 CONTROLLER = ROOT / "goad_nomad.py"
 PROTOTYPE = ROOT / "courses/windows-lpe/standalone/Vagrantfile"
 
@@ -27,6 +28,7 @@ class WslpeNativeLabContractTests(unittest.TestCase):
         cls.inventory = LAB_INVENTORY.read_text(encoding="utf-8")
         cls.routes = ROUTING.read_text(encoding="utf-8")
         cls.foundation = FOUNDATION.read_text(encoding="utf-8")
+        cls.harness = LPE_HARNESS.read_text(encoding="utf-8")
         cls.controller = CONTROLLER.read_text(encoding="utf-8")
 
     def test_first_class_lab_follows_existing_discovery_layout(self):
@@ -86,6 +88,17 @@ class WslpeNativeLabContractTests(unittest.TestCase):
         ):
             self.assertIn(marker, self.foundation)
         self.assertIn("no_log: true", self.foundation)
+
+    def test_existing_windows_lpe_role_is_reused_one_technique_at_a_time(self):
+        self.assertIn('role: windows_lpe', self.harness)
+        self.assertIn('windows_lpe_profile: none', self.harness)
+        self.assertIn('windows_lpe_allow_candidate: false', self.harness)
+        self.assertIn("wslpe_action == 'status' or (wslpe_techniques | length) == 1", self.harness)
+        self.assertIn("KINGDOMS_WSLPE_LEARNER_PASSWORD", self.harness)
+        self.assertIn("WSLPE-WS01", self.harness)
+        self.assertIn("if ($machine.PartOfDomain)", self.harness)
+        # Manual harness must never be part of normal WSLPE install.
+        self.assertNotIn('wslpe-lpe-test.yml', self.routes)
 
     def test_operator_installer_does_not_implicitly_boot_wslpe(self):
         self.assertIn("self.lab_manager.get_current_lab_name() == 'WSLPE'", self.controller)
