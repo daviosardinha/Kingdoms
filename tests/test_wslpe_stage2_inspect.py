@@ -138,12 +138,62 @@ ethernet2.connectionType = "nat"
 
     def test_vagrant_port_inspection_is_read_only(self):
         port_output = "5985 (guest) => 55985 (host)\n"
-        with patch.object(STAGE2, "read_command",
+        with patch.object(STAGE2.os, "geteuid", return_value=1000), \
+             patch.object(STAGE2, "read_command",
                           return_value=port_output) as command:
             self.assertEqual(STAGE2.forwarded_winrm_port(self.instance), 55985)
         self.assertEqual(
             command.call_args.args[0],
             ["vagrant", "port", "WSLPE-WS01"],
+        )
+
+    def test_root_port_lookup_uses_sudo_operator_vagrant_context(self):
+        import pwd
+        from types import SimpleNamespace
+        owner = self.instance.stat().st_uid
+        # Owner fixture is the actual temp dir's owner. The username is
+        # looked up from pwd, never interpolated from a shell string.
+        with patch.object(STAGE2.os, "geteuid", return_value=0), \
+             patch.dict(STAGE2.os.environ, {"SUDO_UID": str(owner)}), \
+             patch.object(pwd, "getpwuid",
+                          return_value=SimpleNamespace(pw_name="operator")):
+            if owner == 0:
+                with self.assertRaisesRegex(ValueError, "owner"):
+                    STAGE2.vagrant_port_command(self.instance)
+            else:
+                self.assertEqual(
+                    STAGE2.vagrant_port_command(self.instance),
+                    ["sudo", "-H", "-u", "operator", "--",
+                     "vagrant", "port", "WSLPE-WS01"],
+                )
+
+    def test_root_port_lookup_rejects_wrong_or_missing_sudo_identity(self):
+        owner = self.instance.stat().st_uid
+        for claimed_uid in ("", "not-an-id", str(owner + 1)):
+            with self.subTest(uid=claimed_uid), \
+                 patch.object(STAGE2.os, "geteuid", return_value=0), \
+                 patch.dict(STAGE2.os.environ,
+                            {"SUDO_UID": claimed_uid}):
+                with self.assertRaisesRegex(ValueError, "owner"):
+                    STAGE2.vagrant_port_command(self.instance)
+
+    def test_root_port_lookup_delegates_only_port_read_not_firewall(self):
+        import pwd
+        from types import SimpleNamespace
+        owner = self.instance.stat().st_uid
+        if owner == 0:
+            self.skipTest("unprivileged temp directory ownership required")
+        with patch.object(STAGE2.os, "geteuid", return_value=0), \
+             patch.dict(STAGE2.os.environ, {"SUDO_UID": str(owner)}), \
+             patch.object(pwd, "getpwuid",
+                          return_value=SimpleNamespace(pw_name="operator")), \
+             patch.object(STAGE2, "read_command",
+                          return_value="5985 (guest) => 2210 (host)") as query:
+            self.assertEqual(STAGE2.forwarded_winrm_port(self.instance), 2210)
+        query.assert_called_once_with(
+            ["sudo", "-H", "-u", "operator", "--", "vagrant",
+             "port", "WSLPE-WS01"],
+            cwd=self.instance / "provider",
         )
 
     def test_winrm_forwarding_bound_only_to_loopback(self):
