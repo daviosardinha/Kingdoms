@@ -137,3 +137,27 @@ require operator approval; never invoke NORTH's lab-mode or reinstall WSLPE.
 
 **Current decision:** WSLPE remains `PROVIDED`, **NOT READY**, independent
 of AD. It must not be offered to learners until P1–P4 are validated.
+
+
+## Operator validation: source parity gate 38/38 PASS
+
+On 2026-10-15 the operator synced the feature branch through commit
+`e83ec61` and executed:
+
+```bash
+bash scripts/wslpe-ws01-parity-source.sh
+```
+
+Observed results: **38 tests PASS / 0 FAIL**, strict standalone role source audit
+**0 domain indicators in 25 scanned files**, `[PASS] WSLPE/NORTH source
+contract`, and `[NO CHANGES]` to Windows, VMs, NAT or NORTH. This closes
+the **source-only parity gate**; it does **not** establish WSLPE live HTTPS
+certificate trust, authenticated HTTPS, local learner RDP, exercise isolation,
+or scenario exploitation.
+
+The next existing committed command is the read-only
+`bash scripts/wslpe-access-audit.sh`, which discovers the native registered
+WSLPE VMX and uses the already verified Ansible HTTP/5985 connection to inspect
+WSMan listeners/HTTPS certificate, RDP/NLA and service state. Do not apply the
+foundation, disconnect NAT or run LPE actions until the evidence passes and
+the control-plane/learner access design is approved.
