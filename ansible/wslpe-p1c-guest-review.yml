@@ -13,6 +13,8 @@
             throw 'Only standalone WSLPE-WS01 is eligible'
           }
           $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction SilentlyContinue
+          $learnerEnabled = $false
+          if ($null -ne $learner) { $learnerEnabled = [bool]$learner.Enabled }
           $admins = Get-LocalGroup -SID ([System.Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop
           $rdpUsers = Get-LocalGroup -SID ([System.Security.Principal.SecurityIdentifier]'S-1-5-32-555') -ErrorAction Stop
           $adminMembers = @(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop)
@@ -47,11 +49,11 @@
             Machine = [string]$env:COMPUTERNAME
             DomainJoined = [bool]$machine.PartOfDomain
             LocalLearnerPresent = ($null -ne $learner)
-            LocalLearnerEnabled = if ($learner) { [bool]$learner.Enabled } else { $false }
+            LocalLearnerEnabled = [bool]$learnerEnabled
             LearnerInAdministrators = ($learnerMember.Count -gt 0)
             LearnerInRemoteDesktopUsers = ($learnerRdpMember.Count -gt 0)
             ActiveRdpWinrmInboundRuleCount = $related.Count
-            ActiveRdpWinrmInboundRules = $related
+            ActiveRdpWinrmInboundRules = @($related | Select-Object -First 30)
             DefaultRouteInterfaces = @($routes | ForEach-Object { [int]$_.InterfaceIndex })
             GuestIPv4 = @($ipv4 | ForEach-Object {
               [pscustomobject]@{ Address=[string]$_.IPAddress; Index=[int]$_.InterfaceIndex }
