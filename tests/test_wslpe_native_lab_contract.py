@@ -119,7 +119,8 @@ class WslpeNativeLabContractTests(unittest.TestCase):
         self.assertIn("self.lab_manager.get_current_lab_name() == 'WSLPE'", self.controller)
         self.assertIn("if getattr(args, 'lab', None) == 'WSLPE'", self.controller)
         self.assertIn("WSLPE is a registered Kingdoms lab recipe", self.controller)
-        self.assertIn("WSLPE native Kingdoms instance integration is pending", self.controller)
+        self.assertIn("bootstrap_native_wslpe(", self.controller)
+        self.assertIn("select windows-lpe explicitly", self.controller.lower())
 
     def test_previous_parallel_bootstrap_is_not_authoritative(self):
         self.assertTrue(PROTOTYPE.exists())
