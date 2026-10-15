@@ -9,6 +9,19 @@
 #
 # The inventory must use the distinct "windows_lpe_standalone" group.
 
+- name: Reject missing or ambiguous standalone inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require exactly one standalone target
+      ansible.builtin.assert:
+        that:
+          - (groups.get('windows_lpe_standalone', []) | length) == 1
+        fail_msg: >-
+          Supply exactly one host in the windows_lpe_standalone inventory group.
+          A skipped host play must never count as a successful preflight.
+
 - name: Verify standalone Windows LPE target without mutating it
   hosts: windows_lpe_standalone
   gather_facts: false
