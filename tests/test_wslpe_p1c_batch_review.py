@@ -1,5 +1,7 @@
 """Static/mock safety regressions for the WSLPE all-in-one P1-C review."""
 from pathlib import Path
+from contextlib import redirect_stdout
+from io import StringIO
 import importlib.util
 import json
 import tempfile
@@ -38,6 +40,20 @@ class WslpeFullReviewTests(unittest.TestCase):
         self.assertFalse(MOD.approved_read_only(["sudo", "-n", "nft", "flush", "ruleset"]))
         self.assertFalse(MOD.approved_read_only(["vmrun", "start"]))
 
+    def test_exact_wslpe_inventory_and_playbook_argv(self):
+        binary = str(Path.home() / ".goad/.venv/bin/ansible-playbook")
+        base = [binary, "-i", str(ROOT / "workspace/wslpe-test/inventory"),
+                "-i", str(ROOT / "ad/WSLPE/data/inventory_disable_vagrant"),
+                "--limit", "ws01", str(ROOT / "ansible/wslpe-p1c-guest-review.yml")]
+        self.assertTrue(MOD.approved_read_only(base))
+        self.assertFalse(MOD.approved_read_only(base[:6] + ["GOAD-WS01", base[7]]))
+        self.assertFalse(MOD.approved_read_only(
+            base[:2] + [str(ROOT / "workspace/north/provider/inventory")] + base[3:]
+        ))
+        self.assertFalse(MOD.approved_read_only(
+            base[:7] + [str(ROOT / "ansible/ws01.yml")]
+        ))
+
     def test_new_vmnet_co_tenant_detection_uses_vmx_metadata_only(self):
         with tempfile.TemporaryDirectory() as folder:
             temp = Path(folder)
@@ -48,7 +64,8 @@ class WslpeFullReviewTests(unittest.TestCase):
             vmrun = f"Total running VMs: 2\n{target}\n{other}\n"
             fake = SimpleNamespace(returncode=0, stdout=vmrun)
             with patch.object(MOD, "run", return_value=fake):
-                MOD.check_vm_membership("vmnet2", target)
+                with redirect_stdout(StringIO()):
+                    MOD.check_vm_membership("vmnet2", target)
                 self.assertTrue(any(x[0] == "co-tenant VMnet" and x[1] == "PASS"
                                     for x in MOD.STATUS))
             other.write_text('ethernet1.vnet = "vmnet2"\n')
@@ -63,7 +80,8 @@ class WslpeFullReviewTests(unittest.TestCase):
         )
         with patch.object(MOD, "run", return_value=SimpleNamespace(
             returncode=0, stdout=lines)):
-            MOD.check_listeners("172.28.231.1")
+            with redirect_stdout(StringIO()):
+                MOD.check_listeners("172.28.231.1")
         messages = [x[2] for x in MOD.STATUS if x[0] == "host sockets"]
         self.assertIn("2 TCP/UDP listening ports", messages[0])
 
@@ -78,7 +96,8 @@ class WslpeFullReviewTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0, stdout=json_rules)
             return SimpleNamespace(returncode=0, stdout="")
         with patch.object(MOD, "run", side_effect=fake_run):
-            MOD.check_firewall("candidate", "vmnet2")
+            with redirect_stdout(StringIO()):
+                MOD.check_firewall("candidate", "vmnet2")
         self.assertTrue(any(x[0] == "existing candidate table" and x[1] == "BLOCKED"
                             for x in MOD.STATUS))
         self.assertEqual(actions[0], ["sudo", "-n", "nft", "-c", "-f", "-"])
