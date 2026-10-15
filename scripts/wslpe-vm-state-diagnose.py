@@ -77,9 +77,9 @@ def evaluate_registration(vmx: Path, running: list[Path]) -> tuple[str, int]:
         return "MATCHED", count
     if count > 1:
         return "AMBIGUOUS", count
-    same_name = [p for p in running if p.name.casefold() == vmx.name.casefold()]
-    return ("SAME_FILENAME_DIFFERENT_PATH" if same_name
-            else "NOT_IN_RUNNING_INVENTORY"), 0
+    # VMware box images frequently reuse names like windows_10.vmx.
+    # Different paths are unrelated machines, never a registration mismatch.
+    return "NOT_IN_RUNNING_INVENTORY", 0
 
 
 def main() -> int:
@@ -117,9 +117,11 @@ def main() -> int:
     if result == "NOT_IN_RUNNING_INVENTORY":
         print("[NOTE] Registered WSLPE guest is absent from vmrun's running inventory.")
         print("       This does not establish why it is missing or whether it is safely stopped.")
-    elif result == "SAME_FILENAME_DIFFERENT_PATH":
-        print("[NOTE] Another running VMX has the same filename, but a different path.")
-        print("       Do not switch or rewrite Vagrant registration automatically.")
+    if result == "NOT_IN_RUNNING_INVENTORY":
+        if any(p.name.casefold() == vmx.name.casefold() for p in running):
+            print("[NOTE] Other running machines use the same VMX filename,")
+            print("       but different paths. That is normal for Windows box images.")
+            print("       Their identity does NOT replace the registered WSLPE VMX.")
 
     # Vagrant status is read-only and runs in the existing operator context.
     rc, out, err = run_read_only(
@@ -136,8 +138,9 @@ def main() -> int:
             print(f"[INFO] Vagrant error: {err[:500]}")
 
     if result != "MATCHED" or not vmx.is_file() or rc != 0:
-        print("[LOCKED] Do not retry install, power-on, destroy or reconfigure WSLPE.")
-        print("[NEXT] Reconcile the exact Vagrant registration and VMware power state.")
+        print("[LOCKED] Do not retry install, destroy or reconfigure WSLPE.")
+        print("[NEXT] Use the guarded Kingdoms 'resume' operator action only after")
+        print("       verifying the registered existing machine is powered off.")
         return 1
     print("[PASS] Native registered VMX is uniquely running and Vagrant status was readable")
     print("[NEXT] Re-run WSLPE network acceptance only; no boot needed")
