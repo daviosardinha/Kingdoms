@@ -224,6 +224,17 @@ def existing_readonly(section: str, command: list[str], timeout: int = 180) -> N
         for line in finished.stdout.splitlines():
             if any('"' + key + '"' in line for key in keys):
                 print("    " + line.strip()[:200])
+    if finished.returncode:
+        # Preserve useful error categories without ever dumping a credential,
+        # Ansible inventory, request headers, or full remote command output.
+        hints = ("fatal:", "FAILED!", "UNREACHABLE!", "ERROR!", "Traceback",
+                 "ConnectionError", "TimeoutError", "ImportError")
+        all_lines = (finished.stdout + "\n" + finished.stderr).splitlines()
+        for line in [v.strip() for v in all_lines if any(h in v for h in hints)][-5:]:
+            if re.search(r"password|secret|token|authorization|cookie|credential", line, re.I):
+                print("    [ERROR] diagnostic detail withheld (sensitive field)")
+            else:
+                print("    [ERROR] " + line[:250])
     result(section, "PASS" if finished.returncode == 0 else "BLOCKED",
            f"command exit={finished.returncode}; read-only observation")
 
