@@ -188,6 +188,15 @@ class WindowsLpeVmwareBackendTests(unittest.TestCase):
         self.assertFalse(result.ready)
         self.assertTrue(any("symlink" in line for line in result.checks))
 
+    def test_guest_creation_refuses_symlinked_machine_state_directory(self):
+        state = self.project / ".vagrant"
+        state.mkdir()
+        (state / "machines").symlink_to(self.root, target_is_directory=True)
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertFalse(result.ready)
+        self.assertTrue(any("symlink" in line for line in result.checks))
+        self.assertFalse(any(args[1:2] == ("up",) for args, _ in self.calls))
+
     def test_boot_failure_fails_without_attempted_cleanup_or_retry(self):
         def runner(args, **kwargs):
             self.calls.append((tuple(args), kwargs))
