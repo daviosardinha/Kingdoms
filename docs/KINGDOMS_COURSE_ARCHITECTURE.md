@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | 1 | **The Fall of the North** | **NORTH**, a domain-joined, multi-machine Windows/Active Directory lab | Existing course and lab |
 | 2 | **Title not yet confirmed** | Future course, separate from NORTH unless explicitly designed otherwise | Future course |
-| Windows LPE | **Title to be chosen** | Independent Windows workstation, local learner and local attack surface | Engineering foundation in progress |
+| Windows LPE | **Windows Local Privilege Escalation** (working label: `windows-lpe`) | Independent Windows workstation, local learner and local attack surface | Engineering foundation in progress |
 
 A course title is not a repository path, virtual-machine identifier, or compatibility alias. Do not expose historical upstream/fork names as course or platform branding.
 
@@ -40,7 +40,7 @@ KINGDOMS | OPERATOR CONSOLE
 > courses
     north          The Fall of the North [available]
     course-2       Course 2 (title pending) [planned]
-    windows-lpe    Windows Local Privilege Escalation (title pending) [development]
+    windows-lpe    Windows Local Privilege Escalation [development]
 > select_course windows-lpe
     Selected Kingdoms course: Windows Local Privilege Escalation [development]
     Deployment adapter is not validated. Lifecycle commands are blocked.
@@ -54,7 +54,20 @@ KINGDOMS | OPERATOR CONSOLE
     Selected Kingdoms course: The Fall of the North [available]
 ```
 
-`courses`, `select_course <slug>`, `course`, and a read-only pending-course `status` are implemented on the feature branch. Selection is session-local and never deploys a machine. The current console continues to support legacy install/start/stop/status/reset on an existing NORTH lab; selecting an unfinished course **blocks** all lifecycle commands, including reset and destroy, rather than forwarding them to NORTH. The separate `-c/--course` argument also fails closed for unsupported non-interactive actions.
+`courses`, `select_course <slug>`, `course`, a read-only pending-course `status`, and Windows LPE backend inspection commands (`course_preflight`, `course_vm_status`) are implemented on the feature branch. Selection is session-local and never deploys a machine. The current console continues to support legacy install/start/stop/status/reset on an existing NORTH lab; selecting an unfinished course **blocks** all lifecycle commands, including reset and destroy, rather than forwarding them to NORTH. The separate `-c/--course` argument also fails closed for unsupported non-interactive actions.
+
+**Operator preflight commands (implemented, pending execution on the operator workstation):**
+
+```text
+Kingdoms > select_course windows-lpe
+Kingdoms > course_preflight
+Kingdoms > course_vm_status
+
+$ ./goad.sh -c windows-lpe -t course-preflight
+$ ./goad.sh -c windows-lpe -t course-vm-status
+```
+
+These commands inspect only the standalone VMware project at `courses/windows-lpe/standalone/` and do not create, start, stop or reset any VM. The preflight checks the pinned Windows image, Vagrant/VMware tools, Ruby syntax and Vagrantfile validity. Status inspects only the standalone Vagrant project. Both are **operator-only diagnostics**, not learner features. The source test suite uses mock subprocess calls; validation on the actual operator host is still outstanding.
 
 **The full Windows LPE installer adapter is not implemented.** Do not interpret the course appearing in the registry as a deployable environment. It discovers labs under `ad/` and its NORTH-specific VMware provider includes segmented routing, identity and exercise-mode behavior. Do **not** register standalone Windows LPE as an Active Directory lab just to make it appear in that list, and do not reuse the NORTH provider's network transitions for the standalone course.
 
@@ -62,7 +75,7 @@ KINGDOMS | OPERATOR CONSOLE
 
 `vagrant up --provider=vmware_desktop` is a low-level **operator/developer diagnostic**, not a learner interface or the final operator installation workflow. Retain the standalone Vagrantfile because the course adapter must still create a real VM through the provider. Do not call the manual Vagrant command part of the normal operator installation steps once the integrated installer exists.
 
-**Engineering order:** validate the newly committed registry/menu tests and legacy regression first, then connect the standalone adapter to the pinned Vagrant definition, then local learner provisioning and runtime gates. Do not encourage a production installation through the menu until the full adapter is implemented and validated.
+**Engineering order:** validate the registry/menu and read-only standalone VMware adapter tests on the operator workstation, then implement a separate, explicitly approved Windows LPE VM creation and guest provisioning lifecycle. Only after a real target and its local learner pass the independent readiness gates should the installer expose mutating lifecycle commands. Do not encourage a production installation through the menu until the full adapter is implemented and validated.
 
 ## Operator control plane versus learner attack surface
 
