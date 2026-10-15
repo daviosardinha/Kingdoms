@@ -17,6 +17,24 @@ The new files reuse the existing Kingdoms instance generation:
 
 **This is a source milestone, not a finished installation.** No WSLPE VM has been created or tested through the native instance lifecycle, no Windows learner has been provisioned and none of the original 20 scenarios has been exercised on WSLPE yet. Preserve the operator's running NORTH instances and any prior prototype Vagrant metadata.
 
+## Native instance source-rendering gate (added, not yet executed locally)
+
+The first real Kingdoms-source preview is now available through `scripts/wslpe-preview-native-instance.py`. It calls the existing `LabInstance._create_vagrantfile`, `_create_provisioning_provider_inventory` and `_create_provisioning_lab_inventory` methods inside a **temporary directory**. It never calls `create_instance_folder`, the VMware provider, Vagrant or Ansible. This is a reproducible source-only preview, **not** an instance installation or a network-isolation guarantee.
+
+A gap found during this work was that the Ansible provisioner reads `ad/WSLPE/data/inventory` for the **initial** configuration and generates the post-Vagrant `inventory_disable_vagrant` file separately. The native WSLPE recipe previously had only the latter. A new initial inventory now defines the `wslpe` and `windows_lpe_standalone` host groups plus the initial WinRM management context. Updated regression tests guard both inventories.
+
+The preview requires an **explicit candidate private IPv4 /24 prefix** and refuses the reserved NORTH `10.4.0.0/16` address space. It confirms the generated Vagrantfile has exactly one `WSLPE-WS01` at the expected IP, the pinned Windows 10 box/version, and the expected inventory and WinRM groups. It does **not** prove the candidate network is unused by current host adapters, VMware vmnets, VPN routes, or another VM. Operators must examine those live network configurations before authorizing any WSLPE VM.
+
+Operator-only local validation in the project's installed Python venv:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+"$HOME/.goad/.venv/bin/python" -m unittest discover -s tests -p 'test_wslpe_native_instance_preview.py' -v
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-preview-native-instance.py --ip-range <operator-chosen-private-prefix>
+```
+
+The `--ip-range` value is only a source-rendering candidate at this stage. Before selecting one, inspect `ip -4 -br address`, `ip -4 route`, and the VMware virtual network configuration. **Never treat preview PASS as permission to start or network-connect a guest.** The native installer remains locked.
+
 ## Lab versus extension
 
 - `WSLPE`: a new independent lab/profile with one Windows guest, local standard learner account and no Active Directory dependencies. This is the correct isolation boundary for a standalone Windows LPE course and later cloud image.
