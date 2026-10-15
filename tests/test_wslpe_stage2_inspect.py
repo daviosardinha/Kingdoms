@@ -173,6 +173,40 @@ ethernet2.connectionType = "nat"
             with self.assertRaisesRegex(ValueError, "Cannot establish"):
                 STAGE2.inspect_management_port_binding(55985)
 
+    def test_guarded_vmnet_nat_wildcard_accepted_only_with_verified_live_evidence(self):
+        from tests.test_wslpe_winrm_guard import nft_fixture
+        listener = ('LISTEN 0 20 0.0.0.0:2210 0.0.0.0:* '
+                    'users:(("vmnet-nat",pid=2162896,fd=9))')
+        # First read_command: unprivileged ss listing used by the strict
+        # loopback check; then privileged nft JSON and privileged ss owner.
+        with patch.object(STAGE2, "read_command",
+                          side_effect=[listener, nft_fixture(), listener]) as call, \
+             patch.object(STAGE2.os, "geteuid", return_value=0):
+            result = STAGE2.inspect_management_access(2210)
+        self.assertIn("non-loopback TCP/2210 drop verified", result)
+        self.assertEqual(call.call_count, 3)
+
+    def test_wildcard_listener_without_exact_firewall_rule_stays_blocked(self):
+        from tests.test_wslpe_winrm_guard import nft_fixture
+        listener = ('LISTEN 0 20 0.0.0.0:2210 0.0.0.0:* '
+                    'users:(("vmnet-nat",pid=2162896,fd=9))')
+        with patch.object(
+            STAGE2, "read_command",
+            side_effect=[listener, nft_fixture(2211), listener],
+        ), patch.object(STAGE2.os, "geteuid", return_value=0):
+            with self.assertRaisesRegex(ValueError, "lacks the exact"):
+                STAGE2.inspect_management_access(2210)
+
+    def test_wildcard_rule_not_accepted_if_owner_is_unknown(self):
+        from tests.test_wslpe_winrm_guard import nft_fixture
+        listener = "LISTEN 0 20 0.0.0.0:2210 0.0.0.0:*"
+        with patch.object(
+            STAGE2, "read_command",
+            side_effect=[listener, nft_fixture(), listener],
+        ), patch.object(STAGE2.os, "geteuid", return_value=0):
+            with self.assertRaisesRegex(ValueError, "ownership"):
+                STAGE2.inspect_management_access(2210)
+
     def test_guest_baseline_and_distinct_nat_exercise_ips_pass(self):
         ok, failed = STAGE2.evaluate_windows(guest_data(), "172.28.231")
         self.assertEqual(failed, [])
