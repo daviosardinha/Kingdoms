@@ -35,12 +35,16 @@ class LegacyConsole:
         self.prompt = 'NORTH > '
 
     def onecmd(self, line):
-        if line.strip() in ("install", "resume"):
+        # Mirror cmd.Cmd's command/argument dispatch instead of treating
+        # "resume --noninteractive" as an unknown legacy command. This keeps
+        # the mock aligned with the real GoadNomad -> cmd.Cmd dispatch path.
+        tokens = line.strip().split(maxsplit=1)
+        command = tokens[0] if tokens else ""
+        arg = tokens[1] if len(tokens) > 1 else ""
+        if command in ("install", "resume"):
             selection = self._course_selection()
             if selection is not None and selection.slug == "windows-lpe":
-                if line.strip() == "resume":
-                    return self.do_resume()
-                return self.do_install()
+                return getattr(self, "do_" + command)(arg)
         self.legacy_calls.append(line)
         return "LEGACY"
 
@@ -219,6 +223,18 @@ class OperatorSelectionTests(unittest.TestCase):
         with patch("builtins.input", side_effect=AssertionError("prompted")):
             self.assertFalse(self.console.onecmd("resume --noninteractive"))
         self.assertEqual(self.resume_calls, [])
+        self.assertEqual(self.console.legacy_calls, [])
+        self.assertTrue(any(
+            "Usage: resume" in message for level, message in StubLog.output
+            if level == "error"
+        ))
+
+    def test_wslpe_install_extra_args_rejected_through_interactive_dispatch(self):
+        self.console.do_select_course("windows-lpe")
+        with patch("builtins.input", side_effect=AssertionError("prompted")):
+            self.assertFalse(self.console.onecmd("install --noninteractive"))
+        self.assertEqual(self.bootstrap_calls, [])
+        self.assertEqual(self.console.legacy_calls, [])
 
     def test_wslpe_resume_without_explicit_course_is_blocked(self):
         self.active["lab"] = "WSLPE"
