@@ -2,6 +2,21 @@
 
 **Decision:** Build `WSLPE` as a **first-class Kingdoms lab recipe and independent instance** managed by the existing Kingdoms operator console, lab manager, provider factory, workspace isolation, Ansible provisioner and source gates. **Do not make a separate ad-hoc Vagrant project the authoritative installation path.** The existing NORTH deployment remains untouched during WSLPE development.
 
+## Current implementation status
+
+**Native WSLPE recipe committed on this feature branch. Host/runtime validation is pending.**
+
+The new files reuse the existing Kingdoms instance generation:
+
+- `ad/WSLPE/providers/vmware/Vagrantfile`: single `WSLPE-WS01` from pinned `mayfly/windows10` version `2024.01.06`, 2 vCPUs and 4 GiB. IP comes from the native instance's `ip_range`, not NORTH's segmented addresses.
+- `ad/WSLPE/providers/vmware/inventory` and `ad/WSLPE/data/inventory_disable_vagrant`: one workstation with no DC or domain membership.
+- `playbooks.yml` now routes WSLPE only to `ansible/wslpe-foundation.yml`. This validates a domain-free Windows baseline and creates `lpe.trainee` from an operator-provided `KINGDOMS_WSLPE_LEARNER_PASSWORD` secret. It does not install vulnerabilities.
+- `ansible/wslpe-lpe-test.yml` is an **operator-only, manual** per-technique wrapper around the original `windows_lpe` Ansible role. Its `full-lpe` profile is deliberately not enabled. It checks the exact local machine before applying any technique.
+- The `windows-lpe` course selector now switches the **existing Kingdoms lab manager** to `WSLPE` if no other instance is loaded. If NORTH or another instance is loaded, switching is refused. The installer remains **fail-closed**, including legacy `-l WSLPE` invocations, until the new instance-provider route and local learner are validated.
+- Source regression tests in `tests/test_wslpe_native_lab_contract.py` and `tests/test_kingdoms_course_registry.py` guard the instance boundary, original role reuse and install lock.
+
+**This is a source milestone, not a finished installation.** No WSLPE VM has been created or tested through the native instance lifecycle, no Windows learner has been provisioned and none of the original 20 scenarios has been exercised on WSLPE yet. Preserve the operator's running NORTH instances and any prior prototype Vagrant metadata.
+
 ## Lab versus extension
 
 - `WSLPE`: a new independent lab/profile with one Windows guest, local standard learner account and no Active Directory dependencies. This is the correct isolation boundary for a standalone Windows LPE course and later cloud image.
@@ -38,7 +53,7 @@ The existing provider factory selects the profiled Kingdoms VMware provider for 
 ## Engineering milestones
 
 1. **Legacy state review.** Operator-side read-only inspection of `courses/windows-lpe/standalone/.vagrant` and global VMware state before retiring the experimental bootstrap. Do not delete state or assume it is empty. No untracked VM may be adopted silently by a new WSLPE instance.
-2. **Native lab recipe.** Add `WSLPE` to the original Kingdoms lab-discovery structure with a single VMware Windows guest definition and inventory. Ensure the provider can build the instance without domain controllers, segmented routers or NORTH preflights.
+2. **Native lab recipe.** Recipe and one-workstation inventory committed. **Pending:** source tests, generated-instance dry run, VMware guest bring-up and proof that the existing provider does not invoke NORTH's routing or DC preflights.
 3. **Unified operator flow.** In `./goad.sh`, `courses` → `select_course windows-lpe` → `install` must select/manage a WSLPE **instance** through the existing lab manager. Do not bypass its workspace, provider and provisioning contract with a separate `vagrant up`. Keep NORTH behavior unchanged when selected.
 4. **Local Windows foundation.** Create only the local standard learner, provisioner identity and guest readiness checks first. Verify build, non-domain membership, UAC, Defender and Firewall, WinRM management boundary and unique VMware NICs. Do not apply vulnerabilities until the base is proven.
 5. **Existing 20.** Reuse the `windows_lpe` role and `full-lpe` selection through a WSLPE-specific playbook with a local learner account. Test each scenario's apply/validate/low-privileged exploit/reset/reapply behavior. The existing NORTH role defaults still contain some target-specific local fixture names that need a **separate, evidenced compatibility audit**.
