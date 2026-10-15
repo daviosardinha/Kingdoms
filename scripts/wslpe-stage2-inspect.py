@@ -41,6 +41,7 @@ $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction SilentlyContinue
 $data = @{
     Name = $env:COMPUTERNAME
     ProductType = [int]$os.ProductType
+    OSCaption = [string]$os.Caption
     WindowsVersion = [string]$os.Version
     WindowsBuild = [string]$os.BuildNumber
     DomainJoined = [bool]$machine.PartOfDomain
@@ -99,7 +100,8 @@ def find_instance(workspace: Path) -> tuple[Path, dict]:
         network = ipaddress.ip_network(f"{prefix}.0/24", strict=True)
     except (ValueError, TypeError):
         raise ValueError("Native WSLPE instance has invalid network metadata")
-    if not network.is_private or network.overlaps(NORTH):
+    if (not network.is_private or network.is_loopback
+        or network.is_link_local or network.overlaps(NORTH)):
         raise ValueError("WSLPE instance network overlaps restricted ranges")
     return directory, info
 
@@ -217,8 +219,10 @@ def evaluate_windows(data: dict, prefix: str) -> tuple[list[str], list[str]]:
     def verify(ok: bool, message: str):
         (good if ok else failed).append(message)
     verify(str(data.get("Name", "")).upper() == MACHINE, "Exact Windows machine identity")
-    verify(data.get("ProductType") == 1 and str(data.get("WindowsVersion", "")).startswith("10."),
-           "Windows client operating system")
+    verify(data.get("ProductType") == 1
+           and "Windows 10" in str(data.get("OSCaption", ""))
+           and str(data.get("WindowsVersion", "")).startswith("10."),
+           "Expected Windows 10 client operating system")
     verify(data.get("DomainJoined") is False, "Not joined to Active Directory")
     verify(data.get("UAC") == 1, "UAC enabled")
     firewalls = data.get("Firewall")
