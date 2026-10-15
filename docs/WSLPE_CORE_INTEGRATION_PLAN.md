@@ -17,6 +17,30 @@ The new files reuse the existing Kingdoms instance generation:
 
 **This is a source milestone, not a finished installation.** No WSLPE VM has been created or tested through the native instance lifecycle, no Windows learner has been provisioned and none of the original 20 scenarios has been exercised on WSLPE yet. Preserve the operator's running NORTH instances and any prior prototype Vagrant metadata.
 
+## One-command operator preboot acceptance
+
+The previously separate source, provider, native-render and network checks are now bundled in `scripts/wslpe-acceptance.py`. This is the **preferred operator entry point** to save time and avoid repeatedly requesting separate test results. It runs 13 non-deployment check groups, captures individual logs, and prints a concise PASS/FAIL summary, with detailed output only for failures.
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin
+git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+python3 scripts/wslpe-acceptance.py --ip-range 172.28.231
+```
+
+The candidate prefix above is specific to the present operator workstation. A future clean VMware server or cloud provider must choose its own validated range. The gate includes:
+
+- All `test_wslpe_*.py` tests, course-registry and legacy install/destroy regression suites
+- Existing `test_windows_lpe_*.py` tests and the full validated 20-technique source contract
+- Actual `LabInstance` Vagrantfile/inventory rendering and optional Ruby parsing of the generated Vagrantfile
+- Linux IPv4 routes, VPN routes, interfaces and configured VMware vmnets collision detection
+- WSLPE Windows foundation and shared-role test harness Ansible syntax
+- VMware Vagrant Desktop plugin, pinned Windows box and read-only running-VM inventory
+
+The operation does not install an instance, run `vagrant up`, change networking, provision a learner or test a live Windows exploit. A PASS is **offline preboot evidence only**. Actual VMware NIC assignment, guest domain/OS baseline, firewall, WinRM and learner access are still independent runtime gates. **The WSLPE installer stays locked.**
+
+Tests for the unified check live in `tests/test_wslpe_acceptance.py` and are included in the standard `test_wslpe_*.py` suite. The new combined preflight and its regression tests are **committed but not yet executed on the operator machine**.
+
 ## Native instance source-rendering gate (added, not yet executed locally)
 
 The first real Kingdoms-source preview is now available through `scripts/wslpe-preview-native-instance.py`. It calls the existing `LabInstance._create_vagrantfile`, `_create_provisioning_provider_inventory` and `_create_provisioning_lab_inventory` methods inside a **temporary directory**. It never calls `create_instance_folder`, the VMware provider, Vagrant or Ansible. This is a reproducible source-only preview, **not** an instance installation or a network-isolation guarantee.
