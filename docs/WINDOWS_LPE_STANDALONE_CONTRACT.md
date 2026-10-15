@@ -1,6 +1,6 @@
 # Windows LPE standalone contract (design gate)
 
-Status: **FOUNDATION / NOT DEPLOYED**. This document defines acceptance criteria. It does not claim a standalone VM has been created or that the 20 existing Kingdoms exercises work outside NORTH.
+Status: **OPERATOR PREFLIGHT AVAILABLE / NOT DEPLOYED**. This document defines acceptance criteria. It does not claim a standalone VM has been created or that the 20 existing Kingdoms exercises work outside NORTH.
 
 ## Objective and deployment split
 
