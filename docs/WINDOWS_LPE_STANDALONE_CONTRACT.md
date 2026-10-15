@@ -9,7 +9,7 @@ Maintain **one** reusable Windows local privilege escalation scenario role with 
 - **Kingdoms**: existing, domain-joined NORTH workstation (WS01). Its current `NORTH\rickon.stark` foothold, network identity, security controls, Phase 00-03 fixtures, and runtime remain untouched.
 - **Standalone Windows LPE**: a separate VM with the **same pinned Windows edition/build** and a **local standard user**, no domain join, no DC, no second Windows host, and no training dependency on AD, LDAP, Kerberos, DNS provided by a DC, domain GPO, or remote shares.
 
-Neither consumer should modify the other. The management workstation or hypervisor may provision/start the VM, but **a learner must be able to enumerate, exploit, verify, and restore every local exercise using only the target machine**. Offline practice is an acceptance test. Local loopback services and target-local administrative fixtures are allowed.
+Neither consumer should modify the other. **All orchestration is operator-only**, including the installer, VMware/Vagrant, Ansible, provisioning accounts, snapshots and instructor resets. Learners are given access only to their assigned vulnerable Windows machine and their learner-level connection credentials. They must be able to enumerate, exploit and verify each exercise using only the target machine. The **operator** must be able to reset it independently. Offline practice is an acceptance test. Local loopback services and target-local administrative fixtures are allowed.
 
 The current `ansible/ws01.yml` remains the Kingdoms-only baseline because it deliberately performs a NORTH domain join. Standalone needs its own provisioning entrypoint; do not simply run `ansible/ws01.yml` without a reachable DC. The existing `ansible/ws01-lpe-install.yml` seeds the original full-lpe profile and is **not** the standalone installer.
 
@@ -20,8 +20,14 @@ The current `ansible/ws01.yml` remains the Kingdoms-only baseline because it del
 3. **Trust boundaries**: privileged services and scheduled tasks execute on WS01 itself. All privileged target identities are local principals or SYSTEM, and no vulnerability depends on domain-controller permissions, a reachable file share, a second victim, a cloud API, or a domain-authenticated user.
 4. **OS and security invariants**: pin the guest OS/build and relevant tool versions. Do not disable UAC, Windows Defender, Windows Firewall, protected-process controls, or endpoint protections globally to force an exploit. If a narrowly scoped scenario requires an exception, justify, validate, and restore it explicitly.
 5. **Real exploitation proof**: for each scenario, demonstrate the starting low-privilege token, the vulnerable object or behavior, the actual exploit precondition, the resulting *local* privilege/identity, and the local-only rollback. An administrator-side Ansible `APPLIED` marker alone does not prove exploitation.
-6. **Reversibility**: repeat `apply -> validate vulnerable -> learner-side exploit -> reset -> validate clean -> reapply -> validate vulnerable` for each scenario, then run the whole set together. Check collision behavior, repeated runs, offline usability and compatibility with the existing 20.
+6. **Reversibility**: operator automation must repeat `apply -> validate vulnerable -> learner-side exploit -> operator reset -> validate clean -> reapply -> validate vulnerable` for each scenario, then run the whole set together. Learners must not receive snapshot, lifecycle, hypervisor or infrastructure-reset permissions. Check collision behavior, repeated runs, offline usability and compatibility with the existing 20.
 7. **Promotion**: a new scenario starts **Planned**. Move it to **Candidate** only after source apply/validate/reset exists. Move it to **Implemented** only after a successful pinned-build, low-privileged, **DC-free** end-to-end test. Do not include unverified additions in the existing `full-lpe` profile.
+
+## Learner access boundary
+
+The **Kingdoms operator console** is only for trusted operators and is never part of the learner VM, learner network, course download or access handoff. The learner receives only the vulnerable Windows instance, an explicitly scoped connection method and a local low-privileged Windows identity. The learner does not receive source access, VMware or future cloud credentials, privileged provisioning WinRM credentials, Ansible inventories, snapshot access or control-plane API permissions.
+
+The standalone course must remain independent of a DC, but **standalone does not mean operator-managed infrastructure is exposed to the learner**. In any future hosted delivery, individual VM assignment, isolation, access delivery, expiration and teardown are operator services separate from the guest vulnerabilities.
 
 ## Current inventory
 
