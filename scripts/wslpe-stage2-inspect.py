@@ -29,7 +29,16 @@ $ErrorActionPreference = 'Stop'
 $os = Get-CimInstance Win32_OperatingSystem
 $machine = Get-CimInstance Win32_ComputerSystem
 $uac = Get-ItemPropertyValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name EnableLUA
-$firewall = @(Get-NetFirewallProfile | Select-Object Name, Enabled)
+$firewall = @(Get-NetFirewallProfile | ForEach-Object {
+    [pscustomobject]@{
+        Name = [string]$_.Name
+        Enabled = [string]$_.Enabled
+        DefaultInboundAction = [string]$_.DefaultInboundAction
+        DefaultOutboundAction = [string]$_.DefaultOutboundAction
+    }
+})
+$networkProfiles = @(Get-NetConnectionProfile -ErrorAction SilentlyContinue |
+    Select-Object InterfaceAlias, InterfaceIndex, NetworkCategory)
 $defender = Get-MpComputerStatus -ErrorAction Stop
 $interfaces = @(Get-NetAdapter | Select-Object Name, InterfaceIndex, MacAddress, Status)
 $ipv4 = @(Get-NetIPAddress -AddressFamily IPv4 |
@@ -47,6 +56,7 @@ $data = @{
     DomainJoined = [bool]$machine.PartOfDomain
     UAC = [int]$uac
     Firewall = $firewall
+    NetworkProfiles = $networkProfiles
     DefenderService = [bool]$defender.AMServiceEnabled
     DefenderAntivirus = [bool]$defender.AntivirusEnabled
     Interfaces = $interfaces
@@ -291,6 +301,59 @@ def windows_probe(port: int) -> dict:
         raise ValueError("Windows returned an invalid audit JSON record")
 
 
+def firewall_profile_evidence(data: dict) -> tuple[bool, list[str]]:
+    """Report source values and validate each required Windows Firewall profile.
+
+    PowerShell CIM enum GpoBoolean may serialize as `"True"`/`"False"`
+    rather than JSON boolean. Accept only unambiguous True, never general
+    Python truthiness (which would treat the nonempty string "False" as true).
+    """
+    profiles = data.get("Firewall")
+    if not isinstance(profiles, list):
+        return False, ["[INFO] Windows Firewall evidence missing or not an array"]
+    expected = {"domain", "private", "public"}
+    found: set[str] = set()
+    messages: list[str] = []
+    all_enabled = len(profiles) == len(expected)
+    for p in profiles:
+        if not isinstance(p, dict):
+            messages.append("[INFO] Windows Firewall returned an invalid profile record")
+            all_enabled = False
+            continue
+        name = str(p.get("Name", "")).strip()
+        key = name.casefold()
+        enabled = p.get("Enabled")
+        verified = (
+            enabled is True
+            or (isinstance(enabled, str) and enabled.strip().casefold() == "true")
+        )
+        if key not in expected or key in found:
+            all_enabled = False
+        found.add(key)
+        if not verified:
+            all_enabled = False
+        show = str(enabled) if isinstance(enabled, (bool, str)) else "Unknown"
+        messages.append(
+            f"[INFO] Windows Firewall {name or '(unnamed)'}: Enabled={show} "
+            f"(JSON type={type(enabled).__name__}); "
+            f"DefaultInbound={p.get('DefaultInboundAction', 'unknown')}"
+        )
+    for name in sorted(expected - found):
+        messages.append(f"[INFO] Windows Firewall required profile {name}: MISSING")
+    if found != expected:
+        all_enabled = False
+    connections = data.get("NetworkProfiles")
+    if isinstance(connections, list):
+        for connection in connections:
+            if isinstance(connection, dict):
+                messages.append(
+                    f"[INFO] Windows network classification: "
+                    f"{connection.get('InterfaceAlias', '(unnamed)')} "
+                    f"category={connection.get('NetworkCategory', 'unknown')}"
+                )
+    return all_enabled, messages
+
+
 def evaluate_windows(data: dict, prefix: str) -> tuple[list[str], list[str]]:
     good, failed = [], []
     def verify(ok: bool, message: str):
@@ -302,10 +365,8 @@ def evaluate_windows(data: dict, prefix: str) -> tuple[list[str], list[str]]:
            "Expected Windows 10 client operating system")
     verify(data.get("DomainJoined") is False, "Not joined to Active Directory")
     verify(data.get("UAC") == 1, "UAC enabled")
-    firewalls = data.get("Firewall")
-    verify(isinstance(firewalls, list) and len(firewalls) >= 3
-           and all(x.get("Enabled") is True for x in firewalls),
-           "All Windows firewall profiles enabled")
+    firewall_ok, _firewall_details = firewall_profile_evidence(data)
+    verify(firewall_ok, "All Windows firewall profiles enabled")
     verify(data.get("DefenderService") is True and data.get("DefenderAntivirus") is True,
            "Microsoft Defender service and antivirus enabled")
     addresses = data.get("IPv4")
@@ -354,6 +415,9 @@ def main() -> int:
     print(f"[PASS] WinRM: read-only query through 127.0.0.1:{port}")
     print(f"[PASS] Bootstrap WinRM management access restricted: {access}")
     print(f"[INFO] VMware network adapters discovered: {len(adapters)}")
+    _, profile_evidence = firewall_profile_evidence(info)
+    for line in profile_evidence:
+        print(line)
     if args.show_adapters:
         for a in adapters:
             print(f"  VMX ethernet{a['index']}: type={a['type']} vnet={a['vnet'] or '(implicit)'} MAC={a['mac'] or '(unavailable)'}")
