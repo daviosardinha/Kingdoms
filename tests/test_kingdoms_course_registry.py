@@ -118,7 +118,7 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertTrue(self.console._set_course_selection("windows-lpe"))
         self.assertEqual(self.console._selected_course, "windows-lpe")
         for command in (
-            "destroy", "destroy_vm target", "reset", "snapshot",
+            "install", "destroy", "destroy_vm target", "reset", "snapshot",
             "start", "stop", "mode provisioning", "ws01", "set_lab GOAD",
             "load instance-1", "provision_lab", "!id", "create", "provide",
         ):
@@ -144,38 +144,35 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertEqual(self.console.legacy_calls, [])
         self.assertTrue(any("mock-only preflight" in x[1] for x in StubLog.output))
 
-    def test_guest_creation_needs_exact_confirmation_and_keeps_repl_open(self):
+    def test_old_direct_vm_command_is_retired_and_keeps_repl_open(self):
         self.console.do_select_course("windows-lpe")
-        self.assertFalse(self.console.do_course_vm_create(""))
-        self.assertFalse(self.console.do_course_vm_create("CREATE north"))
         self.assertFalse(self.console.do_course_vm_create("CREATE windows-lpe"))
         self.assertEqual(self.console.legacy_calls, [])
-        self.assertTrue(
-            any("mock-only guest creation" in x[1] for x in StubLog.output)
-        )
+        self.assertTrue(any(
+            "retired" in msg.lower() for _level, msg in StubLog.output
+        ))
 
-    def test_windows_lpe_install_prompts_and_bootstraps_without_north(self):
+    def test_windows_lpe_install_fails_closed_without_north(self):
         self.console.do_select_course("windows-lpe")
-        self.assertEqual(self.console.prompt, '\nKINGDOMS/windows-lpe > ')
-        with patch("builtins.input", return_value="y") as answer:
+        self.assertEqual(self.console.prompt, '\\nKINGDOMS/windows-lpe > ')
+        with patch("builtins.input", side_effect=AssertionError("prompted")):
             self.assertFalse(self.console.onecmd("install"))
-        answer.assert_called_once()
         self.assertEqual(self.console.legacy_calls, [])
         self.assertTrue(any(
-            "guest bootstrap complete" in msg.lower()
+            "command blocked" in msg.lower() for _level, msg in StubLog.output
+        ))
+
+    def test_windows_lpe_direct_install_cannot_boot_vm(self):
+        self.console.do_select_course("windows-lpe")
+        with patch("builtins.input", side_effect=AssertionError("prompted")):
+            self.assertFalse(self.console.do_install(""))
+        self.assertEqual(self.console.legacy_calls, [])
+        self.assertTrue(any(
+            "native kingdoms instance integration is pending" in msg.lower()
             for _level, msg in StubLog.output
         ))
 
-    def test_windows_lpe_install_decline_does_not_touch_provider(self):
-        self.console.do_select_course("windows-lpe")
-        with patch("builtins.input", return_value="n"):
-            self.assertFalse(self.console.do_install(""))
-        self.assertEqual(self.console.legacy_calls, [])
-        self.assertFalse(any(
-            "mock-only guest creation" in msg for _level, msg in StubLog.output
-        ))
-
-    def test_windows_lpe_install_rejects_arguments_without_prompt(self):
+    def test_windows_lpe_install_with_extra_args_also_fails_closed(self):
         self.console.do_select_course("windows-lpe")
         with patch("builtins.input", side_effect=AssertionError("prompted")):
             self.assertFalse(self.console.do_install("--non-interactive"))
@@ -251,21 +248,14 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
         self.assertEqual(dispatch_task(self.console, self.args("course-preflight", "course-2")), 1)
         self.assertEqual(self.calls, [])
 
-    def test_guest_create_cli_requires_confirmation_and_absent_legacy_instance(self):
+    def test_retired_cli_vm_creation_refused_with_or_without_confirmation(self):
         args = self.args("course-vm-create", "windows-lpe", instance=None)
         self.assertEqual(dispatch_task(self.console, args), 1)
-        self.assertEqual(self.calls, [])
         args.confirm_vm_create = True
-        self.assertEqual(dispatch_task(self.console, args), 0)
-        self.assertEqual(self.calls, [
-            ("select", ("windows-lpe",)), ("create", (True,)),
-        ])
-        self.calls.clear()
-        args.instance = "north-active"
         self.assertEqual(dispatch_task(self.console, args), 1)
         self.assertEqual(self.calls, [])
 
-    def test_guest_create_cli_rejects_other_courses(self):
+    def test_retired_cli_vm_creation_refused_for_other_course(self):
         args = self.args("course-vm-create", "course-2", instance=None)
         args.confirm_vm_create = True
         self.assertEqual(dispatch_task(self.console, args), 1)
