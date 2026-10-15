@@ -105,6 +105,11 @@ class WslpeHostPilotTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 M.installed_exact_policy("vmnet2")
 
+    def test_unreadable_nft_ruleset_is_not_treated_as_absent(self):
+        with patch.object(M, "nft_json", side_effect=ValueError("not readable")):
+            with self.assertRaises(ValueError):
+                M.installed_exact_policy("vmnet2")
+
     def test_timed_rollback_only_targets_exact_wslpe_table(self):
         calls = []
         def fake_cmd(args, **kwargs):
