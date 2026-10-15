@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
-import getpass
 import importlib.util
+import ipaddress
+import json
 import os
+import subprocess
 from pathlib import Path
 import socket
 import ssl
@@ -74,6 +76,72 @@ def checked_certificate(audit, expected_thumbprint: str) -> tuple[str, bytes]:
     return address, der
 
 
+
+def credentials_from_wslpe_inventory(address: str) -> tuple[str, str]:
+    """Read existing native WSLPE operator credentials; never print them.
+
+    This resolves Ansible's *existing WSLPE-only* inventory. No new password
+    literal, file, keychain, or repository secret is created by the audit.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "wslpe_auth_inventory_stage2", ROOT / "scripts/wslpe-stage2-inspect.py"
+    )
+    if spec is None or spec.loader is None:
+        raise ValueError("WSLPE native instance verification unavailable")
+    stage2 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stage2)
+
+    instance, manifest = stage2.find_instance(stage2.WORKSPACE)
+    stage2.locate_registered_vm(instance)
+    if manifest.get("lab") != "WSLPE":
+        raise ValueError("Operator inventory does not belong to WSLPE")
+    inventory = instance / "inventory"
+    base = ROOT / "ad/WSLPE/data/inventory_disable_vagrant"
+    if (not inventory.is_file() or inventory.is_symlink()
+            or not base.is_file() or base.is_symlink()):
+        raise ValueError("Existing WSLPE operator inventories are unavailable")
+
+    executable = Path.home() / ".goad/.venv/bin/ansible-inventory"
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise ValueError("Existing GOAD Ansible inventory executable unavailable")
+    completed = subprocess.run(
+        [str(executable), "-i", str(inventory), "-i", str(base),
+         "--host", "ws01"], text=True, capture_output=True,
+        check=False, timeout=20, cwd=str(ROOT),
+    )
+    if completed.returncode:
+        raise ValueError("WSLPE operator inventory failed to resolve")
+    try:
+        data = json.loads(completed.stdout)
+        if not isinstance(data, dict):
+            raise ValueError("Invalid WSLPE inventory host object")
+        if (str(ipaddress.ip_address(data.get("ansible_host", ""))) != address
+                or data.get("ansible_connection") != "winrm"
+                or str(data.get("ansible_port")) != "5985"
+                or data.get("ansible_winrm_scheme") != "http"
+                or data.get("ansible_winrm_transport") != "ntlm"):
+            raise ValueError("WSLPE operator inventory endpoint mismatch")
+        username = data.get("ansible_user")
+        password = data.get("ansible_password")
+        if (not isinstance(username, str) or not username.strip()
+                or not isinstance(password, str) or not password):
+            raise ValueError("WSLPE operator credentials missing from inventory")
+        return username, password
+    except (json.JSONDecodeError, ipaddress.AddressValueError) as exc:
+        raise ValueError("WSLPE operator inventory unreadable") from exc
+
+
+def operator_credentials(address: str) -> tuple[str, str]:
+    """An explicit private environment override can support later rotation."""
+    override = os.getenv("KINGDOMS_WSLPE_BOOTSTRAP_PASSWORD")
+    if override is not None:
+        user = os.getenv("KINGDOMS_WSLPE_BOOTSTRAP_USER", "vagrant")
+        if not user.strip() or not override:
+            raise ValueError("Incomplete WSLPE operator credential override")
+        return user, override
+    return credentials_from_wslpe_inventory(address)
+
+
 def authenticated_read_only_probe(address: str, der: bytes,
                                   username: str, password: str) -> None:
     import winrm
@@ -126,14 +194,8 @@ def main() -> int:
         audit = tls_audit_module()
         address, certificate = checked_certificate(audit, args.expected_thumbprint)
         print(f"[PASS] WSLPE-only TLS pin, chain, SNI and SAN: {HOST} @ {address}:{PORT}")
-        username = os.getenv("KINGDOMS_WSLPE_BOOTSTRAP_USER", "vagrant")
-        if not username.strip():
-            raise ValueError("WSLPE operator username missing")
-        password = os.getenv("KINGDOMS_WSLPE_BOOTSTRAP_PASSWORD")
-        if password is None:
-            password = getpass.getpass("WSLPE operator WinRM password: ")
-        if not password:
-            raise ValueError("WSLPE operator password missing")
+        username, password = operator_credentials(address)
+        print("[INFO] Operator credentials resolved from existing WSLPE configuration")
         authenticated_read_only_probe(address, certificate, username, password)
     except Exception as exc:
         # Avoid printing exception strings; HTTP libraries may include endpoint
