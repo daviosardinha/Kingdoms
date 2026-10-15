@@ -24,6 +24,7 @@ STATUS: list[tuple[str, str, str]] = []
 READ_ONLY = {
     "vmrun", "ip", "ss", "nft", "iptables-save", "ip6tables-save",
     "systemctl", "bash", str(Path(sys.executable)),
+    str(Path.home() / ".goad/.venv/bin/ansible-playbook"),
 }
 MARKERS = ("[PASS]", "[FAIL]", "[BLOCKED]", "[WARN]", "[NOT VERIFIED]",
            "[RELEASE BLOCKED]", "[INFO]", "PLAY RECAP", "WSLPE STAGE 2 WINDOWS BASELINE")
@@ -189,6 +190,13 @@ def existing_readonly(section: str, command: list[str], timeout: int = 180) -> N
                if any(tag in line for tag in MARKERS)]
     for line in markers[-18:]:
         print("    " + line[:240])
+    if "Windows guest local access" in section:
+        keys = ("LocalLearner", "LearnerInAdministrators", "LearnerInRemoteDesktopUsers",
+                "DefaultRouteInterfaces", "GuestListeningManagementPorts",
+                "ActiveRdpWinrmInboundRuleCount", "GuestNetworkProfiles")
+        for line in finished.stdout.splitlines():
+            if any('"' + key + '"' in line for key in keys):
+                print("    " + line.strip()[:200])
     result(section, "PASS" if finished.returncode == 0 else "BLOCKED",
            f"command exit={finished.returncode}; read-only observation")
 
@@ -231,6 +239,17 @@ def main() -> int:
         ["bash", str(ROOT / "scripts/wslpe-network-acceptance.sh")], timeout=210)
     existing_readonly("WSLPE HTTPS/RDP/NLA configuration",
         ["bash", str(ROOT / "scripts/wslpe-access-audit.sh")], timeout=150)
+    inv = instance / "inventory"
+    if not inv.is_file() or inv.is_symlink():
+        result("Windows guest local access", "BLOCKED",
+               "Native WSLPE inventory unreadable or symlinked")
+    else:
+        existing_readonly("Windows guest local access",
+            [str(Path.home() / ".goad/.venv/bin/ansible-playbook"),
+             "-i", str(inv),
+             "-i", str(ROOT / "ad/WSLPE/data/inventory_disable_vagrant"),
+             "--limit", "ws01",
+             str(ROOT / "ansible/wslpe-p1c-guest-review.yml")], timeout=130)
     existing_readonly("Authenticated pinned WinRM HTTPS",
         [sys.executable, str(ROOT / "scripts/wslpe-https-auth-audit.py"),
          "--expected-thumbprint", args.expected_thumbprint], timeout=90)
