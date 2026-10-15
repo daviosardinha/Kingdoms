@@ -20,6 +20,7 @@ from goad.utils import PROVIDED, READY
 from kingdoms.course_registry import COURSES, get_course, catalog_lines
 from kingdoms.windows_lpe_vmware import WindowsLpeVmwareAdapter
 from kingdoms.wslpe_stage1 import bootstrap_native_wslpe, valid_prefix
+from kingdoms.wslpe_resume import resume_existing_wslpe
 
 
 _upstream = runpy.run_path(
@@ -185,7 +186,7 @@ class GoadNomad(BaseGoad):
                        'course_preflight', 'course_vm_status',
                        'help', '?', 'exit', 'eof'}
             if (
-                action == 'install'
+                action in ('install', 'resume')
                 and self._course_selection() is not None
                 and self._course_selection().slug == 'windows-lpe'
             ):
@@ -193,7 +194,7 @@ class GoadNomad(BaseGoad):
             if action not in allowed:
                 Log.error(
                     'WSLPE full installation and lifecycle remain locked. '
-                    'Only selected windows-lpe Stage 1 boot is allowed.'
+                    'Only selected windows-lpe Stage 1 install or existing-guest resume is allowed.'
                 )
                 return False
         if self._course_is_not_ready():
@@ -202,8 +203,8 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
-            if name == 'install' and self._course_selection().slug == 'windows-lpe':
-                allowed.add('install')
+            if name in ('install', 'resume') and self._course_selection().slug == 'windows-lpe':
+                allowed.add(name)
             if name not in allowed:
                 Log.error(
                     'This course has no validated full deployment adapter. '
@@ -410,6 +411,43 @@ class GoadNomad(BaseGoad):
             return False
 
         return self.do_install_instance()
+    def do_resume(self, arg=''):
+        """Resume only the existing stopped native WSLPE guest, never install."""
+        selected = self._course_selection()
+        if (
+            selected is None or selected.slug != 'windows-lpe'
+            or self.lab_manager.get_current_lab_name() != 'WSLPE'
+        ):
+            Log.error('Select windows-lpe before resuming its existing guest')
+            return False
+        if (arg or '').strip():
+            Log.error('Usage: resume (no arguments; interactive confirmation required)')
+            return False
+        native = self.lab_manager.get_current_instance()
+        if native is None or native.lab_name != 'WSLPE':
+            Log.error('Existing WSLPE instance is not loaded; no VM will be created')
+            return False
+        Log.warning(
+            'Resume existing WSLPE-WS01 only; no new VM, learner or '
+            'Windows LPE vulnerabilities will be provisioned.'
+        )
+        try:
+            confirmation = input('Type RESUME WSLPE to start the existing guest: ').strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            Log.warning('WSLPE resume cancelled')
+            return False
+        if confirmation != 'RESUME WSLPE':
+            Log.warning('WSLPE resume cancelled; no VM actions taken')
+            return False
+        success = resume_existing_wslpe(self.lab_manager, confirmed=True)
+        self.refresh_prompt()
+        if not success:
+            Log.warning(
+                'WSLPE resume did not complete. Do not retry until state is inspected.'
+            )
+        return False
+
     def do_install(self, arg=''):
         """Route interactive Windows LPE stage-1 bootstrap away from NORTH."""
         selected = self._course_selection()
@@ -635,6 +673,9 @@ class GoadNomad(BaseGoad):
             if self._course_selection().slug == 'windows-lpe':
                 print_menu_entry(
                     'install', 'confirm native WSLPE Stage 1 guest boot only'
+                )
+                print_menu_entry(
+                    'resume', 'confirm start of existing powered-off WSLPE guest only'
                 )
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Full course provisioning and other lifecycle actions remain disabled.')
