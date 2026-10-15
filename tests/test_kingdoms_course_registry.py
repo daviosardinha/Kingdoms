@@ -154,7 +154,7 @@ class OperatorSelectionTests(unittest.TestCase):
 
     def test_windows_lpe_install_fails_closed_without_north(self):
         self.console.do_select_course("windows-lpe")
-        self.assertEqual(self.console.prompt, '\\nKINGDOMS/windows-lpe > ')
+        self.assertEqual(self.console.prompt, '\nKINGDOMS/windows-lpe > ')
         with patch("builtins.input", side_effect=AssertionError("prompted")):
             self.assertFalse(self.console.onecmd("install"))
         self.assertEqual(self.console.legacy_calls, [])
