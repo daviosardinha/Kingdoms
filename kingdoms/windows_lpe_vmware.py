@@ -162,8 +162,9 @@ class WindowsLpeVmwareAdapter:
             ))
         # A symlink into another project's Vagrant state is never acceptable.
         local_state = self.project / ".vagrant"
-        machine_state = local_state / "machines" / EXPECTED_VM
-        if local_state.is_symlink() or machine_state.is_symlink():
+        machines_dir = local_state / "machines"
+        machine_state = machines_dir / EXPECTED_VM
+        if any(item.is_symlink() for item in (local_state, machines_dir, machine_state)):
             return PreflightResult(
                 False, ("FAIL: standalone Vagrant state is a symlink",)
             )
