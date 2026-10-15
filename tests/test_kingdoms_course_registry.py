@@ -116,7 +116,7 @@ class OperatorSelectionTests(unittest.TestCase):
         self.console.do_select_course("windows-lpe")
         self.console.do_status()
         self.assertEqual(self.console.legacy_calls, [])
-        self.assertTrue(any("adapter pending" in str(line).lower() for line in StubLog.output))
+        self.assertTrue(any("course adapter passes validation" in str(line).lower() for line in StubLog.output))
 
     def test_interactive_course_selection_never_exits_command_loop(self):
         self.assertFalse(self.console.do_select_course("windows-lpe"))
