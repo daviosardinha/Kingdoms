@@ -29,9 +29,13 @@
             }
           }
           $timeValid = $false
+          $certificateSubject = ''
+          $certificateNotAfter = ''
           if ($null -ne $certificate) {
             $timeValid = $certificate.NotBefore -le (Get-Date) -and
                          $certificate.NotAfter -gt (Get-Date)
+            $certificateSubject = [string]$certificate.Subject
+            $certificateNotAfter = [string]$certificate.NotAfter.ToString('o')
           }
 
           # Exact service/registry gates reused from NORTH's read-only
@@ -52,8 +56,8 @@
             WinRMHttpsCount = $https.Count
             HTTPSCertificatePresent = ($null -ne $certificate)
             HTTPSCertificateTimeValid = [bool]$timeValid
-            HTTPSCertificateSubject = if ($certificate) { [string]$certificate.Subject } else { '' }
-            HTTPSCertificateNotAfter = if ($certificate) { [string]$certificate.NotAfter.ToString('o') } else { '' }
+            HTTPSCertificateSubject = $certificateSubject
+            HTTPSCertificateNotAfter = $certificateNotAfter
             HTTPSCertificateThumbprint = $thumbprint
             RDPServiceRunning = ($rdpService.Status -eq 'Running')
             RDPConnectionsEnabled = ([int]$terminal.fDenyTSConnections -eq 0)
