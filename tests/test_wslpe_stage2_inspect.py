@@ -5,10 +5,11 @@ No VMware, Vagrant, WinRM or Windows commands are executed by these tests.
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "scripts/wslpe-stage2-inspect.py"
@@ -409,6 +410,32 @@ ethernet2.connectionType = "nat"
         _, failed = STAGE2.evaluate_windows(guest, "172.28.231")
         self.assertTrue(any("172.28.231.31" in x for x in failed))
         self.assertTrue(any("Defender" in x for x in failed))
+
+    def test_windows_probe_uses_direct_instance_ip_not_nat_forward(self):
+        data = guest_data()
+        response = SimpleNamespace(
+            status_code=0,
+            std_out=("WSLPE_AUDIT_JSON=" + json.dumps(data)).encode("utf-8"),
+        )
+        session = SimpleNamespace(run_ps=Mock(return_value=response))
+        fake_winrm = SimpleNamespace(Session=Mock(return_value=session))
+        with patch.dict(sys.modules, {"winrm": fake_winrm}):
+            observed = STAGE2.windows_probe("172.28.231.31")
+        self.assertEqual(observed, data)
+        fake_winrm.Session.assert_called_once()
+        self.assertEqual(
+            fake_winrm.Session.call_args.args[0],
+            "http://172.28.231.31:5985/wsman",
+        )
+        self.assertEqual(fake_winrm.Session.call_args.kwargs["transport"], "ntlm")
+        session.run_ps.assert_called_once_with(STAGE2.WINDOWS_READ_ONLY)
+
+    def test_windows_probe_rejects_public_loopback_north_and_invalid_ips(self):
+        for target in ("127.0.0.1", "8.8.8.8", "10.4.10.31",
+                       "not-an-ip", "::1", None):
+            with self.subTest(target=target):
+                with self.assertRaises(ValueError):
+                    STAGE2.windows_probe(target)
 
     def test_windows_probe_script_contains_only_read_operations(self):
         powershell = STAGE2.WINDOWS_READ_ONLY.lower()
