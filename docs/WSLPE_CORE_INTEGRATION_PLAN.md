@@ -36,6 +36,25 @@ On a failed first boot, **do not automatically retry or destroy**. Inspect `work
 
 **The new Stage 1 implementation and its regression tests are committed but have not yet passed execution on the operator's host.** Source acceptance and real Windows runtime acceptance are separate.
 
+## Stage 1 runtime confirmed, Stage 2 guest inspection pending
+
+The operator has confirmed the first native WSLPE Stage 1 boot completed successfully. Kingdoms reported the independently registered Windows VM running as `windows_10.vmx` and set the WSLPE instance status to `PROVIDED` (persisted value `ready for provisioning`). The course is **not ready** and no learner or Windows LPE vulnerabilities have been provisioned.
+
+The next operator step is the **single read-only Stage 2 inspector**, `scripts/wslpe-stage2-inspect.py`. It discovers exactly one native `WSLPE` instance from the current checkout, resolves its specific Vagrant machine registration to the running VMware VMX, enumerates VMX adapters, retrieves the WinRM forwarded port, verifies the management port is bound only to loopback, and uses the existing WinRM management channel for a read-only Windows audit. It checks the exact Windows machine name, Windows client type, no AD domain membership, UAC, three enabled firewall profiles, Defender services, the configured `<instance-prefix>.31/24` exercise address, and no default outbound route via that exercise interface.
+
+The checker **does not configure Windows networking**, provision the learner, run LPE exploits, reboot the VM, create/destroy instances or mark anything `READY`. VMX adapter enumeration alone does not prove isolation or precise NIC-to-vmnet assignment. It therefore always reports that **complete VMware network isolation and learner access remain unverified**, even when the Windows baseline passes. If WinRM, NICs or a Windows security check fails, the tool reports the failure and exits nonzero without modifying anything.
+
+Run in the private operator checkout, using the same Kingdoms Python virtual environment:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+python3 -m unittest discover -s tests -p 'test_wslpe_stage2_inspect.py' -v
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-stage2-inspect.py --show-adapters
+```
+
+The operator has **not yet run these new Stage 2 checks**. The pinned candidate range remains host-specific, and Stage 2 reads the actual prefix from the Kingdoms native instance rather than hardcoding it. The bootstrap `vagrant` credentials are still development-only, and must not be exposed to course learners. NAT must not be confused with an isolated student training network.
+
 ## One-command operator preboot acceptance
 
 The previously separate source, provider, native-render and network checks are now bundled in `scripts/wslpe-acceptance.py`. This is the **preferred operator entry point** to save time and avoid repeatedly requesting separate test results. It runs 13 non-deployment check groups, captures individual logs, and prints a concise PASS/FAIL summary, with detailed output only for failures.
