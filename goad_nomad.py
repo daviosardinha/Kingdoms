@@ -67,13 +67,25 @@ class GoadNomad(BaseGoad):
         if candidate is None:
             Log.error('Unknown Kingdoms course. Run courses to see supported names.')
             return False
-        if candidate.lifecycle_ready:
-            current_lab = self.lab_manager.get_current_lab_name()
-            if current_lab != candidate.legacy_lab:
+        target_lab = candidate.legacy_lab
+        if target_lab and self.lab_manager.get_current_lab_name() != target_lab:
+            # Reuse Kingdoms LabManager rather than maintaining a second
+            # parallel course->Vagrant installation state.
+            if self.lab_manager.get_current_instance() is not None:
                 Log.error(
-                    f'Cannot select {candidate.title} while legacy lab {current_lab} '
-                    f'is configured; use the existing lab selection first.'
+                    f'Cannot switch to {target_lab} while another instance is '
+                    'loaded. Unload that instance explicitly first.'
                 )
+                return False
+            if not self.lab_manager.is_lab_exist(target_lab):
+                Log.error(
+                    f'Kingdoms lab recipe {target_lab} is not registered. '
+                    'Update your operator checkout before selecting it.'
+                )
+                return False
+            self.lab_manager.set_lab(target_lab)
+            if self.lab_manager.get_current_lab_name() != target_lab:
+                Log.error(f'Kingdoms failed to select lab {target_lab}')
                 return False
         self._selected_course = candidate.slug
         self.refresh_prompt()
