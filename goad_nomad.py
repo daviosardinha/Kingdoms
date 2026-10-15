@@ -69,9 +69,9 @@ class GoadNomad(BaseGoad):
         Log.info(f'Selected Kingdoms course: {candidate.title} [{candidate.state}]')
         if not candidate.lifecycle_ready:
             Log.warning(
-                'Deployment adapter is not validated. Only course inspection, '
-                'help and switching courses are permitted. Lifecycle commands '
-                'are blocked to protect any loaded NORTH instance.'
+                'Deployment adapter is not validated. Course inspection and '
+                'read-only Windows LPE preflight/status are permitted. Lifecycle '
+                'commands remain blocked to protect any loaded NORTH instance.'
             )
         return True
 
@@ -93,7 +93,7 @@ class GoadNomad(BaseGoad):
         else:
             Log.info(f'Course: {course.title}; state={course.state}')
             if not course.lifecycle_ready:
-                Log.warning('Course adapter pending. Installation and lifecycle disabled.')
+                Log.warning('Installation and lifecycle remain disabled until the course adapter passes validation.')
 
     def _inspect_selected_windows_lpe(self, operation):
         """Perform inspection only, never dispatch a legacy lab lifecycle."""
@@ -618,6 +618,7 @@ Examples:
  - Open the Kingdoms operator console: ./goad.sh
  - List Kingdoms courses: ./goad.sh -t courses
  - Inspect undeployed Windows LPE course: ./goad.sh -c windows-lpe -t status
+ - Check its isolated VMware backend: ./goad.sh -c windows-lpe -t course-preflight
  - Install the existing NORTH instance: ./goad.sh -c north -t install -l GOAD -p vmware
  - Validate a loaded NORTH instance: ./goad.sh -t validate -i <instance_id>
 
