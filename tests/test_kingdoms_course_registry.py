@@ -35,6 +35,10 @@ class LegacyConsole:
         self.prompt = 'NORTH > '
 
     def onecmd(self, line):
+        if line.strip() == "install":
+            selection = self._course_selection()
+            if selection is not None and selection.slug == "windows-lpe":
+                return self.do_install()
         self.legacy_calls.append(line)
         return "LEGACY"
 
@@ -114,7 +118,7 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertTrue(self.console._set_course_selection("windows-lpe"))
         self.assertEqual(self.console._selected_course, "windows-lpe")
         for command in (
-            "install", "destroy", "destroy_vm target", "reset", "snapshot",
+            "destroy", "destroy_vm target", "reset", "snapshot",
             "start", "stop", "mode provisioning", "ws01", "set_lab GOAD",
             "load instance-1", "provision_lab", "!id", "create", "provide",
         ):
@@ -154,7 +158,7 @@ class OperatorSelectionTests(unittest.TestCase):
         self.console.do_select_course("windows-lpe")
         self.assertEqual(self.console.prompt, '\\nKINGDOMS/windows-lpe > ')
         with patch("builtins.input", return_value="y") as answer:
-            self.assertFalse(self.console.do_install(""))
+            self.assertFalse(self.console.onecmd("install"))
         answer.assert_called_once()
         self.assertEqual(self.console.legacy_calls, [])
         self.assertTrue(any(
