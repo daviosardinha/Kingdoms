@@ -80,9 +80,9 @@ class GoadNomad(BaseGoad):
         Log.info(f'Selected Kingdoms course: {candidate.title} [{candidate.state}]')
         if candidate.slug == 'windows-lpe':
             Log.warning(
-                'Stage 1 only: type install to bootstrap the independent Windows '
-                'guest. Local learner accounts and LPE scenarios are not yet '
-                'configured. Other lifecycle actions remain blocked.'
+                'WSLPE is being integrated as a first-class Kingdoms lab '
+                'instance. Installation remains disabled until the core '
+                'instance/provider/provisioner integration passes validation.'
             )
         elif not candidate.lifecycle_ready:
             Log.warning(
@@ -129,29 +129,16 @@ class GoadNomad(BaseGoad):
         return result.ready
 
     def _create_selected_windows_lpe_guest(self, confirmed=False):
-        """Create only the standalone VMware guest, not an installed course."""
-        selection = self._course_selection()
-        if selection is None or selection.slug != 'windows-lpe':
-            Log.error('Select windows-lpe before creating its standalone guest.')
-            return False
-        result = WindowsLpeVmwareAdapter().create_guest(confirmed=confirmed)
-        for line in result.checks:
-            if line.startswith('FAIL'):
-                Log.error(line)
-            else:
-                Log.info(line)
-        return result.ready
+        """Fail closed: experimental direct VM path is superseded by WSLPE."""
+        Log.error(
+            'Direct VM boot is retired. WSLPE must be created as a native '
+            'Kingdoms lab instance. See docs/WSLPE_CORE_INTEGRATION_PLAN.md.'
+        )
+        return False
 
     def do_course_vm_create(self, arg=''):
-        """Operator-only guest creation. Never install scenarios or touch NORTH."""
-        if arg.strip() != 'CREATE windows-lpe':
-            Log.error(
-                'Creation requires deliberate confirmation: '
-                'course_vm_create CREATE windows-lpe'
-            )
-            return False
-        self._create_selected_windows_lpe_guest(confirmed=True)
-        # cmd.Cmd treats a True return as an instruction to exit.
+        """Retired experimental command. Never create a parallel guest."""
+        self._create_selected_windows_lpe_guest(confirmed=False)
         return False
 
     def do_course_preflight(self, arg=''):
@@ -172,8 +159,6 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
-            if self._course_selection().slug == 'windows-lpe':
-                allowed.add('install')
             if name not in allowed:
                 Log.error(
                     'This course has no validated full deployment adapter. '
@@ -377,34 +362,11 @@ class GoadNomad(BaseGoad):
         """Route interactive Windows LPE stage-1 bootstrap away from NORTH."""
         selected = self._course_selection()
         if selected is not None and selected.slug == 'windows-lpe':
-            if arg.strip():
-                Log.error(
-                    'Windows LPE interactive installation takes no arguments. '
-                    'Select windows-lpe and enter install.'
-                )
-                return False
-            Log.warning(
-                'Windows LPE Stage 1: create only the isolated Windows VM. '
-                'No vulnerabilities, local learner or course access will be installed.'
+            Log.error(
+                'WSLPE native Kingdoms instance integration is pending. '
+                'No VM was created. Direct Vagrant boot was retired to avoid '
+                'bypassing Kingdoms instance management.'
             )
-            try:
-                confirmation = input(
-                    'Create the standalone Windows LPE VM? [y/N]: '
-                )
-            except (EOFError, KeyboardInterrupt):
-                print()
-                Log.warning('Windows LPE guest bootstrap cancelled.')
-                return False
-            if confirmation.strip().lower() != 'y':
-                Log.info('Windows LPE guest bootstrap cancelled.')
-                return False
-            result = self._create_selected_windows_lpe_guest(confirmed=True)
-            if result:
-                Log.info(
-                    'Stage 1 guest bootstrap complete. Full Windows LPE course '
-                    'installation is still pending learner and scenario validation.'
-                )
-            # Returning True would exit the interactive cmd.Cmd session.
             return False
 
         result = self._run_with_install_timer(lambda: self.do_create(arg))
@@ -575,8 +537,9 @@ class GoadNomad(BaseGoad):
             print_menu_entry('course_preflight', 'inspect standalone VM tooling, do not boot')
             print_menu_entry('course_vm_status', 'inspect standalone Vagrant state')
             if self._course_selection().slug == 'windows-lpe':
-                print_menu_entry('install', 'bootstrap isolated VM only; no scenarios yet')
-            print_menu_entry('course_vm_create CREATE windows-lpe', 'legacy guest-only diagnostic')
+                Log.warning(
+                    'WSLPE installation pending native Kingdoms instance integration.'
+                )
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Full course provisioning and other lifecycle actions remain disabled.')
             return
@@ -587,7 +550,7 @@ class GoadNomad(BaseGoad):
         print_menu_entry('course', 'inspect selected course and readiness')
         print_menu_entry('course_preflight', 'inspect Windows LPE tools without boot')
         print_menu_entry('course_vm_status', 'inspect Windows LPE VM status')
-        print_menu_entry('course_vm_create CREATE windows-lpe', 'developer guest-only diagnostic')
+        # Experimental direct VM creation retired in favor of native WSLPE instances.
         if self._nomad_provider() is not None:
             print_menu_title('GOAD_NOMAD Network')
             print_menu_entry('network', 'show the segmented network profile')
@@ -733,26 +696,11 @@ def _dispatch_task(goad, args):
             return 1
         if not course.lifecycle_ready:
             if args.task == 'course-vm-create':
-                if course.slug != 'windows-lpe':
-                    Log.error('Only windows-lpe supports guest-only creation.')
-                    return 1
-                if not getattr(args, 'confirm_vm_create', False):
-                    Log.error(
-                        'Guest creation requires --confirm-vm-create; '
-                        'full Windows LPE course installation is still disabled.'
-                    )
-                    return 1
-                if args.instance is not None:
-                    Log.error(
-                        'Guest creation uses an isolated course project; '
-                        'do not supply a legacy NORTH instance (-i).'
-                    )
-                    return 1
-                if not goad._set_course_selection(course.slug):
-                    return 1
-                return 0 if goad._create_selected_windows_lpe_guest(
-                    confirmed=True
-                ) else 1
+                Log.error(
+                    'Direct Windows LPE VM bootstrap is retired. '
+                    'Use the native WSLPE instance once integrated.'
+                )
+                return 1
             if args.task in ('course-preflight', 'course-vm-status'):
                 if course.slug != 'windows-lpe':
                     Log.error('Only windows-lpe has an independent VM backend.')
