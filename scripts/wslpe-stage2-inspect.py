@@ -149,11 +149,42 @@ def vmx_network_adapters(vmx_text: str) -> list[dict]:
     return result
 
 
+def vagrant_port_command(instance_dir: Path) -> list[str]:
+    """Resolve read-only Vagrant state through its actual non-root owner.
+
+    A sudo-invoked firewall audit requires root for nft/ss, but Vagrant's
+    plugin, machine registration and VAGRANT_HOME belong to the operator.
+    Never invoke a second Vagrant context as root or grant ownership changes.
+    """
+    command = ["vagrant", "port", MACHINE]
+    if os.geteuid() != 0:
+        return command
+
+    import pwd
+    # SUDO_UID is supplied by sudo. Do not trust SUDO_USER as a command
+    # or choose an unrelated account using arbitrary CLI inputs.
+    sudo_uid = os.environ.get("SUDO_UID", "")
+    try:
+        owner_uid = instance_dir.stat().st_uid
+        if not sudo_uid.isdecimal() or int(sudo_uid) != owner_uid or owner_uid == 0:
+            raise ValueError(
+                "Privileged Vagrant audit requires sudo from the owner of "
+                "the existing WSLPE instance directory"
+            )
+        user = pwd.getpwuid(owner_uid)
+    except KeyError as exc:
+        raise ValueError("Cannot resolve the WSLPE instance owner account") from exc
+    except OSError as exc:
+        raise ValueError("Cannot inspect the WSLPE instance owner") from exc
+    return ["sudo", "-H", "-u", user.pw_name, "--", *command]
+
+
 def forwarded_winrm_port(instance_dir: Path) -> int:
-    text = read_command(["vagrant", "port", MACHINE], cwd=instance_dir / "provider")
+    command = vagrant_port_command(instance_dir)
+    text = read_command(command, cwd=instance_dir / "provider")
     match = re.search(r"5985\s+\(guest\)\s+=>\s+(\d+)\s+\(host\)", text)
     if match is None:
-        raise ValueError("Loopback-forwarded WinRM 5985 port was not available")
+        raise ValueError("Vagrant did not report the existing WinRM 5985 forward")
     port = int(match.group(1))
     if not 1 <= port <= 65535:
         raise ValueError("Invalid forwarded WinRM port")
