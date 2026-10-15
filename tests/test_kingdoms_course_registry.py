@@ -74,6 +74,10 @@ def load_unit(name):
         "COURSES": COURSES,
         "get_course": get_course,
         "catalog_lines": catalog_lines,
+        "valid_prefix": lambda prefix: prefix == "172.28.231",
+        "bootstrap_native_wslpe": lambda manager, prefix, confirmed=False: (
+            manager.bootstrap_calls.append((prefix, confirmed)) or True
+        ),
         "print_menu_title": lambda *args: None,
         "print_menu_entry": lambda *args: None,
     }
@@ -112,18 +116,20 @@ class OperatorSelectionTests(unittest.TestCase):
         self.console = OperatorConsole.__new__(OperatorConsole)
         self.console.legacy_calls = []
         self.active = {"lab": "GOAD", "instance": None}
+        self.bootstrap_calls = []
         self.console.lab_manager = types.SimpleNamespace(
             get_current_lab_name=lambda: self.active["lab"],
             get_current_instance=lambda: self.active["instance"],
             is_lab_exist=lambda lab: lab in {"GOAD", "WSLPE"},
             set_lab=lambda lab: self.active.__setitem__("lab", lab),
+            bootstrap_calls=self.bootstrap_calls,
         )
 
-    def test_windows_lpe_is_selectable_for_inspection_only(self):
+    def test_windows_lpe_selection_allows_only_stage1_install(self):
         self.assertTrue(self.console._set_course_selection("windows-lpe"))
         self.assertEqual(self.console._selected_course, "windows-lpe")
         for command in (
-            "install", "destroy", "destroy_vm target", "reset", "snapshot",
+            "destroy", "destroy_vm target", "reset", "snapshot",
             "start", "stop", "mode provisioning", "ws01", "set_lab GOAD",
             "load instance-1", "provision_lab", "!id", "create", "provide",
         ):
@@ -134,7 +140,7 @@ class OperatorSelectionTests(unittest.TestCase):
         self.console.do_select_course("windows-lpe")
         self.console.do_status()
         self.assertEqual(self.console.legacy_calls, [])
-        self.assertTrue(any("course adapter passes validation" in str(line).lower() for line in StubLog.output))
+        self.assertTrue(any("course provisioning" in str(line).lower() for line in StubLog.output))
 
     def test_interactive_course_selection_never_exits_command_loop(self):
         self.assertFalse(self.console.do_select_course("windows-lpe"))
@@ -157,31 +163,45 @@ class OperatorSelectionTests(unittest.TestCase):
             "retired" in msg.lower() for _level, msg in StubLog.output
         ))
 
-    def test_windows_lpe_install_fails_closed_without_north(self):
+    def test_windows_lpe_interactive_install_boots_via_native_stage1_only(self):
         self.console.do_select_course("windows-lpe")
         self.assertEqual(self.console.prompt, '\nKINGDOMS/windows-lpe > ')
-        with patch("builtins.input", side_effect=AssertionError("prompted")):
+        with patch("builtins.input", side_effect=["172.28.231", "CREATE WSLPE"]):
             self.assertFalse(self.console.onecmd("install"))
         self.assertEqual(self.console.legacy_calls, [])
-        self.assertTrue(any(
-            "installation is locked" in msg.lower() for _level, msg in StubLog.output
-        ))
+        self.assertEqual(self.bootstrap_calls, [("172.28.231", True)])
 
-    def test_windows_lpe_direct_install_cannot_boot_vm(self):
+    def test_windows_lpe_install_wrong_confirmation_fails_closed(self):
         self.console.do_select_course("windows-lpe")
+        with patch("builtins.input", side_effect=["172.28.231", "yes"]):
+            self.assertFalse(self.console.onecmd("install"))
+        self.assertEqual(self.console.legacy_calls, [])
+        self.assertEqual(self.bootstrap_calls, [])
+
+    def test_windows_lpe_install_bad_network_fails_before_confirmation(self):
+        self.console.do_select_course("windows-lpe")
+        with patch("builtins.input", side_effect=["10.4.10", AssertionError("prompted")]):
+            self.assertFalse(self.console.do_install(""))
+        self.assertEqual(self.bootstrap_calls, [])
+
+    def test_windows_lpe_install_loaded_instance_fails_without_prompts(self):
+        self.console.do_select_course("windows-lpe")
+        self.active["instance"] = object()
         with patch("builtins.input", side_effect=AssertionError("prompted")):
             self.assertFalse(self.console.do_install(""))
-        self.assertEqual(self.console.legacy_calls, [])
-        self.assertTrue(any(
-            "native kingdoms instance integration is pending" in msg.lower()
-            for _level, msg in StubLog.output
-        ))
+        self.assertEqual(self.bootstrap_calls, [])
 
-    def test_windows_lpe_install_with_extra_args_also_fails_closed(self):
+    def test_windows_lpe_install_extra_args_refused_without_prompt(self):
         self.console.do_select_course("windows-lpe")
         with patch("builtins.input", side_effect=AssertionError("prompted")):
             self.assertFalse(self.console.do_install("--non-interactive"))
-        self.assertEqual(self.console.legacy_calls, [])
+        self.assertEqual(self.bootstrap_calls, [])
+
+    def test_windows_lpe_install_requires_explicit_course_selection(self):
+        self.active["lab"] = "WSLPE"
+        with patch("builtins.input", side_effect=AssertionError("prompted")):
+            self.assertFalse(self.console.do_install(""))
+        self.assertEqual(self.bootstrap_calls, [])
 
     def test_course_switching_and_legacy_console_compatibility(self):
         self.console.do_select_course("windows-lpe")
