@@ -1,6 +1,6 @@
 # Kingdoms Windows Local Privilege Escalation: standalone lab
 
-**Status: VMware backend definition ready for validation, not yet deployed. Kingdoms interactive installer integration is pending.**
+**Status: independent VMware backend definition ready for validation, not yet deployed. Kingdoms' operator-only course selector is present on the feature branch, but the Windows LPE deployment adapter is not implemented.**
 
 This is one independently managed Windows workstation used to develop and verify the shared Kingdoms Windows LPE scenarios. It is not a copy of the NORTH course instance, it does not join Active Directory, and it does not configure any vulnerability on first boot.
 
@@ -18,7 +18,7 @@ A single NAT interface for provisioning does **not** prove network isolation. In
 
 ## How this should be installed
 
-**Normal operator workflow:** a trusted Kingdoms operator selects the Windows LPE course in the unified interactive installer and runs `install`. The operator console owns the VM, local learner account provisioning, scenarios and lifecycle. **The course selector and adapter do not exist yet.** Until implemented, the manual Vagrant path below is a developer test harness, not an official operator installation workflow or a learner instruction.
+**Target operator workflow:** a trusted Kingdoms operator selects the Windows LPE course and later runs `install` after the dedicated adapter passes acceptance. On the current feature branch, `courses`, `select_course windows-lpe`, `course` and read-only `status` are supported, but `install`, `reset`, `destroy`, `start` and `stop` are intentionally blocked for that course. The operator console will eventually own the VM, local learner accounts, scenario preparation and lifecycle. Until that adapter is implemented, the manual Vagrant path below remains a developer test harness, not an official operator installation workflow or a learner instruction.
 
 The Vagrant project in this directory remains the course's low-level VMware backend and a narrow **operator/developer test harness**. It must never be copied to the learner's machine, added to the vulnerable guest, exposed on the learner's network or given to course participants. The eventual learner handoff contains only machine-specific access details and a learner-scoped account, not infrastructure or management credentials.
 
