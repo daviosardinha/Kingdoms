@@ -149,6 +149,38 @@ class WslpeNativeBootTests(unittest.TestCase):
         self.assertEqual(self.events.count(("provider_failure",)), 1)
         self.assertEqual(self.state["instance"].status, CREATED)
 
+    def test_vagrant_registration_and_exact_vmrun_identity_are_required(self):
+        provider_dir = Path(self.provider.path)
+        evidence = provider_dir / ".vagrant/machines/WSLPE-WS01/vmware_desktop"
+        evidence.mkdir(parents=True)
+        vmx = self.root / "ws_lpe_independent.vmx"
+        vmx.write_text('displayName = "WSLPE-WS01"', encoding="utf-8")
+        (evidence / "id").write_text(str(vmx), encoding="utf-8")
+        result = SimpleNamespace(
+            returncode=0,
+            stdout=f"Total running VMs: 1\\n{vmx}\\n".replace("\\n", "\n"),
+            stderr="",
+        )
+        with patch.object(boot.subprocess, "run", return_value=result) as runner:
+            self.assertTrue(boot.inspect_vmware_guest(self.provider))
+        runner.assert_called_once()
+        self.assertEqual(runner.call_args.args[0], ["vmrun", "-T", "ws", "list"])
+
+    def test_existing_north_vmx_is_never_accepted_for_wslpe(self):
+        provider_dir = Path(self.provider.path)
+        evidence = provider_dir / ".vagrant/machines/WSLPE-WS01/vmware_desktop"
+        evidence.mkdir(parents=True)
+        vmx = self.root / "GOAD-WS01.vmx"
+        vmx.write_text("NORTH fixture", encoding="utf-8")
+        (evidence / "id").write_text(str(vmx), encoding="utf-8")
+        with patch.object(boot.subprocess, "run",
+                          side_effect=AssertionError("vmrun must not be consulted")):
+            self.assertFalse(boot.inspect_vmware_guest(self.provider))
+
+    def test_guest_identity_cannot_be_inferred_only_from_vagrant_up(self):
+        self.assertFalse(boot.inspect_vmware_guest(self.provider))
+        self.assertNotIn(("set_status", PROVIDED), self.events)
+
     def test_unverified_guest_does_not_mark_instance_provided(self):
         with self.patches(), patch.object(boot, "inspect_vmware_guest",
                                           return_value=False):
