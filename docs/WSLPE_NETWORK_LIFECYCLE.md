@@ -33,21 +33,38 @@ meta iifname != "lo" tcp dport <actual_WSLPE_host_port> drop
 
 This is not a firewall flush, a Vagrant reload, or a VMware NAT restart. It does **not** rewrite vmnet8 or touch a NORTH guest. The nftables rule is **runtime-only**. It may disappear after a host reboot, at which point the checker must fail closed. A subsequent course release must define and verify the rule's lifecycle/persistence, a clean removal path, and an independent remote-reachability test. A stage-2 pass does **not** by itself mean the guest is safe for learner access.
 
+### Operator troubleshooting: separate Python and Vagrant contexts
+
+The operator's first consolidated test run used Kali's system `python3` (Python 3.14), which cannot import `ansible_runner` from Kingdoms' established dependencies. **The 82 tests did not all pass**: 81 passed and one test module could not import. Run all WSLPE tests through **`$HOME/.goad/.venv/bin/python`** instead. Output printed by mocked firewall tests, including simulated `[PASS] ... DROP verified`, is **not live host firewall evidence**.
+
+The initial `sudo "$HOME/.goad/.venv/bin/python" scripts/wslpe-winrm-firewall.py` audit also failed during `vagrant port WSLPE-WS01`. The first implementation ran Vagrant as root, so it could see a **different Vagrant home/plugin context** from the operator who registered the instance. The updated WSLPE inspector now delegates **only** the read-only `vagrant port` call back to the verified owner of the native WSLPE instance directory when the firewall audit itself is root. It requires `SUDO_UID` to match that directory's non-root owner, uses `sudo -H -u <verified-owner> -- vagrant port`, and leaves `nft` and privileged `ss` checks as root. It neither changes ownership nor copies/restores Vagrant registration state, and it refuses arbitrary identity mismatches.
+
+Preferred next checks:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+"$HOME/.goad/.venv/bin/python" -m unittest discover -s tests -p 'test_wslpe_*.py' -q
+sudo "$HOME/.goad/.venv/bin/python" scripts/wslpe-winrm-firewall.py
+```
+
+The read-only audit is expected to return `[BLOCKED]` while no WSLPE-specific guard exists. Only once the revised tests pass and the live audit confirms the exact WSLPE forwarded port and its current `vmnet-nat` ownership should the operator approve the **explicit one-port nftables mutation**. Never infer that a mocked unit-test message configured the firewall. In particular, do not run `vagrant up`, modify NORTH, `chmod` the instance directory, or clear/reset Vagrant's state to fix this symptom.
+
 ### First bounded operator check
 
 After pulling and running the new source tests, **audit** the real WSLPE host port using the existing native instance (the operator's current port was TCP/2210):
 
 ```bash
 cd "$HOME/kingdoms-lpe-standalone"
-python3 -m unittest discover -s tests -p 'test_wslpe_winrm_guard.py' -v
-python3 -m unittest discover -s tests -p 'test_wslpe_nic_contract.py' -v
-sudo python3 scripts/wslpe-winrm-firewall.py
+"$HOME/.goad/.venv/bin/python" -m unittest discover -s tests -p 'test_wslpe_winrm_guard.py' -v
+"$HOME/.goad/.venv/bin/python" -m unittest discover -s tests -p 'test_wslpe_nic_contract.py' -v
+sudo "$HOME/.goad/.venv/bin/python" scripts/wslpe-winrm-firewall.py
 ```
 
 The audit intentionally exits nonzero when the protective rule is absent. **Only when the audit proves that TCP/2210 still belongs to WSLPE's vmnet-nat and the operator approves a one-port change**, execute:
 
 ```bash
-sudo python3 scripts/wslpe-winrm-firewall.py --apply --confirm-port 2210
+sudo "$HOME/.goad/.venv/bin/python" scripts/wslpe-winrm-firewall.py --apply --confirm-port 2210
 ```
 
 **Never copy the 2210 port number to another host without first discovering that host's actual WSLPE forward.** No change is allowed for an ambiguous instance, changed listener owner, an already present foreign rule/table or a mismatch in the explicit confirmation.
