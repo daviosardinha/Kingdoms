@@ -81,19 +81,29 @@ class WslpeHostPilotTests(unittest.TestCase):
     def test_installed_policy_acceptance_rejects_unknown_table_objects(self):
         sample = [
             {"table": {"family": "inet", "name": M.TABLE}},
-            {"chain": {"family": "inet", "table": M.TABLE, "name": M.INPUT_CHAIN}},
-            {"chain": {"family": "inet", "table": M.TABLE, "name": M.FORWARD_CHAIN}},
-        ] + [
-            {"rule": {"family": "inet", "table": M.TABLE, "chain": name}}
-            for name in (M.INPUT_CHAIN, M.INPUT_CHAIN, M.FORWARD_CHAIN, M.FORWARD_CHAIN)
+            {"chain": {"family": "inet", "table": M.TABLE, "name": M.INPUT_CHAIN,
+                       "hook": "input", "prio": -75}},
+            {"chain": {"family": "inet", "table": M.TABLE, "name": M.FORWARD_CHAIN,
+                       "hook": "forward", "prio": -75}},
         ]
+        for chain, comment, action in (
+            (M.INPUT_CHAIN, "WSLPE operator reply only", "accept"),
+            (M.INPUT_CHAIN, "WSLPE guest to Kali blocked", "drop"),
+            (M.FORWARD_CHAIN, "WSLPE guest forwarding blocked", "drop"),
+            (M.FORWARD_CHAIN, "WSLPE cross-network ingress blocked", "drop"),
+        ):
+            sample.append({"rule": {
+                "family": "inet", "table": M.TABLE, "chain": chain,
+                "comment": comment,
+                "expr": [{"match": {"right": "vmnet2"}}, {action: None}],
+            }})
         with patch.object(M, "nft_json", return_value=sample):
-            self.assertTrue(M.installed_exact_policy())
+            self.assertTrue(M.installed_exact_policy("vmnet2"))
         with patch.object(M, "nft_json", return_value=sample + [
             {"rule": {"family": "inet", "table": M.TABLE, "chain": M.INPUT_CHAIN}}
         ]):
             with self.assertRaises(ValueError):
-                M.installed_exact_policy()
+                M.installed_exact_policy("vmnet2")
 
     def test_timed_rollback_only_targets_exact_wslpe_table(self):
         calls = []
