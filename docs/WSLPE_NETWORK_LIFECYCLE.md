@@ -134,6 +134,28 @@ If both test suites pass, open `./goad.sh`, type `select_course windows-lpe`, th
 
 After a successful resume, rerun `bash scripts/wslpe-network-acceptance.sh` to verify the management firewall rule still matches the current WinRM forwarding port, the real Windows Firewall profiles, VMware NIC isolation and guest readiness. The nftables guard is runtime-only and not reboot persistent. Vagrant may re-evaluate port forwarding during resume, so **do not assume the previously protected host TCP/2210 remains the actual mapping** without re-verification. WSLPE remains private and unavailable to learners.
 
+## Windows evaluation licensing during workstation installation
+
+We now have a plausible explanation for periodic Windows VM shutdowns: a **time-based evaluation license that has expired**. This is **not yet proven for the WSLPE guest**. The Discord screenshot recommends `slmgr /rearm` after an administrator login and reboot, but it describes someone else's Windows Server evaluation problem. WSLPE and NORTH WS01 use the pinned `mayfly/windows10` guest image. Windows Server and Windows 10 evaluation limits cannot be assumed identical.
+
+**Kingdoms already had a production-source implementation for NORTH WS01.** The existing `ansible/roles/settings/eval_rearm/tasks/main.yml` runs during `ansible/ws01.yml` for the NORTH workstation. It checks for a Windows `SoftwareLicensingProduct` with a `TIMEBASED_EVAL` description and an expired `GracePeriodRemaining`. It invokes `cscript.exe slmgr.vbs /rearm` **only** for that expired evaluation, then reboots and checks the grace period again. It does not run on every boot, force activation on other Windows editions or change Defender, UAC or firewall settings. Rearm availability varies with the Windows license and cannot be guaranteed; it is a temporary evaluation-maintenance action, **not an activation or licensing substitute**.
+
+**WSLPE now reuses this very same Ansible role**, imported into `ansible/wslpe-foundation.yml` *after* confirming a standalone Windows client and baseline security controls, but *before* creating its local learner. A separate post-role read-only check requires **at least 24 hours of evaluation grace** or a Windows non-evaluation product reporting `LicenseStatus=1`; missing or otherwise unlicensed evidence stops learner provisioning. This is part of **future operator-approved WSLPE foundation provisioning**, not the existing Stage 1 guest-only boot. No rearm or reboot has been performed on the running operator's machines by this change.
+
+WSLPE Stage 2's read-only PowerShell audit now reports matching Windows licensing products (name, channel, numeric license status and grace minutes, **no product keys**) and searches the last 30 days of System Event ID 1074 for `wlms.exe` or Windows License Monitoring. It fails closed if the evaluation has less than 24 hours remaining or a non-evaluation Windows license cannot be verified, while separately identifying historical WLMS shutdowns without treating old events as proof that the current license remains expired. It **never calls** `slmgr`, restarts Windows or changes a registry setting.
+
+After validating the existing powered-off WSLPE instance and using the guarded native `resume` action, run the standard read-only acceptance:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+"$HOME/.goad/.venv/bin/python" -m unittest discover \
+  -s tests -p 'test_wslpe_license_contract.py' -v
+bash scripts/wslpe-network-acceptance.sh
+```
+
+Inspect the `[INFO] Windows licensing channel` and `Historical Windows License Monitoring shutdown events` lines. If it shows an expired evaluation, **do not loop over `slmgr /rearm`**, disable WLMS or bypass activation. An authorized operator must verify the installed edition, remaining allowed rearm count and licensing terms, then choose the approved **WSLPE-only provisioning/maintenance step**. The guest should never be released to learners based on an expired evaluation or a speculative license reset. For student-facing/cloud hosting, use an appropriately licensed Windows image and permitted deployment rights, rather than relying on repeatable evaluation rearming.
+
 ## Planned WSLPE-specific exercise handoff, NOT IMPLEMENTED YET
 
 We must validate the following gates before disconnecting WSLPE's NAT adapter:
