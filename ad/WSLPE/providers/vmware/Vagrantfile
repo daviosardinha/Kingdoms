@@ -4,7 +4,7 @@
 # No vmnet number is pinned here. The existing Kingdoms VMware template
 # provides the Vagrant private exercise network and provider-managed NAT.
 # Each operator host must validate its networks independently before install.
-# Future cloud/VPS deployment requires a separate provider adapter, not vmnet8.
+# Future cloud/VPS deployment requires a separate provider adapter.
 boxes = [
   {
     :name => "WSLPE-WS01",
