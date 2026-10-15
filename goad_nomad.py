@@ -50,8 +50,8 @@ class GoadNomad(BaseGoad):
             Log.info(f'  {line}')
         Log.info('Learners have access only to deployed vulnerable machines.')
 
-    def do_select_course(self, arg=''):
-        """Select a course without provisioning or changing loaded VM instances."""
+    def _set_course_selection(self, arg=''):
+        """Return selection success without dispatching any provider operation."""
         candidate = get_course(arg)
         if candidate is None:
             Log.error('Unknown Kingdoms course. Run courses to see supported names.')
@@ -73,6 +73,11 @@ class GoadNomad(BaseGoad):
                 'are blocked to protect any loaded NORTH instance.'
             )
         return True
+
+    def do_select_course(self, arg=''):
+        """Interactive command always keeps the operator console open."""
+        self._set_course_selection(arg)
+        return False
 
     def complete_select_course(self, text, line, begidx, endidx):
         options = [course.slug for course in COURSES]
@@ -570,7 +575,7 @@ def parse_args():
     task_help = 'tasks available: courses/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='goad_nomad.py',
-        description='GOAD_NOMAD lab management console.',
+        description='Kingdoms private operator course and lab management console.',
         epilog='''
 Examples:
  - Launch GOAD_NOMAD interactive console: ./goad.sh
@@ -691,7 +696,7 @@ def main():
     if args.task is None:
         # An explicitly selected development course must not fall back into
         # legacy NORTH commands when the operator enters the REPL.
-        if args.course is not None and not goad.do_select_course(args.course):
+        if args.course is not None and not goad._set_course_selection(args.course):
             return 1
         goad.cmdloop()
         return 0
