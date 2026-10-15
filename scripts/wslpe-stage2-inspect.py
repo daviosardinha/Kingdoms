@@ -158,6 +158,30 @@ def forwarded_winrm_port(instance_dir: Path) -> int:
     return port
 
 
+def inspect_management_port_binding(port: int) -> str:
+    """Require forwarded WinRM to listen on loopback, never a public interface."""
+    output = read_command(["ss", "-H", "-ltn"])
+    listeners = []
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) < 5 or fields[0] != "LISTEN":
+            continue
+        endpoint = fields[3]
+        try:
+            bound_port = int(endpoint.rsplit(":", 1)[1])
+        except (IndexError, ValueError):
+            continue
+        if bound_port == port:
+            listeners.append(endpoint.rsplit(":", 1)[0].strip("[]"))
+    if not listeners:
+        raise ValueError("Cannot establish WinRM forwarded port bind scope")
+    if any(host not in ("127.0.0.1", "::1") for host in listeners):
+        raise ValueError(
+            "WSLPE bootstrap WinRM port appears exposed beyond host loopback"
+        )
+    return ", ".join(sorted(set(listeners)))
+
+
 def windows_probe(port: int) -> dict:
     try:
         import winrm
@@ -236,6 +260,7 @@ def main() -> int:
         if len(adapters) < 2:
             raise ValueError("WSLPE VMX does not expose separate management and exercise NICs")
         port = forwarded_winrm_port(instance_dir)
+        bind = inspect_management_port_binding(port)
         info = windows_probe(port)
         passed, failed = evaluate_windows(info, prefix)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
@@ -246,7 +271,7 @@ def main() -> int:
     print(f"[PASS] Native instance: {manifest['id']} | state=PROVIDED (ready for provisioning)")
     print(f"[PASS] Registered VMware guest: {vmx.name}")
     print(f"[PASS] WinRM: read-only query through 127.0.0.1:{port}")
-    print("[NOT VERIFIED] Forwarded WinRM port listening/bind scope; do not expose this bootstrap service")
+    print(f"[PASS] Bootstrap WinRM forwarded port bound only to loopback ({bind})")
     print(f"[INFO] VMware network adapters discovered: {len(adapters)}")
     if args.show_adapters:
         for a in adapters:
