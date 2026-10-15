@@ -164,7 +164,7 @@ class OperatorSelectionTests(unittest.TestCase):
             self.assertFalse(self.console.onecmd("install"))
         self.assertEqual(self.console.legacy_calls, [])
         self.assertTrue(any(
-            "command blocked" in msg.lower() for _level, msg in StubLog.output
+            "installation is locked" in msg.lower() for _level, msg in StubLog.output
         ))
 
     def test_windows_lpe_direct_install_cannot_boot_vm(self):
