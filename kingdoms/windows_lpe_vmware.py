@@ -169,12 +169,35 @@ class WindowsLpeVmwareAdapter:
                 False, ("FAIL: standalone Vagrant state is a symlink",)
             )
         if machine_state.exists():
-            return PreflightResult(
-                False, (
-                    "FAIL: Vagrant already has state for this VM; inspect manually. "
-                    "Never overwrite, destroy or auto-retry partial guests.",
+            if not machine_state.is_dir():
+                return PreflightResult(
+                    False, ("FAIL: Vagrant machine state is not a directory",)
                 )
-            )
+            # 'vagrant status' can create empty per-machine/provider folders
+            # before a VM exists. The actual provider registration marker is
+            # <machine>/<provider>/id. Reject all partial/unknown artifacts,
+            # but don't mistake empty folders or a harmless index UUID for a VM.
+            for provider_state in machine_state.iterdir():
+                if provider_state.is_symlink() or not provider_state.is_dir():
+                    return PreflightResult(
+                        False, ("FAIL: unexpected Vagrant provider state",)
+                    )
+                if provider_state.name != "vmware_desktop":
+                    return PreflightResult(
+                        False, ("FAIL: unexpected Vagrant provider state",)
+                    )
+                for artifact in provider_state.iterdir():
+                    if artifact.is_symlink() or artifact.is_dir():
+                        return PreflightResult(
+                            False, ("FAIL: unexpected nested Vagrant state",)
+                        )
+                    if artifact.name != "index_uuid":
+                        return PreflightResult(
+                            False, (
+                                "FAIL: registered/partial Vagrant VM state "
+                                "exists; inspect manually, do not overwrite",
+                            )
+                        )
 
         existing = self.vm_status()
         if not existing.ready:
