@@ -109,6 +109,111 @@ class WindowsLpeVmwareBackendTests(unittest.TestCase):
         self.assertFalse(result.ready)
         self.assertTrue(any("pinned Windows" in x for x in result.checks))
 
+    def test_guest_creation_requires_explicit_operator_consent(self):
+        result = self.adapter.create_guest(confirmed=False)
+        self.assertFalse(result.ready)
+        self.assertIn("confirmation", result.checks[0])
+        self.assertEqual(self.calls, [])
+
+    def test_guest_creation_is_single_scoped_vagrant_up(self):
+        state = {"booted": False}
+        def runner(args, **kwargs):
+            self.calls.append((tuple(args), kwargs))
+            if args[0] == "ruby":
+                return SimpleNamespace(returncode=0, stdout="Syntax OK", stderr="")
+            if args[1:] == ["plugin", "list"]:
+                output = "vagrant-vmware-desktop (3.0.5, global)"
+            elif args[1:] == ["box", "list"]:
+                output = "mayfly/windows10 (vmware_desktop, 2024.01.06)"
+            elif args[1:] == ["validate"]:
+                output = "Vagrantfile validated"
+            elif args[1:] == ["status"]:
+                output = (
+                    "kingdoms-lpe-ws01 running (vmware_desktop)"
+                    if state["booted"]
+                    else "kingdoms-lpe-ws01 not created (vmware_desktop)"
+                )
+            elif args == ["vagrant", "up", EXPECTED_VM, "--provider=vmware_desktop"]:
+                self.assertFalse(kwargs["capture_output"])
+                state["booted"] = True
+                return SimpleNamespace(returncode=0, stdout=None, stderr=None)
+            else:
+                self.fail("unexpected command " + repr(args))
+            return SimpleNamespace(returncode=0, stdout=output, stderr="")
+        self.adapter._runner = runner
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertTrue(result.ready, result.checks)
+        self.assertIn("guest created and running", result.checks[0])
+        mutations = [
+            args for args, _ in self.calls if args[1:2] == ("up",)
+        ]
+        self.assertEqual(
+            mutations, [("vagrant", "up", EXPECTED_VM, "--provider=vmware_desktop")]
+        )
+        self.assertTrue(all(k["cwd"] == str(self.project) for _, k in self.calls))
+        self.assertFalse(any("destroy" in args for args, _ in self.calls))
+
+    def test_guest_creation_refuses_ambiguous_or_existing_state(self):
+        def state_runner(args, **kwargs):
+            if args[0] == "ruby":
+                stdout = "Syntax OK"
+            elif args[1:] == ["plugin", "list"]:
+                stdout = "vagrant-vmware-desktop (3.0.5, global)"
+            elif args[1:] == ["box", "list"]:
+                stdout = "mayfly/windows10 (vmware_desktop, 2024.01.06)"
+            elif args[1:] == ["validate"]:
+                stdout = "Vagrantfile validated"
+            elif args[1:] == ["status"]:
+                stdout = "kingdoms-lpe-ws01 running (vmware_desktop)"
+            else:
+                self.fail("VM creation attempted in ambiguous state")
+            return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+        self.adapter._runner = state_runner
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertFalse(result.ready)
+        self.assertIn("ambiguous VM state", result.checks[0])
+
+    def test_guest_creation_refuses_stale_vagrant_machine_state(self):
+        machine = self.project / ".vagrant/machines" / EXPECTED_VM
+        machine.mkdir(parents=True)
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertFalse(result.ready)
+        self.assertTrue(any("already has state" in line for line in result.checks))
+        self.assertFalse(any(args[1:2] == ("up",) for args, _ in self.calls))
+
+    def test_guest_creation_refuses_symlinked_vagrant_state(self):
+        state = self.project / ".vagrant"
+        state.symlink_to(self.root, target_is_directory=True)
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertFalse(result.ready)
+        self.assertTrue(any("symlink" in line for line in result.checks))
+
+    def test_boot_failure_fails_without_attempted_cleanup_or_retry(self):
+        def runner(args, **kwargs):
+            self.calls.append((tuple(args), kwargs))
+            if args[0] == "ruby":
+                out = "Syntax OK"
+            elif args[1:] == ["plugin", "list"]:
+                out = "vagrant-vmware-desktop (3.0.5, global)"
+            elif args[1:] == ["box", "list"]:
+                out = "mayfly/windows10 (vmware_desktop, 2024.01.06)"
+            elif args[1:] == ["validate"]:
+                out = "Vagrantfile validated"
+            elif args[1:] == ["status"]:
+                out = "kingdoms-lpe-ws01 not created (vmware_desktop)"
+            elif args[1:2] == ["up"]:
+                return SimpleNamespace(returncode=1, stdout=None, stderr=None)
+            else:
+                self.fail("Unexpected cleanup/command")
+            return SimpleNamespace(returncode=0, stdout=out, stderr="")
+        self.adapter._runner = runner
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertFalse(result.ready)
+        self.assertIn("returned 1", result.checks[0])
+        self.assertEqual(
+            len([c for c in self.calls if c[0][1:2] == ("up",)]), 1
+        )
+
     def test_missing_tools_fails_before_subprocess(self):
         self.adapter._which = lambda binary: None
         result = self.adapter.preflight()
