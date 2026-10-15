@@ -27,7 +27,7 @@ Within **Course 1, The Fall of the North**, the objective is not to present a fl
 
 - **Course 1: The Fall of the North**. Existing NORTH / Active Directory course environment.
 - **Course 2: Title pending**. Future Kingdoms course, not yet named.
-- **Windows Local Privilege Escalation: Title pending**. Independent Windows course being engineered with reusable local scenarios and no domain-controller dependency.
+- **Windows Local Privilege Escalation** (`windows-lpe`). Working course identifier and name; independent Windows training environment with no domain-controller dependency.
 
 See [Kingdoms course architecture](docs/KINGDOMS_COURSE_ARCHITECTURE.md). These are distinct courses under the **Kingdoms** platform, not alternate names for a single lab.
 
