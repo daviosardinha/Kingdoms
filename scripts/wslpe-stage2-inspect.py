@@ -284,7 +284,18 @@ def inspect_management_access(port: int) -> str:
     return f"wildcard vmnet-nat listener, nftables non-loopback TCP/{port} drop verified"
 
 
-def windows_probe(port: int) -> dict:
+def windows_probe(host: str) -> dict:
+    """Read-only Windows inventory over the validated exercise NIC address.
+
+    VMware's NAT listener can map to the wrong guest subnet even when the
+    Windows WinRM service itself works. NAT port binding is audited separately.
+    """
+    try:
+        address = ipaddress.IPv4Address(host)
+    except (ipaddress.AddressValueError, TypeError) as exc:
+        raise ValueError("Invalid direct WSLPE WinRM IPv4 address") from exc
+    if not address.is_private or address.is_loopback or address in NORTH:
+        raise ValueError("Direct WSLPE WinRM endpoint violates network isolation")
     try:
         import winrm
     except ImportError:
@@ -292,7 +303,7 @@ def windows_probe(port: int) -> dict:
     user = os.environ.get("KINGDOMS_WSLPE_BOOTSTRAP_USER", "vagrant")
     password = os.environ.get("KINGDOMS_WSLPE_BOOTSTRAP_PASSWORD", "vagrant")
     session = winrm.Session(
-        f"http://127.0.0.1:{port}/wsman",
+        f"http://{address}:5985/wsman",
         auth=(user, password), transport="ntlm",
         operation_timeout_sec=30, read_timeout_sec=45,
     )
@@ -466,7 +477,10 @@ def main() -> int:
             raise ValueError("WSLPE VMX does not expose separate management and exercise NICs")
         port = forwarded_winrm_port(instance_dir)
         access = inspect_management_access(port)
-        info = windows_probe(port)
+        # The instance prefix was checked by find_instance; the single
+        # WSLPE guest is always assigned its per-instance .31 exercise address.
+        direct_winrm_ip = f"{prefix}.31"
+        info = windows_probe(direct_winrm_ip)
         passed, failed = evaluate_windows(info, prefix)
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         print(f"[BLOCKED] {exc}")
@@ -475,7 +489,7 @@ def main() -> int:
 
     print(f"[PASS] Native instance: {manifest['id']} | state=PROVIDED (ready for provisioning)")
     print(f"[PASS] Registered VMware guest: {vmx.name}")
-    print(f"[PASS] WinRM: read-only query through 127.0.0.1:{port}")
+    print(f"[PASS] WinRM: authenticated read-only query through {direct_winrm_ip}:5985")
     print(f"[PASS] Bootstrap WinRM management access restricted: {access}")
     print(f"[INFO] VMware network adapters discovered: {len(adapters)}")
     _, profile_evidence = firewall_profile_evidence(info)
