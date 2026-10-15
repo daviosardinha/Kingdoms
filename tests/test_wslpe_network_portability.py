@@ -60,7 +60,7 @@ class WslpeNetworkPortabilityTests(unittest.TestCase):
 
     def test_cloud_portability_is_not_misrepresented_as_deployed(self):
         self.assertIn("only a VMware provider definition", self.contract)
-        self.assertIn("not yet implemented as a complete pre-install automated gate", self.contract)
+        self.assertIn("not yet implemented as a complete Windows/learner/runtime acceptance gate", self.contract)
         self.assertIn("not applicable", self.contract)
         self.assertIn("without NORTH", self.contract)
 
