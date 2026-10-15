@@ -44,8 +44,12 @@ class WslpeAccessAuditTests(unittest.TestCase):
             "Get-NetTCPConnection",
         ):
             self.assertIn(required, self.source)
-        self.assertNotIn("winrm.exe", self.source.split("script: |", 1)[1].split("$Ansible.Result", 1)[0].replace(
-            "# WSMan provider; never assume winrm.exe is a valid executable.", ""))
+        script = self.document[0]["tasks"][0]["ansible.windows.win_powershell"]["script"]
+        commands = "\n".join(
+            line for line in script.splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        self.assertNotIn("winrm.exe", commands)
 
     def test_source_is_read_only_and_never_promotes_course(self):
         script = self.document[0]["tasks"][0]["ansible.windows.win_powershell"]["script"]
