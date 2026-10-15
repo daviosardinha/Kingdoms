@@ -58,6 +58,22 @@ The operator has **not yet run these new Stage 2 checks**. The pinned candidate 
 
 ## Stage 2 finding: WinRM forwarded socket exposed beyond loopback
 
+### Root-cause lead: VMware Workstation NAT forwarding
+
+The operator's WSLPE-specific live diagnostic reports **4/4 fixture tests PASS** and the concrete mapping **guest TCP/5985 → host TCP/2210**. The actual host listener is **`0.0.0.0:2210`**, with no PID/process available from the unprivileged `ss` output. The rendered instance Vagrantfile has no explicit WinRM forwarding override. This is evidence of a wildcard-bound listener, **not proof of internet reachability or the identity of the process**.
+
+There is a known VMware Workstation/Vagrant VMware provider limitation where `vmnet-natd` binds forwarded host ports to wildcard even when a Vagrant `host_ip` is supplied; see [Vagrant community report](https://groups.google.com/g/vagrant-up/c/jL8MBGr3dOU). HashiCorp also documents that NAT port forwarding reconfiguration can restart VMware NAT and temporarily disconnect other running VMs: [VMware known issues](https://developer.hashicorp.com/vagrant/docs/providers/vmware/known-issues). Do **not** globally restart VMware NAT or alter shared vmnet8 before proving listener ownership and understanding NORTH's dependencies.
+
+**Next read-only owner proof on the Kali operator host:**
+
+```bash
+sudo ss -H -lntp '( sport = :2210 )'
+sudo lsof -nP -iTCP:2210 -sTCP:LISTEN
+```
+
+If the owner is `vmnet-natd`, the preferred remediation is a **WSLPE port-specific host firewall restriction to the trusted operator path**, followed by real firewall/reachability verification. The current Stage 2 checker deliberately requires loopback binding, so it should **not** be marked passing based on a firewall assertion alone. A later expanded guard would need concrete, independently verified effective access restrictions before it could accept a wildcard-bound listener. Any fix and any stage-2 guard modification must remain scoped to WSLPE, not NORTH.
+
+
 The operator confirmed all **15 Stage 2 regression tests PASS**, but the live check stopped at `[BLOCKED] WSLPE bootstrap WinRM port appears exposed beyond host loopback`. No guest or infrastructure changes occurred. **Do not expose this VM to learners.**
 
 Vagrant's built-in Windows WinRM port forwarding normally uses `host_ip: 127.0.0.1`, but that does not prove the underlying VMware NAT socket is bound locally. The actual port and owning process must be inspected before changing configuration.
