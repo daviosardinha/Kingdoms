@@ -35,9 +35,11 @@ class LegacyConsole:
         self.prompt = 'NORTH > '
 
     def onecmd(self, line):
-        if line.strip() == "install":
+        if line.strip() in ("install", "resume"):
             selection = self._course_selection()
             if selection is not None and selection.slug == "windows-lpe":
+                if line.strip() == "resume":
+                    return self.do_resume()
                 return self.do_install()
         self.legacy_calls.append(line)
         return "LEGACY"
