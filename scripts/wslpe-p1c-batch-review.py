@@ -54,9 +54,11 @@ def approved_read_only(args: list[str]) -> bool:
             re.fullmatch(r"[0-9a-fA-F]{40}", args[3])
         )
     ansible = str(Path.home() / ".goad/.venv/bin/ansible-playbook")
-    if len(args) == 10 and args[0] == ansible:
+    if len(args) == 8 and args[0] == ansible:
         return (
             args[1] == "-i"
+            and Path(args[2]).parent.parent == ROOT / "workspace"
+            and Path(args[2]).name == "inventory"
             and args[3:5] == ["-i", str(ROOT / "ad/WSLPE/data/inventory_disable_vagrant")]
             and args[5:7] == ["--limit", "ws01"]
             and args[7] == str(ROOT / "ansible/wslpe-p1c-guest-review.yml")
