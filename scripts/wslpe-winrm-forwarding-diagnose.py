@@ -100,18 +100,22 @@ def main() -> int:
     if not settings:
         print("  (no explicit WinRM override; Vagrant communicator/provider defaults apply)")
 
-    # Report the active binding only; never claim a modified config is applied.
-    wildcard = re.compile(r"(?<!\S)(?:0\.0\.0\.0|\*|\[::\]|:::)" + re.escape(f":{port}") + r"\b")
-    if any(wildcard.search(line) for line in listeners):
-        print("[FINDING] Host WinRM port may be reachable beyond loopback")
-        print("[NEXT] Determine whether the listener is the VMware NAT forwarding service")
-        print("       before any targeted WSLPE-only remediation")
+    # Inspect the local endpoint, never the remote peer address column.
+    nonloopback = []
+    for line in listeners:
+        host = line.split()[3].rsplit(":", 1)[0].strip("[]")
+        if host not in ("127.0.0.1", "::1"):
+            nonloopback.append(host)
+    if nonloopback:
+        print("[FINDING] WinRM forwarding listener is not restricted to loopback")
+        print("[INFO] Non-loopback bind addresses: " + ", ".join(sorted(set(nonloopback))))
+        print("[NEXT] Determine whether VMware NAT, Vagrant, or another process owns")
+        print("       the listener before any WSLPE-only remediation")
         return 1
     if not listeners:
         return 1
-    print("[INFO] No wildcard listener detected; compare with the Stage 2 binding check")
+    print("[INFO] WinRM forwarding listener appears loopback-only at this time")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
