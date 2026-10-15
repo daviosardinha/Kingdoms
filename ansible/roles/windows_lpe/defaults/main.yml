@@ -8,6 +8,10 @@
 # their current committed implementation.
 
 windows_lpe_action: status
+# Mandatory for identity-dependent scenarios. Supplied by the deployment adapter.
+# Shared LPE tasks must never assume a domain or a specific workstation name.
+windows_lpe_learner_account: ''
+windows_lpe_learner_password: ''
 windows_lpe_profile: none
 windows_lpe_techniques: []
 windows_lpe_validate_state: vulnerable
@@ -150,8 +154,8 @@ windows_lpe_path_search_order_hijacking:
   protected_helper: 'C:\Kingdom LPE\Path Search\SystemBin\KingdomPathHelper.exe'
 
 windows_lpe_always_install_elevated:
-  target_account: 'NORTH\rickon.stark'
-  target_password: 'Winter2022'
+  target_account: "{{ windows_lpe_learner_account }}"
+  target_password: "{{ windows_lpe_learner_password }}"
   root: 'C:\Kingdom LPE\AlwaysInstallElevated'
   state_file: 'C:\Kingdom LPE\AlwaysInstallElevated\state.json'
 
@@ -185,7 +189,7 @@ windows_lpe_unattend_credentials:
   artifact: 'C:\Windows\Panther\Kingdom-Unattend.xml'
 
 windows_lpe_powershell_history_credentials:
-  target_account: 'NORTH\rickon.stark'
+  target_account: "{{ windows_lpe_learner_account }}"
   user_name: kingdom.pshistory
   password: 'Kingdom-PSHistory-2026!'
 
@@ -196,8 +200,8 @@ windows_lpe_hardcoded_application_credentials:
   config: 'C:\ProgramData\KingdomMonitor\monitoring.ini'
 
 windows_lpe_stored_runas_credentials:
-  owner_account: 'NORTH\rickon.stark'
-  owner_password: 'Winter2022'
+  owner_account: "{{ windows_lpe_learner_account }}"
+  owner_password: "{{ windows_lpe_learner_password }}"
   user_name: kingdom.runas
   password: 'Kingdom-RunAs-2026!!'
   credential_target: 'WS01\kingdom.runas'
@@ -210,13 +214,13 @@ windows_lpe_stored_winlogon_credentials:
   backup_file: 'C:\Kingdom LPE\Winlogon Credentials\winlogon-backup.json'
 
 windows_lpe_sebackup_privilege:
-  target_account: 'NORTH\rickon.stark'
+  target_account: "{{ windows_lpe_learner_account }}"
   right: SeBackupPrivilege
   root: 'C:\Kingdom LPE\User Rights\SeBackupPrivilege'
   state_file: 'C:\Kingdom LPE\User Rights\SeBackupPrivilege\state.json'
 
 windows_lpe_seimpersonate_privilege:
-  target_account: 'NORTH\rickon.stark'
+  target_account: "{{ windows_lpe_learner_account }}"
   right: SeImpersonatePrivilege
   root: 'C:\Kingdom LPE\User Rights\SeImpersonatePrivilege'
   state_file: 'C:\Kingdom LPE\User Rights\SeImpersonatePrivilege\state.json'
