@@ -170,3 +170,21 @@ We must validate the following gates before disconnecting WSLPE's NAT adapter:
 **No automatic exercise-mode cutover is enabled in this revision.** This is deliberate: the current guest NIC-to-vmnet mapping and direct WinRM path have not yet been observed. We must inspect them before making irreversible or potentially disruptive guest changes.
 
 For future clean VMware hosts, network IDs and the private prefix are discovered per host. For a future VPS/AWS implementation, only the learner/lab contract is shared; it requires a provider-specific virtual NIC and access adapter, not VMware vmnet names.
+
+
+## 2026-10-15: WinRM recovery verified; expired Windows evaluation blocks Stage 2
+
+The operator's live WSLPE instance `d986ad-wslpe-vmware` was preserved throughout the diagnosis. Vagrant was timing out when using VMware vmnet8 NAT forwarding (`127.0.0.1:2210` routed to the exercise-interface address `172.28.231.31:5985`), although direct authenticated WinRM to `172.28.231.31:5985` succeeded and returned the expected Windows hostname. Direct NAT-interface WinRM also returned HTTP 405 on an unauthenticated GET, indicating an active HTTP listener.
+
+To avoid modifying VMware NAT, NORTH, or the running guest, `kingdoms/wslpe_resume.py` now injects a temporary WSLPE-only direct WinRM override derived from `box[:ip]` for an existing stopped guest's one authorized `--no-provision` resume; the original rendered Vagrantfile and environment are restored. Fresh initial VM creation is unchanged. The Stage 2 read-only Windows inspector also connects directly to the rendered instance's exercise IP instead of relying on the broken forwarded connection. The NAT port's external exposure is still independently checked by the scoped nftables guard.
+
+Operator regression results: **24/24 PASS** in the resume/render/portability checks; subsequently **33/33 Stage 2 inspector tests PASS** and **128/128 aggregate WSLPE tests PASS**. These tests do not replace a full live stop/resume cycle with the new implementation; do not power-cycle a healthy machine just to test it.
+
+The live read-only postboot acceptance on 2026-10-15 confirmed:
+
+- Exact WSLPE registered VMX running, guest Windows 10, not domain-joined, UAC/Defender/three firewall profiles enabled
+- Authenticated WinRM over `172.28.231.31:5985`, guarded NAT host port `2210`, management/exercise interfaces distinct
+- Guest exercise NIC `172.28.231.31/24` on dedicated `vmnet2`, correct vmnet subnet, no default route over exercise NIC
+- **Stage 2 Windows baseline: 8 PASS / 1 FAIL**. Licensing reported `TIMEBASED_EVAL`, `LicenseStatus=5`, `GracePeriodRemaining=0`; one historical Windows License Monitoring shutdown event was present
+
+**Current gating decision:** WSLPE remains `PROVIDED`, **NOT READY**. The Windows evaluation is expired and cannot be released to learners. The existing NORTH `settings/eval_rearm` role is already imported before learner creation in `ansible/wslpe-foundation.yml`, but it runs a mutating rearm and reboot. Do not invoke it automatically: first inspect the guest's `SoftwareLicensingService.RemainingWindowsReArmCount` read-only, confirm entitlement/authorization, and select either approved time-limited evaluation maintenance or an appropriately licensed Windows image. No changes to NORTH, VMware NAT, guest licensing, or learner accounts have been performed in this checkpoint. Exercise-mode NAT cutover, direct HTTPS management and learner/scenario acceptance remain locked.
