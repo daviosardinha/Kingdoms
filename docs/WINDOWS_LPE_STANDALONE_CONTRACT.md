@@ -6,7 +6,7 @@ Status: **FOUNDATION / NOT DEPLOYED**. This document defines acceptance criteria
 
 Maintain **one** reusable Windows local privilege escalation scenario role with two independently provisioned consumers:
 
-- **Kingdoms**: existing, domain-joined GOAD-WS01. Its current `NORTH\rickon.stark` foothold, network identity, security controls, Phase 00-03 fixtures, and runtime remain untouched.
+- **Kingdoms**: existing, domain-joined NORTH workstation (WS01). Its current `NORTH\rickon.stark` foothold, network identity, security controls, Phase 00-03 fixtures, and runtime remain untouched.
 - **Standalone Windows LPE**: a separate VM with the **same pinned Windows edition/build** and a **local standard user**, no domain join, no DC, no second Windows host, and no training dependency on AD, LDAP, Kerberos, DNS provided by a DC, domain GPO, or remote shares.
 
 Neither consumer should modify the other. The management workstation or hypervisor may provision/start the VM, but **a learner must be able to enumerate, exploit, verify, and restore every local exercise using only the target machine**. Offline practice is an acceptance test. Local loopback services and target-local administrative fixtures are allowed.
