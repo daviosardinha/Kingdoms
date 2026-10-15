@@ -18,9 +18,9 @@ A single NAT interface for provisioning does **not** prove network isolation. In
 
 ## How this should be installed
 
-**Normal Kingdoms workflow:** select the Windows LPE course in the unified interactive installer and run `install`. The installer must manage the unique VM, learner provisioning, scenario preparation and lifecycle. **The course selector and adapter do not exist yet.** Until they are implemented, do not present the manual Vagrant path below as the official user installation workflow.
+**Normal operator workflow:** a trusted Kingdoms operator selects the Windows LPE course in the unified interactive installer and runs `install`. The operator console owns the VM, local learner account provisioning, scenarios and lifecycle. **The course selector and adapter do not exist yet.** Until implemented, the manual Vagrant path below is a developer test harness, not an official operator installation workflow or a learner instruction.
 
-The Vagrant project in this directory remains the course's low-level VMware backend and a narrow **developer test harness**. It is useful for verifying one guest before wiring its lifecycle into the console, but it must not replace centralized Kingdoms installation or expose any NORTH-specific operations.
+The Vagrant project in this directory remains the course's low-level VMware backend and a narrow **operator/developer test harness**. It must never be copied to the learner's machine, added to the vulnerable guest, exposed on the learner's network or given to course participants. The eventual learner handoff contains only machine-specific access details and a learner-scoped account, not infrastructure or management credentials.
 
 ## Prerequisites
 
@@ -62,6 +62,10 @@ Before applying any LPE scenario, confirm on the guest:
 6. Evaluation/license grace sufficient to support practical sessions
 
 The independent learner account, installation of the 20 pre-existing scenarios, and the 15 new scenarios are separate engineering stages. See `docs/WINDOWS_LPE_STANDALONE_CONTRACT.md`.
+
+## Access delivery boundary
+
+Only trusted Kingdoms operators use this directory and the future course installer. Learners access the **deployed vulnerable Windows machine only**. They must not receive the Vagrantfile, Ansible inventory, VMware host access, provisioning WinRM credentials, VM snapshots, API keys, privileged local administrator account or another learner's lab. Any future cloud provider must enforce the same boundary with distinct instance assignment and a restricted remote-access method. AWS packaging and learner provisioning are future provider work, not functionality delivered by this VM definition.
 
 ## Safe operation
 
