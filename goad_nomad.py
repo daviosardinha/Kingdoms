@@ -578,13 +578,18 @@ class GoadNomad(BaseGoad):
 def parse_args():
     task_help = 'tasks available: courses/install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
-        prog='goad_nomad.py',
+        prog='kingdoms-operator',
         description='Kingdoms private operator course and lab management console.',
         epilog='''
 Examples:
- - Launch GOAD_NOMAD interactive console: ./goad.sh
- - Install default segmented GOAD on VMware: ./goad.sh -t install -l GOAD -p vmware
- - Validate an installed instance: ./goad.sh -t validate -i <instance_id>
+ - Open the Kingdoms operator console: ./goad.sh
+ - List Kingdoms courses: ./goad.sh -t courses
+ - Inspect undeployed Windows LPE course: ./goad.sh -c windows-lpe -t status
+ - Install the existing NORTH instance: ./goad.sh -c north -t install -l GOAD -p vmware
+ - Validate a loaded NORTH instance: ./goad.sh -t validate -i <instance_id>
+
+GOAD is a legacy internal lab identifier retained for compatibility, not a
+Kingdoms course name. Course installation controls are never given to learners.
 ''',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
