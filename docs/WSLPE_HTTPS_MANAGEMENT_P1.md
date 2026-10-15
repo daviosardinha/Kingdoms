@@ -84,28 +84,28 @@ authorized by a P1-A transport check.
 
 ## 2026-10-15: P1-A live verified; P1-B new probe
 
-The operator's live \`wslpe-https-trust-audit.py\` execution passed:
+The operator's live `wslpe-https-trust-audit.py` execution passed:
 - Six existing source regression tests PASS
-- Observed 5986 leaf SHA-1 matches \`C773EC26D02940F559FE715B83628FEDAE2AA92D\`
-- TLS 1.2 handshake verified against the exact pinned certificate, with DNS SAN \`WSLPE-WS01\`
+- Observed 5986 leaf SHA-1 matches `C773EC26D02940F559FE715B83628FEDAE2AA92D`
+- TLS 1.2 handshake verified against the exact pinned certificate, with DNS SAN `WSLPE-WS01`
 - No Windows, VMware, host trust store, DNS or NORTH changes
 
-The expected \`[BLOCKED]\` output inside the source tests was an intentional
+The expected `[BLOCKED]` output inside the source tests was an intentional
 negative certificate case. The actual operator live TLS probe returned PASS.
 P1-A is therefore closed, but not equivalent to authenticated WinRM.
 
-The new **P1-B** \`scripts/wslpe-https-auth-audit.py\` tests actual NTLM WinRM
+The new **P1-B** `scripts/wslpe-https-auth-audit.py` tests actual NTLM WinRM
 over HTTPS, certificate verification **enabled**. It replays the P1-A pin
 and TLS/SAN validation before asking for any credentials. For the WinRM
 request it uses a process-temporary PEM trust anchor (deleted afterward)
 and a process-only socket resolution shim which permits **only**
-\`WSLPE-WS01:5986\` to resolve to the uniquely registered private guest
-IP. The WinRM URI stays \`https://WSLPE-WS01:5986/wsman\`, preserving HTTPS
+`WSLPE-WS01:5986` to resolve to the uniquely registered private guest
+IP. The WinRM URI stays `https://WSLPE-WS01:5986/wsman`, preserving HTTPS
 hostname validation. Any attempts to resolve foreign or unrelated hosts
 fail closed. Environment-driven HTTP proxies/.netrc are disabled within the
 dedicated Python requests session.
 
-The remote command reads \`COMPUTERNAME\` and \`Win32_ComputerSystem.PartOfDomain\`,
+The remote command reads `COMPUTERNAME` and `Win32_ComputerSystem.PartOfDomain`,
 then prints unambiguous PASS markers; it never changes Windows configuration,
 account privileges, firewall, RDP, VMware NICs, DNS or NORTH. The source
 contains no operator password. If the secure read-only probe fails, stop and
@@ -113,18 +113,18 @@ inspect the failure type; **do not** use an insecure TLS fallback.
 
 Operator command:
 
-\`\`\`bash
+```bash
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 git pull --ff-only || exit 1
 "$HOME/.goad/.venv/bin/python" -m unittest -v tests.test_wslpe_https_auth_audit
 "$HOME/.goad/.venv/bin/python" scripts/wslpe-https-auth-audit.py \
   --expected-thumbprint C773EC26D02940F559FE715B83628FEDAE2AA92D
-\`\`\`
+```
 
 An operator password is requested interactively if the private
-\`KINGDOMS_WSLPE_BOOTSTRAP_PASSWORD\` environment variable is not present.
+`KINGDOMS_WSLPE_BOOTSTRAP_PASSWORD` environment variable is not present.
 **Do not paste the password into logs or commit it to Git.** The current
 bootstrap vagrant identity remains temporary; final operator isolation and
 bootstrap secret rotation are separate P1-C gates. This new P1-B audit has
 not yet run against the operator's live WSLPE machine. The instance remains
-\`PROVIDED\`, not \`READY\`.
+`PROVIDED`, not `READY`.
