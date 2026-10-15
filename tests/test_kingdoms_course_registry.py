@@ -78,6 +78,9 @@ def load_unit(name):
         "bootstrap_native_wslpe": lambda manager, prefix, confirmed=False: (
             manager.bootstrap_calls.append((prefix, confirmed)) or True
         ),
+        "resume_existing_wslpe": lambda manager, confirmed=False: (
+            manager.resume_calls.append(confirmed) or True
+        ),
         "print_menu_title": lambda *args: None,
         "print_menu_entry": lambda *args: None,
     }
@@ -117,12 +120,14 @@ class OperatorSelectionTests(unittest.TestCase):
         self.console.legacy_calls = []
         self.active = {"lab": "GOAD", "instance": None}
         self.bootstrap_calls = []
+        self.resume_calls = []
         self.console.lab_manager = types.SimpleNamespace(
             get_current_lab_name=lambda: self.active["lab"],
             get_current_instance=lambda: self.active["instance"],
             is_lab_exist=lambda lab: lab in {"GOAD", "WSLPE"},
             set_lab=lambda lab: self.active.__setitem__("lab", lab),
             bootstrap_calls=self.bootstrap_calls,
+            resume_calls=self.resume_calls,
         )
 
     def test_windows_lpe_selection_allows_only_stage1_install(self):
@@ -183,6 +188,41 @@ class OperatorSelectionTests(unittest.TestCase):
         with patch("builtins.input", side_effect=["10.4.10", AssertionError("prompted")]):
             self.assertFalse(self.console.do_install(""))
         self.assertEqual(self.bootstrap_calls, [])
+
+    def test_wslpe_resume_is_allowed_only_for_existing_selected_guest(self):
+        self.console.do_select_course("windows-lpe")
+        self.active["instance"] = types.SimpleNamespace(lab_name="WSLPE")
+        with patch("builtins.input", side_effect=["RESUME WSLPE"]):
+            self.assertFalse(self.console.onecmd("resume"))
+        self.assertEqual(self.resume_calls, [True])
+        self.assertEqual(self.bootstrap_calls, [])
+        self.assertEqual(self.console.legacy_calls, [])
+
+    def test_wslpe_resume_rejects_wrong_phrase_without_vm_action(self):
+        self.console.do_select_course("windows-lpe")
+        self.active["instance"] = types.SimpleNamespace(lab_name="WSLPE")
+        with patch("builtins.input", side_effect=["yes"]):
+            self.assertFalse(self.console.onecmd("resume"))
+        self.assertEqual(self.resume_calls, [])
+
+    def test_wslpe_resume_without_loaded_guest_fails_before_prompt(self):
+        self.console.do_select_course("windows-lpe")
+        with patch("builtins.input", side_effect=AssertionError("prompted")):
+            self.assertFalse(self.console.onecmd("resume"))
+        self.assertEqual(self.resume_calls, [])
+
+    def test_wslpe_resume_rejects_extra_arguments(self):
+        self.console.do_select_course("windows-lpe")
+        self.active["instance"] = types.SimpleNamespace(lab_name="WSLPE")
+        with patch("builtins.input", side_effect=AssertionError("prompted")):
+            self.assertFalse(self.console.onecmd("resume --noninteractive"))
+        self.assertEqual(self.resume_calls, [])
+
+    def test_wslpe_resume_without_explicit_course_is_blocked(self):
+        self.active["lab"] = "WSLPE"
+        self.active["instance"] = types.SimpleNamespace(lab_name="WSLPE")
+        self.assertFalse(self.console.onecmd("resume"))
+        self.assertEqual(self.resume_calls, [])
 
     def test_windows_lpe_install_loaded_instance_fails_without_prompts(self):
         self.console.do_select_course("windows-lpe")
