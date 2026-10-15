@@ -23,6 +23,22 @@ WSLPE is an independent Windows Local Privilege Escalation lab under the Kingdom
 
 **Never treat NAT alone as an isolated training network.** In particular, `vmnet8` may be shared with unrelated VMs and permit outbound networking. A deliberately vulnerable machine must not be trusted merely because it has a private IP. The operator must also prevent guest-to-host and guest-to-hypervisor management access through firewall, routing and interface controls.
 
+## Current operator host collision preflight (read-only)
+
+The source-level portability tests have passed on the operator's development machine (6/6). That proves the recipe does not pin specific VMware vmnet names; it **does not** prove a proposed range is safe in the live VMware environment.
+
+`scripts/wslpe-check-host-network.py` is a **Linux/VMware-only read-only checker**, independent of NORTH's hardcoded VMware configuration scripts. It inspects JSON IPv4 interface addresses, **all routing tables** (including routes installed by VPNs), and the host's actual `/etc/vmware/networking` subnet/netmask definitions. It fails closed if the VMware metadata is unreadable or if a candidate network overlaps the observed routes, interfaces or configured vmnets.
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+python3 -m unittest discover -s tests -p 'test_wslpe_host_network.py' -v
+python3 scripts/wslpe-check-host-network.py --ip-range 172.28.231
+```
+
+The prefix above is **only a candidate observed to be outside the previously shared address list**, not a universal default. This checker never installs/configures a vmnet or VM and reports `[NOT VERIFIED]` for the actual future guest adapter, other VMs' static IP assignments, NAT/firewall policy and learner isolation. A `[PASS]` does **not** authorize installation. The WSLPE installer remains locked pending the remaining network and guest runtime gates.
+
+A future Windows VMware host or VPS/cloud provider needs an equivalent **provider-specific** network preflight, not `/etc/vmware/networking`.
+
 ## Fresh VMware host acceptance
 
 The same WSLPE recipe should be portable to a compatible clean VMware workstation/bare-metal host **without NORTH**, subject to an explicit preflight:
