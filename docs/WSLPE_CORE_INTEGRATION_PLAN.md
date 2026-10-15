@@ -12,10 +12,29 @@ The new files reuse the existing Kingdoms instance generation:
 - `ad/WSLPE/providers/vmware/inventory` and `ad/WSLPE/data/inventory_disable_vagrant`: one workstation with no DC or domain membership.
 - `playbooks.yml` now routes WSLPE only to `ansible/wslpe-foundation.yml`. This validates a domain-free Windows baseline and creates `lpe.trainee` from an operator-provided `KINGDOMS_WSLPE_LEARNER_PASSWORD` secret. It does not install vulnerabilities.
 - `ansible/wslpe-lpe-test.yml` is an **operator-only, manual** per-technique wrapper around the original `windows_lpe` Ansible role. Its `full-lpe` profile is deliberately not enabled. It checks the exact local machine before applying any technique.
-- The `windows-lpe` course selector now switches the **existing Kingdoms lab manager** to `WSLPE` if no other instance is loaded. If NORTH or another instance is loaded, switching is refused. The installer remains **fail-closed**, including legacy `-l WSLPE` invocations, until the new instance-provider route and local learner are validated.
+- The `windows-lpe` course selector now switches the **existing Kingdoms lab manager** to `WSLPE` if no other instance is loaded. If NORTH or another instance is loaded, switching is refused. The installer remains **fail-closed for full course deployment**. Only operator-confirmed native Stage 1 WSLPE boot is implemented; all legacy `-l WSLPE` mutation bypasses remain blocked and local learner provisioning is not yet available.
 - Source regression tests in `tests/test_wslpe_native_lab_contract.py` and `tests/test_kingdoms_course_registry.py` guard the instance boundary, original role reuse and install lock.
 
 **This is a source milestone, not a finished installation.** No WSLPE VM has been created or tested through the native instance lifecycle, no Windows learner has been provisioned and none of the original 20 scenarios has been exercised on WSLPE yet. Preserve the operator's running NORTH instances and any prior prototype Vagrant metadata.
+
+## Native Kingdoms Stage 1 guest boot (operator-confirmed, runtime pending)
+
+The operator's consolidated preboot gate has passed **13/13** for candidate network `172.28.231.0/24` at the present workstation. The feature branch now offers a guarded **Stage 1 boot**, separate from a finished Windows LPE course:
+
+```text
+$ ./goad.sh
+> courses
+> select_course windows-lpe
+KINGDOMS/windows-lpe > install
+WSLPE private /24 prefix (3 octets, e.g. 172.28.231): 172.28.231
+Type CREATE WSLPE to authorize the new guest in 172.28.231.0/24: CREATE WSLPE
+```
+
+This reruns all 13 consolidated checks immediately before creation, then calls the existing `LabManager.create_instance()`, `LabInstance` file generation and the **existing** VMware provider `install()`. The resulting VM must be registered as `WSLPE-WS01` and independently verified running by `vmrun` before the instance may move to `PROVIDED`. It must **never** be marked `READY` until guest and course validation is complete. Refuse unconfirmed, noninteractive, mismatched-provider, loaded-instance, invalid subnet, partial-state and direct prototype operations.
+
+On a failed first boot, **do not automatically retry or destroy**. Inspect `workspace/<wslpe-instance>/provider/` evidence with the operator. All other lifecycle controls remain locked for WSLPE. NORTH source and its running instances remain untouched.
+
+**The new Stage 1 implementation and its regression tests are committed but have not yet passed execution on the operator's host.** Source acceptance and real Windows runtime acceptance are separate.
 
 ## One-command operator preboot acceptance
 
@@ -37,7 +56,7 @@ The candidate prefix above is specific to the present operator workstation. A fu
 - WSLPE Windows foundation and shared-role test harness Ansible syntax
 - VMware Vagrant Desktop plugin, pinned Windows box and read-only running-VM inventory
 
-The operation does not install an instance, run `vagrant up`, change networking, provision a learner or test a live Windows exploit. A PASS is **offline preboot evidence only**. Actual VMware NIC assignment, guest domain/OS baseline, firewall, WinRM and learner access are still independent runtime gates. **The WSLPE installer stays locked.**
+The operation does not install an instance, run `vagrant up`, change networking, provision a learner or test a live Windows exploit. A PASS is **offline preboot evidence only**. Actual VMware NIC assignment, guest domain/OS baseline, firewall, WinRM and learner access are still independent runtime gates. **Full WSLPE course installation remains locked. Only a confirmed Stage 1 native guest-only boot can now run.**
 
 Tests for the unified check live in `tests/test_wslpe_acceptance.py` and are included in the standard `test_wslpe_*.py` suite. The new combined preflight and its regression tests are **committed but not yet executed on the operator machine**.
 
@@ -57,13 +76,13 @@ cd "$HOME/kingdoms-lpe-standalone"
 "$HOME/.goad/.venv/bin/python" scripts/wslpe-preview-native-instance.py --ip-range <operator-chosen-private-prefix>
 ```
 
-The `--ip-range` value is only a source-rendering candidate at this stage. Before selecting one, inspect `ip -4 -br address`, `ip -4 route`, and the VMware virtual network configuration. **Never treat preview PASS as permission to start or network-connect a guest.** The native installer remains locked.
+The `--ip-range` value is only a source-rendering candidate at this stage. Before selecting one, inspect `ip -4 -br address`, `ip -4 route`, and the VMware virtual network configuration. **Never treat preview PASS as permission to start or network-connect a guest.** The full native course installer remains locked; operator-confirmed Stage 1 guest boot is a separate development gate.
 
 ## Network portability: do not pin development-host vmnets
 
 WSLPE must be installable through the same Kingdoms **core**, with provider-specific network adapters and no NORTH prerequisite. The native VMware recipe intentionally does not name `vmnet8` or `vmnet10`. Its shared Vagrant template supplies provider-managed management connectivity and a separate `private_network` exercise interface with an instance-selected IP. On the present VMware operator host, `vmnet8` may supply NAT, but **that is not an intrinsic property of the WSLPE course or its shared Ansible role**.
 
-A fresh VMware host must pass network discovery/collision checks before installing WSLPE. A normal VPS may not expose nested virtualization or VMware Workstation at all. An eventual AWS/other cloud implementation needs a separate provider/image/network adapter without any VMware `vmnet` references. None of that future cloud provider integration is currently implemented; the native WSLPE install gate stays locked.
+A fresh VMware host must pass network discovery/collision checks before installing WSLPE. A normal VPS may not expose nested virtualization or VMware Workstation at all. An eventual AWS/other cloud implementation needs a separate provider/image/network adapter without any VMware `vmnet` references. None of that future cloud provider integration is currently implemented; the full native WSLPE deployment gate stays locked, with Stage 1 guest boot only.
 
 See [WSLPE network portability and provider boundary](WSLPE_NETWORK_PORTABILITY.md) for the exact management-versus-exercise network contract and future clean-host tests.
 
