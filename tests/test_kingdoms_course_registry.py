@@ -103,6 +103,7 @@ class CourseRegistryTests(unittest.TestCase):
         self.assertTrue(all("[" in line and "]" in line for line in catalog_lines()))
         self.assertTrue(get_course("windows-lpe").standalone)
         self.assertEqual(get_course("north").legacy_lab, "GOAD")
+        self.assertEqual(get_course("windows-lpe").legacy_lab, "WSLPE")
 
 
 class OperatorSelectionTests(unittest.TestCase):
