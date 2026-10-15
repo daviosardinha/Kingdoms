@@ -18,9 +18,21 @@ A single NAT interface for provisioning does **not** prove network isolation. In
 
 ## How this should be installed
 
-**Target operator workflow:** a trusted Kingdoms operator selects the Windows LPE course and later runs `install` after the dedicated adapter passes acceptance. On the current feature branch, `courses`, `select_course windows-lpe`, `course` and read-only `status` are supported, but `install`, `reset`, `destroy`, `start` and `stop` are intentionally blocked for that course. The operator console will eventually own the VM, local learner accounts, scenario preparation and lifecycle. Until that adapter is implemented, the manual Vagrant path below remains a developer test harness, not an official operator installation workflow or a learner instruction.
+**Target operator workflow:** a trusted Kingdoms operator selects `windows-lpe` and later runs `install` after the dedicated lifecycle adapter passes acceptance. On the feature branch, `courses`, `select_course windows-lpe`, `course`, read-only `status`, `course_preflight` and `course_vm_status` are supported. The last two inspect only this course's VM definition and Vagrant state. `install`, `reset`, `destroy`, `start` and `stop` are intentionally blocked until the separate guest, local learner and scenario readiness gates have been proved. The manual Vagrant commands below remain developer diagnostics, never a learner workflow.
 
 The Vagrant project in this directory remains the course's low-level VMware backend and a narrow **operator/developer test harness**. It must never be copied to the learner's machine, added to the vulnerable guest, exposed on the learner's network or given to course participants. The eventual learner handoff contains only machine-specific access details and a learner-scoped account, not infrastructure or management credentials.
+
+## Operator-only integration checks
+
+From the repository root, after fetching the latest feature-branch commit:
+
+```bash
+./goad.sh -t courses
+./goad.sh -c windows-lpe -t course-preflight
+./goad.sh -c windows-lpe -t course-vm-status
+```
+
+These commands must not boot, reset, destroy, or otherwise modify any virtual machine. The preflight checks the expected Windows box, VMware plugin and Vagrant project syntax. It does **not** prove the standalone guest exists or that LPE scenarios work.
 
 ## Prerequisites
 
