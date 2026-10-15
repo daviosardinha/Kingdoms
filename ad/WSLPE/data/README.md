@@ -6,6 +6,7 @@ WSLPE is a **first-class Kingdoms lab**, not an extension of NORTH. The existing
 
 - The instance range `{{ip_range}}.31` must be inspected against the operator's real host networks before VM creation. Using the default 192.168.56.x range is **not an automatic collision clearance**.
 - The provider inventory is intentionally one Windows workstation only.
+- The initial Ansible run reads `data/inventory` and the rendered provider inventory. The post-Vagrant `data/inventory_disable_vagrant` is a separate lifecycle artifact. Both inventories must contain the WSLPE local Windows host group.
 - The `inventory_disable_vagrant` file currently holds *bootstrap* Vagrant credentials for management and will need to be replaced with a dedicated operator-only identity before learner access is released.
 - No domain join, DC, router, domain GPO or cross-host service is part of WSLPE.
 - The lab can be **discovered** before it is approved for **installation**. Keep the course registry marked `development` until native provisioning, isolation, 20 existing scenario regression and 15 candidate scenario gates pass.
