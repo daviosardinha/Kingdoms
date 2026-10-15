@@ -32,30 +32,37 @@ A course title is not a repository path, virtual-machine identifier, or compatib
 
 The interactive installer is the **operator-facing control plane** for every Kingdoms course. It must never be installed on learner machines, exposed over learner networks, included in course images, or shared with learners. Operators should not have to enter internal Vagrant directories to install a course. The current compatibility entry point is `./goad.sh`, which dispatches to `goad_nomad.py`. A future `./kingdoms.sh` can become the operator launcher while `./goad.sh` remains a backwards-compatible alias after its behavior is tested.
 
-**Target operator interaction (not implemented yet, never a learner interface):**
+**Current operator-only registry slice (committed, requires operator-side validation):**
 
 ```text
 $ ./goad.sh
-Kingdoms > courses
-  1. The Fall of the North        [available]
-  2. Course 2                     [not released]
-  3. Windows Local Privilege Escalation [development]
-
-Kingdoms > select-course windows-lpe
-Kingdoms [windows-lpe] > install
-Kingdoms [windows-lpe] > status
-Kingdoms [windows-lpe] > start
-Kingdoms [windows-lpe] > stop
-Kingdoms [windows-lpe] > reset
+KINGDOMS | OPERATOR CONSOLE
+> courses
+    north          The Fall of the North [available]
+    course-2       Course 2 (title pending) [planned]
+    windows-lpe    Windows Local Privilege Escalation (title pending) [development]
+> select_course windows-lpe
+    Selected Kingdoms course: Windows Local Privilege Escalation [development]
+    Deployment adapter is not validated. Lifecycle commands are blocked.
+> course
+    Course: Windows Local Privilege Escalation; state=development
+> status
+    Course adapter pending. Installation and lifecycle disabled.
+> install
+    Command blocked; the loaded NORTH instance was not touched.
+> select_course north
+    Selected Kingdoms course: The Fall of the North [available]
 ```
 
-These commands represent the proposed **operator console**, not commands supported by today's console. The existing console already exposes install/start/stop/status/reset on the selected **lab instance**. It discovers labs under `ad/` and its NORTH-specific VMware provider includes segmented routing, identity and exercise-mode behavior. Do **not** register standalone Windows LPE as an Active Directory lab just to make it appear in that list, and do not reuse the NORTH provider's network transitions for the standalone course.
+`courses`, `select_course <slug>`, `course`, and a read-only pending-course `status` are implemented on the feature branch. Selection is session-local and never deploys a machine. The current console continues to support legacy install/start/stop/status/reset on an existing NORTH lab; selecting an unfinished course **blocks** all lifecycle commands, including reset and destroy, rather than forwarding them to NORTH. The separate `-c/--course` argument also fails closed for unsupported non-interactive actions.
 
-**Design requirement:** add a course registry and course selection layer above the existing lab/provider implementation, then a dedicated `windows-lpe` course adapter. That adapter should orchestrate the isolated Vagrant VM, initial local account provisioning, build/security preflight, scenario application, validation, start, stop and reset through the same Kingdoms console. For Course 1, delegate to the existing, validated NORTH lifecycle without changing its semantics. Each course keeps its own inventory, provider state, VM identity, snapshots and reset contract. Shared Ansible scenario roles remain reusable.
+**The full Windows LPE installer adapter is not implemented.** Do not interpret the course appearing in the registry as a deployable environment. It discovers labs under `ad/` and its NORTH-specific VMware provider includes segmented routing, identity and exercise-mode behavior. Do **not** register standalone Windows LPE as an Active Directory lab just to make it appear in that list, and do not reuse the NORTH provider's network transitions for the standalone course.
+
+**Design requirement:** the first, fail-closed course registry/selection layer is now in place on the feature branch. Next add a dedicated `windows-lpe` course adapter. That adapter should orchestrate the isolated Vagrant VM, initial local account provisioning, build/security preflight, scenario application, validation, start, stop and reset through the same Kingdoms console. For Course 1, delegate to the existing, validated NORTH lifecycle without changing its semantics. Each course keeps its own inventory, provider state, VM identity, snapshots and reset contract. Shared Ansible scenario roles remain reusable.
 
 `vagrant up --provider=vmware_desktop` is a low-level **operator/developer diagnostic**, not a learner interface or the final operator installation workflow. Retain the standalone Vagrantfile because the course adapter must still create a real VM through the provider. Do not call the manual Vagrant command part of the normal operator installation steps once the integrated installer exists.
 
-**Engineering order:** implement a source-validated course registry/menu first, then connect its standalone adapter to the pinned Vagrant definition, then local learner provisioning and runtime gates. Do not encourage a production installation through the menu until the full adapter is implemented and validated.
+**Engineering order:** validate the newly committed registry/menu tests and legacy regression first, then connect the standalone adapter to the pinned Vagrant definition, then local learner provisioning and runtime gates. Do not encourage a production installation through the menu until the full adapter is implemented and validated.
 
 ## Operator control plane versus learner attack surface
 
