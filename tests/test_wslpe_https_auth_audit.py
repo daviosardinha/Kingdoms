@@ -105,7 +105,7 @@ class WslpeHttpsAuthTests(unittest.TestCase):
 
     def test_no_unsafe_defaults_and_no_mutation_commands(self):
         for required in (
-            "checked_certificate(", "audit.verify_pinned_tls(", "getpass.getpass(",
+            "checked_certificate(", "audit.verify_pinned_tls(", "operator_credentials(",
             'server_cert_validation="validate"', "ca_trust_path=str(anchor)",
             "http.trust_env = False", "http.proxies = {}",
             "with scoped_wslpe_resolution(address):",
