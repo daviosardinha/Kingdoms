@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -128,10 +129,28 @@ def main() -> int:
         "--ip-range", required=True,
         help="Candidate private three-octet /24 prefix (read-only simulation)",
     )
+    parser.add_argument(
+        "--ruby-check", action="store_true",
+        help="Parse rendered Vagrantfile with ruby -c; never run Vagrant or boot",
+    )
     args = parser.parse_args()
     try:
         with tempfile.TemporaryDirectory(prefix="kingdoms-wslpe-render-") as tmp:
             report = render_preview(args.ip_range, Path(tmp))
+            if args.ruby_check:
+                try:
+                    result = subprocess.run(
+                        ["ruby", "-c", str(Path(tmp) / "provider" / "Vagrantfile")],
+                        cwd=tmp, check=False, capture_output=True, text=True,
+                        timeout=20,
+                    )
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    raise ValueError(
+                        "Ruby parser unavailable for rendered Vagrantfile"
+                    ) from exc
+                if result.returncode != 0 or "Syntax OK" not in result.stdout:
+                    raise ValueError("Rendered Vagrantfile failed ruby -c")
+                print("[PASS] Rendered native Kingdoms Vagrantfile Ruby syntax")
             print("KINGDOMS WSLPE NATIVE INSTANCE RENDER: SOURCE PREVIEW PASS")
             for key, value in report.items():
                 print(f"{key}={value}")
