@@ -32,63 +32,34 @@ A course title is not a repository path, virtual-machine identifier, or compatib
 
 The interactive installer is the **operator-facing control plane** for every Kingdoms course. It must never be installed on learner machines, exposed over learner networks, included in course images, or shared with learners. Operators should not have to enter internal Vagrant directories to install a course. The current compatibility entry point is `./goad.sh`, which dispatches to `goad_nomad.py`. A future `./kingdoms.sh` can become the operator launcher while `./goad.sh` remains a backwards-compatible alias after its behavior is tested.
 
-**Current operator-only registry slice (committed, requires operator-side validation):**
+**Private interactive installer (development stage 1, pending host validation):**
 
 ```text
 $ ./goad.sh
-KINGDOMS | OPERATOR CONSOLE
-> courses
+
+Kingdoms > courses
     north          The Fall of the North [available]
     course-2       Course 2 (title pending) [planned]
     windows-lpe    Windows Local Privilege Escalation [development]
-> select_course windows-lpe
-    Selected Kingdoms course: Windows Local Privilege Escalation [development]
-    Deployment adapter is not validated. Lifecycle commands are blocked.
-> course
-    Course: Windows Local Privilege Escalation; state=development
-> status
-    Course adapter pending. Installation and lifecycle disabled.
-> install
-    Command blocked; the loaded NORTH instance was not touched.
-> select_course north
-    Selected Kingdoms course: The Fall of the North [available]
-```
 
-`courses`, `select_course <slug>`, `course`, a read-only pending-course `status`, and Windows LPE backend inspection commands (`course_preflight`, `course_vm_status`) are implemented on the feature branch. Selection is session-local and never deploys a machine. The current console continues to support legacy install/start/stop/status/reset on an existing NORTH lab; selecting an unfinished course **blocks** all lifecycle commands, including reset and destroy, rather than forwarding them to NORTH. The separate `-c/--course` argument also fails closed for unsupported non-interactive actions.
-
-**Operator preflight commands (implemented, pending execution on the operator workstation):**
-
-```text
 Kingdoms > select_course windows-lpe
-Kingdoms > course_preflight
-Kingdoms > course_vm_status
+KINGDOMS/windows-lpe > install
 
-$ ./goad.sh -c windows-lpe -t course-preflight
-$ ./goad.sh -c windows-lpe -t course-vm-status
+Windows LPE Stage 1: create only the isolated Windows VM.
+Create the standalone Windows LPE VM? [y/N]: y
+
+KINGDOMS/windows-lpe > course_vm_status
 ```
 
-These commands inspect only the standalone VMware project at `courses/windows-lpe/standalone/` and do not create, start, stop or reset any VM. The preflight checks the pinned Windows image, Vagrant/VMware tools, Ruby syntax and Vagrantfile validity. Status inspects only the standalone Vagrant project. Both are **operator-only diagnostics**, not learner features. The source test suite uses mock subprocess calls; validation on the actual operator host is still outstanding.
+The interactive `install` command uses the **selected course**, not the legacy default lab. It confirms the action before creating one separate Windows LPE guest under `courses/windows-lpe/standalone/`. NORTH continues using its existing installation logic when that course is active. The console prompt makes the selected environment explicit.
 
-**Controlled development bootstrapping (implemented on the feature branch, not yet runtime-tested):**
+At this engineering stage, **Windows LPE `install` means guest bootstrap only**, not complete course installation. Learner accounts and vulnerabilities are not provisioned yet. All other Windows LPE lifecycle operations remain blocked, including reset and destroy, until independently validated. The noninteractive `-c windows-lpe -t install` also remains disabled because it must not imply a complete installation; a separate explicitly confirmed guest-only CLI action is retained for diagnostics.
 
-```text
-Kingdoms > select_course windows-lpe
-Kingdoms > course_preflight
-Kingdoms > course_vm_create CREATE windows-lpe
-Kingdoms > course_vm_status
-```
+Read-only checks remain available as `course_preflight` and `course_vm_status`. `course_vm_create CREATE windows-lpe` is a lower-level diagnostic, not the expected interactive workflow.
 
-The private operator-only `course_vm_create` command creates **one distinct Windows guest only**. Its CLI equivalent is `./goad.sh -c windows-lpe -t course-vm-create --confirm-vm-create`. It requires explicit confirmation, successful preflight, and a uniquely identified machine proven `not created` with no existing Vagrant machine state. A failed or partial bootstrap must be diagnosed, never destroyed or automatically retried. Existing NORTH infrastructure is never selected as the command target.
+**Vagrant state caution:** `vagrant status` may create empty directories or harmless `index_uuid` metadata before any VM exists. The bootstrap no longer treats their presence alone as a registered VM. It requires a `not created` status and refuses a provider `id`, unexpected files, symlinks or ambiguous state. Do not delete local Vagrant files or force retries to bypass that guard.
 
-This staged bootstrapping does not install any LPE scenarios or create learner accounts. It is not general course installation, which remains disabled.
-
-**The full Windows LPE installer adapter is not implemented.** Do not interpret the course appearing in the registry as a deployable environment. It discovers labs under `ad/` and its NORTH-specific VMware provider includes segmented routing, identity and exercise-mode behavior. Do **not** register standalone Windows LPE as an Active Directory lab just to make it appear in that list, and do not reuse the NORTH provider's network transitions for the standalone course.
-
-**Design requirement:** the first, fail-closed course registry/selection layer is now in place on the feature branch. Next add a dedicated `windows-lpe` course adapter. That adapter should orchestrate the isolated Vagrant VM, initial local account provisioning, build/security preflight, scenario application, validation, start, stop and reset through the same Kingdoms console. For Course 1, delegate to the existing, validated NORTH lifecycle without changing its semantics. Each course keeps its own inventory, provider state, VM identity, snapshots and reset contract. Shared Ansible scenario roles remain reusable.
-
-`vagrant up --provider=vmware_desktop` is a low-level **operator/developer diagnostic**, not a learner interface or the final operator installation workflow. Retain the standalone Vagrantfile because the course adapter must still create a real VM through the provider. Do not call the manual Vagrant command part of the normal operator installation steps once the integrated installer exists.
-
-**Engineering order:** validate the one-shot, operator-confirmed guest bootstrap implementation and tests; then instantiate the independent Windows machine, prove its OS/domain/security/network identity, and create the local learner in a separate provisioning stage. Only after the original 20 scenarios work without AD and the 15 new scenarios are engineered and validated should the regular `install` command become available for Windows LPE. Do not encourage a production installation through the menu until the full adapter is implemented and validated.
+The same private installer will eventually provision local learner accounts and apply all validated scenarios through a dedicated course adapter. The Windows LPE VMware backend still must be validated on the operator's real workstation and with a fresh Windows guest before any course is promoted as ready.
 
 ## Operator control plane versus learner attack surface
 
