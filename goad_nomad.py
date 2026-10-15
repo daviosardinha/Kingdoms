@@ -688,7 +688,11 @@ def main():
     args = parse_args()
     goad = GoadNomad(args)
 
-    if args is None or args.task is None:
+    if args.task is None:
+        # An explicitly selected development course must not fall back into
+        # legacy NORTH commands when the operator enters the REPL.
+        if args.course is not None and not goad.do_select_course(args.course):
+            return 1
         goad.cmdloop()
         return 0
 
