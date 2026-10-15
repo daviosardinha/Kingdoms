@@ -55,7 +55,7 @@ class KingdomsWindowsLpeVmContractTests(unittest.TestCase):
 
     def test_operator_control_plane_is_not_learner_access(self) -> None:
         for boundary in (
-            "operator-only control plane",
+            "## Operator control plane versus learner attack surface",
             "Learners (untrusted lab users)",
             "installer, hypervisor APIs",
             "never the operator installer directly",
