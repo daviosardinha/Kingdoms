@@ -62,6 +62,18 @@ python3 scripts/windows-lpe-standalone-audit.py --json
 
 Add `--strict` to return nonzero while direct domain/network references remain in the shared role. The initial result is expected to be **blocked** because the current role contains `NORTH\rickon.stark` references. This is a starting-point audit, **not** a proof of standalone readiness. It scans the shared role only. Later runtime tests must also inspect provisioning playbooks, Ansible inventory, any local account creation, session context, OS/build, outbound traffic and every new fixture.
 
+## Standalone guest preflight (read-only)
+
+After independently provisioning a separate Windows VM and creating a local standard learner, run the preflight using an inventory group named `windows_lpe_standalone`:
+
+```bash
+ansible-playbook -i <standalone-inventory> \
+  ansible/windows-lpe-standalone-preflight.yml \
+  -e windows_lpe_standalone_expected_build=<pinned-windows-build>
+```
+
+This task checks the guest is a Windows client on the explicitly pinned build, is **not domain joined**, has an enabled local learner who is not a *direct* member of local Administrators, and retains UAC, Windows Firewall and Microsoft Defender. It is read-only, and it does not seed any exploit or create any account. A later interactive learner-token test remains mandatory to rule out indirect group privileges. If the inventory group is empty, the playbook may skip all target tasks: **a skipped play is not a pass**. Prove a target was reached and the `WINDOWS_LPE_STANDALONE_PREFLIGHT=PASS` marker was emitted.
+
 ## First implementation sequence
 
 1. Create a **standalone-specific Windows base provisioner** with a pinned image, local administrator for provisioning, and local non-administrator learner. Do not import the Kingdoms domain-join playbook.
