@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LAB = ROOT / "ad/WSLPE"
 VM = LAB / "providers/vmware/Vagrantfile"
 PROVIDER_INVENTORY = LAB / "providers/vmware/inventory"
+INITIAL_INVENTORY = LAB / "data/inventory"
 LAB_INVENTORY = LAB / "data/inventory_disable_vagrant"
 ROUTING = ROOT / "playbooks.yml"
 FOUNDATION = ROOT / "ansible/wslpe-foundation.yml"
@@ -25,6 +26,7 @@ class WslpeNativeLabContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.vm = VM.read_text(encoding="utf-8")
         cls.provider = PROVIDER_INVENTORY.read_text(encoding="utf-8")
+        cls.initial_inventory = INITIAL_INVENTORY.read_text(encoding="utf-8")
         cls.inventory = LAB_INVENTORY.read_text(encoding="utf-8")
         cls.routes = ROUTING.read_text(encoding="utf-8")
         cls.foundation = FOUNDATION.read_text(encoding="utf-8")
@@ -35,6 +37,7 @@ class WslpeNativeLabContractTests(unittest.TestCase):
         self.assertTrue((LAB / "providers/vmware").is_dir())
         self.assertTrue((LAB / "data").is_dir())
         self.assertTrue(PROVIDER_INVENTORY.is_file())
+        self.assertTrue(INITIAL_INVENTORY.is_file())
         self.assertTrue(LAB_INVENTORY.is_file())
         self.assertEqual(get_course("windows-lpe").legacy_lab, "WSLPE")
         self.assertFalse(get_course("windows-lpe").lifecycle_ready)
@@ -50,7 +53,7 @@ class WslpeNativeLabContractTests(unittest.TestCase):
         self.assertNotIn('GOAD-WS01', self.vm)
 
     def test_recipe_has_no_north_network_or_domain_dependencies(self):
-        for source in (self.vm, self.provider, self.inventory):
+        for source in (self.vm, self.provider, self.initial_inventory, self.inventory):
             for term in ("vmnet10", "vmnet20", "vmnet30", "vmnet99",
                          "10.4.10.", "north.sevenkingdoms.local",
                          "win_domain_membership", "GOAD-ROUTER"):
@@ -59,11 +62,23 @@ class WslpeNativeLabContractTests(unittest.TestCase):
     def test_inventory_contains_only_local_workstation(self):
         self.assertIn('ws01 ansible_host={{ip_range}}.31', self.provider)
         self.assertIn('ansible_connection=winrm', self.inventory)
+        self.assertIn('ansible_connection=winrm', self.initial_inventory)
+        self.assertIn('[wslpe]\nws01', self.initial_inventory)
+        self.assertIn('[windows_lpe_standalone]\nws01', self.initial_inventory)
         self.assertIn('ansible_user=vagrant', self.inventory)
         self.assertIn('[wslpe]\nws01', self.inventory)
         self.assertIn('[windows_lpe_standalone]\nws01', self.inventory)
         self.assertNotIn('[dc]', self.inventory)
         self.assertNotIn('[domain]', self.inventory)
+
+    def test_initial_provisioner_inventory_uses_native_source_path(self):
+        # Existing Ansible._get_lab_inventory reads data/inventory during the
+        # initial run, NOT data/inventory_disable_vagrant.
+        from goad.goadpath import GoadPath
+        self.assertEqual(
+            Path(GoadPath.get_lab_inventory_file("WSLPE")).resolve(),
+            INITIAL_INVENTORY.resolve(),
+        )
 
     def test_native_playbook_routing_is_not_ad_or_full_lpe(self):
         self.assertIn('WSLPE:\n  - wslpe-foundation.yml\n', self.routes)
