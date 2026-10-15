@@ -13,3 +13,5 @@
       vars:
         windows_lpe_action: apply
         windows_lpe_profile: full-lpe
+        windows_lpe_learner_account: 'NORTH\rickon.stark'
+        windows_lpe_learner_password: 'Winter2022'
