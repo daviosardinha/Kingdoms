@@ -122,6 +122,13 @@ class GoadNomad(BaseGoad):
             Log.info('Run courses, then select_course <slug>.')
         else:
             Log.info(f'Course: {course.title}; state={course.state}')
+            if course.slug == 'windows-lpe':
+                native = self.lab_manager.get_current_instance()
+                if native is not None and native.lab_name == 'WSLPE':
+                    Log.info(
+                        f'Native WSLPE instance: {native.instance_id}; '
+                        f'provider state={native.get_status()}'
+                    )
             if not course.lifecycle_ready:
                 Log.warning(
                     'Only confirmed native WSLPE Stage 1 boot is available via '
