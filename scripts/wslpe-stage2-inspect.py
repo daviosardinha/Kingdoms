@@ -47,6 +47,17 @@ $ipv4 = @(Get-NetIPAddress -AddressFamily IPv4 |
 $routes = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' |
     Select-Object InterfaceIndex, NextHop, RouteMetric)
 $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction SilentlyContinue
+$licenseProducts = @(Get-CimInstance SoftwareLicensingProduct -ErrorAction Stop |
+    Where-Object { $_.Name -like 'Windows*' -and $_.PartialProductKey } |
+    Select-Object Name, Description, LicenseStatus, GracePeriodRemaining)
+$wlmsEvents = @(Get-WinEvent -FilterHashtable @{
+    LogName = 'System'
+    Id = 1074
+    StartTime = (Get-Date).AddDays(-30)
+} -ErrorAction SilentlyContinue | Where-Object {
+    [string]$_.Message -match '(?i)wlms\.exe|Windows License Monitoring'
+} | Select-Object -First 3 TimeCreated, Id, ProviderName)
+
 $data = @{
     Name = $env:COMPUTERNAME
     ProductType = [int]$os.ProductType
@@ -63,6 +74,8 @@ $data = @{
     IPv4 = $ipv4
     DefaultRoutes = $routes
     LearnerExists = ($null -ne $learner)
+    LicenseProducts = $licenseProducts
+    LicenseShutdownEvidence = $wlmsEvents
 }
 Write-Output ('WSLPE_AUDIT_JSON=' + ($data | ConvertTo-Json -Compress -Depth 6))
 '''
@@ -354,6 +367,54 @@ def firewall_profile_evidence(data: dict) -> tuple[bool, list[str]]:
     return all_enabled, messages
 
 
+def evaluate_license(data: dict) -> tuple[bool, list[str]]:
+    """Read-only Windows evaluation/license readiness, no rearm or activation.
+
+    The base mayfly/windows10 box is commonly Windows 10 Enterprise Evaluation.
+    This check is separate from the existing operator-controlled
+    settings/eval_rearm Ansible role. At least 24 hours of valid evaluation
+    grace or a verified Licensed non-evaluation Windows SKU is required.
+    """
+    products = data.get("LicenseProducts")
+    if not isinstance(products, list) or not products:
+        return False, ["[INFO] Windows license product evidence: MISSING"]
+    records = [p for p in products if isinstance(p, dict)
+               and str(p.get("Name", "")).startswith("Windows")]
+    evaluation = [p for p in records
+                  if "TIMEBASED_EVAL" in str(p.get("Description", "")).upper()]
+    report = []
+    if evaluation:
+        if len(evaluation) != 1:
+            return False, ["[INFO] Multiple Windows evaluation product records; refusing to guess"]
+        record = evaluation[0]
+        remaining = record.get("GracePeriodRemaining")
+        status = record.get("LicenseStatus")
+        report.append(f"[INFO] Windows licensing channel: TIMEBASED_EVAL; "
+                      f"status={status}; grace_minutes={remaining}")
+        if type(remaining) is not int:
+            return False, report + ["[INFO] Evaluation grace data not an integer"]
+        ready = remaining >= 1440
+    else:
+        states = [p.get("LicenseStatus") for p in records]
+        ready = any(type(x) is int and x == 1 for x in states)
+        report.append(
+            "[INFO] Windows licensing channel: non-evaluation; "
+            f"licensed_product_found={ready}"
+        )
+    shutdowns = data.get("LicenseShutdownEvidence")
+    if isinstance(shutdowns, list) and shutdowns:
+        report.append(
+            f"[INFO] Historical Windows License Monitoring shutdown events "
+            f"(past 30 days): {len(shutdowns)}"
+        )
+        if ready:
+            report.append(
+                "[INFO] Historical license-related shutdowns do not by "
+                "themselves prove the current license is expired"
+            )
+    return ready, report
+
+
 def evaluate_windows(data: dict, prefix: str) -> tuple[list[str], list[str]]:
     good, failed = [], []
     def verify(ok: bool, message: str):
@@ -365,6 +426,8 @@ def evaluate_windows(data: dict, prefix: str) -> tuple[list[str], list[str]]:
            "Expected Windows 10 client operating system")
     verify(data.get("DomainJoined") is False, "Not joined to Active Directory")
     verify(data.get("UAC") == 1, "UAC enabled")
+    license_ok, _license_details = evaluate_license(data)
+    verify(license_ok, "Windows licensing has at least 24h valid grace or licensed non-eval SKU")
     firewall_ok, _firewall_details = firewall_profile_evidence(data)
     verify(firewall_ok, "All Windows firewall profiles enabled")
     verify(data.get("DefenderService") is True and data.get("DefenderAntivirus") is True,
@@ -417,6 +480,9 @@ def main() -> int:
     print(f"[INFO] VMware network adapters discovered: {len(adapters)}")
     _, profile_evidence = firewall_profile_evidence(info)
     for line in profile_evidence:
+        print(line)
+    _, license_evidence = evaluate_license(info)
+    for line in license_evidence:
         print(line)
     if args.show_adapters:
         for a in adapters:
