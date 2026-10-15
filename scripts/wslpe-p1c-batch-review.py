@@ -120,11 +120,17 @@ def check_firewall(candidate: str, vmnet: str) -> None:
     rules = [x["rule"] for x in entries
              if isinstance(x, dict) and isinstance(x.get("rule"), dict)]
     matching = [r for r in rules if vmnet in json.dumps(r, sort_keys=True)]
-    existing = [x for x in entries if isinstance(x, dict) and (
-        x.get("table", {}).get("name") == TABLE if isinstance(x.get("table"), dict)
-        else x.get("chain", {}).get("table") == TABLE if isinstance(x.get("chain"), dict)
-        else x.get("rule", {}).get("table") == TABLE if isinstance(x.get("rule"), dict)
-        else False)]
+    existing = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for key in ("table", "chain", "rule"):
+            payload = entry.get(key)
+            if isinstance(payload, dict):
+                name = payload.get("name") if key == "table" else payload.get("table")
+                if name == TABLE:
+                    existing.append(entry)
+                    break
     if existing:
         result("existing candidate table", "BLOCKED",
                f"inet {TABLE} already exists; refuse duplicate installation")
@@ -153,7 +159,7 @@ def check_listeners(host_ip: str) -> None:
         fields = line.split()
         if len(fields) < 5:
             continue
-        local = fields[4] if fields[0] == "udp" and len(fields) > 5 else fields[3]
+        local = fields[4]  # ss -H -lntup: Netid State Recv-Q Send-Q Local Peer
         address = local.rsplit(":", 1)[0].strip("[]")
         if address in (host_ip, "0.0.0.0", "::", "*"):
             port = local.rsplit(":", 1)[-1]
