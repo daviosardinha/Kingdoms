@@ -16,46 +16,28 @@ This is one independently managed Windows workstation used to develop and verify
 
 A single NAT interface for provisioning does **not** prove network isolation. Inspect the resulting VMX and Windows adapters. Never allow this VM to attach to the NORTH exercise network or assume its host management IP is the course exercise IP.
 
-## How this should be installed
+## Private operator installation workflow
 
-**Target operator workflow:** the private Kingdoms console manages this course. The feature branch supports read-only `courses`, `select_course windows-lpe`, `course`, `status`, `course_preflight` and `course_vm_status`. It now also supports an **explicit guest-only bootstrap** with `course_vm_create CREATE windows-lpe`, which creates just the isolated Windows VM. For noninteractive automation, use `./goad.sh -c windows-lpe -t course-vm-create --confirm-vm-create`. This is **not full course installation**. The ordinary `install`, `reset`, `destroy`, `start` and `stop` remain blocked until the target OS baseline, local learner and scenario acceptance gates have been proved. Manual Vagrant calls remain developer diagnostics and are not a learner workflow.
-
-The Vagrant project in this directory remains the course's low-level VMware backend and a narrow **operator/developer test harness**. It must never be copied to the learner's machine, added to the vulnerable guest, exposed on the learner's network or given to course participants. The eventual learner handoff contains only machine-specific access details and a learner-scoped account, not infrastructure or management credentials.
-
-## Operator-only integration checks
-
-From the repository root, after fetching the latest feature-branch commit:
-
-```bash
-./goad.sh -t courses
-./goad.sh -c windows-lpe -t course-preflight
-./goad.sh -c windows-lpe -t course-vm-status
-```
-
-These commands must not boot, reset, destroy, or otherwise modify any virtual machine. The preflight checks the expected Windows box, VMware plugin and Vagrant project syntax. It does **not** prove the standalone guest exists or that LPE scenarios work.
-
-## Explicit operator guest creation (VM only)
-
-After updating the feature branch, passing the source tests and the `course-preflight` check, a trusted operator can deliberately create **one isolated Windows test VM**:
-
-```bash
-cd "$HOME/kingdoms-lpe-standalone"
-./goad.sh -c windows-lpe -t course-vm-create --confirm-vm-create
-./goad.sh -c windows-lpe -t course-vm-status
-```
-
-Or from the interactive console:
+The unified Kingdoms console is the normal operator entry point. From the feature-branch repository root:
 
 ```text
+./goad.sh
+> courses
 > select_course windows-lpe
-> course_preflight
-> course_vm_create CREATE windows-lpe
-> course_vm_status
+KINGDOMS/windows-lpe > install
+Create the standalone Windows LPE VM? [y/N]: y
+KINGDOMS/windows-lpe > course_vm_status
 ```
 
-This action checks that the dedicated Vagrant state is *not created*, refuses ambiguous or leftover partial state, and runs a single `vagrant up kingdoms-lpe-ws01 --provider=vmware_desktop` **internally from the dedicated project directory**. It does not touch NORTH, create learner accounts or apply any of the 20+15 intended vulnerabilities. It refuses to destroy or auto-retry on failure. **The operator must investigate any partial VMware state before another attempt.**
+**Current Stage 1 only:** `install` creates the one independent VMware Windows guest after confirmation. It does **not** create the local learner account, apply any of the original 20 or proposed 15 scenarios, or report the whole course installed. The Windows LPE `start`, `stop`, `reset` and `destroy` commands are still blocked, and the noninteractive `-c windows-lpe -t install` remains disabled.
 
-Once the VM is running, we still need to independently prove its OS build, lack of domain membership, unique network and VMware identity, Windows security baseline, WinRM management, and local-account model. Only then can we begin standalone scenario testing. A running VM is not an installed Windows LPE course.
+The `course_preflight` and `course_vm_status` commands inspect the standalone backend without booting anything. If manual developer diagnostics are needed, the separate `course_vm_create CREATE windows-lpe` entry point still exists. No operator should normally need to invoke Vagrant from this directory.
+
+### VM registration versus Vagrant metadata
+
+A prior Vagrant status check can leave empty directories or `index_uuid` metadata under `.vagrant/machines/kingdoms-lpe-ws01/vmware_desktop/` even when it reports `not created`. The bootstrap accepts these harmless inspection artifacts if the target is still definitively uncreated. A provider `id`, unknown artifacts, symlinked state or an ambiguous Vagrant status continues to block creation. **Never delete state or retry blindly** if an unrecognized partial state is reported.
+
+This directory and the private operator console are never exposed to learners. Learners receive only their assigned vulnerable guest and approved scoped connection credentials. AWS delivery is a future provider adapter, not part of this local VM bootstrap.
 
 ## Prerequisites
 
