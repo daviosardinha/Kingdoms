@@ -4,3 +4,7 @@
   gather_facts: false
   roles:
     - role: windows_lpe
+      vars:
+        # NORTH adapter only. Shared role accepts a standalone local user instead.
+        windows_lpe_learner_account: 'NORTH\rickon.stark'
+        windows_lpe_learner_password: 'Winter2022'
