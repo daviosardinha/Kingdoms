@@ -25,13 +25,18 @@ class WslpeFullReviewTests(unittest.TestCase):
                      ["sudo", "-n", "nft", "add", "rule"],
                      ["vmrun", "start"],
                      ["vagrant", "up"]):
-            if args[0] in ("vmrun", "vagrant"):
-                # VM lifecycle commands are forbidden by the live batch's
-                # fixed read-only call sites, not a general-purpose API.
-                continue
             with self.subTest(args=args):
                 with self.assertRaises(ValueError):
                     MOD.run(args)
+
+
+    def test_strict_process_allowlist(self):
+        self.assertTrue(MOD.approved_read_only(["vmrun", "-T", "ws", "list"]))
+        self.assertTrue(MOD.approved_read_only(["sudo", "-n", "nft", "-c", "-f", "-"]))
+        self.assertTrue(MOD.approved_read_only(["sudo", "-n", "nft", "-j", "list", "ruleset"]))
+        self.assertFalse(MOD.approved_read_only(["sudo", "-n", "nft", "-f", "-"]))
+        self.assertFalse(MOD.approved_read_only(["sudo", "-n", "nft", "flush", "ruleset"]))
+        self.assertFalse(MOD.approved_read_only(["vmrun", "start"]))
 
     def test_new_vmnet_co_tenant_detection_uses_vmx_metadata_only(self):
         with tempfile.TemporaryDirectory() as folder:
