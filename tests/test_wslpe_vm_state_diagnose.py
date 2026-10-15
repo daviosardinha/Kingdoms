@@ -64,8 +64,10 @@ class WslpeVmStateTests(TestCase):
         self.assertEqual(DIAG.evaluate_registration(self.vmx, []),
                          ("NOT_IN_RUNNING_INVENTORY", 0))
         other = Path(self.tmp.name) / "elsewhere" / self.vmx.name
+        # A matching basename is not evidence of VM identity. The full
+        # registered VMX path is what matters.
         self.assertEqual(DIAG.evaluate_registration(self.vmx, [other]),
-                         ("SAME_FILENAME_DIFFERENT_PATH", 0))
+                         ("NOT_IN_RUNNING_INVENTORY", 0))
         self.assertEqual(DIAG.evaluate_registration(self.vmx,
                          [self.vmx, self.vmx]), ("AMBIGUOUS", 2))
 
