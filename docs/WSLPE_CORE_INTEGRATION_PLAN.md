@@ -35,6 +35,14 @@ cd "$HOME/kingdoms-lpe-standalone"
 
 The `--ip-range` value is only a source-rendering candidate at this stage. Before selecting one, inspect `ip -4 -br address`, `ip -4 route`, and the VMware virtual network configuration. **Never treat preview PASS as permission to start or network-connect a guest.** The native installer remains locked.
 
+## Network portability: do not pin development-host vmnets
+
+WSLPE must be installable through the same Kingdoms **core**, with provider-specific network adapters and no NORTH prerequisite. The native VMware recipe intentionally does not name `vmnet8` or `vmnet10`. Its shared Vagrant template supplies provider-managed management connectivity and a separate `private_network` exercise interface with an instance-selected IP. On the present VMware operator host, `vmnet8` may supply NAT, but **that is not an intrinsic property of the WSLPE course or its shared Ansible role**.
+
+A fresh VMware host must pass network discovery/collision checks before installing WSLPE. A normal VPS may not expose nested virtualization or VMware Workstation at all. An eventual AWS/other cloud implementation needs a separate provider/image/network adapter without any VMware `vmnet` references. None of that future cloud provider integration is currently implemented; the native WSLPE install gate stays locked.
+
+See [WSLPE network portability and provider boundary](WSLPE_NETWORK_PORTABILITY.md) for the exact management-versus-exercise network contract and future clean-host tests.
+
 ## Lab versus extension
 
 - `WSLPE`: a new independent lab/profile with one Windows guest, local standard learner account and no Active Directory dependencies. This is the correct isolation boundary for a standalone Windows LPE course and later cloud image.
