@@ -1,0 +1,19 @@
+[all:vars]
+; WSLPE local management: standalone Windows, no Active Directory.
+domain_name=WSLPE
+ansible_connection=winrm
+ansible_user=vagrant
+ansible_password=vagrant
+ansible_winrm_transport=ntlm
+ansible_winrm_server_cert_validation=ignore
+ansible_winrm_operation_timeout_sec=400
+ansible_winrm_read_timeout_sec=500
+; The management account is only an initial trusted provisioning identity.
+; Rotate/remove it before any learner-facing release.
+
+[workstation]
+ws01
+
+[wslpe]
+ws01
+
