@@ -28,6 +28,35 @@ A course title is not a repository path, virtual-machine identifier, or compatib
 4. After the independent course passes its own compatibility and full scenario gates, rename any remaining inherited internal identifiers incrementally with regression tests and exact migration steps.
 5. The 15 new Windows LPE scenarios remain **planned** until implemented and verified on the pinned standalone Windows build. Original 20 scenarios were previously proven in the NORTH environment, not yet as standalone exercises.
 
+## Unified Kingdoms installer: the required public workflow
+
+The interactive installer is the product-facing entry point for **every course**. Operators should not have to manually enter an internal Vagrant directory to install a course. The current compatibility entry point is `./goad.sh`, which dispatches to `goad_nomad.py`. A future `./kingdoms.sh` can become the public launcher while `./goad.sh` remains a backwards-compatible alias after its behavior is tested.
+
+**Target interaction (not implemented yet):**
+
+```text
+$ ./goad.sh
+Kingdoms > courses
+  1. The Fall of the North        [available]
+  2. Course 2                     [not released]
+  3. Windows Local Privilege Escalation [development]
+
+Kingdoms > select-course windows-lpe
+Kingdoms [windows-lpe] > install
+Kingdoms [windows-lpe] > status
+Kingdoms [windows-lpe] > start
+Kingdoms [windows-lpe] > stop
+Kingdoms [windows-lpe] > reset
+```
+
+These commands represent the proposed **user interface**, not commands supported by today's console. The existing console already exposes install/start/stop/status/reset on the selected **lab instance**. It discovers labs under `ad/` and its NORTH-specific VMware provider includes segmented routing, identity and exercise-mode behavior. Do **not** register standalone Windows LPE as an Active Directory lab just to make it appear in that list, and do not reuse the NORTH provider's network transitions for the standalone course.
+
+**Design requirement:** add a course registry and course selection layer above the existing lab/provider implementation, then a dedicated `windows-lpe` course adapter. That adapter should orchestrate the isolated Vagrant VM, initial local account provisioning, build/security preflight, scenario application, validation, start, stop and reset through the same Kingdoms console. For Course 1, delegate to the existing, validated NORTH lifecycle without changing its semantics. Each course keeps its own inventory, provider state, VM identity, snapshots and reset contract. Shared Ansible scenario roles remain reusable.
+
+`vagrant up --provider=vmware_desktop` is a low-level **developer diagnostic**, not the learner/operator installation interface. Retain the standalone Vagrantfile because the course adapter must still create a real VM through the provider. Do not call the manual Vagrant command part of the normal course installation steps once the integrated installer exists.
+
+**Engineering order:** implement a source-validated course registry/menu first, then connect its standalone adapter to the pinned Vagrant definition, then local learner provisioning and runtime gates. Do not encourage a production installation through the menu until the full adapter is implemented and validated.
+
 ## First standalone machine
 
 The feature branch contains a dedicated Vagrant project at `courses/windows-lpe/standalone/`.
@@ -41,7 +70,7 @@ The feature branch contains a dedicated Vagrant project at `courses/windows-lpe/
 
 The independent VM is an engineering environment, not yet a production-ready course image. Avoid claiming local privilege escalation works until the account, per-scenario, and rollback gates pass.
 
-## Host-side checkout and first start
+## Low-level developer diagnostics until installer integration
 
 Run from `~/kingdoms-lpe-standalone` after committing and fetching the approved branch updates:
 
