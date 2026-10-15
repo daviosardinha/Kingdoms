@@ -30,7 +30,7 @@ A course title is not a repository path, virtual-machine identifier, or compatib
 
 ## Unified Kingdoms installer: operator-only WSLPE instances
 
-**Architecture decision (October 2026):** Extend the validated Kingdoms core, **not** the experimental parallel Vagrant bootstrap. `WSLPE` is the proposed new first-class lab name; `windows-lpe` is the existing operator course identifier. The course remains `development` and **not installable** until the WSLPE recipe, native instance/provider integration, domain-free Ansible sequence, and guest acceptance gates are implemented.
+**Architecture decision (October 2026):** Extend the validated Kingdoms core, **not** the experimental parallel Vagrant bootstrap. `WSLPE` is the proposed new first-class lab name; `windows-lpe` is the existing operator course identifier. The course remains `development`. Only an explicitly confirmed **Stage 1 guest boot** is implemented through the native instance/provider path; full course installation remains unavailable until Windows, learner and scenario acceptance gates pass.
 
 The existing `goad/labs.py`, `goad/lab_manager.py`, `goad/instance.py`, VMware provider factory, Ansible provisioner and `windows_lpe` role are authoritative. `ad/` is the present historical lab-recipe directory; its name is not an Active Directory requirement. Extensions attach to a lab's instance, while WSLPE needs its **own** independent instance and VM.
 
@@ -43,7 +43,7 @@ The intended private operator flow is:
 KINGDOMS/windows-lpe > install
 ```
 
-The menu can currently list/select `windows-lpe`, but `install` must **fail closed** until native WSLPE integration is validated. It must eventually use Kingdoms' existing instance creation and provider/provisioner contract, not a separate `vagrant up` shortcut. NORTH selection must continue to use the existing, proven lifecycle.
+Interactive `install` with `windows-lpe` selected now asks for an operator-chosen private /24 prefix and the exact confirmation `CREATE WSLPE`, reruns all 13 consolidated preboot checks and creates **one native WSLPE instance plus its Windows guest** via Kingdoms' existing `LabManager` and VMware provider. This is Stage 1 only; it neither provisions the learner nor installs vulnerabilities and can mark the instance only `PROVIDED`, never `READY`. On failures it refuses automatic cleanup/retry. The noninteractive WSLPE `install` route remains denied, and NORTH retains its original lifecycle.
 
 The superseded `courses/windows-lpe/standalone/Vagrantfile` and `kingdoms/windows_lpe_vmware.py` remain as experimental engineering artifacts on the draft branch, not the final installer path. The direct creation commands `course_vm_create` and `-t course-vm-create` are now retired in the operator console to avoid confusing prototype state with a real Kingdoms instance. Their read-only inspection helpers may still report the prototype state but are not WSLPE installation readiness. **Do not delete or force-reset earlier Vagrant state.**
 
@@ -67,7 +67,7 @@ The cloud control plane must remain operator-only. Each learner receives access 
 
 The **authoritative** Windows LPE lab is the native `WSLPE` recipe in `ad/WSLPE/`. Its generated Vagrantfile and inventory belong to an independent Kingdoms instance managed by the **existing** lab manager, VMware provider and Ansible provisioner. The repository's former `courses/windows-lpe/standalone/` Vagrant project is retained only as a superseded developer prototype; its direct guest-creation command is retired. **Do not run `vagrant up` from that old project.**
 
-The new native recipe has source-level coverage but is **not installation-ready**. Next validate generated instance files and network isolation without booting a machine, then validate guest readiness, local learner provisioning and one-by-one testing of the existing 20 techniques. Finally add the proposed 15 techniques to the same shared role, and later regression-test all 35 on NORTH WS01.
+The native source and preboot checks have passed on the current operator workstation, and the Stage 1 operator-boot implementation is now committed but **not yet executed on that host**. After safely booting the guest, we must verify actual VMX/NIC assignment, WinRM and Windows security baseline, then provision the local learner and validate the original 20 techniques individually. Finally add the proposed 15 techniques to the same shared role, and later regression-test all 35 on NORTH WS01.
 
 Only trusted Kingdoms operators create and manage instances. Learners receive access solely to their assigned vulnerable Windows guest. See [WSLPE core integration plan](WSLPE_CORE_INTEGRATION_PLAN.md) for the current gates and source mappings.
 
