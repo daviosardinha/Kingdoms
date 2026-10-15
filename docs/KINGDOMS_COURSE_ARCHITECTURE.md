@@ -28,38 +28,26 @@ A course title is not a repository path, virtual-machine identifier, or compatib
 4. After the independent course passes its own compatibility and full scenario gates, rename any remaining inherited internal identifiers incrementally with regression tests and exact migration steps.
 5. The 15 new Windows LPE scenarios remain **planned** until implemented and verified on the pinned standalone Windows build. Original 20 scenarios were previously proven in the NORTH environment, not yet as standalone exercises.
 
-## Unified Kingdoms installer: operator-only control plane
+## Unified Kingdoms installer: operator-only WSLPE instances
 
-The interactive installer is the **operator-facing control plane** for every Kingdoms course. It must never be installed on learner machines, exposed over learner networks, included in course images, or shared with learners. Operators should not have to enter internal Vagrant directories to install a course. The current compatibility entry point is `./goad.sh`, which dispatches to `goad_nomad.py`. A future `./kingdoms.sh` can become the operator launcher while `./goad.sh` remains a backwards-compatible alias after its behavior is tested.
+**Architecture decision (October 2026):** Extend the validated Kingdoms core, **not** the experimental parallel Vagrant bootstrap. `WSLPE` is the proposed new first-class lab name; `windows-lpe` is the existing operator course identifier. The course remains `development` and **not installable** until the WSLPE recipe, native instance/provider integration, domain-free Ansible sequence, and guest acceptance gates are implemented.
 
-**Private interactive installer (development stage 1, pending host validation):**
+The existing `goad/labs.py`, `goad/lab_manager.py`, `goad/instance.py`, VMware provider factory, Ansible provisioner and `windows_lpe` role are authoritative. `ad/` is the present historical lab-recipe directory; its name is not an Active Directory requirement. Extensions attach to a lab's instance, while WSLPE needs its **own** independent instance and VM.
+
+The intended private operator flow is:
 
 ```text
-$ ./goad.sh
-
-Kingdoms > courses
-    north          The Fall of the North [available]
-    course-2       Course 2 (title pending) [planned]
-    windows-lpe    Windows Local Privilege Escalation [development]
-
-Kingdoms > select_course windows-lpe
+./goad.sh
+> courses
+> select_course windows-lpe
 KINGDOMS/windows-lpe > install
-
-Windows LPE Stage 1: create only the isolated Windows VM.
-Create the standalone Windows LPE VM? [y/N]: y
-
-KINGDOMS/windows-lpe > course_vm_status
 ```
 
-The interactive `install` command uses the **selected course**, not the legacy default lab. It confirms the action before creating one separate Windows LPE guest under `courses/windows-lpe/standalone/`. NORTH continues using its existing installation logic when that course is active. The console prompt makes the selected environment explicit.
+The menu can currently list/select `windows-lpe`, but `install` must **fail closed** until native WSLPE integration is validated. It must eventually use Kingdoms' existing instance creation and provider/provisioner contract, not a separate `vagrant up` shortcut. NORTH selection must continue to use the existing, proven lifecycle.
 
-At this engineering stage, **Windows LPE `install` means guest bootstrap only**, not complete course installation. Learner accounts and vulnerabilities are not provisioned yet. All other Windows LPE lifecycle operations remain blocked, including reset and destroy, until independently validated. The noninteractive `-c windows-lpe -t install` also remains disabled because it must not imply a complete installation; a separate explicitly confirmed guest-only CLI action is retained for diagnostics.
+The superseded `courses/windows-lpe/standalone/Vagrantfile` and `kingdoms/windows_lpe_vmware.py` remain as experimental engineering artifacts on the draft branch, not the final installer path. The direct creation commands `course_vm_create` and `-t course-vm-create` are now retired in the operator console to avoid confusing prototype state with a real Kingdoms instance. Their read-only inspection helpers may still report the prototype state but are not WSLPE installation readiness. **Do not delete or force-reset earlier Vagrant state.**
 
-Read-only checks remain available as `course_preflight` and `course_vm_status`. `course_vm_create CREATE windows-lpe` is a lower-level diagnostic, not the expected interactive workflow.
-
-**Vagrant state caution:** `vagrant status` may create empty directories or harmless `index_uuid` metadata before any VM exists. The bootstrap no longer treats their presence alone as a registered VM. It requires a `not created` status and refuses a provider `id`, unexpected files, symlinks or ambiguous state. Do not delete local Vagrant files or force retries to bypass that guard.
-
-The same private installer will eventually provision local learner accounts and apply all validated scenarios through a dedicated course adapter. The Windows LPE VMware backend still must be validated on the operator's real workstation and with a fresh Windows guest before any course is promoted as ready.
+See [WSLPE core integration plan](WSLPE_CORE_INTEGRATION_PLAN.md) for the exact source mappings, instance guards, role reuse, the original 20-scenario regression, the next 15 candidate scenarios and later NORTH integration.
 
 ## Operator control plane versus learner attack surface
 
