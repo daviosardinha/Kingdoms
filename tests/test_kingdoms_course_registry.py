@@ -54,6 +54,11 @@ def load_unit(name):
         def vm_status(self):
             return types.SimpleNamespace(ready=True, checks=("INFO: mock-only status",))
 
+        def create_guest(self, confirmed=False):
+            return types.SimpleNamespace(
+                ready=confirmed, checks=("PASS: mock-only guest creation",)
+            )
+
     scope = {
         "WindowsLpeVmwareAdapter": FakeVmAdapter,
         "BaseGoad": LegacyConsole,
@@ -131,6 +136,16 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertEqual(self.console.legacy_calls, [])
         self.assertTrue(any("mock-only preflight" in x[1] for x in StubLog.output))
 
+    def test_guest_creation_needs_exact_confirmation_and_keeps_repl_open(self):
+        self.console.do_select_course("windows-lpe")
+        self.assertFalse(self.console.do_course_vm_create(""))
+        self.assertFalse(self.console.do_course_vm_create("CREATE north"))
+        self.assertFalse(self.console.do_course_vm_create("CREATE windows-lpe"))
+        self.assertEqual(self.console.legacy_calls, [])
+        self.assertTrue(
+            any("mock-only guest creation" in x[1] for x in StubLog.output)
+        )
+
     def test_course_switching_and_legacy_console_compatibility(self):
         self.console.do_select_course("windows-lpe")
         self.assertTrue(self.console._set_course_selection("north"))
@@ -162,6 +177,9 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
             do_courses=lambda *args: self.calls.append(("courses", args)),
             _set_course_selection=lambda slug: self.calls.append(("select", (slug,))) or True,
             _inspect_selected_windows_lpe=lambda action: self.calls.append(("inspect", (action,))) or True,
+            _create_selected_windows_lpe_guest=lambda confirmed=False: self.calls.append(
+                ("create", (confirmed,))
+            ) or True,
         )
 
     @staticmethod
@@ -169,6 +187,7 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
         return types.SimpleNamespace(
             task=task, course=course, lab=lab, instance=instance,
             run_playbook=None, ansible_only=None,
+            confirm_vm_create=False,
         )
 
     def test_all_windows_lpe_mutating_cli_actions_are_blocked_before_instance_load(self):
@@ -195,6 +214,26 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
         )
         self.calls.clear()
         self.assertEqual(dispatch_task(self.console, self.args("course-preflight", "course-2")), 1)
+        self.assertEqual(self.calls, [])
+
+    def test_guest_create_cli_requires_confirmation_and_absent_legacy_instance(self):
+        args = self.args("course-vm-create", "windows-lpe", instance=None)
+        self.assertEqual(dispatch_task(self.console, args), 1)
+        self.assertEqual(self.calls, [])
+        args.confirm_vm_create = True
+        self.assertEqual(dispatch_task(self.console, args), 0)
+        self.assertEqual(self.calls, [
+            ("select", ("windows-lpe",)), ("create", (True,)),
+        ])
+        self.calls.clear()
+        args.instance = "north-active"
+        self.assertEqual(dispatch_task(self.console, args), 1)
+        self.assertEqual(self.calls, [])
+
+    def test_guest_create_cli_rejects_other_courses(self):
+        args = self.args("course-vm-create", "course-2", instance=None)
+        args.confirm_vm_create = True
+        self.assertEqual(dispatch_task(self.console, args), 1)
         self.assertEqual(self.calls, [])
 
     def test_unrecognized_and_mismatched_cli_course_fail_closed(self):
