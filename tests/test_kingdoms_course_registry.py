@@ -111,8 +111,12 @@ class OperatorSelectionTests(unittest.TestCase):
         StubLog.output = []
         self.console = OperatorConsole.__new__(OperatorConsole)
         self.console.legacy_calls = []
+        self.active = {"lab": "GOAD", "instance": None}
         self.console.lab_manager = types.SimpleNamespace(
-            get_current_lab_name=lambda: "GOAD",
+            get_current_lab_name=lambda: self.active["lab"],
+            get_current_instance=lambda: self.active["instance"],
+            is_lab_exist=lambda lab: lab in {"GOAD", "WSLPE"},
+            set_lab=lambda lab: self.active.__setitem__("lab", lab),
         )
 
     def test_windows_lpe_is_selectable_for_inspection_only(self):
@@ -185,10 +189,29 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertEqual(self.console.onecmd("start"), "LEGACY")
         self.assertEqual(self.console.legacy_calls, ["start"])
 
-    def test_reject_north_selection_if_other_lab_is_configured(self):
-        self.console.lab_manager.get_current_lab_name = lambda: "GOAD-Light"
+    def test_course_selection_routes_through_native_kingdoms_lab_manager(self):
+        self.assertTrue(self.console._set_course_selection("windows-lpe"))
+        self.assertEqual(self.active["lab"], "WSLPE")
+        self.assertTrue(self.console._set_course_selection("north"))
+        self.assertEqual(self.active["lab"], "GOAD")
+
+    def test_reject_north_switch_while_another_instance_is_loaded(self):
+        self.active["lab"] = "WSLPE"
+        self.active["instance"] = object()
         self.assertFalse(self.console._set_course_selection("north"))
+        self.assertEqual(self.active["lab"], "WSLPE")
         self.assertIsNone(getattr(self.console, "_selected_course", None))
+
+    def test_reject_windows_lpe_switch_while_north_instance_is_loaded(self):
+        self.active["instance"] = object()
+        self.assertFalse(self.console._set_course_selection("windows-lpe"))
+        self.assertEqual(self.active["lab"], "GOAD")
+        self.assertIsNone(getattr(self.console, "_selected_course", None))
+
+    def test_reject_missing_wslpe_recipe(self):
+        self.console.lab_manager.is_lab_exist = lambda lab: lab == "GOAD"
+        self.assertFalse(self.console._set_course_selection("windows-lpe"))
+        self.assertEqual(self.active["lab"], "GOAD")
 
     def test_unknown_selection_keeps_previous_guard(self):
         self.console.do_select_course("windows-lpe")
@@ -265,6 +288,21 @@ class NonInteractiveCourseGuardTests(unittest.TestCase):
     def test_unrecognized_and_mismatched_cli_course_fail_closed(self):
         self.assertEqual(dispatch_task(self.console, self.args("install", "fake")), 1)
         self.assertEqual(dispatch_task(self.console, self.args("install", "north", lab="GOAD-Light")), 1)
+        self.assertEqual(self.calls, [])
+
+    def test_legacy_wslpe_lab_bypass_cannot_install(self):
+        self.assertEqual(
+            dispatch_task(self.console, self.args("install", None, lab="WSLPE", instance=None)),
+            1,
+        )
+        self.assertEqual(self.calls, [])
+
+    def test_legacy_wslpe_lab_bypass_cannot_reset_or_destroy(self):
+        for task in ("destroy", "start", "stop", "reset", "snapshot"):
+            self.assertEqual(
+                dispatch_task(self.console, self.args(task, None, lab="WSLPE")),
+                1,
+            )
         self.assertEqual(self.calls, [])
 
     def test_legacy_install_dispatch_is_unchanged_without_course_argument(self):
