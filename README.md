@@ -31,6 +31,8 @@ Within **Course 1, The Fall of the North**, the objective is not to present a fl
 
 See [Kingdoms course architecture](docs/KINGDOMS_COURSE_ARCHITECTURE.md). These are distinct courses under the **Kingdoms** platform, not alternate names for a single lab.
 
+**Access model:** The Kingdoms installer, provisioning systems and lifecycle controls are exclusively for trusted operators. Learners receive access only to their assigned vulnerable machine or explicitly authorized course network, plus their learner-level credentials. They never receive the installer, deployment source, hypervisor/cloud administration or operator credentials. Future cloud deployment must preserve this separation.
+
 ### Course 1 environment
 
 The range combines:
