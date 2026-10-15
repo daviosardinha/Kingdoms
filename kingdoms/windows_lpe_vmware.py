@@ -1,8 +1,9 @@
-"""Read-only VMware backend preflight for the standalone Windows LPE course.
+"""Operator VMware backend for the standalone Windows LPE course.
 
-This module is operator-only. It intentionally has no install, destroy, start,
-stop, or reset method. Those actions require a separately validated lifecycle
-adapter and local Windows learner provisioning.
+Preflight/status are read-only. A single explicit, opt-in guest creation path
+creates only the independent Windows VM. It does NOT install vulnerabilities,
+configure learner credentials, or mark the training course installed.
+Stop, reset, destroy and full install remain unavailable.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ class PreflightResult:
 
 
 class WindowsLpeVmwareAdapter:
-    """Isolated, read-only checks for the operator's dedicated Vagrant project."""
+    """Operator checks and explicit first-guest creation, never NORTH lifecycle."""
 
     def __init__(
         self,
@@ -142,6 +143,105 @@ class WindowsLpeVmwareAdapter:
             return PreflightResult(False, tuple(checks))
         checks.append("INFO: No guest boot or provisioning performed")
         return PreflightResult(True, tuple(checks))
+
+    def create_guest(self, confirmed: bool = False) -> PreflightResult:
+        """Create ONE dedicated guest only after explicit operator approval.
+
+        This is a bootstrap milestone, not course installation. No scenario,
+        learner account, external machine or existing NORTH provider is touched.
+        State is checked before and after, and ambiguous state fails closed.
+        """
+        if not confirmed:
+            return PreflightResult(
+                False, ("FAIL: explicit operator confirmation required to create VM",)
+            )
+        ready = self.preflight()
+        if not ready.ready:
+            return PreflightResult(False, ready.checks + (
+                "FAIL: source/tool preflight must pass before VM creation",
+            ))
+        # A symlink into another project's Vagrant state is never acceptable.
+        local_state = self.project / ".vagrant"
+        machine_state = local_state / "machines" / EXPECTED_VM
+        if local_state.is_symlink() or machine_state.is_symlink():
+            return PreflightResult(
+                False, ("FAIL: standalone Vagrant state is a symlink",)
+            )
+        if machine_state.exists():
+            return PreflightResult(
+                False, (
+                    "FAIL: Vagrant already has state for this VM; inspect manually. "
+                    "Never overwrite, destroy or auto-retry partial guests.",
+                )
+            )
+
+        existing = self.vm_status()
+        if not existing.ready:
+            return PreflightResult(False, existing.checks)
+        import re
+        expected = re.compile(
+            rf"(?m)^{re.escape(EXPECTED_VM)}\s+not created\s+"
+            r"\(vmware_desktop\)\s*$"
+        )
+        if not any(expected.search(part) for part in existing.checks):
+            return PreflightResult(
+                False, (
+                    "FAIL: standalone Vagrant machine is not proven 'not created' "
+                    "for vmware_desktop; refusing a potentially ambiguous VM state",
+                )
+            )
+
+        command = [
+            "vagrant", "up", EXPECTED_VM, "--provider=vmware_desktop",
+        ]
+        # The one authorized creation action is deliberately not added to the
+        # preflight _run() whitelist; Vagrant output streams to the operator.
+        try:
+            process = self._runner(
+                command,
+                cwd=str(self.project),
+                capture_output=False,
+                text=True,
+                check=False,
+                timeout=3600,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return PreflightResult(
+                False, (
+                    "FAIL: standalone Windows VM boot interrupted "
+                    f"({type(exc).__name__}). Inspect course_vm_status; "
+                    "do not retry until its state is reconciled.",
+                )
+            )
+        if process.returncode != 0:
+            return PreflightResult(
+                False, (
+                    f"FAIL: standalone VM creation returned {process.returncode}. "
+                    "Partial VMware/Vagrant state may remain; inspect manually.",
+                )
+            )
+
+        after = self.vm_status()
+        if not after.ready:
+            return PreflightResult(False, after.checks)
+        running = re.compile(
+            rf"(?m)^{re.escape(EXPECTED_VM)}\s+running\s+"
+            r"\(vmware_desktop\)\s*$"
+        )
+        if not any(running.search(part) for part in after.checks):
+            return PreflightResult(
+                False, (
+                    "FAIL: Vagrant reported success but the dedicated guest is "
+                    "not proven running; do not claim bootstrap complete",
+                ) + after.checks,
+            )
+        return PreflightResult(True, (
+            "PASS: dedicated Windows LPE VMware guest created and running",
+            "INFO: Guest identity, networking, OS/security baseline and local "
+            "learner account have NOT been validated",
+            "INFO: Windows LPE scenario provisioning and full course install "
+            "remain disabled",
+        ))
 
     def vm_status(self) -> PreflightResult:
         """Inspect only the independent Windows LPE project status."""
