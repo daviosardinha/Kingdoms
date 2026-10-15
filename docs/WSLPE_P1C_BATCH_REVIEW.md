@@ -63,3 +63,25 @@ firewall chains or affect NORTH.
 Use this single batch once. Return its complete consolidated summary.
 Then prepare one reviewed WSLPE-only fix/rollback plan from all findings
 rather than repeating ad-hoc one-line checks between messages.
+
+
+## 2026-10-15: First source regression run and correction
+
+First operator execution updated the WSLPE-only feature branch through
+`304e047`, ran **28 source tests**, with **27 passing and 1 failing**.
+The only failure was `test_no_uncontrolled_output_or_mutating_calls`
+checking for the stale literal `WSLPE guest local access`, while the
+collector consistently uses `Windows guest local access`. This is an
+assertion/label mismatch; it says nothing about the running Windows guest.
+
+Because the launcher uses `set -euo pipefail`, **no live P1-C batch
+inspection executed** after this source-test failure. The single test
+was corrected in the feature branch. Mock tests were also made quieter
+to avoid printing simulated negative-case BLOCKED findings, and an
+additional exact WSLPE-only Ansible command-scope contract was added.
+
+Next operator action remains the **same single command**:
+`bash scripts/wslpe-full-review.sh` after `git pull --ff-only`.
+This is source code under review; newly changed tests and the full
+runtime pipeline have not been independently executed on Kali yet.
+No NORTH or VMware/Windows/networking changes were performed.
