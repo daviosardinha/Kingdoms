@@ -1,0 +1,23 @@
+[all:vars]
+; WSLPE is a standalone Windows client, not an AD domain member.
+; Initial operator-only Vagrant management identity. Never share with learners.
+domain_name=WSLPE
+ansible_connection=winrm
+ansible_user=vagrant
+ansible_password=vagrant
+ansible_winrm_transport=ntlm
+ansible_winrm_server_cert_validation=ignore
+ansible_winrm_operation_timeout_sec=400
+ansible_winrm_read_timeout_sec=500
+force_dns_server=no
+add_route=no
+enable_http_proxy=no
+
+[workstation]
+ws01
+
+[wslpe]
+ws01
+
+[windows_lpe_standalone]
+ws01
