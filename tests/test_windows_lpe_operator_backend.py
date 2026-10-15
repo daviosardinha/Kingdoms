@@ -174,12 +174,55 @@ class WindowsLpeVmwareBackendTests(unittest.TestCase):
         self.assertIn("ambiguous VM state", result.checks[0])
 
     def test_guest_creation_refuses_stale_vagrant_machine_state(self):
-        machine = self.project / ".vagrant/machines" / EXPECTED_VM
-        machine.mkdir(parents=True)
+        provider = (
+            self.project / ".vagrant/machines" / EXPECTED_VM / "vmware_desktop"
+        )
+        provider.mkdir(parents=True)
+        (provider / "id").write_text("registered-vm-id", encoding="utf-8")
         result = self.adapter.create_guest(confirmed=True)
         self.assertFalse(result.ready)
-        self.assertTrue(any("already has state" in line for line in result.checks))
+        self.assertTrue(any("partial Vagrant VM state" in line for line in result.checks))
         self.assertFalse(any(args[1:2] == ("up",) for args, _ in self.calls))
+
+    def test_status_generated_empty_vagrant_state_does_not_block_creation(self):
+        # The directory alone is not evidence of a registered Vagrant VM.
+        provider = (
+            self.project / ".vagrant/machines" / EXPECTED_VM / "vmware_desktop"
+        )
+        provider.mkdir(parents=True)
+        (provider / "index_uuid").write_text("vagrant-index", encoding="utf-8")
+        def inspect_only(args, **kwargs):
+            if args[0] == "ruby":
+                output = "Syntax OK"
+            elif args[1:] == ["plugin", "list"]:
+                output = "vagrant-vmware-desktop (3.0.5, global)"
+            elif args[1:] == ["box", "list"]:
+                output = "mayfly/windows10 (vmware_desktop, 2024.01.06)"
+            elif args[1:] == ["validate"]:
+                output = "Vagrantfile validated"
+            elif args[1:] == ["status"]:
+                output = "kingdoms-lpe-ws01 not created (vmware_desktop)"
+            elif args[1:2] == ["up"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="")
+            else:
+                self.fail("unexpected command " + repr(args))
+            self.calls.append((tuple(args), kwargs))
+            return SimpleNamespace(returncode=0, stdout=output, stderr="")
+        self.adapter._runner = inspect_only
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertFalse(result.ready)
+        self.assertIn("returned 1", result.checks[0])
+        self.assertTrue(any(args[1:2] == ("up",) for args, _ in self.calls))
+
+    def test_unexpected_state_metadata_fails_closed(self):
+        provider = (
+            self.project / ".vagrant/machines" / EXPECTED_VM / "vmware_desktop"
+        )
+        provider.mkdir(parents=True)
+        (provider / "unexpected.lock").write_text("unknown", encoding="utf-8")
+        result = self.adapter.create_guest(confirmed=True)
+        self.assertFalse(result.ready)
+        self.assertTrue(any("partial Vagrant VM state" in line for line in result.checks))
 
     def test_guest_creation_refuses_symlinked_vagrant_state(self):
         state = self.project / ".vagrant"
