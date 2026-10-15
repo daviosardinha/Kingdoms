@@ -92,12 +92,9 @@ def render_preview(prefix: str, destination: Path) -> dict[str, str]:
         raise ValueError("NORTH-specific machine or VMware vmnet in WSLPE")
     if f"ws01 ansible_host={ip}" not in provider_inventory:
         raise ValueError("Provider inventory does not match guest IP")
-    if f"ws01 ansible_host={ip}" not in disabled_inventory:
-        # The post-Vagrant inventory currently uses groups without host IPs;
-        # provider inventory still carries host addressing. Future overrides
-        # must not bypass this source-only preview unexpectedly.
-        if "ansible_connection=winrm" not in disabled_inventory:
-            raise ValueError("Post-Vagrant inventory is not a Windows inventory")
+    # The initial provider inventory carries the guest IP; the separate
+    # post-Vagrant inventory intentionally supplies groups/WinRM settings.
+    # Validate these independently instead of expecting duplicate host IPs.
     for name, source in (
         ("initial", lab_inventory),
         ("post-vagrant", disabled_inventory),
