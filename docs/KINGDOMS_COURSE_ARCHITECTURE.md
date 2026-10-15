@@ -63,35 +63,13 @@ A future AWS-backed Windows LPE course may use the same local-only scenario role
 
 The cloud control plane must remain operator-only. Each learner receives access only to their assigned lab VM via the approved remote-access channel. No IAM or cloud console permissions, image-management rights, instance-control API access, deployment source or operator keys are delivered to learners. Provisioning, learner assignment, credential delivery, expiration, teardown and cleanup require independent acceptance tests. None of this cloud orchestration is implemented in PR #33.
 
-## First standalone machine
+## WSLPE native deployment path
 
-The feature branch contains a dedicated Vagrant project at `courses/windows-lpe/standalone/`.
+The **authoritative** Windows LPE lab is the native `WSLPE` recipe in `ad/WSLPE/`. Its generated Vagrantfile and inventory belong to an independent Kingdoms instance managed by the **existing** lab manager, VMware provider and Ansible provisioner. The repository's former `courses/windows-lpe/standalone/` Vagrant project is retained only as a superseded developer prototype; its direct guest-creation command is retired. **Do not run `vagrant up` from that old project.**
 
-- **Source image:** `mayfly/windows10`, version `2024.01.06`, as used by the existing Kingdoms workstation.
-- **Hypervisor:** VMware Desktop with a separate Vagrant state directory and guest identity.
-- **Resources:** 2 vCPUs, 4096 MiB RAM.
-- **Network:** Single VMware NAT adapter for initial provisioning and communication only; no connection to Kingdoms' segmented lab adapters. Do not treat NAT connectivity as proof of an offline lab.
-- **No domain join, no course scenario provisioning yet.** First establish the pinned Windows build, local account model and baseline controls, then perform a disconnected/offline acceptance test.
-- **Never run existing NORTH installation, apply/reset, network-mode or VMware scripts against the independent guest.** They contain assumptions about the original lab.
+The new native recipe has source-level coverage but is **not installation-ready**. Next validate generated instance files and network isolation without booting a machine, then validate guest readiness, local learner provisioning and one-by-one testing of the existing 20 techniques. Finally add the proposed 15 techniques to the same shared role, and later regression-test all 35 on NORTH WS01.
 
-The independent VM is an engineering environment, not yet a production-ready course image. Avoid claiming local privilege escalation works until the account, per-scenario, and rollback gates pass.
-
-## Low-level developer diagnostics until installer integration
-
-Run from `~/kingdoms-lpe-standalone` after committing and fetching the approved branch updates:
-
-```bash
-cd "$HOME/kingdoms-lpe-standalone"
-git status -sb
-ruby -c courses/windows-lpe/standalone/Vagrantfile
-cd courses/windows-lpe/standalone
-vagrant validate
-vagrant status
-```
-
-The commands above do not boot a machine. Only after reviewing those results, deliberately provision a **separate** VM from that directory with `vagrant up --provider=vmware_desktop`. It may take significant time to clone the Windows image, and Vagrant may need to configure its management WinRM listener. Do not reuse the existing Kingdoms provider state directory.
-
-Next inspect the guest's OS build, domain membership, services, security baseline and configured VMware network attachments. Once ready, disconnect its external network path and prove exercises remain usable through the VMware console.
+Only trusted Kingdoms operators create and manage instances. Learners receive access solely to their assigned vulnerable Windows guest. See [WSLPE core integration plan](WSLPE_CORE_INTEGRATION_PLAN.md) for the current gates and source mappings.
 
 ## Existing Windows LPE source gate
 
