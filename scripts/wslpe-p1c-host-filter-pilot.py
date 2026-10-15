@@ -83,7 +83,7 @@ def absent_before_pilot() -> None:
         raise ValueError("Proposed WSLPE nft table already exists: no overwrite allowed")
 
 
-def installed_exact_policy() -> bool:
+def installed_exact_policy(vmnet: str | None = None) -> bool:
     try:
         entries = nft_json("table", "inet", TABLE)
     except ValueError:
@@ -94,10 +94,26 @@ def installed_exact_policy() -> bool:
     rules = [obj for kind, obj in found if kind == "rule"]
     if len(tables) != 1 or len(chains) != 2 or len(rules) != 4:
         raise ValueError("WSLPE table has unexpected extra/missing objects")
-    if {c.get("name") for c in chains} != {INPUT_CHAIN, FORWARD_CHAIN}:
-        raise ValueError("Unexpected WSLPE nft chain identity")
-    if {r.get("chain") for r in rules} != {INPUT_CHAIN, FORWARD_CHAIN}:
-        raise ValueError("Unexpected WSLPE rule chain identity")
+    hooks = {(str(c.get("name")), str(c.get("hook")),
+              int(c.get("prio", 999))) for c in chains}
+    if hooks != {(INPUT_CHAIN, "input", -75), (FORWARD_CHAIN, "forward", -75)}:
+        raise ValueError("Unexpected WSLPE nft chain hooks or priorities")
+    expected = {
+        (INPUT_CHAIN, "WSLPE operator reply only", "accept"),
+        (INPUT_CHAIN, "WSLPE guest to Kali blocked", "drop"),
+        (FORWARD_CHAIN, "WSLPE guest forwarding blocked", "drop"),
+        (FORWARD_CHAIN, "WSLPE cross-network ingress blocked", "drop"),
+    }
+    actual = []
+    for item in rules:
+        operations = {key for expression in item.get("expr", ())
+                      if isinstance(expression, dict) for key in expression}
+        action = "accept" if "accept" in operations else "drop" if "drop" in operations else ""
+        actual.append((str(item.get("chain")), str(item.get("comment")), action))
+        if vmnet and vmnet not in json.dumps(item.get("expr", ())):
+            raise ValueError("WSLPE nft rule lacks the expected dedicated vmnet")
+    if set(actual) != expected or len(actual) != len(expected):
+        raise ValueError("WSLPE nft rule actions/comments differ from reviewed candidate")
     return True
 
 
@@ -169,7 +185,7 @@ def pilot(seconds: int) -> None:
     if r.returncode:
         raise ValueError("nftables rejected WSLPE-only candidate; rollback timer remains armed")
     try:
-        if not installed_exact_policy():
+        if not installed_exact_policy(vmnet):
             raise ValueError("Post-installation WSLPE table proof failed")
         if not check_https():
             raise ValueError("Operator certificate-verified HTTPS broke after policy")
