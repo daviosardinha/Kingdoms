@@ -42,6 +42,13 @@ def guest_data():
             {"InterfaceIndex": 11, "NextHop": "192.168.213.2"}
         ],
         "LearnerExists": False,
+        "LicenseProducts": [{
+            "Name": "Windows(R), Professional edition",
+            "Description": "Windows(R) Operating System, RETAIL channel",
+            "LicenseStatus": 1,
+            "GracePeriodRemaining": 0,
+        }],
+        "LicenseShutdownEvidence": [],
     }
 
 
@@ -261,6 +268,73 @@ ethernet2.connectionType = "nat"
         ok, failed = STAGE2.evaluate_windows(guest_data(), "172.28.231")
         self.assertEqual(failed, [])
         self.assertGreaterEqual(len(ok), 7)
+
+    def test_non_evaluation_licensed_windows_product_passes(self):
+        guest = guest_data()
+        ok, details = STAGE2.evaluate_license(guest)
+        self.assertTrue(ok)
+        self.assertTrue(any("non-evaluation" in x for x in details))
+        self.assertEqual(STAGE2.evaluate_windows(guest, "172.28.231")[1], [])
+
+    def test_valid_time_based_evaluation_with_training_grace_passes(self):
+        guest = guest_data()
+        guest["LicenseProducts"] = [{
+            "Name": "Windows(R), Enterprise Evaluation edition",
+            "Description": "Windows(R) Operating System, TIMEBASED_EVAL channel",
+            "LicenseStatus": 2,
+            "GracePeriodRemaining": 43200,
+        }]
+        self.assertTrue(STAGE2.evaluate_license(guest)[0])
+        self.assertEqual(STAGE2.evaluate_windows(guest, "172.28.231")[1], [])
+
+    def test_expired_or_nearly_expired_eval_blocks_course(self):
+        for grace in (0, -1, 30, 1439, None, "180"):
+            with self.subTest(grace=grace):
+                guest = guest_data()
+                guest["LicenseProducts"] = [{
+                    "Name": "Windows(R), Enterprise Evaluation edition",
+                    "Description": "TIMEBASED_EVAL channel",
+                    "LicenseStatus": 0,
+                    "GracePeriodRemaining": grace,
+                }]
+                self.assertFalse(STAGE2.evaluate_license(guest)[0])
+                self.assertTrue(any("Windows licensing" in x
+                                    for x in STAGE2.evaluate_windows(
+                                        guest, "172.28.231")[1]))
+
+    def test_unknown_or_unlicensed_windows_fails_closed(self):
+        for products in (
+            [], None, "UNKNOWN",
+            [{"Name": "Windows(R), Professional edition",
+              "Description": "RETAIL channel",
+              "LicenseStatus": 0, "GracePeriodRemaining": 0}],
+            [{"Name": "Office", "Description": "TIMEBASED_EVAL",
+              "LicenseStatus": 1, "GracePeriodRemaining": 8000}],
+        ):
+            with self.subTest(products=products):
+                guest = guest_data()
+                guest["LicenseProducts"] = products
+                self.assertFalse(STAGE2.evaluate_license(guest)[0])
+
+    def test_historical_wlms_shutdown_is_evidence_not_permanent_failure(self):
+        guest = guest_data()
+        guest["LicenseShutdownEvidence"] = [
+            {"Id": 1074, "ProviderName": "User32",
+             "TimeCreated": "2026-10-14"}
+        ]
+        ok, details = STAGE2.evaluate_license(guest)
+        self.assertTrue(ok)
+        self.assertTrue(any("Historical" in x for x in details))
+        self.assertTrue(any("current license" in x for x in details))
+
+    def test_licensing_probe_only_reads_cim_and_shutdown_event_log(self):
+        script = STAGE2.WINDOWS_READ_ONLY
+        self.assertIn("SoftwareLicensingProduct", script)
+        self.assertIn("Get-WinEvent", script)
+        self.assertIn("LicenseShutdownEvidence", script)
+        for forbidden in ("slmgr.vbs", "/rearm", "Restart-Computer",
+                          "Set-Service", "Stop-Service"):
+            self.assertNotIn(forbidden, script)
 
     def test_firewall_cim_enum_true_strings_are_accepted(self):
         """A Windows CIM GpoBoolean value can serialize as JSON text."""
