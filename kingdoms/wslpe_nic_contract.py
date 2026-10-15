@@ -1,4 +1,4 @@
-"""Provider-neutral WSLPE two-stage Windows networking contract.
+"""VMware-specific WSLPE two-stage Windows networking contract.
 
 Adapted from NORTH's proven semantics, without invoking NORTH's router/DC,
 segmented vmnet setup, or its lifecycle scripts. Read-only evidence gates here;
@@ -11,8 +11,8 @@ import ipaddress
 import re
 
 NORTH_VNETS = {"vmnet10", "vmnet20", "vmnet30", "vmnet99"}
-MANAGEMENT_VNETS = {"vmnet8"}  # conventional NAT, NOT a hardcoded requirement
-FORBIDDEN = NORTH_VNETS | MANAGEMENT_VNETS
+SHARED_VNETS = {"vmnet1", "vmnet8"}  # default host-only/NAT, not requirements
+FORBIDDEN = NORTH_VNETS | SHARED_VNETS
 
 
 def parse_vmx_networks(vmx: str) -> dict[int, dict[str, str]]:
@@ -62,7 +62,7 @@ def check_exercise_mapping(vmx: str, vmnet_subnets: dict[str, str], prefix: str)
         )
         return reasons
     if assigned in FORBIDDEN:
-        reasons.append(f"{assigned} is NORTH or shared management; WSLPE must be separate")
+        reasons.append(f"{assigned} is NORTH or a shared default VMware network; WSLPE must be separate")
         return reasons
     try:
         target = ipaddress.ip_network(prefix + ".0/24", strict=True)
