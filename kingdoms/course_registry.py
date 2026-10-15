@@ -37,6 +37,7 @@ COURSES: Tuple[Course, ...] = (
         slug="windows-lpe",
         title="Windows Local Privilege Escalation",
         state="development",
+        legacy_lab="WSLPE",  # New first-class Kingdoms lab; not yet registered.
         standalone=True,
     ),
 )
