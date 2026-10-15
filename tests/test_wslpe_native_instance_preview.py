@@ -1,6 +1,8 @@
 """Read-only tests of actual Kingdoms LabInstance WSLPE template rendering."""
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -51,6 +53,27 @@ class NativeWslpeInstancePreviewTests(unittest.TestCase):
             self.assertIn("[wslpe]", post)
             self.assertIn("[windows_lpe_standalone]", initial)
             self.assertIn("ansible_connection=winrm", initial)
+
+    def test_direct_script_entrypoint_from_unrelated_directory(self):
+        # A direct operator command must resolve the Kingdoms Python package
+        # without relying on the caller's current working directory.
+        with tempfile.TemporaryDirectory() as directory:
+            process = subprocess.run(
+                [
+                    sys.executable, str(SCRIPT), "--ip-range", "172.28.231",
+                ],
+                cwd=directory, capture_output=True, text=True,
+                timeout=30, check=False,
+            )
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertIn(
+                "KINGDOMS WSLPE NATIVE INSTANCE RENDER: SOURCE PREVIEW PASS",
+                process.stdout,
+            )
+            self.assertIn(
+                "Kingdoms workspace, VMware, Vagrant, WinRM, Ansible: NOT MODIFIED",
+                process.stdout,
+            )
 
     def test_preview_writes_nothing_to_real_kingdoms_workspace(self):
         from unittest.mock import patch
