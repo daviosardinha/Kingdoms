@@ -29,11 +29,11 @@ class WslpeNicContractTests(unittest.TestCase):
         self.assertTrue(nic.check_provisioning_layout(invalid))
 
     def test_refuse_north_and_shared_nat_vmnet_for_exercise(self):
-        for vnet in ("vmnet8", "vmnet10", "vmnet20", "vmnet30", "vmnet99"):
+        for vnet in ("vmnet1", "vmnet8", "vmnet10", "vmnet20", "vmnet30", "vmnet99"):
             with self.subTest(vnet=vnet):
                 vmx = VMX.replace("vmnet2", vnet)
                 messages = nic.check_exercise_mapping(vmx, SUBNETS, "172.28.231")
-                self.assertTrue(any("NORTH or shared management" in x for x in messages))
+                self.assertTrue(any("NORTH or a shared default VMware network" in x for x in messages))
 
     def test_unproven_vmnet_assignment_is_not_guessed(self):
         vmx = VMX.replace('ethernet1.vnet = "vmnet2"', "")
