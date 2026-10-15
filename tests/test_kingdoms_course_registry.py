@@ -5,6 +5,7 @@ Runs entirely in Python without importing the hypervisor/Ansible stack.
 import ast
 import types
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from kingdoms.course_registry import COURSES, get_course, catalog_lines
@@ -30,6 +31,9 @@ class StubLog:
 
 
 class LegacyConsole:
+    def refresh_prompt(self):
+        self.prompt = 'NORTH > '
+
     def onecmd(self, line):
         self.legacy_calls.append(line)
         return "LEGACY"
@@ -145,6 +149,33 @@ class OperatorSelectionTests(unittest.TestCase):
         self.assertTrue(
             any("mock-only guest creation" in x[1] for x in StubLog.output)
         )
+
+    def test_windows_lpe_install_prompts_and_bootstraps_without_north(self):
+        self.console.do_select_course("windows-lpe")
+        self.assertEqual(self.console.prompt, '\\nKINGDOMS/windows-lpe > ')
+        with patch("builtins.input", return_value="y") as answer:
+            self.assertFalse(self.console.do_install(""))
+        answer.assert_called_once()
+        self.assertEqual(self.console.legacy_calls, [])
+        self.assertTrue(any(
+            "guest bootstrap complete" in msg.lower()
+            for _level, msg in StubLog.output
+        ))
+
+    def test_windows_lpe_install_decline_does_not_touch_provider(self):
+        self.console.do_select_course("windows-lpe")
+        with patch("builtins.input", return_value="n"):
+            self.assertFalse(self.console.do_install(""))
+        self.assertEqual(self.console.legacy_calls, [])
+        self.assertFalse(any(
+            "mock-only guest creation" in msg for _level, msg in StubLog.output
+        ))
+
+    def test_windows_lpe_install_rejects_arguments_without_prompt(self):
+        self.console.do_select_course("windows-lpe")
+        with patch("builtins.input", side_effect=AssertionError("prompted")):
+            self.assertFalse(self.console.do_install("--non-interactive"))
+        self.assertEqual(self.console.legacy_calls, [])
 
     def test_course_switching_and_legacy_console_compatibility(self):
         self.console.do_select_course("windows-lpe")
