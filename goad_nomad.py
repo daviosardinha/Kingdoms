@@ -19,6 +19,7 @@ from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
 from kingdoms.course_registry import COURSES, get_course, catalog_lines
 from kingdoms.windows_lpe_vmware import WindowsLpeVmwareAdapter
+from kingdoms.wslpe_stage1 import bootstrap_native_wslpe, valid_prefix
 
 
 _upstream = runpy.run_path(
@@ -92,9 +93,10 @@ class GoadNomad(BaseGoad):
         Log.info(f'Selected Kingdoms course: {candidate.title} [{candidate.state}]')
         if candidate.slug == 'windows-lpe':
             Log.warning(
-                'WSLPE is being integrated as a first-class Kingdoms lab '
-                'instance. Installation remains disabled until the core '
-                'instance/provider/provisioner integration passes validation.'
+                'Windows LPE development: install now supports ONLY the native '
+                'Kingdoms WSLPE Stage 1 guest boot with explicit confirmation. '
+                'Full provisioning, other lifecycle actions and learner access '
+                'remain locked.'
             )
         elif not candidate.lifecycle_ready:
             Log.warning(
@@ -121,7 +123,11 @@ class GoadNomad(BaseGoad):
         else:
             Log.info(f'Course: {course.title}; state={course.state}')
             if not course.lifecycle_ready:
-                Log.warning('Only interactive Stage 1 VM bootstrap is available through install. Full course provisioning and other lifecycle actions remain disabled until the course adapter passes validation.')
+                Log.warning(
+                    'Only confirmed native WSLPE Stage 1 boot is available via '
+                    'interactive install. Course provisioning and other '
+                    'lifecycle actions remain disabled.'
+                )
 
     def _inspect_selected_windows_lpe(self, operation):
         """Perform inspection only, never dispatch a legacy lab lifecycle."""
@@ -171,10 +177,16 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'help', '?', 'exit', 'eof'}
+            if (
+                action == 'install'
+                and self._course_selection() is not None
+                and self._course_selection().slug == 'windows-lpe'
+            ):
+                allowed.add('install')
             if action not in allowed:
                 Log.error(
-                    'WSLPE installation is locked until native instance '
-                    'and provisioning acceptance gates pass.'
+                    'WSLPE full installation and lifecycle remain locked. '
+                    'Only selected windows-lpe Stage 1 boot is allowed.'
                 )
                 return False
         if self._course_is_not_ready():
@@ -183,6 +195,8 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
+            if name == 'install' and self._course_selection().slug == 'windows-lpe':
+                allowed.add('install')
             if name not in allowed:
                 Log.error(
                     'This course has no validated full deployment adapter. '
@@ -392,14 +406,55 @@ class GoadNomad(BaseGoad):
     def do_install(self, arg=''):
         """Route interactive Windows LPE stage-1 bootstrap away from NORTH."""
         selected = self._course_selection()
-        if (
-            (selected is not None and selected.slug == 'windows-lpe')
-            or self.lab_manager.get_current_lab_name() == 'WSLPE'
-        ):
+        if selected is not None and selected.slug == 'windows-lpe':
+            if self.lab_manager.get_current_lab_name() != 'WSLPE':
+                Log.error('WSLPE native lab must be selected before Stage 1 boot')
+                return False
+            if arg.strip():
+                Log.error('For WSLPE, type install without arguments in the operator console')
+                return False
+            if self.lab_manager.get_current_instance() is not None:
+                Log.error(
+                    'WSLPE instance already loaded. No retries through install. '
+                    'Inspect the instance and guest state independently.'
+                )
+                return False
+            Log.warning(
+                'WSLPE Stage 1 ONLY: create and boot one native Kingdoms Windows VM. '
+                'No local learner or Windows LPE scenario will be installed.'
+            )
+            try:
+                prefix = input(
+                    'WSLPE private /24 prefix (3 octets, e.g. 172.28.231): '
+                ).strip()
+                if not valid_prefix(prefix):
+                    Log.error('Invalid private /24 prefix or reserved NORTH address')
+                    return False
+                confirmation = input(
+                    f'Type CREATE WSLPE to authorize the new guest in '
+                    f'{prefix}.0/24: '
+                ).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                Log.warning('WSLPE Stage 1 boot cancelled without changes')
+                return False
+            if confirmation != 'CREATE WSLPE':
+                Log.warning('WSLPE Stage 1 boot cancelled without changes')
+                return False
+            succeeded = bootstrap_native_wslpe(
+                self.lab_manager, prefix, confirmed=True
+            )
+            self.refresh_prompt()
+            if not succeeded:
+                Log.warning(
+                    'WSLPE Stage 1 did not complete. Inspect any partial instance '
+                    'without resetting or retrying automatically.'
+                )
+            return False
+        if self.lab_manager.get_current_lab_name() == 'WSLPE':
             Log.error(
-                'WSLPE native Kingdoms instance integration is pending. '
-                'No VM was created. Direct Vagrant boot was retired to avoid '
-                'bypassing Kingdoms instance management.'
+                'Select windows-lpe explicitly. Normal WSLPE installation '
+                'and all bypass paths remain locked.'
             )
             return False
 
@@ -571,8 +626,8 @@ class GoadNomad(BaseGoad):
             print_menu_entry('course_preflight', 'inspect standalone VM tooling, do not boot')
             print_menu_entry('course_vm_status', 'inspect standalone Vagrant state')
             if self._course_selection().slug == 'windows-lpe':
-                Log.warning(
-                    'WSLPE installation pending native Kingdoms instance integration.'
+                print_menu_entry(
+                    'install', 'confirm native WSLPE Stage 1 guest boot only'
                 )
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Full course provisioning and other lifecycle actions remain disabled.')
