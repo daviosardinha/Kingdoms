@@ -113,6 +113,27 @@ git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-fo
 
 The script checks the WSLPE native `instance.json`, the read-only `.vagrant/machines/WSLPE-WS01/vmware_desktop/id` registration path, and the actual output of `vmrun -T ws list` plus `vagrant status WSLPE-WS01` from the **existing operator** Vagrant project. It distinguishes a stopped/non-listed guest, an altered VMX path and an ambiguous duplicate. It performs **no host or Windows mutations** and deliberately exits nonzero when the VM is not proven running. No automatic reboot or state repair may be attempted before examining this evidence. The newly committed diagnostic and fixture tests are awaiting operator execution.
 
+## Recovery: WSLPE native instance is powered off, not misregistered
+
+The operator ran the new native VM diagnostic and confirmed seven diagnostic tests pass. The existing WSLPE instance `d986ad-wslpe-vmware` is still **PROVIDED**, and its registered VMX file exists under the *WSLPE checkout*. `vmrun -T ws list` showed only the five independently running NORTH machines. `vagrant status WSLPE-WS01` reported **`not running (vmware_desktop)`** and that the VM was powered off.
+
+The original diagnostic label `SAME_FILENAME_DIFFERENT_PATH` was misleading. Windows 10 boxes frequently generate `windows_10.vmx` under **different VM directories**. A matching filename in NORTH is normal and does **not** imply Vagrant registration damage. The diagnostic now reports `NOT_IN_RUNNING_INVENTORY` and explains any unrelated name matches separately.
+
+**Operator recovery uses Kingdoms' existing VMware/Vagrant provider, not a second deployment path.** A new `resume` command is available *only* after explicitly selecting `windows-lpe` in the private console with an existing loaded WSLPE instance. It requires the exact confirmation `RESUME WSLPE`, validates the single native Vagrant VMX registration and present source Vagrantfile, insists on a fully consistent `vmrun` inventory and the specific Vagrant state `not running (vmware_desktop)`, and issues exactly one `provider.command.run_vagrant(['up', 'WSLPE-WS01', '--no-provision'], provider.path)` call. Afterward, it independently checks that the **exact originally registered VMX** appears once in the VMware running list. No `install`, instance creation, Ansible provisioning, new learner, snapshot/reset, NORTH lifecycle or automatic retry is permitted. It never advances the instance from `PROVIDED` to `READY`.
+
+**Not yet run by the operator:** latest `resume` implementation and tests. To validate:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone"
+git fetch origin && git merge --ff-only origin/feature/windows-lpe-standalone-foundation
+"$HOME/.goad/.venv/bin/python" -m unittest discover -s tests -p 'test_wslpe_resume.py' -v
+"$HOME/.goad/.venv/bin/python" -m unittest discover -s tests -p 'test_kingdoms_course_registry.py' -v
+```
+
+If both test suites pass, open `./goad.sh`, type `select_course windows-lpe`, then `resume`, and approve with `RESUME WSLPE`. **This actually powers on the existing VM**, and should be done only with operator approval. On any blocker, do not retry and do not run `install`, `vagrant up` or `destroy` manually.
+
+After a successful resume, rerun `bash scripts/wslpe-network-acceptance.sh` to verify the management firewall rule still matches the current WinRM forwarding port, the real Windows Firewall profiles, VMware NIC isolation and guest readiness. The nftables guard is runtime-only and not reboot persistent. Vagrant may re-evaluate port forwarding during resume, so **do not assume the previously protected host TCP/2210 remains the actual mapping** without re-verification. WSLPE remains private and unavailable to learners.
+
 ## Planned WSLPE-specific exercise handoff, NOT IMPLEMENTED YET
 
 We must validate the following gates before disconnecting WSLPE's NAT adapter:
