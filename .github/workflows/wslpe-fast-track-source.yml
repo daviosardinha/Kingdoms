@@ -75,3 +75,48 @@ jobs:
             tests.test_wslpe_learner_credentials \
             tests.test_wslpe_operator_shell_safety \
             tests.test_wslpe_aie_profile_preflight
+
+  windows-native-export:
+    name: Verify userenv CreateProfile symbol (Windows, no guest)
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check actual userenv.dll entry point without creating a user profile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Get-Content 'ansible/wslpe-always-install-elevated-preflight.yml' -Raw
+          if ($source -notmatch 'EntryPoint = "CreateProfile", ExactSpelling = true') {
+            throw 'WSLPE preflight does not use the verified native entry point'
+          }
+          $code = @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class WslpeExportCheck {
+              [DllImport("kernel32.dll", CharSet=CharSet.Unicode,
+                         ExactSpelling=true, EntryPoint="LoadLibraryW")]
+              public static extern IntPtr LoadLibrary(string name);
+              [DllImport("kernel32.dll", CharSet=CharSet.Ansi,
+                         ExactSpelling=true, EntryPoint="GetProcAddress")]
+              public static extern IntPtr GetProcAddress(IntPtr module, string name);
+              [DllImport("kernel32.dll", ExactSpelling=true, EntryPoint="FreeLibrary")]
+              [return: MarshalAs(UnmanagedType.Bool)]
+              public static extern bool FreeLibrary(IntPtr module);
+          }
+          '@
+          Add-Type -TypeDefinition $code -ErrorAction Stop
+          $handle = [WslpeExportCheck]::LoadLibrary('userenv.dll')
+          if ($handle -eq [IntPtr]::Zero) {
+            throw 'Could not load userenv.dll'
+          }
+          try {
+            $actual = [WslpeExportCheck]::GetProcAddress($handle, 'CreateProfile')
+            if ($actual -eq [IntPtr]::Zero) {
+              throw 'userenv.dll does not export CreateProfile'
+            }
+            Write-Host '[PASS] Windows userenv.dll exports CreateProfile'
+          }
+          finally {
+            [void][WslpeExportCheck]::FreeLibrary($handle)
+          }
