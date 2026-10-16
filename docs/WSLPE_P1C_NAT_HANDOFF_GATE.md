@@ -367,3 +367,42 @@ restore path, a boot-time WSLPE-only firewall/startup ordering
 contract validated across a Kali restart, and a learner-grade network
 isolation design that does not expose Kali at ARP/L2. None of these
 requirements may be marked PASS based on source tests alone.
+
+
+## 2026-10-16 — 42/42 rollback timer preview accepted; separate release scopes
+
+Live Kali output of `bash scripts/wslpe-p1c-rollback-and-boot-review.sh`
+confirmed **42/42 tests PASS**, in-memory private recovery-bundle digest,
+registered `WSLPE-WS01` VMX, scoped WinRM/host policy on current
+Vagrant TCP/2210, and the 240-second rollback timer **preview**.
+`TIMER_ARMED=FALSE`, `BOOT_INSTALL_AUTHORIZED=FALSE`, and
+`WSLPE_NAT_CUTOVER_AUTHORIZED=FALSE` remain the truthful live statuses.
+
+We detected and corrected a planning-policy mismatch: the prior
+`approve_arming()` demanded learner-grade guest-to-host L2 isolation
+even for **trusted local WSLPE engineering** on the existing Kali
+host-only vmnet2 network. These are now separate explicit scopes:
+
+- **local_dev:** may continue toward an exact-VMX WSLPE-only NAT
+  transition and restore rehearsal after **real** recovery acceptance,
+  management return route verification, and reboot-proven WSLPE boot
+  firewall and startup protection. It deliberately acknowledges
+  Kali's existing L2 exposure and NEVER permits an untrusted learner.
+- **learner:** requires **all** the above AND proven guest-to-host
+  Layer-2/hypervisor isolation plus local non-admin learner/RDP
+  acceptance, scenario resets and compliant Windows licensing.
+  `vmnet2` host-only is **not** adequate for this release.
+
+The gate defaults to **learner**, fails closed on unknown scopes and
+preserves the explicit blocking status for both currently.
+`scripts/wslpe-p1c-rollback-plan.py` now prints independent lists
+of missing proofs in one run; source unit tests enforce that
+`local_dev` cannot accidentally promote `learner`.
+
+No WSLPE reboot/start/stop, NAT disconnect, nft write, guest changes
+or NORTH change occurred in this source update. The new scope tests
+have not yet run on Kali. The next engineering work is *not another
+source preview*: it is root-owned recovery approval and host firewall
+persistence installed with a bounded, independently tested rollback
+and startup race mitigation. Learner topology remains a separate
+architecture milestone.
