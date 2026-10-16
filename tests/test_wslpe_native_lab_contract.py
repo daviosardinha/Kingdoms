@@ -110,6 +110,21 @@ class WslpeNativeLabContractTests(unittest.TestCase):
             self.assertIn(marker, self.foundation)
         self.assertIn("no_log: true", self.foundation)
 
+    def test_standalone_learner_admin_and_rdp_groups_resolve_builtin_sids(self):
+        # Get-LocalGroupMember cannot reliably accept a qualified
+        # "BUILTIN\\Administrators" name. Localized group names are resolved
+        # by stable built-in SIDs and passed as local group names.
+        self.assertIn("S-1-5-32-544", self.foundation)
+        self.assertIn("S-1-5-32-555", self.foundation)
+        self.assertIn("Get-LocalGroup -SID", self.foundation)
+        self.assertIn("Get-LocalGroupMember -Group $admins.Name", self.foundation)
+        self.assertIn("Get-LocalGroupMember -Group $rdp.Name", self.foundation)
+        self.assertNotIn("Translate([System.Security.Principal.NTAccount]).Value", self.foundation)
+        self.assertNotIn("Get-LocalGroupMember -Group $admins)", self.foundation)
+        self.assertIn("WSLPE_LOCAL_ADMIN_MEMBERSHIP=DENIED", self.foundation)
+        self.assertIn("WSLPE_LOCAL_LEARNER_RDP_GROUP=PASS", self.foundation)
+        self.assertIn("if ($machine.PartOfDomain", self.foundation)
+
     def test_existing_windows_lpe_role_is_reused_one_technique_at_a_time(self):
         self.assertIn('role: windows_lpe', self.harness)
         self.assertIn('windows_lpe_profile: none', self.harness)
