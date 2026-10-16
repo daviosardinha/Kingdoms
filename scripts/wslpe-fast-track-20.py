@@ -104,7 +104,9 @@ def invocation(ansible: Path, inventory: Path, varsfile: Path,
         if action != "validate" or state not in {"vulnerable", "clean"}:
             raise ValueError("Invalid WSLPE validation state")
         variables["windows_lpe_validate_state"] = state
-    # Include localhost so the first play\'s WSLPE-only authorization\n    # assertions are NOT silently skipped by --limit ws01.\n    return [str(ansible), "-i", str(inventory), "-i", str(varsfile),
+    # Include localhost so the first play's WSLPE-only authorization
+    # assertions are not silently skipped by --limit ws01.
+    return [str(ansible), "-i", str(inventory), "-i", str(varsfile),
             "--limit", "ws01,localhost", str(PLAYBOOK), "-e",
             json.dumps(variables, separators=(",", ":"))]
 
