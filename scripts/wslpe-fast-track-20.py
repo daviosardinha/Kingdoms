@@ -152,6 +152,25 @@ def run(args) -> int:
         raise ValueError("WSLPE Ansible inventory resolution failed")
     check_inventory(json.loads(validate.stdout), expected)
 
+    # Optional, explicitly approved local learner foundation using
+    # the existing WSLPE playbook, not NORTH's domain-joined baseline.
+    # Its first guest task asserts exact hostname and no AD membership
+    # before changing Windows settings or creating the learner account.
+    if args.bootstrap_learner:
+        foundation = ROOT / "ansible/wslpe-foundation.yml"
+        print("[RUN] WSLPE-only local learner foundation (may perform a license reboot)")
+        setup = subprocess.run(
+            [str(ansible), "-i", str(inventory), "-i", str(varsfile),
+             "--limit", "ws01", str(foundation)],
+            cwd=ROOT, env=env, capture_output=True, text=True,
+            timeout=3600, check=False,
+        )
+        if setup.returncode:
+            print(f"[BLOCKED] Standalone learner foundation exit={setup.returncode}")
+            print("[STOP] No LPE scenario was applied")
+            return 2
+        print("[PASS] WSLPE standalone learner foundation")
+
     # Must prove local (not AD) learner before any scenario mutation.
     # The WSLPE status adapter performs exact COMPUTERNAME/PartOfDomain
     # checks and requires an existing enabled local lpe.trainee.
@@ -206,12 +225,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true",
                         help="explicitly qualify all scenarios on trusted local WSLPE")
+    parser.add_argument("--bootstrap-learner", action="store_true",
+                        help="on --execute, first apply the existing WSLPE-only local foundation")
     parser.add_argument("--report-dir", default=str(
         Path.home() / ".local/state/kingdoms-wslpe-qualification"))
     parser.add_argument("--timeout-seconds", type=int, default=900)
     args = parser.parse_args()
     if not 120 <= args.timeout_seconds <= 3600:
         parser.error("Per-step timeout must be between 120 and 3600 seconds")
+    if args.bootstrap_learner and not args.execute:
+        parser.error("--bootstrap-learner requires explicit --execute")
     try:
         return run(args)
     except (OSError, ValueError, KeyError, TypeError,
