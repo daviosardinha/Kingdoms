@@ -50,15 +50,27 @@ def approve_arming(*, boot_guard_reboot_verified: bool,
                    management_return_route_verified: bool,
                    exact_workstation_vm_owner_verified: bool,
                    recovery_live_test_verified: bool,
-                   host_l2_isolation_verified: bool) -> list[str]:
+                   host_l2_isolation_verified: bool,
+                   deployment_scope: str = "learner") -> list[str]:
+    """Separate trusted local engineering from untrusted learner release.
+
+    This is a planning gate, NEVER execution authorization. Both scopes
+    require actual VMware recovery and host-boot readiness; local_dev
+    alone may accept a host-connected exercise interface temporarily.
+    """
+    if deployment_scope not in ("local_dev", "learner"):
+        raise ValueError("Unknown WSLPE deployment scope")
     missing = []
     for checked, description in (
         (boot_guard_reboot_verified, "No reboot-proven WSLPE boot firewall"),
         (management_return_route_verified, "No independent management recovery"),
         (exact_workstation_vm_owner_verified, "No exact WSLPE VMX owner proof"),
         (recovery_live_test_verified, "No real VMware owner restore acceptance"),
-        (host_l2_isolation_verified, "No guest-to-host L2 isolation proof"),
     ):
-        if not checked:
+        if type(checked) is not bool or not checked:
             missing.append(description)
+    if type(host_l2_isolation_verified) is not bool:
+        raise ValueError("Layer 2 acceptance must be explicitly proven or denied")
+    if deployment_scope == "learner" and not host_l2_isolation_verified:
+        missing.append("No guest-to-host L2 isolation proof")
     return missing
