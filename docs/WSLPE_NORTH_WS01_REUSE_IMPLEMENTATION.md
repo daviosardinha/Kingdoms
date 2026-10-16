@@ -161,3 +161,25 @@ restoration; it will **not** prove production VM shutdown/restart, a
 real powered-off VMX replacement, host reboot protection or guest
 ARP/L2 isolation. Those remain locked prerequisites for live NAT
 cutover and learner release.
+
+
+## 2026-10-16 — Owner-context VMware list and scratch restore accepted
+
+Live Kali operator output for `bash scripts/wslpe-p1c-vmrun-recovery-gate.sh`
+confirmed **30/30 source tests PASS**, exact WSLPE VM owner/VMX matched,
+host-side transient owner timer fired, and `vmrun -T ws list` was
+successfully executed by the independent systemd owner service.
+The owner-side inventory showed **6 running VMware VMs**; only the exact
+registered WSLPE VMX was selected as the recovery target.
+
+The scratch (disposable file) recovery verified candidate render and
+original restoration byte-for-byte, with distinct SHA256 values for
+original and Ethernet0-only NAT-disabled candidate.
+Markers: `WSLPE_SYSTEMD_VMRUN_LIST=TRUE`,
+`WSLPE_SCRATCH_VMX_RESTORE_BYTE_EXACT=TRUE`, and
+`WSLPE_VMWARE_OWNER_RECOVERY_READONLY_GATE=TRUE`.
+
+This closes **owner-context VMware read access and scratch VMX restore**.
+It does **NOT** prove `vmrun stop/start` under a timer, real VMX restore,
+persistent firewall rules, NAT disconnect, or Layer-2 safety. Source and
+runtime tests were read-only for VM/network components. NORTH unchanged.
