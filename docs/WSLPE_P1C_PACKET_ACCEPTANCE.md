@@ -94,3 +94,40 @@ NORTH must never be used as a test target or modified. NEXT:
 design and verify an out-of-band recoverable **WSLPE-only NAT handoff**
 with explicit exact VMX ownership, plus a broader cross-layer isolation
 matrix and eventual local non-admin learner RDP acceptance.
+
+
+## 2026-10-16 — First source regression defect and Kali desktop support
+
+First operator attempt at the combined `--execute` workflow stopped at
+unittest before any live listener, nft rules, Windows network change or
+firewall operation. The log showed **35 tests, 34 PASS and 1 ERROR**:
+`test_positive_control_demands_remote_and_matching_guest_listener`.
+The mocked listener's `count.side_effect=[0,1]` was consumed by the
+positive case. Reusing the same iterator for the negative case yielded
+`StopIteration`, which is a regression test fixture bug, not a Windows
+network failure.
+
+The test now resets the listener mock before each independent case,
+and additionally asserts that an uncorroborated guest OPEN result fails
+when no accepted guest IP is observed. The failure is fail-closed because
+the launcher has `set -euo pipefail`; **no firewall pilot occurred**.
+
+Operator has returned to local Kali. The CLI formerly refused an
+`--execute` without `SSH_CONNECTION`. It now distinguishes:
+- **SSH**: existing independent operator route and systemd timer smoke
+  checks, then remote guarded pilot.
+- **Local Kali console**: an interactive TTY and actual independent
+  systemd timer smoke proof before any WSLPE-owned filter installation,
+  then the same 180-second bounded pilot and HTTPS/rollback gates.
+
+The remote route check is never skipped on actual SSH execution. A local
+non-interactive session cannot authorize firewall modifications.
+No NORTH, VMware, guest NAT, routing, Windows guest or host firewall
+changes were made by these source fixes.
+
+The first accepted result must include **all source tests PASS** and
+`[PASS] WSLPE_PACKET_BASELINE=TRUE` (guest-to-host positive control).
+New regression tests and live packet-path probes remain pending operator
+execution. The `--execute` option is still state-changing and requires
+the exact typed confirmation string. Exercise NAT remains attached and
+guest L2/IPv6/NORTH isolation remains unverified.
