@@ -92,6 +92,38 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Parse embedded WSLPE registry reset PowerShell on native Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m pip install --disable-pip-version-check pyyaml
+          @'
+          import os
+          from pathlib import Path
+          import yaml
+          source = Path('ansible/wslpe-aie-reset-tasks.yml')
+          tasks = yaml.safe_load(source.read_text(encoding='utf-8'))
+          output = Path(os.environ['RUNNER_TEMP']) / 'wslpe-reset-powershell'
+          output.mkdir(parents=True, exist_ok=True)
+          for i, task in enumerate(tasks):
+              settings = task.get('ansible.windows.win_powershell')
+              if settings:
+                  (output / f'reset-task-{i}.ps1').write_text(
+                      settings['script'], encoding='utf-8')
+          assert len(list(output.glob('*.ps1'))) == 2
+          '@ | python -
+          $scripts = Get-ChildItem "$env:RUNNER_TEMP/wslpe-reset-powershell/*.ps1"
+          foreach ($script in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $script.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              foreach ($errorItem in $errors) { Write-Error $errorItem.Message }
+              throw "PowerShell syntax failed: $($script.Name)"
+            }
+            Write-Host "[PASS] Native Windows PowerShell AST parsed $($script.Name)"
+          }
       - name: Check actual userenv.dll entry point without creating a user profile
         shell: pwsh
         run: |
