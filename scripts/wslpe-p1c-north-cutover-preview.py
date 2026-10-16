@@ -53,12 +53,20 @@ def north_source_contract() -> None:
     ):
         if required not in lifecycle:
             raise ValueError("Proven NORTH lifecycle source drift detected")
+    # NORTH's actual Bash validator uses grep -E expressions such as
+    # ^ethernet0\\.startconnected. Compare the normalized literal tokens
+    # without weakening the Ethernet0/Ethernet1 or readiness requirements.
+    runtime_property_tokens = runtime.lower().replace(r"\\.", ".")
     for required in (
-        "ethernet0.startconnected", "ethernet1",
-        "wait_for_tcp",
+        "ethernet0.connectiontype",
+        "ethernet0.startconnected",
+        "ethernet1.connectiontype",
+        "ethernet1.vnet",
     ):
-        if required not in runtime.lower():
-            raise ValueError("NORTH post-transition validator changed")
+        if required not in runtime_property_tokens:
+            raise ValueError(f"NORTH post-transition NIC contract drift: {required}")
+    if "wait_for_tcp" not in runtime.lower():
+        raise ValueError("NORTH post-transition readiness contract drift")
     print("[PASS] Reused NORTH lifecycle sequence and runtime validation invariants")
     print("[EXCLUDED] NORTH router, DCs, domain rights and hardcoded NORTH VMnets")
 
