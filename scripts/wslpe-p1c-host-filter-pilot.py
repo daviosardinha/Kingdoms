@@ -243,7 +243,9 @@ def main() -> int:
                 raise ValueError("Read-only rollback verification takes no confirmation")
             if scoped_objects(nft_json("ruleset")):
                 raise ValueError("WSLPE host firewall pilot table still present")
-            print("[PASS] WSLPE_AUTOMATIC_ROLLBACK=TRUE")
+            print("[PASS] WSLPE_PILOT_TABLE_ABSENT=TRUE")
+            print("[INFO] Table absence after the timer window is verified;")
+            print("       prior timer smoke-test supports, but does not prove, timer causation")
             if not check_https():
                 raise ValueError("Post-rollback authenticated HTTPS failed")
             print("[PASS] WSLPE_POST_ROLLBACK_HTTPS=TRUE")
