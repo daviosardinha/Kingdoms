@@ -1,5 +1,8 @@
 # Windows LPE — Today’s fast-track from NORTH WS01 to standalone WSLPE
 
+> **Scope:** This document qualifies only the **first 20** standalone scenarios. The full standalone course target is **45 techniques (20 foundation + 15 advanced + 10 expert)**. **NORTH remains fixed at its original 20.** See [WSLPE 45-Technique Roadmap](./WSLPE_45_TECHNIQUE_ROADMAP.md). The 25 added techniques are planned, not yet implemented.
+
+
 **Source of truth:** Existing \`ansible/roles/windows_lpe\` in this repo.
 **Scope:** Standalone WSLPE development only; NORTH is read-only/frozen.
 **Status:** Fast-track operator runner committed, first Kali qualification pending.
