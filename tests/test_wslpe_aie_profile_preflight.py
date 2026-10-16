@@ -128,6 +128,10 @@ class WslpeAieProfilePreflightTests(unittest.TestCase):
                 "--execute", "--resume-report", str(checkpoint),
                 "--report-dir", str(directory),
             ])
+            fake_bin = directory / ".goad/.venv/bin"
+            fake_bin.mkdir(parents=True)
+            (fake_bin / "ansible-playbook").touch()
+            (fake_bin / "ansible-inventory").touch()
             events = []
 
             def simulate(command, **kwargs):
@@ -147,7 +151,8 @@ class WslpeAieProfilePreflightTests(unittest.TestCase):
                 events.append(("AIE_PREPARE", None, None))
                 return True
 
-            with patch.object(RUNNER, "exact_standalone", return_value=(
+            with patch.object(RUNNER.Path, "home", return_value=directory), \
+                 patch.object(RUNNER, "exact_standalone", return_value=(
                         Path("/private/WSLPE/inventory"), Path("/private/WSLPE/vars"),
                         "172.28.231.31"
                     )), patch.object(RUNNER, "check_inventory"), \
