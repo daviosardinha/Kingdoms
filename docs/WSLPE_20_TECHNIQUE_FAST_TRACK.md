@@ -125,3 +125,29 @@ appropriate Windows licensing and tenant separation.
 - Treat local developer qualification and commercial learner release
   as separate milestones. Do not pretend 20 tests alone finish the
   entire course.
+
+
+## Fast-track Python syntax hotfix (2026-10-16)
+
+The first Kali fast-track invocation stopped **before tests, PLAN or
+Windows changes** with `IndentationError: unexpected indent` at
+`scripts/wslpe-fast-track-20.py` line 108. A source-edit operation had
+inserted literal `\\n` tokens between a two-line comment and
+`return`, leaving the `return` misparsed. The feature-branch hotfix
+replaces those tokens with real newlines, without changing the WSLPE
+target, Ansible invocation, or scenario lifecycle.
+
+**Next run compiles BEFORE importing tests or executing any guest action:**
+
+~~~bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+git pull --ff-only || exit 1
+PY="$HOME/.goad/.venv/bin/python"
+"$PY" -m py_compile scripts/wslpe-fast-track-20.py tests/test_wslpe_fast_track_20.py &&
+"$PY" -m unittest -v tests.test_wslpe_fast_track_20 &&
+"$PY" scripts/wslpe-fast-track-20.py
+~~~
+
+This hotfix has not yet been validated on Kali. Do not run the
+`--execute --bootstrap-learner` branch until compile, unit tests and
+the exact WSLPE-only plan have all passed.
