@@ -81,6 +81,8 @@ class WslpeFastTrackResumeTests(unittest.TestCase):
         self.assertIn('catalog[:resume_index]', source)
         self.assertIn('"validate", "vulnerable"', source)
         self.assertIn('catalog[resume_index:]', source)
+        self.assertIn('"validate", "clean"', source)
+        self.assertIn("Previous failed apply may have partial state", source)
         self.assertIn('"--resume-report"', source)
         self.assertIn('load_private_checkpoint(', source)
 
