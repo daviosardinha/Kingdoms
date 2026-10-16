@@ -49,15 +49,20 @@ def main() -> int:
         print(f"[PASS] In-memory original recovery bundle digest={digest}")
         print(f"[PASS] Proposed owner-context systemd rollback delay={timer.delay_seconds}s")
         print(f"[INFO] Timer unit name is illustrative; unique ID required at approval")
-        issues = approve_arming(
+        evidence = dict(
             boot_guard_reboot_verified=False,
             management_return_route_verified=False,
             exact_workstation_vm_owner_verified=True,
             recovery_live_test_verified=False,
             host_l2_isolation_verified=False,
         )
-        for reason in issues:
-            print(f"[RELEASE BLOCKED] {reason}")
+        for scope in ("local_dev", "learner"):
+            issues = approve_arming(**evidence, deployment_scope=scope)
+            print(f"===== WSLPE SCOPE: {scope.upper()} =====")
+            for reason in issues:
+                print(f"[RELEASE BLOCKED] {reason}")
+            print(f"[RESULT] {scope.upper()}_PREREQUISITES_COMPLETE={not issues}")
+        print("[INFO] Trusted local development does NOT imply learner-grade L2 isolation")
         print("[RESULT] WSLPE_ROLLBACK_TIMER_PLAN=PASS; TIMER_ARMED=FALSE")
         print("[RESULT] WSLPE_NAT_CUTOVER_AUTHORIZED=FALSE")
         return 0
