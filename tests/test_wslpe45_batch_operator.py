@@ -99,7 +99,7 @@ class OperatorTests(unittest.TestCase):
         self.assertNotIn("shell=True", text)
         self.assertNotIn("exit 1", text + entry)
         self.assertNotIn("ansible/ws01-lpe-install.yml", entry)
-        self.assertNotIn("10.4.10.31", text)
+        self.assertIn('"10.4.10.31"', text)
         for expected in (".wslpe45-recovery-required", "exact_standalone",
                          "check_inventory", "ws01,localhost",
                          "WSLPE45_BATCH_STAGE=", "read_only"):
