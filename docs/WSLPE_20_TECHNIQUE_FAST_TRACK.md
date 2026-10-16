@@ -58,13 +58,28 @@ Keep \`KINGDOMS_WSLPE_LEARNER_PASSWORD\` private (at least 12 chars).
 
 ### One explicit batch qualification — WSLPE DEVELOPMENT ONLY
 
-Once the learner exists and you approve deliberately installing
-vulnerable techniques on the trusted local guest:
+If the learner foundation has NOT already been applied, use the
+**one-shot bootstrap + qualification** route. Bootstrap reuses the
+existing WSLPE-only foundation playbook and may perform a controlled
+Windows evaluation-rearm reboot. It never invokes NORTH:
+
+~~~bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-fast-track-20.py --execute --bootstrap-learner
+~~~
+
+If `lpe.trainee` already exists, avoid unnecessary provisioning and run
+only the qualification:
 
 ~~~bash
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 "$HOME/.goad/.venv/bin/python" scripts/wslpe-fast-track-20.py --execute
 ~~~
+
+Both commands demand the exact interactive approval. The bootstrap route
+does the native WSLPE inventory safety check **before** applying the
+foundation and then runs the existing local/domain-free `status`
+acceptance before any LPE vulnerability scenario.
 
 The runner:
 
