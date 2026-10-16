@@ -82,6 +82,9 @@ class WslpeFastTrackTests(unittest.TestCase):
         self.assertIn('ansible/wslpe-lpe-test.yml', s)
         self.assertIn('meta.get("lab") != "WSLPE"', s)
         self.assertIn('confirmation != "QUALIFY WSLPE 20"', s)
+        self.assertIn('args.bootstrap_learner', s)
+        self.assertIn('ansible/wslpe-foundation.yml', s)
+        self.assertIn('--bootstrap-learner requires explicit --execute', s)
         for unsafe in ("lab-mode.sh", "GOAD-WS01.vmx", "vmrun stop",
                        "nft flush", "vagrant up", "ansible/ws01-lpe-install.yml"):
             self.assertNotIn(unsafe, s)
