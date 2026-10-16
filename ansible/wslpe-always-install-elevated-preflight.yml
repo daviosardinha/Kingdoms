@@ -54,18 +54,20 @@
           using System.Text;
           public static class WslpeProfileNative {
               [DllImport("userenv.dll", CharSet = CharSet.Unicode,
-                         EntryPoint = "CreateProfileW", ExactSpelling = true)]
+                         EntryPoint = "CreateProfile", ExactSpelling = true)]
               public static extern int CreateProfile(
-                  string userSid, string userName,
-                  StringBuilder profilePath, uint chars);
+                  [MarshalAs(UnmanagedType.LPWStr)] string userSid,
+                  [MarshalAs(UnmanagedType.LPWStr)] string userName,
+                  [Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder profilePath,
+                  uint chars);
           }
           '@
               Add-Type -TypeDefinition $definition -ErrorAction Stop
-              $buffer = New-Object System.Text.StringBuilder(1024)
+              $buffer = New-Object System.Text.StringBuilder(260)
               $result = [WslpeProfileNative]::CreateProfile(
                   $sid, $account.Name, $buffer, [uint32]$buffer.Capacity)
               if ($result -ne 0 -and -not (Test-Path -LiteralPath $profileKey)) {
-                  throw "CreateProfileW failed for standalone learner, HRESULT=$result"
+                  throw "CreateProfile failed for standalone learner, HRESULT=$result"
               }
               $Ansible.Changed = $true
           }
