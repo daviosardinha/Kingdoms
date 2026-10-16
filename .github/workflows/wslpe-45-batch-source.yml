@@ -94,9 +94,13 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw '#35 script extraction failed' }
           $sources = @(
-            (Get-Item 'ansible/files/wslpe45/WslpeFixture.psm1'),
-            (Get-ChildItem "$env:RUNNER_TEMP/wslpe45-traversal-source/*.ps1")
+            Get-Item -LiteralPath 'ansible/files/wslpe45/WslpeFixture.psm1'
+          ) + @(
+            Get-ChildItem -Path "$env:RUNNER_TEMP/wslpe45-traversal-source/*.ps1"
           )
+          if ($sources.Count -lt 7) {
+            throw "Expected ownership module and six PowerShell scripts, found $($sources.Count)"
+          }
           foreach ($entry in $sources) {
             $tokens = $null
             $errors = $null
