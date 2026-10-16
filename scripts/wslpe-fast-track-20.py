@@ -155,6 +155,39 @@ def private_failure_log(root: Path, label: str, diagnostic: str) -> Path:
     return logfile
 
 
+AIE_PREPARE = ROOT / "ansible/wslpe-always-install-elevated-preflight.yml"
+
+
+def prepare_standalone_aie(*, ansible: Path, inventory: Path, varsfile: Path,
+                           env: dict, report_root: Path, timeout: int) -> bool:
+    """Only WSLPE: create the local learner profile and reconcile an
+    EMPTY, untracked directory from the previous failed apply.
+    The safety assertions live in the WSLPE-only playbook.
+    """
+    if not AIE_PREPARE.is_file():
+        raise ValueError("WSLPE-only AIE profile preflight is missing")
+    command = [
+        str(ansible), "-i", str(inventory), "-i", str(varsfile),
+        "--limit", "ws01,localhost", str(AIE_PREPARE),
+    ]
+    print("[RUN] WSLPE-only local profile and failed-apply preflight", flush=True)
+    try:
+        result = subprocess.run(
+            command, cwd=ROOT, env=env, capture_output=True, text=True,
+            timeout=timeout, check=False)
+        status = result.returncode
+        diagnostic = result.stdout + "\n" + result.stderr
+    except subprocess.TimeoutExpired:
+        status, diagnostic = 124, "WSLPE-only profile preparation timed out"
+    if status:
+        path = private_failure_log(report_root, "aie-profile-preflight", diagnostic)
+        print(f"[BLOCKED] WSLPE profile preparation exit={status}")
+        print(f"[DIAGNOSTIC] Private Ansible log: {path} (redact before sharing)")
+        return False
+    print("[PASS] WSLPE-only learner profile ready and partial fixture reconciled")
+    return True
+
+
 def run(args) -> int:
     catalog = load_catalog()
     inventory, varsfile, expected = exact_standalone()
@@ -273,10 +306,20 @@ def run(args) -> int:
             return 2
         print(f"[PASS] Previous WSLPE scenario still vulnerable: {technique}", flush=True)
 
+    prepared_aie = False
     if args.resume_report:
-        # A failed apply may have changed only half its registry/profile
-        # fixture. Never retry it blindly: demand a clean baseline first.
+        # A failed apply may have left its working directory behind.
+        # For technique 7, first validate/create the local learner profile
+        # and remove ONLY the empty, untracked exact candidate directory.
+        # This does not mutate the six previously accepted techniques.
         failed_technique = catalog[resume_index]
+        if failed_technique == "always_install_elevated":
+            if not prepare_standalone_aie(
+                ansible=ansible, inventory=inventory, varsfile=varsfile,
+                env=env, report_root=report_root,
+                timeout=args.timeout_seconds):
+                return 2
+            prepared_aie = True
         clean_cmd = invocation(
             ansible, inventory, varsfile, failed_technique, "validate", "clean")
         clean = subprocess.run(
@@ -295,6 +338,14 @@ def run(args) -> int:
                      datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".json")
     records = []
     for technique in catalog[resume_index:]:
+        if technique == "always_install_elevated" and not prepared_aie:
+            if not prepare_standalone_aie(
+                ansible=ansible, inventory=inventory, varsfile=varsfile,
+                env=env, report_root=report_root,
+                timeout=args.timeout_seconds):
+                print("[STOP] No AlwaysInstallElevated apply or further scenario changes")
+                return 2
+            prepared_aie = True
         for action, state in FLOW:
             cmd = invocation(ansible, inventory, varsfile, technique, action, state)
             print(f"[RUN] {technique}: {action}" + (f"/{state}" if state else ""), flush=True)
