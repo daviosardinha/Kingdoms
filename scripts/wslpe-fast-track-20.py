@@ -65,9 +65,16 @@ def exact_standalone() -> tuple[Path, Path, str]:
     if vmx.is_symlink() or not vmx.resolve(strict=True).is_relative_to(
             stage.WORKSPACE.resolve()):
         raise ValueError("Untrusted registered WSLPE VMX")
-    inventory = (stage.WORKSPACE / str(identity) / "inventory").resolve(strict=True)
-    if inventory.is_symlink() or not inventory.is_file():
-        raise ValueError("WSLPE native inventory unavailable")
+    # find_instance returns the actual native instance DIRECTORY, not
+    # its ID. Never reconstruct a path from an identifier/string.
+    if not isinstance(identity, Path) or identity.is_symlink():
+        raise ValueError("Untrusted native WSLPE instance directory")
+    inventory_path = identity / "inventory"
+    if inventory_path.is_symlink() or not inventory_path.is_file():
+        raise ValueError("WSLPE native inventory unavailable or symlinked")
+    inventory = inventory_path.resolve(strict=True)
+    if not inventory.is_relative_to(stage.WORKSPACE.resolve()):
+        raise ValueError("WSLPE inventory escapes the native workspace")
     base = (ROOT / "ad/WSLPE/data/inventory_disable_vagrant").resolve(strict=True)
     expected = f"{meta['ip_range']}.31"
     if not re.fullmatch(r"(?:[0-9]{1,3}\.){3}[0-9]{1,3}", expected):
