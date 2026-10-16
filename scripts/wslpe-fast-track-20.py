@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from kingdoms.wslpe_learner_credentials import learner_password, read_local_access
+from kingdoms.wslpe_fast_track_resume import load_private_checkpoint
 CATALOG = ROOT / "ansible/roles/windows_lpe/defaults/main.yml"
 PLAYBOOK = ROOT / "ansible/wslpe-lpe-test.yml"
 STAGE = ROOT / "scripts/wslpe-stage2-inspect.py"
@@ -167,8 +168,15 @@ def run(args) -> int:
     if not args.execute:
         print("[PLAN ONLY] No VMware, Windows, Ansible or firewall writes")
         print("[PREREQ] WSLPE foundation learner lpe.trainee must already exist")
-        for n, technique in enumerate(catalog, 1):
-            print(f"  {n:02d}. {technique}")
+        if args.resume_report:
+            root = private_report_dir(args.report_dir)
+            position = load_private_checkpoint(
+                args.resume_report, root, catalog, FLOW)
+            print(f"[RESUME PLAN] Revalidate {position} previously passed scenarios")
+            print(f"[RESUME PLAN] Start from {position+1:02d}. {catalog[position]}")
+        else:
+            for n, technique in enumerate(catalog, 1):
+                print(f"  {n:02d}. {technique}")
         return 0
 
     print("[WARNING] This intentionally installs/resets vulnerable LPE scenarios")
@@ -195,6 +203,15 @@ def run(args) -> int:
         raise ValueError("WSLPE Ansible inventory resolution failed")
     check_inventory(json.loads(validate.stdout), expected)
     report_root = private_report_dir(args.report_dir)
+    if args.resume_report and args.bootstrap_learner:
+        raise ValueError("Resume cannot also bootstrap/modify the existing learner foundation")
+    resume_index = (
+        load_private_checkpoint(args.resume_report, report_root, catalog, FLOW)
+        if args.resume_report else 0
+    )
+    if args.resume_report:
+        print(f"[RESUME] Approved checkpoint failure at {catalog[resume_index]}; "
+              f"revalidating {resume_index} earlier scenarios, not resetting them")
 
     # Generate ONE unique local learner credential on the first approved
     # bootstrap and reuse it on every subsequent qualification. No prompt.
@@ -241,10 +258,25 @@ def run(args) -> int:
         print("[NEXT] Inspect the precise WSLPE-only failure above, not NORTH")
         return 2
 
+    # The previous report alone is NOT evidence of current guest state.
+    # Verify every skipped technique without applying or resetting it.
+    for technique in catalog[:resume_index]:
+        cmd = invocation(ansible, inventory, varsfile, technique, "validate", "vulnerable")
+        checked = subprocess.run(
+            cmd, cwd=ROOT, env=env, capture_output=True, text=True,
+            timeout=args.timeout_seconds, check=False)
+        if checked.returncode:
+            private_log = private_failure_log(
+                report_root, "resume-preflight", checked.stdout + "\n" + checked.stderr)
+            print(f"[BLOCKED] Existing vulnerable state drift: {technique}")
+            print(f"[DIAGNOSTIC] {private_log} (redact before sharing)")
+            return 2
+        print(f"[PASS] Previous WSLPE scenario still vulnerable: {technique}", flush=True)
+
     report = report_root / ("wslpe-qualification-" +
                      datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".json")
     records = []
-    for technique in catalog:
+    for technique in catalog[resume_index:]:
         for action, state in FLOW:
             cmd = invocation(ansible, inventory, varsfile, technique, action, state)
             print(f"[RUN] {technique}: {action}" + (f"/{state}" if state else ""), flush=True)
@@ -270,6 +302,8 @@ def run(args) -> int:
                 return 1
             print("[PASS]", flush=True)
     print("[PASS] WSLPE_STANDALONE_20_TECHNIQUES_ACCEPTED=TRUE")
+    if resume_index:
+        print(f"[PASS] {resume_index} previous technique states independently revalidated")
     print("[INFO] Each scenario was left in the intended vulnerable state")
     print(f"[REPORT] {report}")
     print("[NOT VERIFIED] Learner isolation, RDP and course documentation")
@@ -279,6 +313,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true",
                         help="explicitly qualify all scenarios on trusted local WSLPE")
+    parser.add_argument("--resume-report", type=Path,
+                        help="resume a failed APPLY checkpoint after revalidating earlier vulnerable scenarios")
     parser.add_argument("--bootstrap-learner", action="store_true",
                         help="on --execute, first create/reuse a unique local learner and apply the WSLPE-only foundation")
     parser.add_argument("--show-learner-access", action="store_true",
@@ -291,6 +327,8 @@ def main():
         parser.error("Per-step timeout must be between 120 and 3600 seconds")
     if args.bootstrap_learner and not args.execute:
         parser.error("--bootstrap-learner requires explicit --execute")
+    if args.resume_report and args.bootstrap_learner:
+        parser.error("Resume cannot rerun learner foundation; choose one path")
     if args.show_learner_access and (args.execute or args.bootstrap_learner):
         parser.error("--show-learner-access is a separate, read-only operation")
     try:
