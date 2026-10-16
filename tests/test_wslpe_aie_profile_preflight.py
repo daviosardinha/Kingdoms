@@ -46,7 +46,15 @@ class WslpeAieProfilePreflightTests(unittest.TestCase):
         self.assertIn("must not be a local administrator", self.ps)
 
     def test_microsoft_profile_api_instead_of_winrm_start_process(self):
-        self.assertIn('EntryPoint = "CreateProfileW"', self.ps)
+        # userenv.dll exports CreateProfile (Unicode parameters), NOT
+        # CreateProfileW. A source-level test catches the precise P/Invoke
+        # binding error that failed live WSLPE on 2026-10-16.
+        self.assertIn('EntryPoint = "CreateProfile", ExactSpelling = true', self.ps)
+        self.assertNotIn('CreateProfileW', self.ps)
+        self.assertIn('[MarshalAs(UnmanagedType.LPWStr)] string userSid', self.ps)
+        self.assertIn('[MarshalAs(UnmanagedType.LPWStr)] string userName', self.ps)
+        self.assertIn('[Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder profilePath', self.ps)
+        self.assertIn('System.Text.StringBuilder(260)', self.ps)
         self.assertIn('DllImport("userenv.dll"', self.ps)
         self.assertIn("Add-Type -TypeDefinition $definition", self.ps)
         self.assertIn("[WslpeProfileNative]::CreateProfile(", self.ps)
