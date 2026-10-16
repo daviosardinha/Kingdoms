@@ -91,7 +91,15 @@ def check_inventory(data: dict, expected: str) -> None:
             raise ValueError("Expected exactly one standalone WSLPE host")
     host = groups.get("_meta", {}).get("hostvars", {}).get("ws01", {})
     if str(host.get("ansible_host")) != expected or host.get("ansible_connection") != "winrm":
-        raise ValueError("Inventory does not target exact WSLPE management address")
+        # Never expose credentials or full host variables in diagnostics.
+        # We can safely report only the IP and connection transport.
+        actual_ip = host.get("ansible_host", "<absent>")
+        actual_transport = host.get("ansible_connection", "<absent>")
+        raise ValueError(
+            "Resolved WSLPE inventory mismatch: "
+            f"expected host={expected}, connection=winrm; "
+            f"resolved host={actual_ip}, connection={actual_transport}"
+        )
     if not host.get("ansible_user") or host.get("domain_name") != "WSLPE":
         raise ValueError("WSLPE-only management identity not resolved")
     for forbidden in ("dc", "domain"):
@@ -169,8 +177,12 @@ def run(args) -> int:
         raise ValueError("Existing trusted GOAD Ansible environment missing")
 
     validate = subprocess.run(
+        # No --export: we need the EFFECTIVE merged host variables
+        # (instance host/IP plus WSLPE [all:vars] WinRM connection).
+        # --export is optimized for re-export and can leave inherited
+        # variables in group vars rather than _meta.hostvars.ws01.
         [str(ansible_inv), "-i", str(inventory), "-i", str(varsfile),
-         "--list", "--export"], cwd=ROOT, env=env,
+         "--list"], cwd=ROOT, env=env,
         capture_output=True, text=True, timeout=40, check=False,
     )
     if validate.returncode:
