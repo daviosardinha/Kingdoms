@@ -376,3 +376,33 @@ The actual seventh-technique PowerShell/Ansible failure is still unknown;
 the private `wslpe-scenario-8e06d146092c.log` must be inspected before
 running mutating resume. Source review and simulated shell safety do not
 prove the live guest state or preclude all future errors.
+
+
+## Fast-track regression test contract hardened (2026-10-16)
+
+Operator source checks failed with `AttributeError: 'types.SimpleNamespace'
+object has no attribute 'resume_report'`. The resume feature had added
+a mandatory `args.resume_report` read to the non-mutating path, but
+the preexisting `test_default_mode_does_not_invoke_ansible_or_modify_vm`
+test still constructed `SimpleNamespace(execute=False)`. No guest
+modifications occurred; the parent Kali terminal correctly remained
+open with a `[BLOCKED]` status.
+
+**Durable fix:** `build_parser()` is now shared by runtime and the
+source tests. Default plan and checkpoint-resume plan tests use
+`build_parser().parse_args(...)`, not hand-created namespace mocks.
+A test matrix covers all CLI option defaults. WSLPE-only
+`.github/workflows/wslpe-fast-track-source.yml` now runs syntax
+compilation and source/negative-path tests on branch updates, without
+any VMware, Windows, firewall, Vagrant or NORTH calls.
+
+**GitHub Actions source validation:** run 38946855211 completed
+SUCCESS, **22/22 tests**, `python -m py_compile` PASS. Source checks
+are real, but guest-side scenario 7 `always_install_elevated` is
+still blocked pending its private Ansible error inspection. Do not
+confuse green source CI with 20/20 Windows scenario acceptance.
+
+Next operator action: pull the feature branch; inspect
+`~/.local/state/kingdoms-wslpe-qualification/wslpe-scenario-8e06d146092c.log`
+with password redaction. Do not run `--execute --resume-report` until
+technique-7 failed APPLY's exact cause and baseline are established.
