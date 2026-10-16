@@ -105,3 +105,24 @@ privilege escalation**. These remain separate acceptance gates.
 
 P1-C is not complete until *packet-path negative tests* and an approved
 WSLPE-only, recoverable NAT cutover are designed and proven.
+
+
+## 2026-10-16 — Remote operator pilot: runtime PASS
+
+The operator executed the confirmed `scripts/wslpe-remote-operator.sh --execute` via mobile SSH on Kali. The provided terminal evidence shows:
+
+- Source regression: **31 tests PASS**.
+- WSLPE certificate-verified authenticated WinRM HTTPS: **PASS**, domain-free identity PASS, credentials sourced from the existing WSLPE configuration.
+- SSH return path: `tailscale0`, not `vmnet2` — **PASS**.
+- Independent host timer *smoke test actually fired* — **PASS**.
+- Transient WSLPE-only nftables filter on `vmnet2` installed successfully — **PASS**.
+- HTTPS operator access survived the active filter — **PASS**.
+- Scheduled rollback window elapsed; `WSLPE_PILOT_TABLE_ABSENT=TRUE` — **PASS**.
+- Verified post-rollback authenticated HTTPS: `WSLPE_POST_ROLLBACK_HTTPS=TRUE` — **PASS**.
+- Launcher completion: `WSLPE_REMOTE_PILOT_ROLLBACK_AND_HTTPS=TRUE` — **PASS**.
+
+**Scope:** No NORTH, VM, Windows, provisioning NAT or permanent host firewall modification was performed by this pilot. The temporary WSLPE-only table was confirmed absent after the rollback window. Table absence alone does **not** prove that the rollback systemd timer was the precise removal cause; the independent earlier smoke test proves only that timer infrastructure can execute.
+
+**Next acceptance gates:** (1) controlled WSLPE guest-to-Kali packet filtering tests with negative controls (include IPv4/IPv6 and host service paths), (2) independent isolation proof for ARP/L2, hypervisor and NORTH despite intended learner SYSTEM privileges, (3) bounded, exactly registered WSLPE-only provisioning NAT handoff/reconnect with out-of-band recovery, (4) durable firewall/guard persistence across host restart, and (5) local learner RDP access. All remain **unverified/locked**, and WSLPE status remains `PROVIDED`, not `READY`.
+
+Do not modify NORTH, reuse its `lab-mode.sh`, disconnect NAT or promote learner access on the strength of this pilot alone.
