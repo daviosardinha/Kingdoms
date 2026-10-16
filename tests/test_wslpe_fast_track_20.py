@@ -110,22 +110,17 @@ class WslpeFastTrackTests(unittest.TestCase):
             FAST.invocation(binpath, inv, varsfile, "unquoted_service_path", "apply", "clean")
 
     def test_default_mode_does_not_invoke_ansible_or_modify_vm(self):
-        from types import SimpleNamespace
         with patch.object(FAST, "exact_standalone", return_value=(
                 Path("/tmp/ws/inventory"), Path("/tmp/ws/vars"), "172.28.231.31"
                 )), patch.object(FAST.subprocess, "run") as call:
-            # Keep this fixture aligned with every argparse option used
-            # by the non-mutating run() path. This caught the 2026-10-16
-            # missing resume_report AttributeError regression.
-            args = SimpleNamespace(
-                execute=False, resume_report=None,
-                report_dir=str(Path("/tmp/wslpe-preview-unused")),
-            )
+            # Parse the actual CLI defaults: no hand-maintained
+            # SimpleNamespace that can drift when flags are added.
+            args = FAST.build_parser().parse_args([])
+            self.assertIsNone(args.resume_report)
             self.assertEqual(FAST.run(args), 0)
             call.assert_not_called()
 
     def test_read_only_resume_plan_accepts_full_cli_args_without_ansible(self):
-        from types import SimpleNamespace
         with TemporaryDirectory() as temp:
             root = Path(temp) / "report"
             root.mkdir(mode=0o700)
@@ -142,16 +137,34 @@ class WslpeFastTrackTests(unittest.TestCase):
             })
             checkpoint.write_text(json.dumps(events), encoding="utf-8")
             checkpoint.chmod(0o600)
-            args = SimpleNamespace(
-                execute=False,
-                resume_report=checkpoint,
-                report_dir=str(root),
-            )
+            args = FAST.build_parser().parse_args([
+                "--resume-report", str(checkpoint),
+                "--report-dir", str(root),
+            ])
             with patch.object(FAST, "exact_standalone", return_value=(
                 Path("/tmp/ws/inventory"), Path("/tmp/ws/vars"), "172.28.231.31",
             )), patch.object(FAST.subprocess, "run") as call:
                 self.assertEqual(FAST.run(args), 0)
                 call.assert_not_called()
+
+    def test_argument_parser_modes_have_all_expected_defaults(self):
+        parser = FAST.build_parser()
+        for switches in (
+            [],
+            ["--resume-report", "/tmp/report.json"],
+            ["--execute"],
+            ["--execute", "--bootstrap-learner"],
+            ["--execute", "--resume-report", "/tmp/report.json"],
+            ["--show-learner-access"],
+        ):
+            with self.subTest(switches=switches):
+                args = parser.parse_args(switches)
+                for required in (
+                    "execute", "resume_report", "bootstrap_learner",
+                    "show_learner_access", "report_dir", "timeout_seconds",
+                ):
+                    self.assertTrue(hasattr(args, required), required)
+        self.assertIsNone(parser.parse_args([]).resume_report)
 
     def test_private_failure_log_keeps_ansible_diagnostics_owner_only(self):
         with TemporaryDirectory() as folder:
