@@ -190,3 +190,50 @@ and WSLPE-only provisioning directly; \`--show-learner-access\` remains
 a separate read-only operator operation. Actual infrastructure and
 learner-release safety preconditions still apply.
 
+
+
+## Inventory export-mode regression (2026-10-16)
+
+On Kali the refreshed fast-track passed **12/12 source tests** and
+catalog discovery (20/20), then stopped *before credential creation
+or Windows modification* at:
+`[BLOCKED] WSLPE qualification: Inventory does not target exact WSLPE management address`.
+The user also attempted `--show-learner-access`, which appropriately
+failed because no credential had been created.
+
+The runner had invoked `ansible-inventory --list --export` but
+assumed `_meta.hostvars.ws01` held the fully merged connection
+variables. Export mode optimizes the format for inventory export and
+may leave `[all:vars]` connection properties separate from hostvars.
+This is not the correct representation for strict effective
+connection checks.
+
+**Fix:** `resolved_inventory_command()` now runs
+`ansible-inventory -i <native_instance> -i <WSLPE_only_vars> --list`
+(without `--export`), preserving the exact registered WSLPE
+instance/IP, the resolved WinRM transport, one standalone host,
+`domain_name=WSLPE`, and denial of NORTH/DC hosts. The negative
+regression covers export-style layout, wrong transport and NORTH IP.
+On a real mismatch the runner displays only expected/actual IP and
+transport, never passwords.
+
+A missing `--show-learner-access` credential now explains that
+`--bootstrap-learner` must first pass inventory. No account, secret
+or vulnerability changes were made by the failed run.
+
+**Next combined local execution:**
+
+~~~bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+git pull --ff-only || exit 1
+PY="$HOME/.goad/.venv/bin/python"
+"$PY" -m py_compile scripts/wslpe-fast-track-20.py kingdoms/wslpe_learner_credentials.py &&
+"$PY" -m unittest -v tests.test_wslpe_fast_track_20 tests.test_wslpe_learner_credentials &&
+"$PY" scripts/wslpe-fast-track-20.py --execute --bootstrap-learner
+~~~
+
+The newly added tests are **not yet validated on Kali**. Explicit
+`--execute` remains sufficient authorization; no terminal confirmation
+phrases or manual password prompts. If WSLPE provisioning fails, the
+script stops and supplies a private diagnostic log path. Never share
+an unredacted log containing Ansible credentials.
