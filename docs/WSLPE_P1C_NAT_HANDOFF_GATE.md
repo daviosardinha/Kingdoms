@@ -149,3 +149,43 @@ proven commands for the existing VMware Workstation version and the
 exact registered WSLPE VMX, with a host-independent recovery option.
 
 This is an architectural release decision, not a new diagnostic loop.
+
+
+## 2026-10-16 — Boot-time host firewall guard must track live Vagrant port
+
+The accepted owner-context read-only recovery gate passed **30/30**
+source tests. The independent host-side systemd worker successfully ran
+`vmrun -T ws list` as the registered WSLPE VMX owner, observing six
+running VMware guests but selecting the **one exact WSLPE VMX only**.
+The real VMX was untouched; scratch NAT-change and original-byte
+restoration passed.
+
+### Persistence dependency discovered in source
+
+The current WSLPE forwarded WinRM port is discovered at runtime through
+`scripts/wslpe-stage2-inspect.py::forwarded_winrm_port()`, ultimately
+using `vagrant port WSLPE-WS01`. The existing
+`kingdoms/wslpe_winrm_guard.firewall_batch(port)` deliberately drops
+non-loopback traffic at the **exact discovered host TCP port**.
+Historically VMware/Vagrant has reassigned this forwarded port after
+collision. **A boot service that blindly hardcodes TCP/2210 is unsafe**:
+it could fail to protect a newly reassigned host listener.
+
+The next boot-persistence implementation must therefore be one
+coordinated WSLPE-only change that proves the live forward mapping
+matches the protected port, revalidates the guard after Vagrant/VMware
+port reassignment, and fails closed rather than silently leaving the
+current listener exposed. It must never rely on restarting shared
+VMware NAT services or importing NORTH router/nftables configuration.
+
+The boot-stage guard needs to be verified **before** any untrusted
+learner can reach a running WSLPE VM. Dedicated nftables table identity,
+INPUT/FORWARD hook priority, IPv4/IPv6 packet evidence and startup
+ordering must all be validated after a real host restart. Enabling
+`nftables.service` without proving it preserves the existing host
+rulesets is forbidden.
+
+The host-only vmnet2 L2/ARP boundary is a separate unsolved blocker,
+even if boot persistence and NAT disconnect subsequently pass. No
+release readiness promotion or live VMX mutation is authorized from
+the successful read-only recovery gate.
