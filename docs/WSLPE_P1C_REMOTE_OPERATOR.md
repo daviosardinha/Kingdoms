@@ -126,3 +126,20 @@ The operator executed the confirmed `scripts/wslpe-remote-operator.sh --execute`
 **Next acceptance gates:** (1) controlled WSLPE guest-to-Kali packet filtering tests with negative controls (include IPv4/IPv6 and host service paths), (2) independent isolation proof for ARP/L2, hypervisor and NORTH despite intended learner SYSTEM privileges, (3) bounded, exactly registered WSLPE-only provisioning NAT handoff/reconnect with out-of-band recovery, (4) durable firewall/guard persistence across host restart, and (5) local learner RDP access. All remain **unverified/locked**, and WSLPE status remains `PROVIDED`, not `READY`.
 
 Do not modify NORTH, reuse its `lab-mode.sh`, disconnect NAT or promote learner access on the strength of this pilot alone.
+
+
+## Next checkpoint: guest-to-owned-host packet-path acceptance
+
+The completed 120-second pilot established source/management/rollback behavior,
+but not actual guest-originating dataplane denial. The next WSLPE-only stage
+adds [WSLPE packet acceptance](WSLPE_P1C_PACKET_ACCEPTANCE.md) with a
+controlled unprivileged host listener bound only to vmnet2 and a single
+authenticated Windows-origin TCP connection to that exact host service.
+
+The baseline launcher `bash scripts/wslpe-p1c-packet-review.sh` runs
+source regressions and the safe guest-to-host positive control without
+applying any firewall. Its separately confirmed `--execute` mode, **not
+yet authorized for runtime**, reuses the independent host-side rollback and
+proves the negative path while filtering and positive restoration after timer
+expiry. It never probes NORTH or disconnects NAT; all IPv6, ARP/L2, NAT,
+hypervisor and SYSTEM-compromise isolation claims remain blocked.
