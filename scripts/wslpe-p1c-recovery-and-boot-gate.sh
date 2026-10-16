@@ -12,6 +12,7 @@ PY="$HOME/.goad/.venv/bin/python"
 echo '===== P1-C RECOVERY AND DYNAMIC BOOT-GUARD SOURCE REGRESSIONS ====='
 "$PY" -m py_compile \
   kingdoms/wslpe_exact_restore.py \
+  kingdoms/wslpe_recovery_bundle.py \
   kingdoms/wslpe_vmware_recover.py \
   kingdoms/wslpe_boot_policy.py \
   scripts/wslpe-p1c-boot-policy-preview.py
