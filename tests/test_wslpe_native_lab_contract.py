@@ -123,6 +123,8 @@ class WslpeNativeLabContractTests(unittest.TestCase):
         self.assertNotIn("Get-LocalGroupMember -Group $admins)", self.foundation)
         self.assertIn("WSLPE_LOCAL_ADMIN_MEMBERSHIP=DENIED", self.foundation)
         self.assertIn("WSLPE_LOCAL_LEARNER_RDP_GROUP=PASS", self.foundation)
+        self.assertIn(r'-Member "$env:COMPUTERNAME\$LearnerName"', self.foundation)
+        self.assertNotIn(r'-Member "$env:COMPUTERNAME\\$LearnerName"', self.foundation)
         self.assertIn("if ($machine.PartOfDomain", self.foundation)
 
     def test_existing_windows_lpe_role_is_reused_one_technique_at_a_time(self):
