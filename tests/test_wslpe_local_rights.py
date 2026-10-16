@@ -28,7 +28,8 @@ class WslpeLocalRightsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         tasks = yaml.safe_load(TASK.read_text(encoding="utf-8"))
-        cls.assertEqual(cls, len(tasks), 1)
+        if len(tasks) != 1:
+            raise AssertionError("WSLPE rights adapter must have exactly one scoped task")
         cls.script = tasks[0]["ansible.windows.win_powershell"]["script"]
         cls.play = yaml.safe_load(ADAPTER.read_text(encoding="utf-8"))[1]
 
