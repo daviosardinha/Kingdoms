@@ -149,14 +149,16 @@ class WslpeRollbackTimerTests(unittest.TestCase):
         from contextlib import redirect_stdout
         from io import StringIO
         import sys
-        with patch.dict(os.environ, {
-            "INVOCATION_ID": "", "KINGDOMS_WSLPE_ROLLBACK_ENABLED": ""
-        }), patch.object(sys, "argv", [
-            "rollback.py", "--bundle", "/tmp/example/recovery.json",
-            "--approved-sha256", "f"*64, "--restore"
-        ]), patch.object(CLI, "stage_module") as stage, redirect_stdout(StringIO()):
-            self.assertEqual(CLI.main(), 1)
-            stage.assert_not_called()
+        for invocation in ("", "spoofed-host-unit"):
+            with self.subTest(invocation=invocation), patch.dict(os.environ, {
+                "INVOCATION_ID": invocation,
+                "KINGDOMS_WSLPE_ROLLBACK_ENABLED": "TRUE"
+            }), patch.object(sys, "argv", [
+                "rollback.py", "--bundle", "/tmp/example/recovery.json",
+                "--approved-sha256", "f"*64, "--restore"
+            ]), patch.object(CLI, "stage_module") as stage, redirect_stdout(StringIO()):
+                self.assertEqual(CLI.main(), 1)
+                stage.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()
