@@ -18,6 +18,7 @@ echo '===== P1-C RECOVERY AND DYNAMIC BOOT-GUARD SOURCE REGRESSIONS ====='
   scripts/wslpe-p1c-boot-policy-preview.py
 "$PY" -m unittest -v \
   tests.test_wslpe_exact_restore \
+  tests.test_wslpe_recovery_bundle \
   tests.test_wslpe_vmware_recover \
   tests.test_wslpe_boot_policy \
   tests.test_wslpe_north_cutover_parity \
