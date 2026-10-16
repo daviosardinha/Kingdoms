@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-from kingdoms.wslpe_fast_track_resume import resume_position, load_private_checkpoint
+from kingdoms.wslpe_fast_track_resume import resume_position, load_private_checkpoint, load_chained_private_checkpoint
 
 CATALOG = (
     "unquoted_service_path", "weak_service_dacl",
@@ -74,6 +74,50 @@ class WslpeFastTrackResumeTests(unittest.TestCase):
             linked.symlink_to(path)
             with self.assertRaises(ValueError):
                 load_private_checkpoint(linked, root, CATALOG, FLOW)
+
+    def test_exact_original_plus_newer_report_proves_sixteen_passes(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp) / "private"
+            root.mkdir(mode=0o700)
+            prefix = root / "wslpe-qualification-20261016T153256Z.json"
+            later = root / "wslpe-qualification-20261016T213032Z.json"
+            first = checkpoint()
+            later_rows = [
+                {"technique": tech, "action": action,
+                 "state": state, "exit_code": 0}
+                for tech in CATALOG[6:16] for action, state in FLOW
+            ]
+            later_rows.append({
+                "technique": "sebackup_privilege", "action": "apply",
+                "state": None, "exit_code": 2,
+            })
+            self.assertEqual(len(first), 37)
+            self.assertEqual(len(later_rows), 61)
+            prefix.write_text(json.dumps(first))
+            later.write_text(json.dumps(later_rows))
+            prefix.chmod(0o600)
+            later.chmod(0o600)
+            self.assertEqual(
+                load_chained_private_checkpoint(prefix, later, root, CATALOG, FLOW),
+                16,
+            )
+            with self.assertRaises(ValueError):
+                load_private_checkpoint(later, root, CATALOG, FLOW)
+            with self.assertRaises(ValueError):
+                load_chained_private_checkpoint(later, later, root, CATALOG, FLOW)
+            for changed in (
+                later_rows[1:],
+                later_rows[:5] + [dict(later_rows[5], exit_code=2)] + later_rows[6:],
+                later_rows[:-1] + [dict(later_rows[-1], action="reset")],
+                later_rows[:-1] + [dict(later_rows[-1], technique="seimpersonate_privilege")],
+            ):
+                later.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    load_chained_private_checkpoint(prefix, later, root, CATALOG, FLOW)
+            later.write_text(json.dumps(later_rows))
+            later.chmod(0o644)
+            with self.assertRaises(ValueError):
+                load_chained_private_checkpoint(prefix, later, root, CATALOG, FLOW)
 
     def test_resume_has_no_guest_mutations_in_preflight_source(self):
         source = (Path(__file__).resolve().parents[1]
