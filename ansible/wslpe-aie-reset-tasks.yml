@@ -78,9 +78,25 @@
       # The original NORTH role uses "KingdomAIE" for temporary mounts.
       $loadedSID = Test-Path -LiteralPath "Registry::HKEY_USERS\$sid"
       $mount = if ($loadedSID) { $sid } else { 'KingdomAIE' }
-      if (-not $loadedSID -and -not (Test-Path -LiteralPath 'Registry::HKEY_USERS\KingdomAIE')) {
-          & reg.exe load "HKU\$mount" "$ntuser" | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw 'AIE registry hive could not be loaded for restoration' }
+      if (-not $loadedSID) {
+          $alreadyMounted = Test-Path -LiteralPath 'Registry::HKEY_USERS\KingdomAIE'
+          if ($alreadyMounted) {
+              # A stale mount from the failed shared-role reset is expected,
+              # but never unload a foreign process's unrelated registry hive.
+              $hiveList = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\hivelist' -ErrorAction Stop
+              $record = @($hiveList.PSObject.Properties | Where-Object { $_.Name -eq '\REGISTRY\USER\KingdomAIE' })
+              $pathTail = $ntuser.Substring(2)
+              if ($record.Count -ne 1 -or
+                  -not [string]$record[0].Value -or
+                  -not ([string]$record[0].Value).EndsWith(
+                      $pathTail, [StringComparison]::OrdinalIgnoreCase)) {
+                  throw 'AIE temporary registry mount cannot be identified as the exact learner profile'
+              }
+          }
+          else {
+              & reg.exe load "HKU\$mount" "$ntuser" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'AIE registry hive could not be loaded for restoration' }
+          }
       }
 
       # All HKCU changes are completed HERE. A separate Ansible task will
@@ -123,7 +139,6 @@
       $Ansible.Changed = $true
       Write-Output 'WSLPE_AIE_REGISTRY_SNAPSHOT_RESTORED=TRUE'
   register: wslpe_aie_restore
-  no_log: true
 
 - name: Require verified WSLPE AIE registry restoration
   ansible.builtin.assert:
