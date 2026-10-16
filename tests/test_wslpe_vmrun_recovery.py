@@ -104,7 +104,8 @@ class WslpeVmrunRecoveryTests(unittest.TestCase):
             self.assertEqual(evidence["running_vm_count"], 1)
             args = calls[0]
             self.assertIn(f"--property=User={owner}", args)
-            self.assertEqual(args[-3:], ["--result", args[-2], args[-1]][1:] if False else args[-3:])
+            self.assertEqual(args[-2], "--result")
+            self.assertEqual(args[-1], str(Path(args[-1])))
             self.assertIn("--worker", args)
             self.assertIn(str(vmx), args)
             self.assertIn(str(vmrun), args)
