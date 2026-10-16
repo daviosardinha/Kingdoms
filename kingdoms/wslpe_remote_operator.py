@@ -57,7 +57,7 @@ def ssh_management_path(vmnet: str, subnet: str,
         raise ValueError("Host SSH return-route evidence is ambiguous")
     device = routes[0].get("dev")
     if (not isinstance(device, str) or not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,32}", device)
-            or device == vmnet):
+            or device == vmnet or device.startswith("vmnet")):
         raise ValueError("SSH route may traverse the vulnerable WSLPE vmnet")
     source = routes[0].get("prefsrc") or routes[0].get("src")
     if not source:
