@@ -1,0 +1,182 @@
+---
+# Source readiness, NOT deployment or attack evidence.
+schema: kingdoms.wslpe45.impl-index.v1
+scope: standalone-wslpe-only
+target: WSLPE-WS01
+shared_north_role_frozen: true
+techniques:
+  - number: 21
+    id: scheduled_task_definition_acl
+    status: planned
+    playbook: ansible/wslpe45/scheduled_task_definition_acl.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 22
+    id: scm_create_service_acl
+    status: planned
+    playbook: ansible/wslpe45/scm_create_service_acl.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 23
+    id: privileged_service_config_injection
+    status: planned
+    playbook: ansible/wslpe45/privileged_service_config_injection.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 24
+    id: privileged_updater_hijack
+    status: planned
+    playbook: ansible/wslpe45/privileged_updater_hijack.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 25
+    id: msi_repair_custom_action
+    status: planned
+    playbook: ansible/wslpe45/msi_repair_custom_action.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 26
+    id: ifeo_debugger_acl_hijack
+    status: planned
+    playbook: ansible/wslpe45/ifeo_debugger_acl_hijack.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 27
+    id: com_clsid_registration_hijack
+    status: planned
+    playbook: ansible/wslpe45/com_clsid_registration_hijack.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 28
+    id: app_paths_registry_hijack
+    status: planned
+    playbook: ansible/wslpe45/app_paths_registry_hijack.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 29
+    id: named_pipe_authorization
+    status: planned
+    playbook: ansible/wslpe45/named_pipe_authorization.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 30
+    id: jea_role_capability_misconfig
+    status: planned
+    playbook: ansible/wslpe45/jea_role_capability_misconfig.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 31
+    id: setakeownership_privilege
+    status: planned
+    playbook: ansible/wslpe45/setakeownership_privilege.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 32
+    id: serestore_privilege
+    status: planned
+    playbook: ansible/wslpe45/serestore_privilege.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 33
+    id: sedebug_privilege
+    status: planned
+    playbook: ansible/wslpe45/sedebug_privilege.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 34
+    id: ntfs_link_redirection
+    status: planned
+    playbook: ansible/wslpe45/ntfs_link_redirection.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 35
+    id: privileged_path_traversal_write
+    status: candidate
+    playbook: ansible/wslpe45/traversal.yml
+    source_ci: passed
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 36
+    id: wmi_privileged_provider_authorization
+    status: planned
+    playbook: ansible/wslpe45/wmi_privileged_provider_authorization.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 37
+    id: wmi_permanent_consumer_hijack
+    status: planned
+    playbook: ansible/wslpe45/wmi_permanent_consumer_hijack.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 38
+    id: dcom_server_launch_acl
+    status: planned
+    playbook: ansible/wslpe45/dcom_server_launch_acl.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 39
+    id: privileged_loopback_http_authz
+    status: planned
+    playbook: ansible/wslpe45/privileged_loopback_http_authz.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 40
+    id: custom_rpc_authorization
+    status: planned
+    playbook: ansible/wslpe45/custom_rpc_authorization.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 41
+    id: privileged_argument_injection
+    status: planned
+    playbook: ansible/wslpe45/privileged_argument_injection.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 42
+    id: privileged_child_environment_trust
+    status: planned
+    playbook: ansible/wslpe45/privileged_child_environment_trust.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 43
+    id: elevated_plugin_signature_bypass
+    status: planned
+    playbook: ansible/wslpe45/elevated_plugin_signature_bypass.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 44
+    id: privileged_file_toctou
+    status: planned
+    playbook: ansible/wslpe45/privileged_file_toctou.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending
+  - number: 45
+    id: privileged_backup_restore_api
+    status: planned
+    playbook: ansible/wslpe45/privileged_backup_restore_api.yml
+    source_ci: pending
+    learner_proof: pending
+    six_stage_qualification: pending

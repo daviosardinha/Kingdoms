@@ -13,6 +13,10 @@ on:
       - 'scripts/wslpe-45-feasibility.py'
       - 'tests/test_wslpe_batch_catalog.py'
       - 'tests/test_wslpe_batch_feasibility.py'
+      - 'kingdoms/wslpe45_implementation_index.yml'
+      - 'kingdoms/wslpe45_batch_operator.py'
+      - 'scripts/wslpe-45-qualify.py'
+      - 'tests/test_wslpe45_batch_operator.py'
       - 'tests/test_wslpe45_candidate_traversal.py'
       - 'ansible/files/wslpe45/**'
       - 'ansible/wslpe45/**'
@@ -31,9 +35,16 @@ jobs:
       - name: Validate Python, all 45 unique IDs, frozen NORTH and exact-guest negative paths
         run: |
           python -m py_compile kingdoms/wslpe_batch_catalog.py kingdoms/wslpe_batch_feasibility.py scripts/wslpe-45-batch.py scripts/wslpe-45-feasibility.py tests/test_wslpe_batch_catalog.py tests/test_wslpe_batch_feasibility.py
-          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator
           python scripts/wslpe-45-batch.py
           python scripts/wslpe-45-feasibility.py
+          python scripts/wslpe-45-qualify.py
+          if python scripts/wslpe-45-qualify.py --execute; then
+            echo 'ERROR: Incomplete 25-fixture batch must refuse guest execution'
+            false
+          else
+            echo '[PASS] Incomplete batch correctly fails closed before guest contact'
+          fi
 
   windows-native-syntax:
     runs-on: windows-latest
