@@ -1,5 +1,7 @@
 """WSLPE-only NAT readiness contracts; no live VMware, firewall or guest writes."""
 import importlib.util
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 import unittest
 from unittest.mock import MagicMock, patch
@@ -100,9 +102,10 @@ class WslpeNatReadinessTests(unittest.TestCase):
         self.assertFalse(cutover_blockers(False, True, True, True))
 
     def test_main_fails_closed_before_guest_calls_when_vmx_identity_missing(self):
-        with patch.object(M, "imported") as imported:
+        with patch.object(M, "imported") as imported, redirect_stdout(StringIO()) as observed:
             imported.side_effect = ValueError("WSLPE VMX missing")
             self.assertEqual(M.main(), 1)
+            self.assertIn("[BLOCKED] ValueError", observed.getvalue())
 
     def test_source_checks_only_wslpe_without_mutations(self):
         source = SCRIPT.read_text(encoding="utf-8")
