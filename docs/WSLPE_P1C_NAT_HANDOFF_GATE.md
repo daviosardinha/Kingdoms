@@ -1,6 +1,6 @@
 # WSLPE P1-C — One-shot NAT handoff readiness and release gate
 
-**Status:** Audit committed; new live run pending. WSLPE PROVIDED / NOT READY. NORTH frozen.
+**Status:** Consolidated live read-only audit PASSED on 2026-10-16. NAT cutover LOCKED; WSLPE PROVIDED / NOT READY. NORTH frozen.
 
 ## Evidence already accepted (October 16)
 
@@ -60,3 +60,56 @@ firewall has yet been demonstrated. Do not equate a successful source
 run with a safe NAT cutover or a learner-ready release.
 
 NORTH is untouched; all source changes remain on the WSLPE feature branch.
+
+
+## October 16 — Accepted complete live audit and single implementation milestone
+
+The operator ran the complete one-shot P1-C gate on Kali. The submitted
+terminal log shows **66/66 source/safety tests PASS** plus **29/29
+additional consolidated review tests PASS**. An early [BLOCKED] ValueError
+appearing between these sections was the deliberately simulated negative
+test for missing VMX; it was **not** a live infrastructure failure. This
+test now captures its own expected output to remove that confusing marker.
+
+Actual evidence, all scoped to WSLPE:
+- Exact registered and uniquely running `windows_10.vmx`, exercise
+  `vmnet2`, host `172.28.231.1`, guest `172.28.231.31`.
+- NAT Ethernet0 remains attached; distinct exercise Ethernet1 remains
+  attached. Windows NICs match both VMware VMX MAC identities exactly.
+  Windows NAT NIC index 6 has one default route; dedicated exercise NIC
+  index 8 has **no IPv4 or IPv6 default route**.
+- **One IPv6 address exists on the exercise NIC**. This is exposure
+  evidence, not a successful IPv6 attack or a proof of isolation.
+- Co-tenant detection found no other *running* VMX explicitly on
+  vmnet2 among five checked. Powered-off VMs, dynamic attachments and
+  hypervisor paths remain unverified.
+- Certificate-pinned, authenticated WinRM HTTPS/5986 **PASS** and
+  domain-free Windows identity **PASS**. Windows security baseline
+  **9/9 PASS**; guard table present.
+- Previous scoped nft policy not installed; no collision; syntax
+  check accepted; WSLPE pilot table absent after prior timer;
+  post-rollback HTTPS **PASS**.
+- Host nftables boot service was **disabled**. Host firewall
+  persistence across reboot has NOT been proved.
+- Existing host has **18 TCP/UDP listeners** bound to its dedicated
+  WSLPE interface or wildcard addresses. This does not mean all
+  are reachable from the guest; positive/negative packet tests
+  must demonstrate the actual allowed paths.
+- `WSLPE_NAT_READINESS_AUDIT=PASS; REMAINING_GATES=4`;
+  `WSLPE_NAT_CUTOVER_AUTHORIZED=FALSE`.
+
+**Engineering decision:** Stop repeating source/read-only audits.
+The next GitHub change must deliver one reviewed WSLPE-only
+implementation containing (a) host reboot-persistent filtering with
+safe scoped rollback, (b) an independent exact-VMX/NAT restore runbook
+and timer that is actually executable under the existing VMware owner
+context, (c) a vendor-safe powered-off Ethernet0-only cutover, and
+(d) IPv4/IPv6/ARP/L2 and post-restart acceptance. The new implementation
+must not promise complete guest isolation merely because the IPv4
+INPUT filter passed. If VMware host-only vmnet2 cannot meet the L2
+boundary, redesign the exercise/management boundary rather than
+weaken the acceptance criteria.
+
+**No VM lifecycle or firewall changes were authorized or made by the
+read-only gate.** NORTH is frozen, and no learner RDP or training release
+may be enabled until the new controls pass live acceptance.
