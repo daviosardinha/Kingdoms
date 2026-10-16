@@ -406,3 +406,78 @@ Next operator action: pull the feature branch; inspect
 `~/.local/state/kingdoms-wslpe-qualification/wslpe-scenario-8e06d146092c.log`
 with password redaction. Do not run `--execute --resume-report` until
 technique-7 failed APPLY's exact cause and baseline are established.
+
+
+## Technique 7 — Access denied in profile initialization (2026-10-16)
+
+The private WinRM/Ansible log for
+`wslpe-scenario-8e06d146092c.log` reported:
+
+- Task: `windows_lpe : Apply AlwaysInstallElevated candidate`
+- Exception: `This command cannot be run due to the error: Access is denied.`
+
+The shared NORTH role's apply task creates
+`C:\Kingdom LPE\AlwaysInstallElevated` **before** launching
+`Start-Process -Credential -LoadUserProfile` to initialize the learner
+profile. A remote WinRM secondary process launch is the likely denied
+operation, but the error alone does not prove its exact instruction.
+The failed apply may have left an empty candidate directory.
+
+**WSLPE-only adaptation — NORTH remains unchanged:** the new
+`ansible/wslpe-always-install-elevated-preflight.yml` validates
+`WSLPE-WS01` in a workgroup, the existing enabled *non-admin*
+`lpe.trainee`, and an elevated provisioning context. It invokes
+the supported `userenv.dll CreateProfileW` API to initialize the
+learner's local profile/NTUSER.DAT **without** `Start-Process -Credential`.
+It then refuses pre-existing unexpected installer policy, reparse
+points, an existing candidate state.json or any files in the candidate
+directory. Only a directory proven empty and untracked is removed.
+Existing successful scenario 1–6 state is neither re-applied nor reset.
+
+The fast-track `--execute --resume-report` path performs the following
+in one approved sequence: exact WSLPE-only instance check; status;
+live vulnerable-state verification of the six accepted scenarios;
+WSLPE profile/preflight; technique 7 clean check; remaining technique
+cycles from 7 onwards. Failure stops further changes and writes a
+private diagnostic log. A normal fresh 20-scenario run uses the same
+profile preparation once at technique 7.
+
+**Proven by GitHub source CI (run 38948836918):** Python compilation,
+actual Ansible `--syntax-check` for the WSLPE-only playbook, and
+**28/28** source/mocked integration tests. These tests do NOT prove
+that CreateProfileW succeeds inside the live guest, nor that the
+remaining 14 scenarios work in WSLPE.
+
+**Next Kali action, preserving the interactive terminal:**
+
+~~~bash
+if (
+  cd "$HOME/kingdoms-lpe-standalone" &&
+  git pull --ff-only &&
+  PY="$HOME/.goad/.venv/bin/python" &&
+  "$PY" -m py_compile scripts/wslpe-fast-track-20.py &&
+  "$PY" -m unittest -v \
+    tests.test_wslpe_fast_track_20 \
+    tests.test_wslpe_fast_track_resume \
+    tests.test_wslpe_aie_profile_preflight &&
+  ANSIBLE_CONFIG="$PWD/ansible/ansible.cfg" \
+  ANSIBLE_ROLES_PATH="$PWD/ansible/roles" \
+  "$HOME/.goad/.venv/bin/ansible-playbook" \
+    -i "$PWD/workspace/d986ad-wslpe-vmware/inventory" \
+    -i "$PWD/ad/WSLPE/data/inventory_disable_vagrant" \
+    --limit "ws01,localhost" --syntax-check \
+    ansible/wslpe-always-install-elevated-preflight.yml &&
+  "$PY" scripts/wslpe-fast-track-20.py --execute \
+    --resume-report "$HOME/.local/state/kingdoms-wslpe-qualification/wslpe-qualification-20261016T153256Z.json"
+); then
+  echo "[PASS] WSLPE resumed qualification completed; Kali shell remains open"
+else
+  echo "[BLOCKED] Inspect the private WSLPE diagnostic; Kali shell remains open"
+fi
+~~~
+
+The old checkpoint is *proof of six complete qualification cycles*,
+not a guarantee that their current vulnerable state is unchanged.
+That is why the runner **revalidates all six** prior to any modification.
+No command is permitted to recreate the VM, touch NORTH, or bypass the
+standard-account and WinRM identity gates.
