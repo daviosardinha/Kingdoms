@@ -53,6 +53,7 @@ class WslpeRemoteOperatorTests(unittest.TestCase):
         env = {"SSH_CONNECTION": "198.51.100.24 53212 192.168.1.60 22"}
         for routes in (
             '[{"dev":"vmnet2"}]',
+            '[{"dev":"vmnet8","prefsrc":"192.168.213.1"}]',
             '[{"dev":"vmnet2"},{"dev":"wlp2s0"}]',
             '[{"dev":"wlp2s0","prefsrc":"172.28.231.1"}]',
             '[{"dev":"wlp2s0"}]',
