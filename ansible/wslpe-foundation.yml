@@ -150,7 +150,7 @@
           $rdp = Get-LocalGroup -SID (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-555')) -ErrorAction Stop
           $members = @(Get-LocalGroupMember -Group $rdp.Name -ErrorAction Stop)
           if (@($members | Where-Object { $_.SID.Value -eq $learner.SID.Value }).Count -eq 0) {
-            Add-LocalGroupMember -Group $rdp.Name -Member "$env:COMPUTERNAME\\$LearnerName" -ErrorAction Stop
+            Add-LocalGroupMember -Group $rdp.Name -Member "$env:COMPUTERNAME\$LearnerName" -ErrorAction Stop
             $Ansible.Changed = $true
           }
           else {
