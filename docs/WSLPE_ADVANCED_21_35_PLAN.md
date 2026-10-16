@@ -36,6 +36,29 @@ After probe acceptance, build the actual **standalone-only #21 fixture**: unique
 
 Design reviews for #22–25 must specifically test machine-wide SCM ACL restore (#22), privileged fixture containment (#23–24), and MSI repair elevation requirements without global AlwaysInstallElevated (#25).
 
+### Technique #21 — next live feasibility step (read-only)
+
+The operator entry point is `scripts/wslpe-advanced21-probe.py`. Its default mode is a **local plan**, with no guest contact. The `--execute` mode reads only the exact registered standalone WSLPE guest through the same strong inventory/hostname/workgroup checks as the original 20-technique runner.
+
+```bash
+if (
+  cd "$HOME/kingdoms-lpe-standalone" &&
+  git pull --ff-only &&
+  "$HOME/.goad/.venv/bin/python" -m unittest -q \
+    tests.test_wslpe_advanced_catalog \
+    tests.test_wslpe_advanced21_probe &&
+  "$HOME/.goad/.venv/bin/python" scripts/wslpe-advanced21-probe.py --execute
+); then
+  echo "[PASS] Read-only advanced #21 feasibility accepted"
+else
+  echo "[BLOCKED] Check the private WSLPE probe diagnostic. Terminal remains open."
+fi
+```
+
+This performs **zero VM lifecycle, account, scheduled task, task ACL or source-role mutations**; it checks the existing validated `KingdomTaskBinary` foundation task's COM security descriptor using a management-side read operation. Stop on any failed marker or unexpected inventory. No advanced vulnerability is installed by this command.
+
+Pre-deployment evidence: GitHub Actions [run 38977744195](https://github.com/daviosardinha/Kingdoms/actions/runs/38977744195) passed **48/48** Python source/mocked tests, Ansible playbook syntax checks, and PowerShell parsing and read-only Task Scheduler COM connection on a Windows runner. This CI gate **does not establish** that the probe has yet passed on the WSLPE Windows 10 guest, or that the learner can edit privileged task definitions.
+
 ## Feasibility risks to resolve before implementation
 
 - **#22:** SCM security-descriptor changes are machine-wide; require a verified exact original-SDDL snapshot and a rollback escape hatch before deployment.
