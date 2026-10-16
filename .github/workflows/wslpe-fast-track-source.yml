@@ -47,6 +47,15 @@ jobs:
           python-version: '3.11'
       - name: Install test-only dependency
         run: python -m pip install --disable-pip-version-check PyYAML
+      - name: Install Ansible playbook syntax dependencies
+        run: |
+          python -m pip install --disable-pip-version-check 'ansible-core>=2.18,<2.20'
+          ansible-galaxy collection install ansible.windows
+      - name: Syntax check WSLPE-only profile preparation
+        run: |
+          printf '[wslpe]\nws01 ansible_connection=local\n[windows_lpe_standalone]\nws01\n' > "$RUNNER_TEMP/wslpe-ci-inventory"
+          ansible-playbook -i "$RUNNER_TEMP/wslpe-ci-inventory" --syntax-check \
+            ansible/wslpe-always-install-elevated-preflight.yml
       - name: Check Python syntax
         run: |
           python -m py_compile \
