@@ -481,3 +481,71 @@ not a guarantee that their current vulnerable state is unchanged.
 That is why the runner **revalidates all six** prior to any modification.
 No command is permitted to recreate the VM, touch NORTH, or bypass the
 standard-account and WinRM identity gates.
+
+## Technique 7 reset failure — standalone hive-unload recovery
+
+After the Windows-native `CreateProfile` correction, the WSLPE runner
+successfully applied `always_install_elevated` and validated it as
+vulnerable. The reset failed with:
+`reg.exe unload "HKU\\$mount": ERROR: Access is denied`.
+This was in the **shared** role's reset PowerShell task after it
+opened the user's registry key with `Get-Item`. An open registry handle
+is the leading suspected cause; the log proves the failing unload but
+does not prove which process held the handle.
+
+**No shared NORTH files or guests were modified.** The standalone
+`ansible/wslpe-lpe-test.yml` adapter now routes ONLY
+`wslpe_action=reset` with exactly
+`wslpe_techniques=['always_install_elevated']` to
+`ansible/wslpe-aie-reset-tasks.yml`, keeping shared-role apply/validate
+and all other scenario lifecycle implementations intact.
+
+The WSLPE-specific reset requires exact workgroup hostname, enabled
+local non-admin learner, elevated operator, matching original SID and
+profile from the persisted state snapshot. It verifies a pre-existing
+`HKU\\KingdomAIE` belongs to that learner before touching it.
+It restores registry values using the saved state, exits the
+PowerShell task to release provider handles, runs `reg.exe unload`
+in a **separate Windows process**, and deletes only the exact
+snapshot and now-empty scenario directory after success. Unexpected
+files, symlinks/reparse points, foreign mounts or unknown state block
+cleanup. Failures preserve the snapshot for inspection.
+
+New explicit `--recover-aie-reset` mode is available only together
+with `--execute --resume-report`, using the **original**
+`wslpe-qualification-20261016T153256Z.json` report that recorded
+six fully passing techniques and scenario 7 failing at first apply.
+The subsequent `wslpe-qualification-20261016T201657Z.json` report
+contains a failed **reset** and is deliberately rejected by the
+standard resume parser. The recovery flow revalidates the first six
+vulnerable scenarios, performs standalone snapshot restoration,
+prepares the profile safely, asserts clean AIE, and then continues
+the full apply/validate/reset/reapply cycle starting at technique 7.
+It does not reapply or reset scenarios 1–6.
+
+**Pre-Kali validation:** GitHub CI run 38963486370 passed
+**33/33** source and negative-path regression tests, Python
+compilation, Ansible syntax checks for both WSLPE playbooks, and
+Windows-native PowerShell AST parsing of both reset scripts.
+CI does not reproduce the WinRM registry-hive lock. Its successful
+result does not establish live reset or student release acceptance.
+
+```bash
+if (
+  cd "$HOME/kingdoms-lpe-standalone" &&
+  git pull --ff-only &&
+  PY="$HOME/.goad/.venv/bin/python" &&
+  "$PY" -m py_compile scripts/wslpe-fast-track-20.py &&
+  "$PY" -m unittest -q \
+    tests.test_wslpe_fast_track_20 \
+    tests.test_wslpe_fast_track_resume \
+    tests.test_wslpe_aie_profile_preflight \
+    tests.test_wslpe_aie_reset_adapter &&
+  "$PY" scripts/wslpe-fast-track-20.py --execute --recover-aie-reset \
+    --resume-report "$HOME/.local/state/kingdoms-wslpe-qualification/wslpe-qualification-20261016T153256Z.json"
+); then
+  echo "[PASS] WSLPE scenario qualification completed"
+else
+  echo "[BLOCKED] WSLPE recovery stopped safely; inspect the latest private diagnostic"
+fi
+```
