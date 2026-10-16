@@ -56,7 +56,7 @@ def north_source_contract() -> None:
     # NORTH's actual Bash validator uses grep -E expressions such as
     # ^ethernet0\\.startconnected. Compare the normalized literal tokens
     # without weakening the Ethernet0/Ethernet1 or readiness requirements.
-    runtime_property_tokens = runtime.lower().replace(r"\\.", ".")
+    runtime_property_tokens = runtime.lower().replace(r"\.", ".")
     for required in (
         "ethernet0.connectiontype",
         "ethernet0.startconnected",
