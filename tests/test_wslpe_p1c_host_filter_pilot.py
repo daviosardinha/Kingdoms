@@ -42,6 +42,64 @@ class WslpeHostPilotTests(unittest.TestCase):
                 self.assertEqual(M.main(), 1)
                 preflight.assert_not_called()
 
+    def test_ssh_execution_fails_closed_without_explicit_remote_flag(self):
+        with patch.dict("os.environ", {
+            "SSH_CONNECTION": "198.51.100.24 55000 192.168.1.60 22"
+        }), patch.object(M, "pilot") as pilot, \
+             patch.object(sys, "argv", [
+                 "pilot.py", "--pilot", "--confirm", M.CONFIRM, "--seconds", "120"
+             ]), redirect_stdout(StringIO()):
+            self.assertEqual(M.main(), 1)
+            pilot.assert_not_called()
+
+    def test_remote_pilot_requires_explicit_flag_and_ssh_session(self):
+        with patch.dict("os.environ", {
+            "SSH_CONNECTION": "198.51.100.24 55000 192.168.1.60 22"
+        }), patch.object(M, "pilot") as pilot, \
+             patch.object(sys, "argv", [
+                 "pilot.py", "--pilot", "--remote", "--confirm",
+                 M.CONFIRM, "--seconds", "120"
+             ]), redirect_stdout(StringIO()):
+            self.assertEqual(M.main(), 0)
+            pilot.assert_called_once_with(120, remote=True)
+
+    def test_remote_preflight_proves_host_timer_without_installation(self):
+        with patch.object(M, "local_preflight", return_value=(
+            "candidate", "vmnet2", "172.28.231.1", "172.28.231.31"
+        )), patch.object(M, "remote_preflight") as preflight, \
+             patch.object(M, "sudo_nft") as nft, \
+             patch.object(sys, "argv", [
+                 "pilot.py", "--remote-preflight"
+             ]), redirect_stdout(StringIO()) as output:
+            self.assertEqual(M.main(), 0)
+            preflight.assert_called_once_with("vmnet2", "172.28.231.1")
+            nft.assert_not_called()
+            self.assertIn("REMOTE_WSLPE_ROLLBACK_PREFLIGHT=TRUE", output.getvalue())
+
+    def test_verify_rollback_fails_if_table_remains(self):
+        with patch.object(M, "nft_json", return_value=[
+            {"table": {"family": "inet", "name": M.TABLE}}
+        ]), patch.object(M, "check_https") as https, \
+             patch.object(sys, "argv", [
+                 "pilot.py", "--verify-rollback"
+             ]), redirect_stdout(StringIO()):
+            self.assertEqual(M.main(), 1)
+            https.assert_not_called()
+
+    def test_verify_rollback_requires_authenticated_https(self):
+        with patch.object(M, "nft_json", return_value=[]), \
+             patch.object(M, "check_https", return_value=False), \
+             patch.object(sys, "argv", [
+                 "pilot.py", "--verify-rollback"
+             ]), redirect_stdout(StringIO()):
+            self.assertEqual(M.main(), 1)
+        with patch.object(M, "nft_json", return_value=[]), \
+             patch.object(M, "check_https", return_value=True), \
+             patch.object(sys, "argv", [
+                 "pilot.py", "--verify-rollback"
+             ]), redirect_stdout(StringIO()):
+            self.assertEqual(M.main(), 0)
+
     def test_pilot_arms_rollback_before_installing_rules(self):
         order = []
         def check_https():
