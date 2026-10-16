@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
+import json
 import os
 import unittest
 
@@ -108,6 +109,64 @@ class WslpeAieProfilePreflightTests(unittest.TestCase):
                 reports = list(folder.glob("wslpe-aie-profile-preflight-*.log"))
                 self.assertEqual(len(reports), 1)
                 self.assertEqual(reports[0].stat().st_mode & 0o777, 0o600)
+
+    def test_full_mocked_resume_orders_preflight_between_old_and_new_scenarios(self):
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            checkpoint = directory / "wslpe-qualification-20261016T153256Z.json"
+            catalog = RUNNER.load_catalog()
+            records = [
+                {"technique": technique, "action": action,
+                 "state": state, "exit_code": 0}
+                for technique in catalog[:6] for action, state in RUNNER.FLOW
+            ]
+            records.append({"technique": catalog[6], "action": "apply",
+                            "state": None, "exit_code": 2})
+            checkpoint.write_text(json.dumps(records), encoding="utf-8")
+            checkpoint.chmod(0o600)
+            args = RUNNER.build_parser().parse_args([
+                "--execute", "--resume-report", str(checkpoint),
+                "--report-dir", str(directory),
+            ])
+            events = []
+
+            def simulate(command, **kwargs):
+                if "--list" in command:
+                    return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+                if "-e" not in command:
+                    self.fail(f"Unexpected invocation: {command}")
+                arg = json.loads(command[command.index("-e") + 1])
+                technique = (arg.get("wslpe_techniques") or [""])[0]
+                action, state = arg["wslpe_action"], arg.get("windows_lpe_validate_state")
+                events.append((technique, action, state))
+                fail = (technique == "always_install_elevated" and action == "apply")
+                return SimpleNamespace(returncode=2 if fail else 0,
+                                       stdout="", stderr="Controlled mock failure")
+
+            def prepare(**kwargs):
+                events.append(("AIE_PREPARE", None, None))
+                return True
+
+            with patch.object(RUNNER, "exact_standalone", return_value=(
+                        Path("/private/WSLPE/inventory"), Path("/private/WSLPE/vars"),
+                        "172.28.231.31"
+                    )), patch.object(RUNNER, "check_inventory"), \
+                 patch.object(RUNNER, "learner_password", return_value="FakeSecret!NoLiveUse123"), \
+                 patch.object(RUNNER.subprocess, "run", side_effect=simulate), \
+                 patch.object(RUNNER, "prepare_standalone_aie", side_effect=prepare):
+                self.assertEqual(RUNNER.run(args), 1)
+
+            self.assertEqual(events[0][1], "status")
+            old_validations = [x for x in events if x[0] in catalog[:6]]
+            self.assertEqual(len(old_validations), 6)
+            self.assertTrue(all(x[1:] == ("validate", "vulnerable") for x in old_validations))
+            self.assertEqual(events[7], ("AIE_PREPARE", None, None))
+            self.assertEqual(events[8], ("always_install_elevated", "validate", "clean"))
+            self.assertEqual(events[9], ("always_install_elevated", "apply", None))
+            self.assertFalse(any(x[0] in catalog[7:] for x in events))
+            self.assertFalse(any(x[0] in catalog[:6] and x[1] in ("apply", "reset")
+                                 for x in events))
+
 
 if __name__ == "__main__":
     unittest.main()
