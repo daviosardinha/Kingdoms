@@ -76,6 +76,30 @@
       windows_lpe_techniques selection.
   when: windows_lpe_action in ['apply', 'validate', 'reset']
 
+- name: Require a configured learner for identity-dependent scenarios
+  ansible.builtin.assert:
+    that:
+      - windows_lpe_learner_account is string
+      - (windows_lpe_learner_account | length) > 0
+    fail_msg: >-
+      The selected Windows LPE techniques need an explicit learner identity.
+      Pass it from the Kingdoms or standalone deployment adapter.
+  when:
+    - windows_lpe_action in ['apply', 'validate', 'reset']
+    - (windows_lpe_requested_techniques | intersect(['always_install_elevated', 'powershell_history_credentials', 'stored_runas_credentials', 'sebackup_privilege', 'seimpersonate_privilege']) | length) > 0
+
+- name: Require an explicit learner credential for profile/RunAs seeding
+  ansible.builtin.assert:
+    that:
+      - windows_lpe_learner_password is string
+      - (windows_lpe_learner_password | length) > 0
+    fail_msg: >-
+      Applying selected credential-dependent Windows LPE scenarios requires
+      a learner credential supplied by the deployment adapter.
+  when:
+    - windows_lpe_action == 'apply'
+    - (windows_lpe_requested_techniques | intersect(['always_install_elevated', 'stored_runas_credentials']) | length) > 0
+
 - name: Refuse Windows LPE techniques with no source implementation
   ansible.builtin.assert:
     that:

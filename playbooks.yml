@@ -1,3 +1,8 @@
+# First-class WSLPE lab: local Windows only, no Active Directory playbooks.
+# Full-lpe is intentionally NOT applied during foundation provisioning.
+WSLPE:
+  - wslpe-foundation.yml
+
 NHA:
   - build.yml
   - ad-servers.yml

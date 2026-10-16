@@ -1,0 +1,81 @@
+---
+# WSLPE-only Windows-side P1-C and P2 readiness, never configures guest.
+- name: Audit WSLPE host-boundary and local learner access prerequisites
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Collect read-only WSLPE route, local accounts, RDP and firewall evidence
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $machine = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -ine 'WSLPE-WS01' -or $machine.PartOfDomain) {
+            throw 'Only standalone WSLPE-WS01 is eligible'
+          }
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction SilentlyContinue
+          $learnerEnabled = $false
+          if ($null -ne $learner) { $learnerEnabled = [bool]$learner.Enabled }
+          $admins = Get-LocalGroup -SID ([System.Security.Principal.SecurityIdentifier]'S-1-5-32-544') -ErrorAction Stop
+          $rdpUsers = Get-LocalGroup -SID ([System.Security.Principal.SecurityIdentifier]'S-1-5-32-555') -ErrorAction Stop
+          $adminMembers = @(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop)
+          $rdpMembers = @(Get-LocalGroupMember -Group $rdpUsers.Name -ErrorAction Stop)
+          $learnerMember = @($adminMembers | Where-Object { $_.Name -match '(?i)\\lpe\.trainee$' })
+          $learnerRdpMember = @($rdpMembers | Where-Object { $_.Name -match '(?i)\\lpe\.trainee$' })
+          $routes = @(Get-NetRoute -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop)
+          $adapters = @(Get-NetAdapter -ErrorAction Stop)
+          $ipv4 = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+            Where-Object { $_.IPAddress -notlike '127.*' })
+          $networks = @(Get-NetConnectionProfile -ErrorAction Stop)
+          $services = @(Get-NetTCPConnection -State Listen -ErrorAction Stop |
+            Where-Object { $_.LocalPort -in @(3389,5985,5986) })
+          $inbound = @(Get-NetFirewallRule -PolicyStore ActiveStore -Direction Inbound -Enabled True -ErrorAction Stop)
+          $related = @()
+          foreach ($rule in $inbound) {
+            $ports = @($rule | Get-NetFirewallPortFilter -ErrorAction Stop)
+            if (@($ports | Where-Object {
+              $p = [string]$_.LocalPort
+              $p -in @('3389','5985','5986') -or $p -eq 'Any'
+            }).Count -eq 0) { continue }
+            $sources = @($rule | Get-NetFirewallAddressFilter -ErrorAction Stop)
+            $related += [pscustomobject]@{
+              Name = [string]$rule.Name
+              Action = [string]$rule.Action
+              Profile = [string]$rule.Profile
+              Ports = (@($ports | ForEach-Object { [string]$_.LocalPort }) -join ',')
+              RemoteAddresses = (@($sources | ForEach-Object { [string]$_.RemoteAddress }) -join ',')
+            }
+          }
+          $Ansible.Result = @{
+            Machine = [string]$env:COMPUTERNAME
+            DomainJoined = [bool]$machine.PartOfDomain
+            LocalLearnerPresent = ($null -ne $learner)
+            LocalLearnerEnabled = [bool]$learnerEnabled
+            LearnerInAdministrators = ($learnerMember.Count -gt 0)
+            LearnerInRemoteDesktopUsers = ($learnerRdpMember.Count -gt 0)
+            ActiveRdpWinrmInboundRuleCount = $related.Count
+            ActiveRdpWinrmInboundRules = @($related | Select-Object -First 30)
+            DefaultRouteInterfaces = @($routes | ForEach-Object { [int]$_.InterfaceIndex })
+            GuestIPv4 = @($ipv4 | ForEach-Object {
+              [pscustomobject]@{ Address=[string]$_.IPAddress; Index=[int]$_.InterfaceIndex }
+            })
+            GuestNetworkProfiles = @($networks | ForEach-Object {
+              [pscustomobject]@{ Alias=[string]$_.InterfaceAlias; Category=[string]$_.NetworkCategory }
+            })
+            GuestListeningManagementPorts = @($services | ForEach-Object { [int]$_.LocalPort } |
+              Sort-Object -Unique)
+          }
+          $Ansible.Changed = $false
+      register: wslpe_guest_review
+
+    - name: Show only WSLPE local access and network evidence
+      ansible.builtin.debug:
+        var: wslpe_guest_review.result
+
+    - name: Reject any non-standalone target
+      ansible.builtin.assert:
+        that:
+          - wslpe_guest_review.result.Machine == 'WSLPE-WS01'
+          - not (wslpe_guest_review.result.DomainJoined | bool)
+        success_msg: >-
+          WSLPE-only read-only guest survey completed. Effective network isolation,
+          remotely authenticated learner RDP and recovery remain NOT VERIFIED.

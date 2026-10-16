@@ -1,0 +1,19 @@
+# Kingdoms WSLPE: first-class independent, single-machine Windows LPE lab.
+# Rendered through the EXISTING Kingdoms instance/Vagrant template, not a
+# separate Vagrant project. The machine uses its own generated instance state.
+# No vmnet number is pinned here. The existing Kingdoms VMware template
+# provides the Vagrant private exercise network and provider-managed NAT.
+# Each operator host must validate its networks independently before install.
+# Future cloud/VPS deployment requires a separate provider adapter.
+boxes = [
+  {
+    :name => "WSLPE-WS01",
+    :hostname => "wslpe-ws01",
+    :ip => "{{ip_range}}.31",
+    :box => "mayfly/windows10",
+    :box_version => "2024.01.06",
+    :os => "windows",
+    :cpus => 2,
+    :mem => 4096
+  }
+]

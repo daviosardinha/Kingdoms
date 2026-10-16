@@ -1,0 +1,100 @@
+---
+# WSLPE operator-only per-technique runtime harness.
+# Uses the SAME windows_lpe Ansible role as NORTH. Not included in
+# playbooks.yml because the 20 existing scenarios have NOT been proven on
+# a standalone/local-account workstation. Do not run against NORTH.
+#
+# Once the baseline guest is validated, a dedicated operator can explicitly
+# select ONE technique and action for controlled validation:
+#
+#   ansible-playbook -i <wslpe-instance-inventory> ansible/wslpe-lpe-test.yml \
+#     -e wslpe_action=status
+#
+#   ansible-playbook -i <wslpe-instance-inventory> ansible/wslpe-lpe-test.yml \
+#     -e wslpe_action=apply \
+#     -e '{"wslpe_techniques":["unquoted_service_path"]}'
+#
+# The password is supplied only from the operator's trusted environment
+# KINGDOMS_WSLPE_LEARNER_PASSWORD. Never include it in source control.
+
+- name: Validate WSLPE-specific manual technique selection
+  hosts: localhost
+  gather_facts: false
+  vars:
+    wslpe_action: status
+    wslpe_techniques: []
+  tasks:
+    - name: Require a single WSLPE target and exact approved action
+      ansible.builtin.assert:
+        that:
+          - (groups.get('wslpe', []) | length) == 1
+          - wslpe_action in ['status', 'apply', 'validate', 'reset']
+          - wslpe_action == 'status' or (wslpe_techniques | length) == 1
+          - (wslpe_techniques | difference(['full-lpe'])) | length == (wslpe_techniques | length)
+        fail_msg: >-
+          Use a single WSLPE Windows host and exactly one named technique
+          for apply/validate/reset. A full profile is not yet approved.
+
+    - name: Require the local learner secret for technique application
+      ansible.builtin.assert:
+        that:
+          - (lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') | length) >= 12
+        fail_msg: >-
+          The WSLPE learner secret must be present in the private operator
+          environment. No source-controlled training password is accepted.
+        quiet: true
+      when: wslpe_action != 'status'
+      no_log: true
+
+- name: Exercise the shared Windows LPE role on WSLPE only
+  hosts: wslpe
+  gather_facts: false
+  vars:
+    wslpe_action: status
+    wslpe_techniques: []
+  pre_tasks:
+    - name: Prove the exact local guest and domain-free learner identity
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $machine = Get-CimInstance Win32_ComputerSystem
+          if ($machine.PartOfDomain) {
+            throw 'Refusing LPE scenario on a domain-joined guest'
+          }
+          if ($env:COMPUTERNAME -ne 'WSLPE-WS01') {
+            throw ('Incorrect VM for WSLPE training: ' + $env:COMPUTERNAME)
+          }
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if (-not $learner.Enabled) {
+            throw 'WSLPE learner is disabled'
+          }
+          Write-Output 'WSLPE_TECHNIQUE_TARGET=PASS'
+      changed_when: false
+
+  roles:
+    - role: windows_lpe
+      # NORTH's existing shared role remains completely unchanged.
+      # Only this standalone guest routes AIE reset through the
+      # fixed two-process hive lifecycle.
+      when: >-
+        not (
+          (wslpe_action == 'reset' and wslpe_techniques == ['always_install_elevated'])
+          or ((wslpe_techniques | intersect(['sebackup_privilege', 'seimpersonate_privilege']) | length) > 0)
+        )
+      vars:
+        windows_lpe_action: "{{ wslpe_action }}"
+        windows_lpe_profile: none
+        windows_lpe_techniques: "{{ wslpe_techniques }}"
+        windows_lpe_stored_runas_credential_target: 'WSLPE-WS01\kingdom.runas'
+        windows_lpe_learner_account: 'WSLPE-WS01\lpe.trainee'
+        windows_lpe_learner_password: "{{ lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') }}"
+        windows_lpe_allow_candidate: false
+
+  tasks:
+    - name: Reset standalone AlwaysInstallElevated without held registry handles
+      ansible.builtin.include_tasks: wslpe-aie-reset-tasks.yml
+      when: wslpe_action == 'reset' and wslpe_techniques == ['always_install_elevated']
+
+    - name: Use exact local LSA policy for WSLPE-only SeBackup and SeImpersonate
+      ansible.builtin.include_tasks: wslpe-user-rights-tasks.yml
+      when: (wslpe_techniques | intersect(['sebackup_privilege', 'seimpersonate_privilege']) | length) == 1

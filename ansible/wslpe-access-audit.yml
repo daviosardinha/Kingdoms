@@ -1,0 +1,100 @@
+---
+# WSLPE-only read-only access baseline, adapted from NORTH WS01's WinRM and
+# RDP evidence contracts. This NEVER deploys the NORTH domain/identity policy.
+- name: Audit existing WSLPE Windows management and RDP baseline
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Collect WSLPE-only WSMan listener, certificate and RDP evidence
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $machine = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -ine 'WSLPE-WS01' -or $machine.PartOfDomain) {
+            throw 'This audit is restricted to standalone WSLPE-WS01'
+          }
+
+          # NORTH vagrant/ConfigureRemotingForAnsible.ps1 checks the native
+          # WSMan provider; never assume winrm.exe is a valid executable.
+          $providerListeners = @(Get-ChildItem 'WSMan:\localhost\Listener' -ErrorAction Stop)
+          $listeners = @(Get-WSManInstance -ResourceURI 'winrm/config/listener' -Enumerate -ErrorAction Stop)
+          $http = @($listeners | Where-Object { $_.Transport -ieq 'HTTP' -and [int]$_.Port -eq 5985 })
+          $https = @($listeners | Where-Object { $_.Transport -ieq 'HTTPS' -and [int]$_.Port -eq 5986 })
+          $thumbprint = ''
+          $certificate = $null
+          if ($https.Count -eq 1) {
+            $thumbprint = ([string]$https[0].CertificateThumbprint).Replace(' ', '')
+            if ($thumbprint -match '^[0-9a-fA-F]{40}$') {
+              $certificate = Get-Item -LiteralPath ("Cert:\LocalMachine\My\" + $thumbprint) -ErrorAction SilentlyContinue
+            }
+          }
+          $timeValid = $false
+          $certificateSubject = ''
+          $certificateNotAfter = ''
+          if ($null -ne $certificate) {
+            $timeValid = $certificate.NotBefore -le (Get-Date) -and
+                         $certificate.NotAfter -gt (Get-Date)
+            $certificateSubject = [string]$certificate.Subject
+            $certificateNotAfter = [string]$certificate.NotAfter.ToString('o')
+          }
+
+          # Exact service/registry gates reused from NORTH's read-only
+          # scripts/rdp-host-evidence.ps1, without NORTH domain identities.
+          $rdpService = Get-Service TermService -ErrorAction Stop
+          $winrmService = Get-Service WinRM -ErrorAction Stop
+          $terminal = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -ErrorAction Stop
+          $rdpTcp = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -ErrorAction Stop
+          $tcp = @(Get-NetTCPConnection -State Listen -ErrorAction Stop |
+                   Where-Object { $_.LocalPort -in @(3389, 5985, 5986) })
+
+          $Ansible.Result = @{
+            Machine = [string]$env:COMPUTERNAME
+            DomainJoined = [bool]$machine.PartOfDomain
+            WinRMServiceRunning = ($winrmService.Status -eq 'Running')
+            WSManProviderListenerCount = $providerListeners.Count
+            WinRMHttpCount = $http.Count
+            WinRMHttpsCount = $https.Count
+            HTTPSCertificatePresent = ($null -ne $certificate)
+            HTTPSCertificateTimeValid = [bool]$timeValid
+            HTTPSCertificateSubject = $certificateSubject
+            HTTPSCertificateNotAfter = $certificateNotAfter
+            HTTPSCertificateThumbprint = $thumbprint
+            RDPServiceRunning = ($rdpService.Status -eq 'Running')
+            RDPConnectionsEnabled = ([int]$terminal.fDenyTSConnections -eq 0)
+            RDPNLARequired = ([int]$rdpTcp.UserAuthentication -eq 1)
+            RDPSecurityLayer = [int]$rdpTcp.SecurityLayer
+            RDPPortListening = (@($tcp | Where-Object { $_.LocalPort -eq 3389 }).Count -gt 0)
+            WinRMHttpPortListening = (@($tcp | Where-Object { $_.LocalPort -eq 5985 }).Count -gt 0)
+            WinRMHttpsPortListening = (@($tcp | Where-Object { $_.LocalPort -eq 5986 }).Count -gt 0)
+          }
+          $Ansible.Changed = $false
+      register: wslpe_access
+
+    - name: Display collected access evidence without making changes
+      ansible.builtin.debug:
+        var: wslpe_access.result
+
+    - name: Enforce WSLPE access configuration preflight
+      ansible.builtin.assert:
+        that:
+          - wslpe_access.result.Machine == 'WSLPE-WS01'
+          - not (wslpe_access.result.DomainJoined | bool)
+          - wslpe_access.result.WinRMServiceRunning | bool
+          - (wslpe_access.result.WinRMHttpCount | int) == 1
+          - (wslpe_access.result.WinRMHttpsCount | int) == 1
+          - wslpe_access.result.HTTPSCertificatePresent | bool
+          - wslpe_access.result.HTTPSCertificateTimeValid | bool
+          - wslpe_access.result.WinRMHttpPortListening | bool
+          - wslpe_access.result.WinRMHttpsPortListening | bool
+          - wslpe_access.result.RDPServiceRunning | bool
+          - wslpe_access.result.RDPConnectionsEnabled | bool
+          - wslpe_access.result.RDPNLARequired | bool
+          - wslpe_access.result.RDPPortListening | bool
+        fail_msg: >-
+          WSLPE WSMan HTTPS or RDP/NLA baseline is not proven. Inspect the
+          evidence above; do not change listeners, certificates, firewall,
+          NAT or NORTH automatically.
+        success_msg: >-
+          WSLPE listener/certificate-time/RDP-NLA baseline verified.
+          HTTPS certificate trust, authenticated HTTPS, effective RDP logon,
+          learner access and exercise-mode isolation remain NOT VERIFIED.

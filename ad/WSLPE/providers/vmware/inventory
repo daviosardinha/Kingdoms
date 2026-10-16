@@ -1,0 +1,5 @@
+[default]
+; WSLPE is NOT domain-joined and has no NORTH/DC/router dependency.
+; Explicitly review the chosen ip_range before any instance is provisioned.
+ws01 ansible_host={{ip_range}}.31 dict_key=ws01
+

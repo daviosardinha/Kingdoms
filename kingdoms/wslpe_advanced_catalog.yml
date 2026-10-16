@@ -1,0 +1,164 @@
+---
+# WSLPE-only candidate catalog for techniques 21–35.
+# Status is PLANNED: no scenario is deployed, accepted, or NORTH-visible.
+# Promotion is gated on native Windows feasibility and full 6-step lifecycle.
+schema: kingdoms.wslpe.advanced.v1
+scope: standalone-wslpe-only
+platform: windows-10-workgroup
+target_total: 45
+foundation_count: 20
+advanced_count: 15
+learner: 'WSLPE-WS01\lpe.trainee'
+shared_north_role_frozen: true
+status: planned
+techniques:
+  - number: 21
+    id: scheduled_task_definition_acl
+    name: Scheduled Task Definition ACL Abuse
+    category: privileged-task
+    status: planned
+    mechanic: low-privilege task-definition write permission on a dedicated SYSTEM task
+    distinct_from: [scheduled_task_binary_permissions, scheduled_task_directory_permissions]
+    prerequisite: task object security descriptor grants local learner task update, while executable and containing directory remain protected
+    fixture: dedicated Kingdoms task and inert signed-off marker command
+    feasibility_gate: Task Scheduler COM GetSecurityDescriptor and SetSecurityDescriptor on exact Windows 10 build; learner can actually update the action
+  - number: 22
+    id: scm_create_service_acl
+    name: Service Control Manager ACL Abuse
+    category: service-control
+    status: planned
+    mechanic: delegated SCM create-service access, not permissions on an existing service
+    distinct_from: [weak_service_dacl, weak_service_binary_permissions]
+    prerequisite: reversible, machine-wide SCM descriptor change with strict original SDDL snapshot
+    fixture: dedicated benign SYSTEM service in the isolated guest
+    feasibility_gate: verify SCM SDDL restore and absence of collateral permissions changes
+  - number: 23
+    id: privileged_service_config_injection
+    name: Service Configuration File Injection
+    category: service-execution
+    status: planned
+    mechanic: data-to-command interpretation in a privileged service configuration
+    distinct_from: [insecure_service_registry, path_search_order_hijacking]
+    prerequisite: custom deterministic service parser executing configured action
+    fixture: custom Kingdoms service with attacker-writable configuration only
+    feasibility_gate: prove low-privilege config edit causes intended elevated operation without binary replacement
+  - number: 24
+    id: privileged_updater_hijack
+    name: Privileged Software Updater Hijacking
+    category: trusted-update
+    status: planned
+    mechanic: elevated updater accepts attacker-controlled manifest or package
+    distinct_from: [unquoted_service_path, weak_service_binary_permissions]
+    prerequisite: deterministic update consumption with no internet or third-party updater dependencies
+    fixture: custom offline Kingdoms update service
+    feasibility_gate: strict file and package boundary plus complete rollback
+  - number: 25
+    id: msi_repair_custom_action
+    name: Windows Installer Repair Abuse
+    category: installer
+    status: planned
+    mechanic: deliberately insecure elevated repair custom action
+    distinct_from: [always_install_elevated]
+    prerequisite: signed-off controlled MSI custom action; no global AlwaysInstallElevated registry policy
+    fixture: lab-only MSI and repair source
+    feasibility_gate: prove repair operation and standard-user execution context with reliable uninstall
+  - number: 26
+    id: ifeo_debugger_acl_hijack
+    name: IFEO Debugger Hijacking
+    category: registry-trust
+    status: planned
+    mechanic: writable per-executable IFEO Debugger configuration for a dedicated privileged launch
+    distinct_from: [registry_run_keys, weak_service_registry_permissions]
+    prerequisite: exclusive test executable registry key and privileged execution trigger
+    fixture: lab-only test application and isolated IFEO subkey
+    feasibility_gate: verify no system executable hijack or global debugger key changes
+  - number: 27
+    id: com_clsid_registration_hijack
+    name: COM CLSID Registration Hijacking
+    category: com-trust
+    status: planned
+    mechanic: writable COM registration consumed by a dedicated elevated COM client
+    distinct_from: [service_dll_hijacking, insecure_service_registry]
+    prerequisite: task-owned CLSID and deterministic elevated consumer
+    fixture: lab-only COM server/client components
+    feasibility_gate: prove COM resolution and payload loading under intended elevated context
+  - number: 28
+    id: app_paths_registry_hijack
+    name: App Paths Registry Hijacking
+    category: registry-trust
+    status: planned
+    mechanic: writable App Paths entry used by dedicated elevated ShellExecute consumer
+    distinct_from: [registry_run_keys, path_search_order_hijacking]
+    prerequisite: task-owned App Paths name, not a Windows/system application
+    fixture: custom launcher with controlled ShellExecute
+    feasibility_gate: prove ShellExecute resolves configured path and check for HKCU/HKLM precedence
+  - number: 29
+    id: named_pipe_authorization
+    name: Insecure Named Pipe Authorization
+    category: privileged-ipc
+    status: planned
+    mechanic: privileged IPC service trusts unauthorized low-integrity client requests
+    distinct_from: [weak_service_dacl, hardcoded_application_credentials]
+    prerequisite: lab-only pipe server with constrained, observable command surface
+    fixture: custom isolated Windows pipe service
+    feasibility_gate: prove standard learner controls service-request input, not arbitrary unrelated named pipes
+  - number: 30
+    id: jea_role_capability_misconfig
+    name: PowerShell JEA Endpoint Misconfiguration
+    category: delegated-admin
+    status: planned
+    mechanic: excessive delegated command authorization in privileged PowerShell endpoint
+    distinct_from: [seimpersonate_privilege, stored_runas_credentials]
+    prerequisite: dedicated endpoint must not alter existing WinRM management listener or lock out provisioning
+    fixture: local-only isolated JEA configuration and purpose-built role capability
+    feasibility_gate: Windows 10 endpoint compatibility, safe rollback and independent recovery
+  - number: 31
+    id: setakeownership_privilege
+    name: SeTakeOwnershipPrivilege Abuse
+    category: token-rights
+    status: planned
+    mechanic: delegated ownership privilege across a protected lab-only object
+    distinct_from: [sebackup_privilege, seimpersonate_privilege]
+    prerequisite: explicitly provisioned local-user LSA right and isolated protected object
+    fixture: dedicated resource with no operating-system file changes
+    feasibility_gate: prove token recognition and full ACL/ownership rollback
+  - number: 32
+    id: serestore_privilege
+    name: SeRestorePrivilege Abuse
+    category: token-rights
+    status: planned
+    mechanic: restore privilege permits controlled protected file or registry replacement
+    distinct_from: [sebackup_privilege, seimpersonate_privilege]
+    prerequisite: lab-only resource and appropriate user logon token
+    fixture: private protected artifact consumed by an elevated lab service
+    feasibility_gate: prove object replacement without touching critical Windows paths
+  - number: 33
+    id: sedebug_privilege
+    name: SeDebugPrivilege Abuse
+    category: token-rights
+    status: planned
+    mechanic: debugging privilege on an eligible non-PPL elevated lab process
+    distinct_from: [seimpersonate_privilege, sebackup_privilege]
+    prerequisite: dedicated non-protected lab process, not LSASS or protected processes
+    fixture: instrumented Kingdoms SYSTEM lab process
+    feasibility_gate: demonstrate process rights without PPL bypass or EDR disabling
+  - number: 34
+    id: ntfs_link_redirection
+    name: NTFS Junction and Hardlink Redirection
+    category: file-operation-trust
+    status: planned
+    mechanic: privileged file operation follows an attacker-controlled link into a protected lab fixture
+    distinct_from: [writable_program_directory, scheduled_task_directory_permissions]
+    prerequisite: task-owned locations with explicit link privileges and path restrictions
+    fixture: controlled source/target tree and dedicated privileged maintenance process
+    feasibility_gate: Windows 10 hardlink/junction semantics and no arbitrary system file target
+  - number: 35
+    id: privileged_path_traversal_write
+    name: Privileged File-Write Path Traversal
+    category: file-operation-trust
+    status: planned
+    mechanic: privileged maintenance component fails to constrain an attacker-supplied path
+    distinct_from: [ntfs_link_redirection, privileged_service_config_injection]
+    prerequisite: custom lab-only privileged writer with bounded test-root enforcement
+    fixture: directory traversal demonstration confined to Kingdoms-owned paths
+    feasibility_gate: prove write escaped intended input directory yet remained in safe dedicated lab root

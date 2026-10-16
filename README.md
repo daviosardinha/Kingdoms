@@ -4,7 +4,7 @@
 
 <img width="1672" height="941" alt="Kingdoms" src="https://github.com/user-attachments/assets/a7f99c97-94af-408b-95df-1624bad2b6f1" />
 
-### Segmented Active Directory Offensive Security Training Range
+### Offensive Security Training Platform
 
 **Recon. Compromise. Pivot. Escalate. Persist.**
 
@@ -19,9 +19,21 @@ Kingdoms began as a fork of [Orange Cyberdefense's GOAD](https://github.com/Oran
 
 ## What is Kingdoms?
 
-Kingdoms is a deliberately vulnerable, segmented Active Directory range built for progressive offensive-security training.
+Kingdoms is an offensive-security training platform built around separate, reusable course environments. The first released lab is a deliberately vulnerable, segmented Active Directory environment. The Windows Local Privilege Escalation course under development will use an independent Windows workstation and will not require a domain controller.
 
-The objective is not to present a flat collection of vulnerable servers. Students begin inside a constrained security zone, learn the environment, obtain identities and footholds, escalate local privileges, abuse authentication, pivot through network boundaries, and progressively move from a machine-level compromise toward domain, parent-domain and forest-level attack paths.
+Within **Course 1, The Fall of the North**, the objective is not to present a flat collection of vulnerable servers. Learners begin inside a constrained security zone, learn the environment, obtain identities and footholds, escalate local privileges, abuse authentication, pivot through network boundaries, and progressively move from a machine-level compromise toward domain, parent-domain and forest-level attack paths.
+
+### Courses
+
+- **Course 1: The Fall of the North**. Existing NORTH / Active Directory course environment.
+- **Course 2: Title pending**. Future Kingdoms course, not yet named.
+- **Windows Local Privilege Escalation** (`windows-lpe`). Working course identifier and name; independent Windows training environment with no domain-controller dependency.
+
+See [Kingdoms course architecture](docs/KINGDOMS_COURSE_ARCHITECTURE.md). These are distinct courses under the **Kingdoms** platform, not alternate names for a single lab.
+
+**Access model:** The Kingdoms installer, provisioning systems and lifecycle controls are exclusively for trusted operators. Learners receive access only to their assigned vulnerable machine or explicitly authorized course network, plus their learner-level credentials. They never receive the installer, deployment source, hypervisor/cloud administration or operator credentials. Future cloud deployment must preserve this separation.
+
+### Course 1 environment
 
 The range combines:
 

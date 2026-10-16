@@ -1,0 +1,51 @@
+# -*- mode: ruby -*-
+# Kingdoms Windows LPE: independent, single-workstation development guest.
+#
+# Stage 1: create the Windows machine only. NO domain join, scenario seeding,
+# account mutation, NORTH network assignment, or automatic exploit execution.
+# Stage 2: provision local learner + validate Windows build/security separately.
+#
+# Use: cd courses/windows-lpe/standalone && vagrant up --provider=vmware_desktop
+
+Vagrant.require_version ">= 2.4.0"
+
+Vagrant.configure("2") do |config|
+  config.vm.box_check_update = false
+  config.vm.boot_timeout = 1200
+  config.vm.graceful_halt_timeout = 120
+  config.winrm.timeout = 1200
+  config.winrm.retry_limit = 30
+  config.winrm.retry_delay = 10
+
+  config.vm.define "kingdoms-lpe-ws01" do |guest|
+    guest.vm.box = "mayfly/windows10"
+    guest.vm.box_version = "2024.01.06"
+    guest.vm.guest = :windows
+    guest.vm.communicator = "winrm"
+    guest.vm.hostname = "kingdoms-lpe"
+
+    # Explicitly avoid the shared lab VM's data networks. Management initially
+    # uses VMware NAT; later acceptance must prove standalone/offline operation.
+    # A separate directory gives this VM its own .vagrant/ state and identity.
+    guest.vm.synced_folder ".", "/vagrant", disabled: true
+
+    # Disable RDP forwarding inherited from some Windows Vagrant boxes.
+    # Learner access configuration belongs to later provisioning stages.
+    guest.vm.network :forwarded_port,
+      guest: 3389, host: 53389, host_ip: "127.0.0.1",
+      id: "rdp", auto_correct: false, disabled: true
+
+    guest.vm.provider "vmware_desktop" do |vmware|
+      vmware.force_vmware_license = "workstation"
+      vmware.gui = false
+      vmware.vmx["displayName"] = "Kingdoms Windows LPE - standalone development"
+      vmware.vmx["memsize"] = "4096"
+      vmware.vmx["numvcpus"] = "2"
+      vmware.vmx["ethernet0.connectionType"] = "nat"
+      vmware.vmx["ethernet0.startConnected"] = "TRUE"
+      vmware.vmx["ethernet1.present"] = "FALSE"
+      vmware.vmx["ethernet2.present"] = "FALSE"
+      vmware.enable_vmrun_ip_lookup = false
+    end
+  end
+end
