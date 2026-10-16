@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import ipaddress
+import os
 import json
 from pathlib import Path
 import re
@@ -23,6 +25,7 @@ sys.path.insert(0, str(ROOT))
 from kingdoms.wslpe_isolation_policy import (
     TABLE, INPUT_CHAIN, FORWARD_CHAIN, exact_rollback, render_host_filter,
 )
+from kingdoms.wslpe_remote_operator import ssh_management_path, host_timer_smoke_test
 
 PLAN = ROOT / "scripts/wslpe-p1c-isolation-plan.py"
 BATCH = ROOT / "scripts/wslpe-p1c-batch-review.py"
@@ -175,8 +178,19 @@ def check_https() -> bool:
     )
 
 
-def pilot(seconds: int) -> None:
+def remote_preflight(vmnet: str, host: str) -> None:
+    # The caller's SSH route must be disjoint from the guest exercise vmnet.
+    subnet = str(ipaddress.ip_interface(f"{host}/24").network)
+    dev = ssh_management_path(vmnet, subnet)
+    print(f"[PASS] Operator SSH return route uses {dev}, not {vmnet}", flush=True)
+    unit = host_timer_smoke_test()
+    print(f"[PASS] Independent host rollback timer smoke test fired: {unit}", flush=True)
+
+
+def pilot(seconds: int, remote: bool = False) -> None:
     policy, vmnet, host, guest = local_preflight()
+    if remote:
+        remote_preflight(vmnet, host)
     if not check_https():
         raise ValueError("Pre-pilot HTTPS management is not healthy")
     timer = arm_rollback(seconds, uuid.uuid4().hex[:12])
@@ -205,6 +219,9 @@ def main() -> int:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--pilot", action="store_true")
     modes.add_argument("--rollback", action="store_true")
+    modes.add_argument("--remote-preflight", action="store_true")
+    parser.add_argument("--remote", action="store_true",
+                        help="explicitly authorize bounded remote SSH pilot after host timer smoke proof")
     parser.add_argument("--confirm", default="")
     parser.add_argument("--seconds", type=int, default=180)
     args = parser.parse_args()
@@ -213,19 +230,32 @@ def main() -> int:
     print("[SCOPE] Exact native WSLPE only; NEVER NAT, NORTH or other nftables tables")
     try:
         if args.rollback:
-            if args.confirm != ROLLBACK_CONFIRM:
+            if args.remote or args.confirm != ROLLBACK_CONFIRM:
                 raise ValueError("Exact WSLPE-only rollback confirmation required")
             if installed_exact_policy():
                 rollback_now()
                 print("[PASS] Scoped WSLPE table rolled back")
             else:
                 print("[PASS] WSLPE table already absent; no modification")
+        elif args.remote_preflight:
+            if args.confirm or args.remote:
+                raise ValueError("Remote smoke-test does not accept pilot confirmation")
+            _, vmnet, host, guest = local_preflight()
+            remote_preflight(vmnet, host)
+            print("[PASS] REMOTE_WSLPE_ROLLBACK_PREFLIGHT=TRUE")
+            print("[NO FIREWALL CHANGES] Standalone timer proof completed")
         elif args.pilot:
             if args.confirm != CONFIRM or not 120 <= args.seconds <= 300:
                 raise ValueError("Exact PILOT confirmation and 120–300s window required")
-            pilot(args.seconds)
+            is_ssh = bool(os.environ.get("SSH_CONNECTION")
+                          or __import__("os").environ.get("SSH_TTY"))
+            if is_ssh and not args.remote:
+                raise ValueError("Remote SSH pilot requires --remote and independent rollback proof")
+            if args.remote and not is_ssh:
+                raise ValueError("Remote pilot requires an authenticated SSH session")
+            pilot(args.seconds, remote=args.remote)
         else:
-            if args.confirm:
+            if args.confirm or args.remote:
                 raise ValueError("Confirmation supplied without an operation")
             policy, vmnet, host, guest = local_preflight()
             print(f"[PASS] Exact WSLPE-only policy plan: {vmnet} {host} -> {guest}")
