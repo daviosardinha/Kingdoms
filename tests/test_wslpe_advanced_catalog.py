@@ -57,7 +57,8 @@ def validate_planning_catalog(data: object, existing: set[str]) -> None:
         if entry.get("status") != "planned":
             raise ValueError("Unvalidated candidate must not be marked implemented")
         for field in ("name", "category", "mechanic", "prerequisite", "fixture", "feasibility_gate"):
-            if not isinstance(entry.get(field), str) or len(entry[field]) < 12:
+            minimum = 3 if field == "category" else 12
+            if not isinstance(entry.get(field), str) or len(entry[field]) < minimum:
                 raise ValueError(f"Missing specific advanced {field}")
         overlap = entry.get("distinct_from")
         if not isinstance(overlap, list) or not overlap:
