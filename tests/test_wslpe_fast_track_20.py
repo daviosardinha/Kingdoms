@@ -2,6 +2,9 @@
 from pathlib import Path
 import importlib.util
 import json
+import os
+import stat
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -78,6 +81,19 @@ class WslpeFastTrackTests(unittest.TestCase):
             self.assertEqual(FAST.run(args), 0)
             call.assert_not_called()
 
+    def test_private_failure_log_keeps_ansible_diagnostics_owner_only(self):
+        with TemporaryDirectory() as folder:
+            target = Path(folder) / "report"
+            private = FAST.private_report_dir(str(target))
+            self.assertEqual(stat.S_IMODE(private.stat().st_mode), 0o700)
+            log = FAST.private_failure_log(private, "learner-foundation",
+                                           "Private diagnostics only")
+            self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+            self.assertIn("Private diagnostics only", log.read_text())
+            self.assertNotIn("Private diagnostics only", str(log))
+            with self.assertRaises(ValueError):
+                FAST.private_failure_log(private, "NORTH/forbidden", "no")
+
     def test_source_contains_only_existing_wslpe_harness_and_no_north_lifecycle(self):
         s = SOURCE.read_text(encoding="utf-8")
         self.assertIn('ansible/wslpe-lpe-test.yml', s)
@@ -88,6 +104,7 @@ class WslpeFastTrackTests(unittest.TestCase):
         self.assertIn('bootstrap=args.bootstrap_learner', s)
         self.assertIn('--show-learner-access', s)
         self.assertIn('read_local_access()', s)
+        self.assertIn('private_failure_log(', s)
         self.assertIn('args.bootstrap_learner', s)
         self.assertIn('ansible/wslpe-foundation.yml', s)
         self.assertIn('--bootstrap-learner requires explicit --execute', s)
