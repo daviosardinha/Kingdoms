@@ -27,7 +27,7 @@ class ExactRecoveryTests(unittest.TestCase):
             vm.write_text(VMX)
             self.assertTrue(parse_inventory(f"Total running VMs: 1\n{vm}\n", vm))
             self.assertFalse(parse_inventory("Total running VMs: 0\n", vm))
-            alias = str(vm.parent / "." / vm.name)
+            alias = str(vm.parent) + "/./" + vm.name
             self.assertRaises(ValueError, parse_inventory,
                               f"Total running VMs: 2\n{vm}\n{alias}\n", vm)
             for bad in ("", "wrong", "Total running VMs: 2\n"+str(vm)+"\n",
