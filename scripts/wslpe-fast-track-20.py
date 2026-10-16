@@ -317,6 +317,23 @@ def run(args) -> int:
         # and remove ONLY the empty, untracked exact candidate directory.
         # This does not mutate the six previously accepted techniques.
         failed_technique = catalog[resume_index]
+        if args.recover_user_rights:
+            if failed_technique not in {"sebackup_privilege", "seimpersonate_privilege"}:
+                raise ValueError("Rights recovery must target the exact failed SeBackup/SeImpersonate apply")
+            print(f"[RECOVERY] Reset exact WSLPE-only {failed_technique} state through direct LSA", flush=True)
+            reset_cmd = invocation(
+                ansible, inventory, varsfile, failed_technique, "reset", None)
+            recovery = subprocess.run(
+                reset_cmd, cwd=ROOT, env=env, capture_output=True, text=True,
+                timeout=args.timeout_seconds, check=False)
+            if recovery.returncode:
+                private_log = private_failure_log(
+                    report_root, "rights-reset-recovery",
+                    recovery.stdout + "\n" + recovery.stderr)
+                print(f"[BLOCKED] WSLPE {failed_technique} snapshot recovery exit={recovery.returncode}")
+                print(f"[DIAGNOSTIC] {private_log} (redact before sharing)")
+                return 2
+            print(f"[PASS] WSLPE-only {failed_technique} snapshot restored", flush=True)
         if args.recover_aie_reset:
             if failed_technique != "always_install_elevated":
                 raise ValueError("Scoped AIE reset recovery cannot target any other technique")
@@ -410,6 +427,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="resume a failed APPLY checkpoint after revalidating earlier vulnerable scenarios")
     parser.add_argument("--recover-aie-reset", action="store_true",
                         help="with --execute and original AIE checkpoint: finish partial WSLPE-only AIE reset first")
+    parser.add_argument("--recover-user-rights", action="store_true",
+                        help="with --execute and exact failed SeBackup/SeImpersonate APPLY checkpoint: restore one partial rights fixture")
     parser.add_argument("--bootstrap-learner", action="store_true",
                         help="on --execute, first create/reuse a unique local learner and apply the WSLPE-only foundation")
     parser.add_argument("--show-learner-access", action="store_true",
@@ -431,6 +450,8 @@ def main():
         parser.error("Resume cannot rerun learner foundation; choose one path")
     if args.recover_aie_reset and (not args.execute or not args.resume_report or args.bootstrap_learner):
         parser.error("--recover-aie-reset requires --execute and original --resume-report, no bootstrap")
+    if args.recover_user_rights and (not args.execute or not args.resume_report or args.bootstrap_learner or args.recover_aie_reset):
+        parser.error("--recover-user-rights requires --execute and original --resume-report, no bootstrap or AIE recovery")
     if args.show_learner_access and (args.execute or args.bootstrap_learner):
         parser.error("--show-learner-access is a separate, read-only operation")
     try:
