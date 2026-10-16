@@ -96,5 +96,23 @@ class ExactRecoveryTests(unittest.TestCase):
                              "RESTORED_ORIGINAL_OFFLINE")
             self.assertEqual(set(x[3] for x in calls), {"list"})
 
+    @unittest.skipIf(os.geteuid() == 0, "requires unprivileged VMware owner")
+    def test_wrong_owner_cannot_issue_soft_stop(self):
+        from unittest.mock import patch
+        with TemporaryDirectory() as folder:
+            vm = Path(folder) / "windows_10.vmx"
+            vm.write_text(VMX)
+            plan = prepare_plan(vm, vm, "vmnet2", os.geteuid())
+            vm.write_bytes(plan.candidate)
+            commands = []
+            def runner(argv, **kwargs):
+                commands.append(argv)
+                return result()
+            with patch("kingdoms.wslpe_vmware_recover.os.geteuid", return_value=0):
+                self.assertRaises(ValueError, owner_recover, plan, vm, "vmrun",
+                                  execute=True, runner=runner)
+            self.assertEqual(commands, [])
+            self.assertEqual(vm.read_bytes(), plan.candidate)
+
 if __name__ == "__main__":
     unittest.main()
