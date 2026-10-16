@@ -64,3 +64,23 @@ Do not infer permanent safety from a successful, timed pilot. Before making this
 - Standalone local learner RDP and 20 LPE scenario acceptance: **pending**.
 
 **No part of this source-only preparation promotes WSLPE from PROVIDED to READY.**
+
+
+## 2026-10-16: Operator preview acceptance
+
+The operator ran `bash scripts/wslpe-p1c-pilot-preview.sh` on Kali:
+**27 unit tests PASS**, scoped certificate-verified WinRM HTTPS identity
+PASS (and automatic credential resolution), one unique WSLPE guest running,
+five unrelated VMs checked with no explicit vmnet2 overlap, and Linux
+`nft --check` candidate accepted without application.
+
+No Windows/VMware/NAT/firewall/NORTH changes were made. This closes the
+**source/runtime preview** gate only, not the timed firewall pilot.
+
+The next isolated exercise is an **explicitly approved** 120-second pilot
+at the local Kali console with working independent VMware recovery.
+The live pilot must arm the systemd rollback timer before applying the
+WSLPE-only nft table, prove HTTPS management survives, then wait for the
+timer and re-read the complete nft ruleset to prove the table disappeared.
+Any missing rollback proof blocks persistent policy or NAT cutover.
+No automated P1-C readiness promotion is allowed.
