@@ -164,9 +164,64 @@ class WslpePacketAcceptanceTests(unittest.TestCase):
                           side_effect=lambda *args: calls.append("removed")), \
              redirect_stdout(StringIO()):
             MOD.execute_phases(pilot, witness, lambda h: True,
-                               "172.28.231.1", "vmnet2")
+                               "172.28.231.1", "vmnet2", remote=True)
         self.assertEqual(calls, ["open", "apply", "blocked", "removed", "open"])
         pilot.pilot.assert_called_once_with(MOD.PILOT_SECONDS, remote=True)
+
+    def test_local_execute_runs_with_independent_timer_preflight(self):
+        pilot = MagicMock()
+        auth = MagicMock()
+        pilot.local_preflight.return_value = (
+            "candidate", "vmnet2", "172.28.231.1", "172.28.231.31"
+        )
+        auth.checked_certificate.return_value = ("172.28.231.31", b"der")
+        witness = MagicMock()
+        witness.__enter__.return_value = witness
+        from contextlib import contextmanager
+
+        @contextmanager
+        def fake_guest(*args):
+            yield lambda host: True
+
+        def chosen(path, name):
+            return pilot if path == MOD.PILOT_PATH else auth
+
+        with patch.dict("os.environ", {"SSH_CONNECTION": ""}), \
+             patch.object(sys.stdin, "isatty", return_value=True), \
+             patch.object(MOD, "load", side_effect=chosen), \
+             patch.object(MOD, "ControlledHostListener", return_value=witness), \
+             patch.object(MOD, "authenticated_guest", side_effect=fake_guest), \
+             patch.object(MOD, "execute_phases") as phases, \
+             patch.object(sys, "argv", [
+                 "packet.py", "--execute", "--confirm", MOD.CONFIRM
+             ]), redirect_stdout(StringIO()):
+            self.assertEqual(MOD.main(), 0)
+        pilot.host_timer_smoke_test.assert_called_once()
+        pilot.remote_preflight.assert_not_called()
+        phases.assert_called_once()
+        self.assertFalse(phases.call_args.kwargs["remote"])
+
+    def test_local_execute_requires_interactive_console_before_loading(self):
+        with patch.dict("os.environ", {"SSH_CONNECTION": ""}), \
+             patch.object(sys.stdin, "isatty", return_value=False), \
+             patch.object(MOD, "load") as loader, \
+             patch.object(sys, "argv", [
+                 "packet.py", "--execute", "--confirm", MOD.CONFIRM
+             ]), redirect_stdout(StringIO()):
+            self.assertEqual(MOD.main(), 1)
+            loader.assert_not_called()
+
+    def test_local_execute_phases_never_impersonates_ssh(self):
+        pilot = MagicMock()
+        pilot.installed_exact_policy.return_value = True
+        pilot.check_https.return_value = True
+        with patch.object(MOD, "verified_guest_connection"), \
+             patch.object(MOD, "verified_guest_deny"), \
+             patch.object(MOD, "wait_for_table_removal"), \
+             redirect_stdout(StringIO()):
+            MOD.execute_phases(pilot, MagicMock(), lambda host: True,
+                               "172.28.231.1", "vmnet2", remote=False)
+        pilot.pilot.assert_called_once_with(MOD.PILOT_SECONDS, remote=False)
 
     def test_source_never_targets_north_or_disconnects_nat(self):
         text = SCRIPT.read_text(encoding="utf-8")
@@ -177,7 +232,7 @@ class WslpePacketAcceptanceTests(unittest.TestCase):
             self.assertNotIn(forbidden, text)
         self.assertIn("server_cert_validation=\"validate\"", text)
         self.assertIn("scoped_wslpe_resolution(", text)
-        self.assertIn("pilot.pilot(PILOT_SECONDS, remote=True)", text)
+        self.assertIn("pilot.pilot(PILOT_SECONDS, remote=remote)", text)
         self.assertIn("rollback_now()", text)
         self.assertIn("--execute", text)
 
