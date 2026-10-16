@@ -124,6 +124,40 @@ jobs:
             }
             Write-Host "[PASS] Native Windows PowerShell AST parsed $($script.Name)"
           }
+      - name: Exercise the actual AIE device-path guard against Windows' loaded user hive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import os
+          from pathlib import Path
+          import yaml
+          tasks = yaml.safe_load(Path('ansible/wslpe-aie-reset-tasks.yml').read_text(encoding='utf-8'))
+          source = tasks[0]['ansible.windows.win_powershell']['script']
+          marker = "              $hiveList = Get-ItemProperty"
+          start = source.index(marker)
+          end = source.index("\n          }\n          else {", start)
+          block = source[start:end]
+          assert block.count("'\\REGISTRY\\USER\\KingdomAIE'") == 1
+          block = block.replace(
+              "'\\REGISTRY\\USER\\KingdomAIE'",
+              "('\\REGISTRY\\USER\\' + $sid)")
+          header = """
+          $ErrorActionPreference = 'Stop'
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          $ntuser = Join-Path $env:USERPROFILE 'NTUSER.DAT'
+          """
+          footer = """
+          if (-not [string]::Equals($hiveValue, $expectedHive,
+                                      [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Actual Windows hivelist/native path canonicalization mismatch'
+          }
+          Write-Host '[PASS] WSLPE device path guard matches live Windows hivelist'
+          """
+          path = Path(os.environ['RUNNER_TEMP']) / 'wslpe-native-hive-guard.ps1'
+          path.write_text(header + block + footer, encoding='utf-8')
+          '@ | python -
+          & "$env:RUNNER_TEMP/wslpe-native-hive-guard.ps1"
       - name: Check actual userenv.dll entry point without creating a user profile
         shell: pwsh
         run: |
