@@ -83,14 +83,155 @@
           if ($alreadyMounted) {
               # A stale mount from the failed shared-role reset is expected,
               # but never unload a foreign process's unrelated registry hive.
+              # Hivelist uses native NT device paths (e.g.
+              # \Device\HarddiskVolumeX\Users\...\NTUSER.DAT). Comparing
+              # that string to a DOS-only suffix (C:\...) was invalid.
+              # Resolve the real drive to its NT device using QueryDosDeviceW
+              # and require an EXACT whole-path match. No fuzzy suffix match,
+              # unknown mount adoption, or user-supplied volume selection.
               $hiveList = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\hivelist' -ErrorAction Stop
-              $record = @($hiveList.PSObject.Properties | Where-Object { $_.Name -eq '\REGISTRY\USER\KingdomAIE' })
-              $pathTail = $ntuser.Substring(2)
-              if ($record.Count -ne 1 -or
-                  -not [string]$record[0].Value -or
-                  -not ([string]$record[0].Value).EndsWith(
-                      $pathTail, [StringComparison]::OrdinalIgnoreCase)) {
-                  throw 'AIE temporary registry mount cannot be identified as the exact learner profile'
+              $record = @($hiveList.PSObject.Properties | Where-Object { $_.Name -ieq '\REGISTRY\USER\KingdomAIE' })
+              if ($record.Count -ne 1 -or -not [string]$record[0].Value) {
+                  throw 'AIE temporary registry mount has no unique hive identity record'
+              }
+              $profileHive = Get-Item -LiteralPath $ntuser -Force -ErrorAction Stop
+              if (($profileHive.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw 'AIE learner hive is a reparse point'
+              }
+              $rootDrive = [IO.Path]::GetPathRoot($ntuser).TrimEnd('\')
+              if ($rootDrive -notmatch '^[A-Za-z]:
+          }
+          else {
+              & reg.exe load "HKU\$mount" "$ntuser" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'AIE registry hive could not be loaded for restoration' }
+          }
+      }
+
+      # All HKCU changes are completed HERE. A separate Ansible task will
+      # unload after the current PowerShell process exits and releases keys.
+      $userPath = "Registry::HKEY_USERS\$mount\Software\Policies\Microsoft\Windows\Installer"
+      if ([bool]$state.user_value_exists) {
+          New-Item -Path $userPath -Force | Out-Null
+          New-ItemProperty -LiteralPath $userPath -Name AlwaysInstallElevated -Value ([int]$state.user_value) -PropertyType DWord -Force | Out-Null
+      }
+      else {
+          Remove-ItemProperty -LiteralPath $userPath -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
+          if (-not [bool]$state.user_key_exists -and (Test-Path -LiteralPath $userPath)) {
+              $userKey = Get-Item -LiteralPath $userPath
+              if ($userKey.Property.Count -eq 0 -and $userKey.SubKeyCount -eq 0) {
+                  $userKey.Close()
+                  $userKey = $null
+                  Remove-Item -LiteralPath $userPath -Force
+              }
+              else {
+                  $userKey.Close()
+                  $userKey = $null
+              }
+          }
+      }
+      if ([bool]$state.user_value_exists) {
+          $actual = Get-ItemProperty -LiteralPath $userPath -Name AlwaysInstallElevated -ErrorAction Stop
+          if ([int]$actual.AlwaysInstallElevated -ne [int]$state.user_value) {
+              throw 'AIE user registry value did not restore to snapshot'
+          }
+      }
+      else {
+          $actual = Get-ItemProperty -LiteralPath $userPath -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
+          if ($null -ne $actual) { throw 'AIE user registry value still exists' }
+      }
+
+      $Ansible.Result = @{
+          temporary_hive = (-not $loadedSID)
+          snapshot_verified = $true
+      }
+      $Ansible.Changed = $true
+      Write-Output 'WSLPE_AIE_REGISTRY_SNAPSHOT_RESTORED=TRUE'
+  register: wslpe_aie_restore
+
+- name: Require verified WSLPE AIE registry restoration
+  ansible.builtin.assert:
+    that:
+      - wslpe_aie_restore.result.snapshot_verified | default(false) | bool
+    fail_msg: "WSLPE AIE reset cannot continue without verified snapshot restoration"
+
+- name: Unload temporary learner registry hive in a separate process
+  ansible.windows.win_command:
+    argv:
+      - reg.exe
+      - unload
+      - HKU\KingdomAIE
+  register: wslpe_aie_unload
+  when: wslpe_aie_restore.result.temporary_hive | default(false) | bool
+
+- name: Finalize the exact standalone WSLPE AIE snapshot cleanup
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $system = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+      if ($system.PartOfDomain -or $env:COMPUTERNAME -ne 'WSLPE-WS01') {
+          throw 'AIE finalization refused: wrong machine identity'
+      }
+      $root = 'C:\Kingdom LPE\AlwaysInstallElevated'
+      $stateFile = Join-Path $root 'state.json'
+      if (-not (Test-Path -LiteralPath $stateFile -PathType Leaf)) {
+          throw 'AIE finalization refused: snapshot missing'
+      }
+      $directory = Get-Item -LiteralPath $root -Force -ErrorAction Stop
+      if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+          throw 'AIE finalization refused: reparse-point directory'
+      }
+      $entries = @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)
+      if ($entries.Count -ne 1 -or $entries[0].Name -ne 'state.json' -or
+          ($entries[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+          throw 'AIE finalization refused: unexpected contents'
+      }
+      $saved = Get-Content -LiteralPath $stateFile -Raw | ConvertFrom-Json
+      $machine = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -Name AlwaysInstallElevated -ErrorAction SilentlyContinue
+      if ([bool]$saved.machine_value_exists) {
+          if ($null -eq $machine -or [int]$machine.AlwaysInstallElevated -ne [int]$saved.machine_value) {
+              throw 'AIE HKLM value not restored to original'
+          }
+      }
+      elseif ($null -ne $machine) {
+          throw 'AIE HKLM value still exists after restoration'
+      }
+      Remove-Item -LiteralPath $stateFile -Force -ErrorAction Stop
+      Remove-Item -LiteralPath $root -Force -ErrorAction Stop
+      Write-Output 'WSLPE_AIE_RESET=PASS'
+  register: wslpe_aie_reset_final
+) {
+                  throw 'AIE learner hive must have an exact local drive-letter path'
+              }
+              $native = @'
+          using System;
+          using System.Runtime.InteropServices;
+          using System.Text;
+          public static class WslpeAieDosDevice {
+              [DllImport("kernel32.dll", CharSet=CharSet.Unicode,
+                         EntryPoint="QueryDosDeviceW", ExactSpelling=true,
+                         SetLastError=true)]
+              public static extern uint QueryDosDevice(
+                  string device, StringBuilder path, int capacity);
+          }
+          '@
+              Add-Type -TypeDefinition $native -ErrorAction Stop
+              $buffer = New-Object System.Text.StringBuilder(4096)
+              $count = [WslpeAieDosDevice]::QueryDosDevice(
+                  $rootDrive, $buffer, $buffer.Capacity)
+              if ($count -eq 0) {
+                  throw 'AIE learner volume cannot be resolved to an NT device path'
+              }
+              $volume = $buffer.ToString().Split([char]0)[0].TrimEnd('\')
+              if (-not $volume.StartsWith('\Device\', [StringComparison]::OrdinalIgnoreCase)) {
+                  throw 'AIE learner volume identity is not a local NT device'
+              }
+              $suffix = $ntuser.Substring($rootDrive.Length).TrimStart('\')
+              $expectedHive = $volume + '\' + $suffix
+              $hiveValue = ([string]$record[0].Value).TrimEnd([char]0)
+              if (-not [string]::Equals(
+                  $hiveValue, $expectedHive,
+                  [StringComparison]::OrdinalIgnoreCase)) {
+                  throw 'AIE temporary registry mount does not map to the exact learner NTUSER.DAT'
               }
           }
           else {
