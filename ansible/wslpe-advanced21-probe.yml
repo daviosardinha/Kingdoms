@@ -48,7 +48,7 @@
           $folder = $service.GetFolder('\')
           $task = $folder.GetTask('KingdomTaskBinary')
           $sddl = [string]$task.GetSecurityDescriptor(4)
-          if (-not $sddl -or $sddl -notmatch '^D:') {
+          if ([string]::IsNullOrWhiteSpace($sddl)) {
               throw 'Task Scheduler COM did not provide a readable task DACL'
           }
           $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor($sddl)
