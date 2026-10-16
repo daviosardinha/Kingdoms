@@ -6,6 +6,7 @@ registered VMX. NORTH VMX paths are not accepted by upstream plan creation.
 """
 from __future__ import annotations
 from pathlib import Path
+import os
 import re
 import subprocess
 import time
@@ -53,8 +54,12 @@ def owner_recover(plan: RecoveryPlan, registered: Path, vmrun: str, *,
     """
     if not execute:
         raise ValueError("Live WSLPE rollback is not authorized")
-    if plan.vmx.resolve(strict=True) != registered.resolve(strict=True):
+    if (plan.vmx.is_symlink() or registered.is_symlink()
+            or plan.vmx.resolve(strict=True) != registered.resolve(strict=True)):
         raise ValueError("Registered WSLPE VMX changed")
+    if (plan.owner_uid <= 0 or os.geteuid() != plan.owner_uid
+            or plan.vmx.stat().st_uid != plan.owner_uid):
+        raise ValueError("WSLPE VMware owner changed; do not stop machine")
     was_running = parse_inventory(vmrun_list(vmrun, runner), registered)
     current = plan.vmx.read_bytes()
     if current == plan.original:
