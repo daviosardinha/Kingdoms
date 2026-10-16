@@ -73,6 +73,10 @@
 
   roles:
     - role: windows_lpe
+      # NORTH's existing shared role remains completely unchanged.
+      # Only this standalone guest routes AIE reset through the
+      # fixed two-process hive lifecycle.
+      when: not (wslpe_action == 'reset' and wslpe_techniques == ['always_install_elevated'])
       vars:
         windows_lpe_action: "{{ wslpe_action }}"
         windows_lpe_profile: none
@@ -81,3 +85,8 @@
         windows_lpe_learner_account: 'WSLPE-WS01\lpe.trainee'
         windows_lpe_learner_password: "{{ lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') }}"
         windows_lpe_allow_candidate: false
+
+  tasks:
+    - name: Reset standalone AlwaysInstallElevated without held registry handles
+      ansible.builtin.include_tasks: wslpe-aie-reset-tasks.yml
+      when: wslpe_action == 'reset' and wslpe_techniques == ['always_install_elevated']
