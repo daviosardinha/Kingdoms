@@ -1,7 +1,7 @@
 # WSLPE P1-C — Reuse NORTH WS01, remove every AD dependency
 
 **Scope:** WSLPE-only feature branch. NORTH is read-only and unchanged.
-**Status:** 36/36 source parity and read-only VMX preview accepted; host-side recovery rehearsal pending.
+**Status:** 36/36 NORTH parity and 24/24 owner-timer recovery tests accepted; VMware-owner list/scratch rehearsal pending.
 WSLPE remains PROVIDED / NOT READY.
 
 This is an implementation and acceptance map, not a separate VM stack.
@@ -113,3 +113,51 @@ bash scripts/wslpe-p1c-recovery-rehearsal.sh
 rehearsal does **not** prove vmrun works from that transient service,
 nor that a powered-off VMX rollback or host-reboot persistence works.
 Those gates must be implemented and accepted before live NAT cutover.
+
+
+## 2026-10-16 — Owner timer live acceptance and deeper recovery proof
+
+The operator ran the source and owner-timer rehearsal on local Kali. The
+terminal log showed **24/24 source tests PASS**, the exact registered
+`windows_10.vmx` owner confirmed, NORTH lifecycle source parity PASS,
+and a 3-second systemd timer executing under the actual VMX owner.
+`WSLPE_OWNER_HOST_TIMER_FIRED=TRUE` and
+`WSLPE_OWNER_RECOVERY_REHEARSAL=TRUE` both PASS. The marker was
+temporary; **no VM shutdown, restart or VMX edit occurred**.
+
+### Combined read-only VMware recovery gate (new source)
+
+`kingdoms/wslpe_vmrun_recovery.py` and
+`scripts/wslpe-p1c-owner-vmrun-worker.py` add an independent host timer
+that executes only **`vmrun -T ws list`** in the verified owner account,
+then strictly matches the registered exact WSLPE VMX path (not
+`windows_10.vmx` basename alone). The timer writes only a 0600
+temporary JSON result in a 0700 directory; the launcher validates its
+owner, VMX identity and result before removing the temporary directory.
+
+This tests whether the *same systemd context that would need to rescue a
+cutover* can actually reach VMware Workstation without a login shell.
+A disabled/missing VMware session, wrong UID, ambiguous VM inventory,
+incorrect systemd state or missing result **fails closed**.
+
+The same run exercises the NORTH-derived persistent Ethernet0 NAT change
+on a **disposable copy** of the registered WSLPE VMX. It applies the
+candidate in the scratch file, verifies the SHA256 before/after and
+restores exactly the original bytes via
+`guarded_original_restore`. The registered VMX is never written.
+
+One operator command (feature branch, local Kali account):
+
+~~~bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+git pull --ff-only || exit 1
+bash scripts/wslpe-p1c-vmrun-recovery-gate.sh
+~~~
+
+**This newly committed batch has not yet run on Kali.** It performs
+no VM/NAT/firewall changes and never contacts NORTH. Passing it will
+show owner-context *read-only VMware access* and scratch-only VMX
+restoration; it will **not** prove production VM shutdown/restart, a
+real powered-off VMX replacement, host reboot protection or guest
+ARP/L2 isolation. Those remain locked prerequisites for live NAT
+cutover and learner release.
