@@ -45,7 +45,7 @@
           $sid = $account.SID.Value
           $profileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid"
           if (-not (Test-Path -LiteralPath $profileKey)) {
-              # CreateProfileW is a supported Windows API for administrator-side
+              # CreateProfile (the actual userenv.dll export) is the Windows API for administrator-side
               # local profile creation. Do not launch cmd.exe via Start-Process
               # -Credential in an already remote WinRM provisioning session.
               $definition = @'
