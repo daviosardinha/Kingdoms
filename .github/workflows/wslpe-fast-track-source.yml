@@ -134,7 +134,7 @@ jobs:
           import yaml
           tasks = yaml.safe_load(Path('ansible/wslpe-aie-reset-tasks.yml').read_text(encoding='utf-8'))
           source = tasks[0]['ansible.windows.win_powershell']['script']
-          marker = "              $hiveList = Get-ItemProperty"
+          marker = "$hiveList = Get-ItemProperty"
           start = source.index(marker)
           end = source.index("\n    }\n    else {", start)
           block = source[start:end]
@@ -157,6 +157,7 @@ jobs:
           path = Path(os.environ['RUNNER_TEMP']) / 'wslpe-native-hive-guard.ps1'
           path.write_text(header + block + footer, encoding='utf-8')
           '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Native hive guard generation failed' }
           & "$env:RUNNER_TEMP/wslpe-native-hive-guard.ps1"
       - name: Check actual userenv.dll entry point without creating a user profile
         shell: pwsh
