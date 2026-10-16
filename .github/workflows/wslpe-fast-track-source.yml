@@ -17,6 +17,8 @@ on:
       - 'tests/test_wslpe_aie_reset_adapter.py'
       - 'ansible/wslpe-aie-reset-tasks.yml'
       - 'ansible/wslpe-lpe-test.yml'
+      - 'ansible/wslpe-user-rights-tasks.yml'
+      - 'tests/test_wslpe_local_rights.py'
       - 'ansible/wslpe-always-install-elevated-preflight.yml'
       - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
       - 'ansible/roles/windows_lpe/defaults/main.yml'
@@ -34,6 +36,8 @@ on:
       - 'tests/test_wslpe_aie_reset_adapter.py'
       - 'ansible/wslpe-aie-reset-tasks.yml'
       - 'ansible/wslpe-lpe-test.yml'
+      - 'ansible/wslpe-user-rights-tasks.yml'
+      - 'tests/test_wslpe_local_rights.py'
       - 'ansible/wslpe-always-install-elevated-preflight.yml'
       - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
       - 'ansible/roles/windows_lpe/defaults/main.yml'
@@ -64,6 +68,8 @@ jobs:
             ansible/wslpe-always-install-elevated-preflight.yml
           ansible-playbook -i "$RUNNER_TEMP/wslpe-ci-inventory" --syntax-check \
             ansible/wslpe-lpe-test.yml
+          python -c "import yaml; x=yaml.safe_load(open('ansible/wslpe-user-rights-tasks.yml')); assert len(x)==1"
+
       - name: Check Python syntax
         run: |
           python -m py_compile \
@@ -75,7 +81,8 @@ jobs:
             tests/test_wslpe_learner_credentials.py \
             tests/test_wslpe_operator_shell_safety.py \
             tests/test_wslpe_aie_profile_preflight.py \
-            tests/test_wslpe_aie_reset_adapter.py
+            tests/test_wslpe_aie_reset_adapter.py \
+            tests/test_wslpe_local_rights.py
       - name: Run read-only source and negative-path regressions
         run: |
           python -m unittest -v \
@@ -84,7 +91,8 @@ jobs:
             tests.test_wslpe_learner_credentials \
             tests.test_wslpe_operator_shell_safety \
             tests.test_wslpe_aie_profile_preflight \
-            tests.test_wslpe_aie_reset_adapter
+            tests.test_wslpe_aie_reset_adapter \
+            tests.test_wslpe_local_rights
 
   windows-native-export:
     name: Verify userenv CreateProfile symbol (Windows, no guest)
@@ -159,6 +167,34 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Native hive guard generation failed' }
           & "$env:RUNNER_TEMP/wslpe-native-hive-guard.ps1"
+      - name: Verify direct LSA rights enumeration in Windows PowerShell 5.1 (read only)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          @'
+          import os
+          from pathlib import Path
+          import yaml
+          tasks = yaml.safe_load(Path('ansible/wslpe-user-rights-tasks.yml').read_text(encoding='utf-8'))
+          assert len(tasks) == 1
+          script = tasks[0]['ansible.windows.win_powershell']['script']
+          anchor = "Add-Type -TypeDefinition @'"
+          start = script.index(anchor)
+          end = script.index("\n'@", start) + len("\n'@")
+          native = script[start:end]
+          smoke = r'''
+          $ErrorActionPreference = 'Stop'
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          $direct = [WslpeDirectAccountRights]::HasRight($sid, 'SeBackupPrivilege')
+          if ($direct -isnot [bool]) { throw 'LSA direct account lookup must return a Boolean' }
+          Write-Host '[PASS] Windows-native direct LSA account-right enumeration'
+          '''
+          dest = Path(os.environ['RUNNER_TEMP']) / 'wslpe-lsa-query.ps1'
+          dest.write_text(native + '\n' + smoke, encoding='utf-8-sig')
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Windows LSA smoke fixture creation failed' }
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP/wslpe-lsa-query.ps1"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell 5.1 LSA native enumeration failed' }
       - name: Check actual userenv.dll entry point without creating a user profile
         shell: pwsh
         run: |
