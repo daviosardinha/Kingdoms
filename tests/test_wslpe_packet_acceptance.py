@@ -77,8 +77,22 @@ class WslpePacketAcceptanceTests(unittest.TestCase):
         listener.count.side_effect = [0, 1]
         with redirect_stdout(StringIO()):
             MOD.verified_guest_connection(listener, lambda _ip: True, "172.28.231.1")
+
+        # Reset the witness between independent positive and negative
+        # assertions; an exhausted side_effect iterator raises StopIteration
+        # rather than the intended fail-closed ValueError.
+        listener.reset_mock()
+        listener.count.side_effect = [1]
         with self.assertRaises(ValueError):
             MOD.verified_guest_connection(listener, lambda _ip: False, "172.28.231.1")
+
+        # A claimed remote success without a matching accepted guest
+        # connection must also fail (not silently pass).
+        listener.reset_mock()
+        listener.count.return_value = 0
+        listener.count.side_effect = None
+        with patch.object(MOD.time, "sleep"), self.assertRaises(ValueError):
+            MOD.verified_guest_connection(listener, lambda _ip: True, "172.28.231.1")
 
     def test_deny_requires_closed_socket_and_no_listener_accept(self):
         listener = MagicMock()
