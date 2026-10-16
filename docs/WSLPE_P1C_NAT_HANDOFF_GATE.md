@@ -189,3 +189,62 @@ The host-only vmnet2 L2/ARP boundary is a separate unsolved blocker,
 even if boot persistence and NAT disconnect subsequently pass. No
 release readiness promotion or live VMX mutation is authorized from
 the successful read-only recovery gate.
+
+
+## Recovery-state machine and boot-port candidate — source staged
+
+The 2026-10-16 engineering branch now includes actual **WSLPE-only
+recovery logic**, with live mutation still locked behind separate
+authorization and independent-timer integration:
+
+- `kingdoms/wslpe_exact_restore.py`: accepts only the exact
+  registered WSLPE VMX and verified non-root owner. Generates a
+  SHA256-bound Ethernet0-only candidate, refuses unknown VMware
+  rewrites, and can restore original VMX bytes by atomic rename
+  **only after powered-off state has been independently confirmed**.
+- `kingdoms/wslpe_vmware_recover.py`: NORTH-derived explicit
+  `vmrun stop <exact VMX> soft` → wait until absent from unique VMware
+  inventory → exact offline restore → optional `vmrun start <exact VMX>
+  nogui` with readiness check. Never forces power off, touches a
+  second VMX or restarts a guest that was already stopped. Ambiguous
+  duplicate aliases in VMware inventory fail closed. No live caller
+  is yet wired to this mutation-capable module.
+- `kingdoms/wslpe_boot_policy.py`: reuses the existing verified
+  `kingdoms_wslpe_winrm` and `kingdoms_wslpe_exercise` nftables
+  renderers. It requires the **current WSLPE Vagrant forwarded port**
+  and dynamic exercise vmnet/subnet, rejects global firewall/NAT
+  changes, and marks boot installation **NOT AUTHORIZED**.
+- `scripts/wslpe-p1c-boot-policy-preview.py`: read-only registered
+  VMX, dynamic `vagrant port`, unique root `ss` vmnet-nat listener
+  and current guard verification. No host firewall writes.
+- `tests/test_wslpe_exact_restore.py`,
+  `tests/test_wslpe_vmware_recover.py`,
+  `tests/test_wslpe_boot_policy.py`: scratch-only and mocked
+  fail-closed regressions, also included in the existing parity gate.
+
+**One new first-run operator command**:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+git pull --ff-only || exit 1
+bash scripts/wslpe-p1c-recovery-and-boot-gate.sh
+```
+
+This command runs source tests and live read-only port/VMX
+checks. **It does NOT run the new VMX restore function on a real VM,
+register a rollback service, install persistent nftables tables,
+enable `nftables.service` or disconnect NAT.** Its results have
+not yet been collected from Kali.
+
+**Not yet implemented:** durable owner-context recovery bundle and
+independent timed execution of the *real* VMX restore; boot-service
+ordering ensuring an untrusted WSLPE guest cannot start before the
+dynamic forwarded WinRM guard and scoped exercise filter are active;
+host-reboot persistence validation. The host-only VMnet2 ARP/Layer2
+boundary remains a separate architectural release blocker.
+
+A boot service that reconciles the port only AFTER VMware exposes
+a newly forwarded listener cannot prove zero exposure during the
+interval. Fail-safe startup ordering or a stronger guest-only network
+boundary must be proven, not asserted from a successful preflight.
+Until then, **NAT cutover and learner access remain locked**.
