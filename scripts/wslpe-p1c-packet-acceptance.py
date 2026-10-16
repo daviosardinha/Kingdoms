@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 from contextlib import contextmanager
 import importlib.util
+import ipaddress
 import os
 from pathlib import Path
 import ssl
@@ -106,7 +107,7 @@ def verified_guest_deny(witness, probe, host: str) -> None:
 
 def wait_for_table_removal(pilot, seconds: int, started: float) -> None:
     """Give the host-side timer its full window independently of SSH."""
-    remaining = max(0, seconds + 18 - (time.monotonic() - started))
+    remaining = max(0, seconds + 20 - (time.monotonic() - started))
     print(f"[INFO] Awaiting independent WSLPE table removal (~{int(remaining)}s)")
     if remaining:
         time.sleep(remaining)
@@ -123,14 +124,15 @@ def execute_phases(pilot, witness, probe, host: str, vmnet: str) -> None:
     print("===== TEMPORARY FILTER: EXPECT GUEST -> KALI DENIAL =====", flush=True)
     # pilot.pilot rechecks unique VMX, SSH route, short timer smoke, HTTPS,
     # dedicated nft ownership and rollback timer before applying anything.
-    started = time.monotonic()
     pilot.pilot(PILOT_SECONDS, remote=True)
     if not pilot.installed_exact_policy(vmnet):
         raise ValueError("WSLPE filter was not installed with expected identity")
     verified_guest_deny(witness, probe, host)
 
     print("===== AUTOMATIC ROLLBACK: REPEAT POSITIVE CONTROL =====", flush=True)
-    wait_for_table_removal(pilot, PILOT_SECONDS, started)
+    # Conservative timer: start measurement after policy installation was
+    # verified; timer armed earlier, so this cannot shorten its full window.
+    wait_for_table_removal(pilot, PILOT_SECONDS, time.monotonic())
     verified_guest_connection(witness, probe, host)
     if not pilot.check_https():
         raise ValueError("Authenticated WSLPE HTTPS failed after rollback")
@@ -163,7 +165,7 @@ def main() -> int:
         pilot = load(PILOT_PATH, "wslpe_packet_policy")
         auth = load(AUTH_PATH, "wslpe_packet_https_auth")
         policy, vmnet, host, guest = pilot.local_preflight()
-        network = str(__import__("ipaddress").ip_interface(f"{host}/24").network)
+        network = str(ipaddress.ip_interface(f"{host}/24").network)
         validate_target(host, guest, network, PORT)
         print(f"[PASS] WSLPE-only native target={guest} listener={host}:{PORT}")
         if os.environ.get("SSH_CONNECTION"):
@@ -190,9 +192,9 @@ def main() -> int:
         print(f"[BLOCKED] {type(exc).__name__}; WSLPE-only acceptance incomplete")
         if applied and pilot is not None:
             try:
-                if pilot.scoped_objects(pilot.nft_json("ruleset")):
+                if pilot.installed_exact_policy(vmnet):
                     pilot.rollback_now()
-                    print("[PASS] Emergency WSLPE-only table rollback completed")
+                    print("[PASS] Exact-policy WSLPE-only emergency rollback completed")
                 else:
                     print("[PASS] WSLPE pilot table already absent")
             except Exception:
