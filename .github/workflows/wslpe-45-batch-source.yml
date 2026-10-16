@@ -1,0 +1,26 @@
+name: WSLPE 45 standalone source contract
+on:
+  push:
+    branches: ['feature/windows-lpe-45-batch']
+  pull_request:
+    paths:
+      - 'kingdoms/wslpe_batch_catalog.py'
+      - 'kingdoms/wslpe_expert_catalog.yml'
+      - 'scripts/wslpe-45-batch.py'
+      - 'tests/test_wslpe_batch_catalog.py'
+      - '.github/workflows/wslpe-45-batch-source.yml'
+jobs:
+  source-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pyyaml
+      - name: Verify source-only 45 matrix and NORTH freeze
+        run: |
+          python -m py_compile kingdoms/wslpe_batch_catalog.py scripts/wslpe-45-batch.py tests/test_wslpe_batch_catalog.py
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog
+          python scripts/wslpe-45-batch.py

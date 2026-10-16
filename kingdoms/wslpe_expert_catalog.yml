@@ -1,0 +1,103 @@
+---
+# Expert 36–45 are proposed, not implemented. WSLPE only.
+schema: kingdoms.wslpe.expert.v1
+scope: standalone-wslpe-only
+platform: windows-10-workgroup
+target_total: 45
+foundation_count: 20
+advanced_count: 15
+expert_count: 10
+learner: 'WSLPE-WS01\lpe.trainee'
+shared_north_role_frozen: true
+status: planned
+techniques:
+  - number: 36
+    id: wmi_privileged_provider_authorization
+    name: WMI privileged provider authorization
+    status: planned
+    mechanic: non-admin caller invokes improperly delegated privileged lab provider method
+    prerequisite: isolated custom WMI provider with a protected owned marker
+    fixture: Kingdoms-only WMI provider and namespace
+    feasibility_gate: native Windows 10 registration, low-privilege call and complete provider rollback
+    distinct_from: [jea_role_capability_misconfig, weak_service_dacl]
+  - number: 37
+    id: wmi_permanent_consumer_hijack
+    name: WMI permanent event consumer hijack
+    status: planned
+    mechanic: unauthorized edit redirects a privileged event-triggered lab action
+    prerequisite: test-only WMI event filter and consumer authorization
+    fixture: unique event namespace, consumer, filter and binding
+    feasibility_gate: prove consumer privilege and remove only test-owned subscriptions
+    distinct_from: [wmi_privileged_provider_authorization, scheduled_task_definition_acl]
+  - number: 38
+    id: dcom_server_launch_acl
+    name: DCOM launch and access ACL abuse
+    status: planned
+    mechanic: delegated launch and method access to an overprivileged custom DCOM server
+    prerequisite: isolated COM server with dedicated AppID and rollback of original ACL
+    fixture: Kingdoms-only out-of-process COM server writing one test marker
+    feasibility_gate: Windows 10 DCOM hardening and per-AppID access proof
+    distinct_from: [com_clsid_registration_hijack, jea_role_capability_misconfig]
+  - number: 39
+    id: privileged_loopback_http_authz
+    name: Unauthenticated local privileged HTTP API
+    status: planned
+    mechanic: elevated local API mistakes loopback origin for caller authorization
+    prerequisite: test service bound exclusively to localhost
+    fixture: Kingdoms HTTP server accepting only a protected lab marker operation
+    feasibility_gate: low-privilege request, listener isolation and rollback
+    distinct_from: [named_pipe_authorization, custom_rpc_authorization]
+  - number: 40
+    id: custom_rpc_authorization
+    name: Custom Windows RPC authorization failure
+    status: planned
+    mechanic: elevated test RPC interface accepts unauthorized local caller
+    prerequisite: custom RPC service and exact interface UUID
+    fixture: Kingdoms-only RPC server with a bounded privileged operation
+    feasibility_gate: prove client token and deny non-lab endpoint access
+    distinct_from: [named_pipe_authorization, privileged_loopback_http_authz]
+  - number: 41
+    id: privileged_argument_injection
+    name: Privileged command argument injection
+    status: planned
+    mechanic: elevated launcher improperly interprets low-privilege supplied argument
+    prerequisite: purpose-built protected command wrapper
+    fixture: Kingdoms-only argument parser and protected marker operation
+    feasibility_gate: prove elevated interpreter behavior without unrelated system effects
+    distinct_from: [privileged_service_config_injection, privileged_path_traversal_write]
+  - number: 42
+    id: privileged_child_environment_trust
+    name: Privileged child environment injection
+    status: planned
+    mechanic: elevated child trusts user-controlled environment field other than PATH
+    prerequisite: fixed privileged launcher and controlled environment value
+    fixture: custom Windows child reading a Kingdoms-only test setting
+    feasibility_gate: confirm effective child token and distinguish from PATH hijacking
+    distinct_from: [path_search_order_hijacking, app_paths_registry_hijack]
+  - number: 43
+    id: elevated_plugin_signature_bypass
+    name: Elevated plugin trust bypass
+    status: planned
+    mechanic: privileged custom extension loader accepts an untrusted plugin
+    prerequisite: dedicated loader and lab-owned plugin trust manifest
+    fixture: Kingdoms signed and unsigned managed-code plugin samples
+    feasibility_gate: prove trust failure without changing global signing policies
+    distinct_from: [service_dll_hijacking, privileged_updater_hijack]
+  - number: 44
+    id: privileged_file_toctou
+    name: Privileged file validation-to-use race
+    status: planned
+    mechanic: elevated consumer checks user-controlled content before a race-time change
+    prerequisite: deterministic bounded two-party synchronization
+    fixture: input, protected output and markers under one Kingdoms-only root
+    feasibility_gate: repeatable race and no file operations outside the fixture
+    distinct_from: [ntfs_link_redirection, privileged_updater_hijack]
+  - number: 45
+    id: privileged_backup_restore_api
+    name: Insecure privileged application restore interface
+    status: planned
+    mechanic: elevated application restore endpoint authorizes inappropriate user
+    prerequisite: scoped application-owned snapshots, no SeRestorePrivilege grant
+    fixture: protected Kingdoms application file and backup service
+    feasibility_gate: low-privilege API write, not token privilege or path traversal
+    distinct_from: [serestore_privilege, sebackup_privilege, privileged_path_traversal_write]
