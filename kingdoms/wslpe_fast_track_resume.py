@@ -46,10 +46,8 @@ def resume_position(records: object, catalog: tuple[str, ...],
     return technique_idx
 
 
-def load_private_checkpoint(path: Path, report_dir: Path,
-                            catalog: tuple[str, ...],
-                            flow: tuple[tuple[str, str | None], ...]) -> int:
-    """Read operator-owned checkpoint only, no automatic guest mutations."""
+def private_records(path: Path, report_dir: Path) -> list[dict]:
+    """Validate the owner-only existing checkpoint before reading its rows."""
     if path.is_symlink() or not path.is_file():
         raise ValueError("Checkpoint is not a regular file")
     if (not re.fullmatch(r"wslpe-qualification-\d{8}T\d{6}Z\.json", path.name)
@@ -58,4 +56,38 @@ def load_private_checkpoint(path: Path, report_dir: Path,
             or stat.S_IMODE(path.stat().st_mode) != 0o600
             or path.stat().st_size > 80_000):
         raise ValueError("Checkpoint is not the approved private WSLPE report")
-    return resume_position(json.loads(path.read_text(encoding="utf-8")), catalog, flow)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("Checkpoint must contain an ordered list of scenario operations")
+    return data
+
+
+def load_private_checkpoint(path: Path, report_dir: Path,
+                            catalog: tuple[str, ...],
+                            flow: tuple[tuple[str, str | None], ...]) -> int:
+    """Read and validate a complete-from-technique-1 qualification report."""
+    return resume_position(private_records(path, report_dir), catalog, flow)
+
+
+def load_chained_private_checkpoint(prefix: Path, continuation: Path,
+                                    report_dir: Path, catalog: tuple[str, ...],
+                                    flow: tuple[tuple[str, str | None], ...]) -> int:
+    """Strictly validate two immutable partial reports, without writing a third.
+
+    The first report ends at a failed APPLY. The next report starts exactly
+    at that technique and ends at a later failed APPLY. No failed reset or
+    reordered/missing successful scenario cycles is acceptable.
+    """
+    if prefix == continuation or prefix.resolve() == continuation.resolve():
+        raise ValueError("Chained WSLPE checkpoints must be distinct")
+    prefix_rows = private_records(prefix, report_dir)
+    first = resume_position(prefix_rows, catalog, flow)
+    remainder = private_records(continuation, report_dir)
+    if not remainder or len(remainder) <= len(flow):
+        raise ValueError("Wslpe chained report must contain successful new technique cycles")
+    if len(prefix_rows) - 1 != first * len(flow):
+        raise ValueError("Wslpe original report is not an exact failed-apply prefix")
+    position = resume_position(prefix_rows[:-1] + remainder, catalog, flow)
+    if position <= first:
+        raise ValueError("Wslpe chained report does not advance the qualification")
+    return position
