@@ -1,7 +1,7 @@
 # WSLPE P1-C — Reuse NORTH WS01, remove every AD dependency
 
 **Scope:** WSLPE-only feature branch. NORTH is read-only and unchanged.
-**Status:** Exact-VMX source implementation prepared; runtime validation pending.
+**Status:** 36/36 source parity and read-only VMX preview accepted; host-side recovery rehearsal pending.
 WSLPE remains PROVIDED / NOT READY.
 
 This is an implementation and acceptance map, not a separate VM stack.
@@ -72,3 +72,44 @@ separately accepted.
 
 The implementation deliberately fails closed. **No NAT cutover or learner
 release authorization is implied by preview success.**
+
+
+## 2026-10-16 — Accepted NORTH parity and VMX preview
+
+The operator ran `bash scripts/wslpe-north-cutover-preview.sh` on Kali.
+The resulting output showed **36/36 regressions PASS** and the live
+read-only preview completed. Exact registered `windows_10.vmx`,
+Ethernet0=provisioning NAT, Ethernet1=`vmnet2`, exact forward TCP/2210,
+SHA256 original/candidate values and in-memory byte-for-byte restore
+were all confirmed.
+
+This closes the **source parity and offline-candidate preview gate** only.
+NAT is still connected, vmnet2 still reaches Kali at Layer 2, and neither
+VMX write nor VMware lifecycle action was executed. NORTH has not been
+modified.
+
+### Host-side owner recovery rehearsal (new source)
+
+The new `kingdoms/wslpe_owner_recovery.py`,
+`scripts/wslpe-p1c-owner-recovery-check.py` and
+`scripts/wslpe-p1c-recovery-rehearsal.sh` implement the next
+WSLPE-specific gate, reused from NORTH's strict operator/VMX lifecycle
+contract. In one run they check source parity, exact VMX ownership and
+rehearse a **system systemd timer that runs as the same non-root VMX
+owner**. The timer touches and removes a unique 0700-owned disposable
+`/tmp` marker; no virtual machine is stopped or edited. This shows
+whether a future VMX rollback could execute independently of an SSH
+login in the right Unix account context.
+
+Execute only the consolidated harmless rehearsal:
+
+~~~bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+git pull --ff-only || exit 1
+bash scripts/wslpe-p1c-recovery-rehearsal.sh
+~~~
+
+**Current status:** committed, runtime test still pending. A successful
+rehearsal does **not** prove vmrun works from that transient service,
+nor that a powered-off VMX rollback or host-reboot persistence works.
+Those gates must be implemented and accepted before live NAT cutover.
