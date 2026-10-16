@@ -104,8 +104,8 @@ def invocation(ansible: Path, inventory: Path, varsfile: Path,
         if action != "validate" or state not in {"vulnerable", "clean"}:
             raise ValueError("Invalid WSLPE validation state")
         variables["windows_lpe_validate_state"] = state
-    return [str(ansible), "-i", str(inventory), "-i", str(varsfile),
-            "--limit", "ws01", str(PLAYBOOK), "-e",
+    # Include localhost so the first play\'s WSLPE-only authorization\n    # assertions are NOT silently skipped by --limit ws01.\n    return [str(ansible), "-i", str(inventory), "-i", str(varsfile),
+            "--limit", "ws01,localhost", str(PLAYBOOK), "-e",
             json.dumps(variables, separators=(",", ":"))]
 
 def run(args) -> int:
@@ -168,7 +168,7 @@ def run(args) -> int:
         print("[RUN] WSLPE-only local learner foundation (may perform a license reboot)")
         setup = subprocess.run(
             [str(ansible), "-i", str(inventory), "-i", str(varsfile),
-             "--limit", "ws01", str(foundation)],
+             "--limit", "ws01,localhost", str(foundation)],
             cwd=ROOT, env=env, capture_output=True, text=True,
             timeout=3600, check=False,
         )
@@ -182,7 +182,7 @@ def run(args) -> int:
     # The WSLPE status adapter performs exact COMPUTERNAME/PartOfDomain
     # checks and requires an existing enabled local lpe.trainee.
     status_cmd = [str(ansible), "-i", str(inventory), "-i", str(varsfile),
-                  "--limit", "ws01", str(PLAYBOOK),
+                  "--limit", "ws01,localhost", str(PLAYBOOK),
                   "-e", '{"wslpe_action":"status","wslpe_techniques":[]}']
     status = subprocess.run(status_cmd, cwd=ROOT, env=env,
                             capture_output=True, text=True, timeout=600)
