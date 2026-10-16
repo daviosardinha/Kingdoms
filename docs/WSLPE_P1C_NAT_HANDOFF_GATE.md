@@ -113,3 +113,39 @@ weaken the acceptance criteria.
 **No VM lifecycle or firewall changes were authorized or made by the
 read-only gate.** NORTH is frozen, and no learner RDP or training release
 may be enabled until the new controls pass live acceptance.
+
+
+## VMware host-only boundary — isolation design decision
+
+VMware's documented **host-only** network type explicitly places the
+hypervisor host and attached guests on a *shared private LAN*:
+https://knowledge.broadcom.com/external/article?legacyId=1006480
+
+This is correct for the **current trusted local development** topology,
+but it is not, by itself, an isolation boundary against a Windows guest
+where the course deliberately grants a learner SYSTEM privileges.
+Our audited `vmnet2` has a Kali host-side `172.28.231.1` interface and
+the WSLPE guest has a link-local IPv6 address. The successful host nft
+INPUT IPv4 TCP test is evidence for *that one path*, not ARP/L2 or
+all host/hypervisor attack surfaces.
+
+Therefore, **do not declare learner-grade safe isolation just by
+disconnecting Ethernet0 NAT**. Keep vmnet2 for private development,
+with the temporary protections already proven, until the separate
+learner-grade architecture is selected. A guest-only VMware LAN Segment
+(or another provider-native isolated virtual switch with no host adapter),
+coupled to a deliberately trusted and separately isolated operator/
+attacker access path, is a candidate design; it is not implemented and
+its Linux VMware Workstation behavior still requires validation.
+
+Vendor networking reference:
+https://knowledge.broadcom.com/external/article/307810/creating-subnets-in-vmware-workstation.html
+
+VMware Workstation and vSphere are different management planes. A
+vSphere PowerCLI `Set-NetworkAdapter -Connected` example must **not**
+be treated as proof that local Linux Workstation `vmrun` supports an
+equivalent safe hot disconnect. Any cutover/restore action must use
+proven commands for the existing VMware Workstation version and the
+exact registered WSLPE VMX, with a host-independent recovery option.
+
+This is an architectural release decision, not a new diagnostic loop.
