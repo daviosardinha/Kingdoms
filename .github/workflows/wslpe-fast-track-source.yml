@@ -1,0 +1,62 @@
+name: WSLPE fast-track source regression
+
+on:
+  push:
+    branches:
+      - feature/windows-lpe-standalone-foundation
+    paths:
+      - '.github/workflows/wslpe-fast-track-source.yml'
+      - 'scripts/wslpe-fast-track-20.py'
+      - 'kingdoms/wslpe_fast_track_resume.py'
+      - 'kingdoms/wslpe_learner_credentials.py'
+      - 'tests/test_wslpe_fast_track_20.py'
+      - 'tests/test_wslpe_fast_track_resume.py'
+      - 'tests/test_wslpe_learner_credentials.py'
+      - 'tests/test_wslpe_operator_shell_safety.py'
+      - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
+      - 'ansible/roles/windows_lpe/defaults/main.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/wslpe-fast-track-source.yml'
+      - 'scripts/wslpe-fast-track-20.py'
+      - 'kingdoms/wslpe_fast_track_resume.py'
+      - 'kingdoms/wslpe_learner_credentials.py'
+      - 'tests/test_wslpe_fast_track_20.py'
+      - 'tests/test_wslpe_fast_track_resume.py'
+      - 'tests/test_wslpe_learner_credentials.py'
+      - 'tests/test_wslpe_operator_shell_safety.py'
+      - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
+      - 'ansible/roles/windows_lpe/defaults/main.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-only:
+    name: Compile and regression test WSLPE (no VM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test-only dependency
+        run: python -m pip install --disable-pip-version-check PyYAML
+      - name: Check Python syntax
+        run: |
+          python -m py_compile \
+            scripts/wslpe-fast-track-20.py \
+            kingdoms/wslpe_fast_track_resume.py \
+            kingdoms/wslpe_learner_credentials.py \
+            tests/test_wslpe_fast_track_20.py \
+            tests/test_wslpe_fast_track_resume.py \
+            tests/test_wslpe_learner_credentials.py \
+            tests/test_wslpe_operator_shell_safety.py
+      - name: Run read-only source and negative-path regressions
+        run: |
+          python -m unittest -v \
+            tests.test_wslpe_fast_track_20 \
+            tests.test_wslpe_fast_track_resume \
+            tests.test_wslpe_learner_credentials \
+            tests.test_wslpe_operator_shell_safety
