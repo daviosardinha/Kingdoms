@@ -23,6 +23,8 @@ import re
 import subprocess
 import sys
 
+from kingdoms.wslpe_learner_credentials import learner_password, read_local_access
+
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "ansible/roles/windows_lpe/defaults/main.yml"
 PLAYBOOK = ROOT / "ansible/wslpe-lpe-test.yml"
@@ -127,22 +129,11 @@ def run(args) -> int:
             print(f"  {n:02d}. {technique}")
         return 0
 
-    if not sys.stdin.isatty():
-        raise ValueError("Interactive local Kali terminal required for execution")
     print("[WARNING] This intentionally installs/resets vulnerable LPE scenarios")
     print("[WARNING] Trusted WSLPE development ONLY; not safe for student access")
-    confirmation = input("Type QUALIFY WSLPE 20 to authorize guest changes: ")
-    if confirmation != "QUALIFY WSLPE 20":
-        raise ValueError("Exact operator approval was not supplied")
-
-    import getpass
-    secret = os.environ.get("KINGDOMS_WSLPE_LEARNER_PASSWORD")
-    if not secret:
-        secret = getpass.getpass("WSLPE local learner password: ")
-    if len(secret) < 12:
-        raise ValueError("WSLPE local learner secret must have at least 12 characters")
+    # --execute is explicit operator authorization; no terminal-dependent
+    # prompt or fragile confirmation phrase is required.
     env = os.environ.copy()
-    env["KINGDOMS_WSLPE_LEARNER_PASSWORD"] = secret
     env["ANSIBLE_CONFIG"] = str(ROOT / "ansible/ansible.cfg")
     env["ANSIBLE_ROLES_PATH"] = str(ROOT / "ansible/roles")
     env["ANSIBLE_NOCOLOR"] = "1"
@@ -160,6 +151,13 @@ def run(args) -> int:
     if validate.returncode:
         raise ValueError("WSLPE Ansible inventory resolution failed")
     check_inventory(json.loads(validate.stdout), expected)
+
+    # Generate ONE unique local learner credential on the first approved
+    # bootstrap and reuse it on every subsequent qualification. No prompt.
+    # Do not create any secret before exact WSLPE target/inventory checks.
+    env["KINGDOMS_WSLPE_LEARNER_PASSWORD"] = learner_password(
+        bootstrap=args.bootstrap_learner, environ=env)
+    print("[PASS] Reusable WSLPE-WS01 local learner credential resolved")
 
     # Optional, explicitly approved local learner foundation using
     # the existing WSLPE playbook, not NORTH's domain-joined baseline.
@@ -235,7 +233,9 @@ def main():
     parser.add_argument("--execute", action="store_true",
                         help="explicitly qualify all scenarios on trusted local WSLPE")
     parser.add_argument("--bootstrap-learner", action="store_true",
-                        help="on --execute, first apply the existing WSLPE-only local foundation")
+                        help="on --execute, first create/reuse a unique local learner and apply the WSLPE-only foundation")
+    parser.add_argument("--show-learner-access", action="store_true",
+                        help="explicitly display local WSLPE learner credentials (never in routine logs)")
     parser.add_argument("--report-dir", default=str(
         Path.home() / ".local/state/kingdoms-wslpe-qualification"))
     parser.add_argument("--timeout-seconds", type=int, default=900)
@@ -244,11 +244,24 @@ def main():
         parser.error("Per-step timeout must be between 120 and 3600 seconds")
     if args.bootstrap_learner and not args.execute:
         parser.error("--bootstrap-learner requires explicit --execute")
+    if args.show_learner_access and (args.execute or args.bootstrap_learner):
+        parser.error("--show-learner-access is a separate, read-only operation")
     try:
+        if args.show_learner_access:
+            user, password = read_local_access()
+            print("[LOCAL DEVELOPMENT ACCOUNT — NOT LEARNER RELEASE AUTHORIZATION]")
+            print(f"Windows username: {user}")
+            print(f"Windows password: {password}")
+            return 0
         return run(args)
-    except (OSError, ValueError, KeyError, TypeError,
-            json.JSONDecodeError) as exc:
-        print(f"[BLOCKED] WSLPE qualification aborted: {type(exc).__name__}")
+    except json.JSONDecodeError:
+        print("[BLOCKED] WSLPE qualification: Ansible inventory returned invalid JSON")
+        return 1
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        # Our custom errors are actionable; do not display raw Ansible
+        # stdout, arbitrary secret values or credentials in diagnostics.
+        safe = str(exc) if type(exc) is ValueError else type(exc).__name__
+        print(f"[BLOCKED] WSLPE qualification: {safe}")
         return 1
 
 if __name__ == "__main__":
