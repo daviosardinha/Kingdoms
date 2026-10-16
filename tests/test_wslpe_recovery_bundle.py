@@ -73,9 +73,15 @@ class WslpeRecoveryBundleTests(unittest.TestCase):
             vmx.write_text(SAMPLE)
             plan = prepare_plan(vmx, vmx, "vmnet2", os.geteuid())
             folder = base / "too_open"
-            folder.mkdir(mode=0o755)
+            # The consolidated launcher sets umask 077, so mkdir(0755)
+            # alone creates a secure 0700 directory. Force the actual
+            # prohibited permissions and assert the negative fixture.
+            folder.mkdir(mode=0o700)
+            folder.chmod(0o755)
+            self.assertEqual(folder.stat().st_mode & 0o777, 0o755)
             with self.assertRaises(ValueError):
                 write_private_bundle(folder / "recovery.json", plan)
+            self.assertFalse((folder / "recovery.json").exists())
             folder.chmod(0o700)
             target = folder / "a.json"
             target.write_text("foreign")
@@ -86,6 +92,35 @@ class WslpeRecoveryBundleTests(unittest.TestCase):
                 read_private_bundle(folder / "recovery.json",
                                     registered_vmx=vmx, owner_uid=os.geteuid())
             self.assertEqual(target.read_text(), "foreign")
+
+    @unittest.skipIf(os.geteuid() == 0, "nonroot VMware owner required")
+    def test_reader_refuses_permissions_changed_after_bundle_creation(self):
+        with TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            vmx = base / "windows_10.vmx"
+            vmx.write_text(SAMPLE)
+            plan = prepare_plan(vmx, vmx, "vmnet2", os.geteuid())
+            folder = base / "approved"
+            folder.mkdir(mode=0o700)
+            path = folder / "recovery.json"
+            write_private_bundle(path, plan)
+
+            folder.chmod(0o755)
+            self.assertEqual(folder.stat().st_mode & 0o777, 0o755)
+            with self.assertRaises(ValueError):
+                read_private_bundle(path, registered_vmx=vmx,
+                                    owner_uid=os.geteuid())
+
+            folder.chmod(0o700)
+            path.chmod(0o644)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+            with self.assertRaises(ValueError):
+                read_private_bundle(path, registered_vmx=vmx,
+                                    owner_uid=os.geteuid())
+
+            path.chmod(0o600)
+            self.assertEqual(read_private_bundle(
+                path, registered_vmx=vmx, owner_uid=os.geteuid()), plan)
 
     def test_untrusted_payload_schema_and_owner_fail_closed(self):
         with TemporaryDirectory() as tmp:
