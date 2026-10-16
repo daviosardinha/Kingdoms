@@ -237,3 +237,33 @@ The newly added tests are **not yet validated on Kali**. Explicit
 phrases or manual password prompts. If WSLPE provisioning fails, the
 script stops and supplies a private diagnostic log path. Never share
 an unredacted log containing Ansible credentials.
+
+
+## Local learner Administrators/RDP SID hotfix (2026-10-16)
+
+Kali source batch **14/14 PASS**; exact native WSLPE inventory
+verified, and a private non-admin learner credential was generated
+and reused. The first real `ansible/wslpe-foundation.yml` run returned
+exit=2 after completing the baseline/license checks and creating the
+local `lpe.trainee` account. The failure was specifically:
+
+`Get-LocalGroupMember -Group BUILTIN\\Administrators` could not locate
+the group. `Get-LocalGroupMember -Group` needs the local group name;
+the previous code translated builtin Administrators SID to the
+domain-qualified `BUILTIN\\Administrators` string.
+
+The WSLPE-only foundation now uses
+`Get-LocalGroup -SID S-1-5-32-544` and passes `$admins.Name`
+into `Get-LocalGroupMember`, then checks learner SID equality.
+It also adds the **standard non-admin learner** to the built-in
+Remote Desktop Users group by SID `S-1-5-32-555`, with idempotent
+membership verification and no AD membership changes. These source
+changes do **not** prove actual learner RDP/NLA logon: that requires
+separate runtime acceptance.
+
+The existing VM, workgroup, generated password and user are preserved.
+The same `--execute --bootstrap-learner` operation safely reruns the
+idempotent foundation, then resumes the 20 existing shared-role
+qualification cycles. No NORTH files or guest were changed. New
+source regression is awaiting its first Kali run. The result is
+not yet 20/20; previous attempt stopped **before any LPE scenario**.
