@@ -23,9 +23,10 @@ import re
 import subprocess
 import sys
 
-from kingdoms.wslpe_learner_credentials import learner_password, read_local_access
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from kingdoms.wslpe_learner_credentials import learner_password, read_local_access
 CATALOG = ROOT / "ansible/roles/windows_lpe/defaults/main.yml"
 PLAYBOOK = ROOT / "ansible/wslpe-lpe-test.yml"
 STAGE = ROOT / "scripts/wslpe-stage2-inspect.py"
