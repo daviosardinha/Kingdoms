@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from kingdoms.wslpe_learner_credentials import learner_password, read_local_access
-from kingdoms.wslpe_fast_track_resume import load_private_checkpoint
+from kingdoms.wslpe_fast_track_resume import load_private_checkpoint, load_chained_private_checkpoint
 CATALOG = ROOT / "ansible/roles/windows_lpe/defaults/main.yml"
 PLAYBOOK = ROOT / "ansible/wslpe-lpe-test.yml"
 STAGE = ROOT / "scripts/wslpe-stage2-inspect.py"
@@ -203,8 +203,12 @@ def run(args) -> int:
         print("[PREREQ] WSLPE foundation learner lpe.trainee must already exist")
         if args.resume_report:
             root = private_report_dir(args.report_dir)
-            position = load_private_checkpoint(
-                args.resume_report, root, catalog, FLOW)
+            position = (
+                load_chained_private_checkpoint(
+                    args.resume_prefix_report, args.resume_report, root, catalog, FLOW)
+                if args.resume_prefix_report else
+                load_private_checkpoint(args.resume_report, root, catalog, FLOW)
+            )
             print(f"[RESUME PLAN] Revalidate {position} previously passed scenarios")
             print(f"[RESUME PLAN] Start from {position+1:02d}. {catalog[position]}")
             if args.recover_aie_reset:
@@ -243,8 +247,13 @@ def run(args) -> int:
     if args.resume_report and args.bootstrap_learner:
         raise ValueError("Resume cannot also bootstrap/modify the existing learner foundation")
     resume_index = (
-        load_private_checkpoint(args.resume_report, report_root, catalog, FLOW)
-        if args.resume_report else 0
+        (
+            load_chained_private_checkpoint(
+                args.resume_prefix_report, args.resume_report,
+                report_root, catalog, FLOW)
+            if args.resume_prefix_report else
+            load_private_checkpoint(args.resume_report, report_root, catalog, FLOW)
+        ) if args.resume_report else 0
     )
     if args.resume_report:
         print(f"[RESUME] Approved checkpoint failure at {catalog[resume_index]}; "
@@ -425,6 +434,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="explicitly qualify all scenarios on trusted local WSLPE")
     parser.add_argument("--resume-report", type=Path,
                         help="resume a failed APPLY checkpoint after revalidating earlier vulnerable scenarios")
+    parser.add_argument("--resume-prefix-report", type=Path,
+                        help="optional original WSLPE checkpoint when --resume-report contains only continuation techniques")
     parser.add_argument("--recover-aie-reset", action="store_true",
                         help="with --execute and original AIE checkpoint: finish partial WSLPE-only AIE reset first")
     parser.add_argument("--recover-user-rights", action="store_true",
@@ -448,6 +459,10 @@ def main():
         parser.error("--bootstrap-learner requires explicit --execute")
     if args.resume_report and args.bootstrap_learner:
         parser.error("Resume cannot rerun learner foundation; choose one path")
+    if args.resume_prefix_report and not args.resume_report:
+        parser.error("--resume-prefix-report requires the later --resume-report")
+    if args.recover_user_rights and not args.resume_prefix_report:
+        parser.error("--recover-user-rights requires the original --resume-prefix-report")
     if args.recover_aie_reset and (not args.execute or not args.resume_report or args.bootstrap_learner):
         parser.error("--recover-aie-reset requires --execute and original --resume-report, no bootstrap")
     if args.recover_user_rights and (not args.execute or not args.resume_report or args.bootstrap_learner or args.recover_aie_reset):
