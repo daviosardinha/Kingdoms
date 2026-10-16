@@ -1,0 +1,64 @@
+---
+# Read-only Windows Task Scheduler feasibility check for standalone WSLPE #21.
+# This file has no apply/reset actions and is NOT included by the 20-tech role.
+- name: Authorize exact WSLPE advanced-only inspection
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require one standalone guest with zero DC or AD targets
+      ansible.builtin.assert:
+        that:
+          - (groups.get('wslpe', []) | length) == 1
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+        fail_msg: "Advanced task ACL probe is WSLPE-WS01 only; NORTH is out of scope"
+
+- name: Read-only Task Scheduler descriptor capability probe
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Check local learner, OS and Task Scheduler security descriptor API
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $system = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -ne 'WSLPE-WS01' -or $system.PartOfDomain) {
+              throw 'Advanced probe refused: target is not standalone WSLPE-WS01'
+          }
+          if ($os.Caption -notmatch 'Windows 10') {
+              throw 'Advanced probe requires the exact Windows 10 guest'
+          }
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if (-not $learner.Enabled) { throw 'Advanced probe: local learner disabled' }
+          $adminSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')
+          $admins = Get-LocalGroup -SID $adminSid -ErrorAction Stop
+          $members = @(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop)
+          if (@($members | Where-Object { $_.SID.Value -eq $learner.SID.Value }).Count -ne 0) {
+              throw 'Advanced probe: learner must remain a non-administrator'
+          }
+          $taskFile = 'C:\Windows\System32\Tasks\KingdomTaskBinary'
+          if (-not (Test-Path -LiteralPath $taskFile -PathType Leaf)) {
+              throw 'Advanced probe requires the previously validated foundation task'
+          }
+          $service = New-Object -ComObject 'Schedule.Service'
+          $service.Connect()
+          $folder = $service.GetFolder('\')
+          $task = $folder.GetTask('KingdomTaskBinary')
+          $sddl = [string]$task.GetSecurityDescriptor(4)
+          if (-not $sddl -or $sddl -notmatch '^D:') {
+              throw 'Task Scheduler COM did not provide a readable task DACL'
+          }
+          $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor($sddl)
+          if ($null -eq $descriptor.DiscretionaryAcl) {
+              throw 'Task Scheduler task DACL did not parse'
+          }
+          # No calls to SetSecurityDescriptor, RegisterTaskDefinition,
+          # Set-ScheduledTask, or task execution. This is entirely read only.
+          Write-Output 'WSLPE_ADV21_GUEST=EXACT'
+          Write-Output 'WSLPE_ADV21_LOCAL_LEARNER=NONADMIN'
+          Write-Output 'WSLPE_ADV21_TASK_COM_DACL_READ=PASS'
+          Write-Output 'WSLPE_ADV21_PROBE_READ_ONLY=TRUE'
+      changed_when: false
