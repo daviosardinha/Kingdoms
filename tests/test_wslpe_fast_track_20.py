@@ -56,6 +56,43 @@ class WslpeFastTrackTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             FAST.check_inventory(changed, "172.28.231.31")
 
+    def test_resolved_inventory_uses_merged_hostvars_not_export_layout(self):
+        inv = Path("/tmp/WSLPE/instance/inventory")
+        base = Path("/tmp/WSLPE/inventory_disable_vagrant")
+        command = FAST.resolved_inventory_command(
+            Path("/tmp/venv/bin/ansible-inventory"), inv, base)
+        self.assertEqual(command, [
+            "/tmp/venv/bin/ansible-inventory",
+            "-i", str(inv), "-i", str(base), "--list"
+        ])
+        self.assertNotIn("--export", command)
+
+        # Ansible's export-oriented layout may separate all:vars from
+        # hostvars. That is not suitable for the safety comparison.
+        export_layout = {
+            "wslpe": {"hosts": ["ws01"]},
+            "windows_lpe_standalone": {"hosts": ["ws01"]},
+            "all": {"vars": {"ansible_connection": "winrm",
+                             "domain_name": "WSLPE"}},
+            "_meta": {"hostvars": {"ws01": {
+                "ansible_host": "172.28.231.31",
+            }}},
+        }
+        with self.assertRaisesRegex(ValueError, "connection=<absent>"):
+            FAST.check_inventory(export_layout, "172.28.231.31")
+        # The effective merged layout must include both instance host
+        # and inherited connection; wrong hosts still fail closed.
+        merged_layout = json.loads(json.dumps(export_layout))
+        merged_layout["_meta"]["hostvars"]["ws01"].update(
+            ansible_connection="winrm",
+            ansible_user="vagrant",
+            domain_name="WSLPE",
+        )
+        FAST.check_inventory(merged_layout, "172.28.231.31")
+        merged_layout["_meta"]["hostvars"]["ws01"]["ansible_host"] = "10.4.10.31"
+        with self.assertRaisesRegex(ValueError, "mismatch"):
+            FAST.check_inventory(merged_layout, "172.28.231.31")
+
     def test_invocation_never_selects_north_and_has_correct_validation_state(self):
         binpath = Path("/opt/venv/bin/ansible-playbook")
         inv = Path("/tmp/WSLPE/inventory")
