@@ -106,6 +106,15 @@ def check_inventory(data: dict, expected: str) -> None:
         if groups.get(forbidden, {}).get("hosts"):
             raise ValueError("Domain/DC hosts appear in WSLPE inventory")
 
+def resolved_inventory_command(ansible_inventory: Path, inventory: Path,
+                               varsfile: Path) -> list[str]:
+    """Use Ansible's merged effective hostvars, not --export source layout."""
+    return [
+        str(ansible_inventory), "-i", str(inventory), "-i", str(varsfile),
+        "--list",
+    ]
+
+
 def invocation(ansible: Path, inventory: Path, varsfile: Path,
                technique: str, action: str, state: str | None) -> list[str]:
     if technique not in load_catalog() or action not in {"apply", "validate", "reset"}:
@@ -177,12 +186,9 @@ def run(args) -> int:
         raise ValueError("Existing trusted GOAD Ansible environment missing")
 
     validate = subprocess.run(
-        # No --export: we need the EFFECTIVE merged host variables
-        # (instance host/IP plus WSLPE [all:vars] WinRM connection).
-        # --export is optimized for re-export and can leave inherited
-        # variables in group vars rather than _meta.hostvars.ws01.
-        [str(ansible_inv), "-i", str(inventory), "-i", str(varsfile),
-         "--list"], cwd=ROOT, env=env,
+        # Use effective merged hostvars, never the export-oriented format.
+        resolved_inventory_command(ansible_inv, inventory, varsfile),
+        cwd=ROOT, env=env,
         capture_output=True, text=True, timeout=40, check=False,
     )
     if validate.returncode:
