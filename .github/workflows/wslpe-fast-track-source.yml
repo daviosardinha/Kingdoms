@@ -21,6 +21,8 @@ on:
       - 'ansible/wslpe-advanced21-probe.yml'
       - 'kingdoms/wslpe_advanced_catalog.yml'
       - 'tests/test_wslpe_advanced_catalog.py'
+      - 'scripts/wslpe-advanced21-probe.py'
+      - 'tests/test_wslpe_advanced21_probe.py'
       - 'docs/WSLPE_ADVANCED_21_35_PLAN.md'
       - 'docs/WSLPE_45_TECHNIQUE_ROADMAP.md'
       - 'tests/test_wslpe_local_rights.py'
@@ -45,6 +47,8 @@ on:
       - 'ansible/wslpe-advanced21-probe.yml'
       - 'kingdoms/wslpe_advanced_catalog.yml'
       - 'tests/test_wslpe_advanced_catalog.py'
+      - 'scripts/wslpe-advanced21-probe.py'
+      - 'tests/test_wslpe_advanced21_probe.py'
       - 'docs/WSLPE_ADVANCED_21_35_PLAN.md'
       - 'docs/WSLPE_45_TECHNIQUE_ROADMAP.md'
       - 'tests/test_wslpe_local_rights.py'
@@ -95,7 +99,9 @@ jobs:
             tests/test_wslpe_aie_profile_preflight.py \
             tests/test_wslpe_aie_reset_adapter.py \
             tests/test_wslpe_local_rights.py \
-            tests/test_wslpe_advanced_catalog.py
+            tests/test_wslpe_advanced_catalog.py \
+            scripts/wslpe-advanced21-probe.py \
+            tests/test_wslpe_advanced21_probe.py
       - name: Run read-only source and negative-path regressions
         run: |
           python -m unittest -v \
@@ -106,7 +112,8 @@ jobs:
             tests.test_wslpe_aie_profile_preflight \
             tests.test_wslpe_aie_reset_adapter \
             tests.test_wslpe_local_rights \
-            tests.test_wslpe_advanced_catalog
+            tests.test_wslpe_advanced_catalog \
+            tests.test_wslpe_advanced21_probe
 
   windows-native-export:
     name: Verify userenv CreateProfile symbol (Windows, no guest)
