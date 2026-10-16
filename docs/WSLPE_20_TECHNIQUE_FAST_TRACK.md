@@ -267,3 +267,54 @@ idempotent foundation, then resumes the 20 existing shared-role
 qualification cycles. No NORTH files or guest were changed. New
 source regression is awaiting its first Kali run. The result is
 not yet 20/20; previous attempt stopped **before any LPE scenario**.
+
+
+## First live 20-scenario qualification: 6 accepted, 7th apply blocked
+
+Kali source validation passed **12/12** and the WSLPE-only local
+learner foundation returned PASS with the reusable private credential.
+The first six shared-role techniques completed all six lifecycle
+steps: apply, validate vulnerable, reset, validate clean, reapply and
+validate vulnerable (**36 successful actions**).
+
+`always_install_elevated` failed on its **first apply** (Ansible exit
+code 2). All subsequent techniques were untouched. The run stopped
+cleanly and wrote the operator-only files:
+
+- `~/.local/state/kingdoms-wslpe-qualification/wslpe-qualification-20261016T153256Z.json`
+- `~/.local/state/kingdoms-wslpe-qualification/wslpe-scenario-8e06d146092c.log`
+
+The JSON proves the six completed cycles and the failed seventh apply,
+but **does not contain the Ansible/PowerShell failure cause**. Inspect
+the private log's actual failure before changing the shared
+`ansible/roles/windows_lpe` role. The AlwaysInstallElevated task
+requires the local learner Windows profile/NTUSER.DAT, which was
+previously created using an authenticated Start-Process path for the
+NORTH domain learner; profile setup incompatibility is only a
+hypothesis pending the log. NORTH remains frozen.
+
+A new `--resume-report` mode reads an owner-only, exact-format,
+sequential qualification report with a **failed first apply only**.
+The current WSLPE native inventory and standalone identity gates
+still run. Before skipping any previously accepted technique, the
+runner rechecks it with `validate/vulnerable` against the actual
+guest; any drift aborts. It never repeats the passed six apply/reset
+cycles. Do **not** run mutating resume until the seventh scenario's
+error and potential partial apply state have been investigated.
+
+After a specific fix and state review, the controlled resume workflow
+will be:
+
+~~~bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+git pull --ff-only || exit 1
+PY="$HOME/.goad/.venv/bin/python"
+"$PY" -m unittest -v tests.test_wslpe_fast_track_resume tests.test_wslpe_fast_track_20
+"$PY" scripts/wslpe-fast-track-20.py \
+  --resume-report "$HOME/.local/state/kingdoms-wslpe-qualification/wslpe-qualification-20261016T153256Z.json"
+# After diagnosis/repair only: append --execute to the exact command.
+~~~
+
+No learner, VM, firewall, NAT or NORTH changes were made by
+adding the resume parser. The new resume source tests have not yet
+run on Kali.
