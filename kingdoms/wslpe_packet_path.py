@@ -71,8 +71,8 @@ def parse_windows_probe(status: int, output: bytes) -> bool:
         raise ValueError("Authenticated WSLPE guest socket probe failed")
     if len(output) > 4096:
         raise ValueError("Unexpectedly large WSLPE guest response")
-    lines = output.decode("utf-8", "replace").splitlines()
-    counts = {line.strip(): lines.count(line) for line in lines}
+    lines = [line.strip() for line in output.decode("utf-8", "replace").splitlines()]
+    counts = {line: lines.count(line) for line in set(lines)}
     for required in ("WSLPE_PACKET_MACHINE=WSLPE-WS01",
                      "WSLPE_PACKET_DOMAIN_FREE=TRUE"):
         if counts.get(required, 0) != 1:
