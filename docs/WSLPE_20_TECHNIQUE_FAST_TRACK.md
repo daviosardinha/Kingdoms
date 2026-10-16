@@ -89,6 +89,8 @@ The runner:
 3. Verifies the dynamic WSLPE-only instance/inventory and host IP.
 4. Runs the existing WSLPE playbook \`status\` to prove exact hostname,
    domain-free machine and existing local \`lpe.trainee\` before changes.
+   The Ansible limit includes both \`ws01\` and \`localhost\`; otherwise
+   the adapter's first authorization play would be silently skipped.
 5. Executes each existing technique one at a time:
    \`apply → validate vulnerable → reset → validate clean →
    reapply → validate vulnerable\`. Stops at the **first** error.
