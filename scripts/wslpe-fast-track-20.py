@@ -207,6 +207,10 @@ def run(args) -> int:
                 args.resume_report, root, catalog, FLOW)
             print(f"[RESUME PLAN] Revalidate {position} previously passed scenarios")
             print(f"[RESUME PLAN] Start from {position+1:02d}. {catalog[position]}")
+            if args.recover_aie_reset:
+                if catalog[position] != "always_install_elevated":
+                    raise ValueError("AIE recovery only permitted at the exact seventh-technique checkpoint")
+                print("[RESUME PLAN] WSLPE-only failed-reset snapshot recovery before AIE clean check")
         else:
             for n, technique in enumerate(catalog, 1):
                 print(f"  {n:02d}. {technique}")
@@ -313,6 +317,25 @@ def run(args) -> int:
         # and remove ONLY the empty, untracked exact candidate directory.
         # This does not mutate the six previously accepted techniques.
         failed_technique = catalog[resume_index]
+        if args.recover_aie_reset:
+            if failed_technique != "always_install_elevated":
+                raise ValueError("Scoped AIE reset recovery cannot target any other technique")
+            # The prior APPLY checkpoint proves exactly six prior complete
+            # cycles; revalidate each one before entering this repair.
+            # A more recent report shows AIE applied and reset failed.
+            print("[RECOVERY] Restore exact WSLPE AIE registry snapshot before resume", flush=True)
+            reset_cmd = invocation(
+                ansible, inventory, varsfile, failed_technique, "reset", None)
+            reset = subprocess.run(
+                reset_cmd, cwd=ROOT, env=env, capture_output=True, text=True,
+                timeout=args.timeout_seconds, check=False)
+            if reset.returncode:
+                private_log = private_failure_log(
+                    report_root, "aie-reset-recovery", reset.stdout + "\n" + reset.stderr)
+                print(f"[BLOCKED] WSLPE-only AIE snapshot reset exit={reset.returncode}")
+                print(f"[DIAGNOSTIC] {private_log} (redact before sharing)")
+                return 2
+            print("[PASS] WSLPE AIE snapshot restored and temporary hive unloaded", flush=True)
         if failed_technique == "always_install_elevated":
             if not prepare_standalone_aie(
                 ansible=ansible, inventory=inventory, varsfile=varsfile,
@@ -385,6 +408,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="explicitly qualify all scenarios on trusted local WSLPE")
     parser.add_argument("--resume-report", type=Path,
                         help="resume a failed APPLY checkpoint after revalidating earlier vulnerable scenarios")
+    parser.add_argument("--recover-aie-reset", action="store_true",
+                        help="with --execute and original AIE checkpoint: finish partial WSLPE-only AIE reset first")
     parser.add_argument("--bootstrap-learner", action="store_true",
                         help="on --execute, first create/reuse a unique local learner and apply the WSLPE-only foundation")
     parser.add_argument("--show-learner-access", action="store_true",
@@ -404,6 +429,8 @@ def main():
         parser.error("--bootstrap-learner requires explicit --execute")
     if args.resume_report and args.bootstrap_learner:
         parser.error("Resume cannot rerun learner foundation; choose one path")
+    if args.recover_aie_reset and (not args.execute or not args.resume_report or args.bootstrap_learner):
+        parser.error("--recover-aie-reset requires --execute and original --resume-report, no bootstrap")
     if args.show_learner_access and (args.execute or args.bootstrap_learner):
         parser.error("--show-learner-access is a separate, read-only operation")
     try:
