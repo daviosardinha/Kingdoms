@@ -118,6 +118,63 @@ class WslpeAieProfilePreflightTests(unittest.TestCase):
                 self.assertEqual(len(reports), 1)
                 self.assertEqual(reports[0].stat().st_mode & 0o777, 0o600)
 
+    def test_scoped_failed_reset_recovery_orders_snapshot_reset_before_profile_cleanup(self):
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            checkpoint = directory / "wslpe-qualification-20261016T153256Z.json"
+            catalog = RUNNER.load_catalog()
+            records = [
+                {"technique": tech, "action": action, "state": state, "exit_code": 0}
+                for tech in catalog[:6] for action, state in RUNNER.FLOW
+            ]
+            records.append({"technique": catalog[6], "action": "apply",
+                            "state": None, "exit_code": 2})
+            checkpoint.write_text(json.dumps(records))
+            checkpoint.chmod(0o600)
+            fake_bin = directory / ".goad/.venv/bin"
+            fake_bin.mkdir(parents=True)
+            for name in ("ansible-playbook", "ansible-inventory"):
+                (fake_bin / name).touch()
+            args = RUNNER.build_parser().parse_args([
+                "--execute", "--recover-aie-reset",
+                "--resume-report", str(checkpoint),
+                "--report-dir", str(directory),
+            ])
+            events = []
+
+            def simulate(cmd, **kwargs):
+                if "--list" in cmd:
+                    return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+                payload = json.loads(cmd[cmd.index("-e") + 1])
+                tech = (payload.get("wslpe_techniques") or [""])[0]
+                action = payload["wslpe_action"]
+                state = payload.get("windows_lpe_validate_state")
+                events.append((tech, action, state))
+                return SimpleNamespace(returncode=(
+                    2 if tech == "always_install_elevated" and action == "apply" else 0),
+                    stdout="", stderr="mock")
+
+            def prepare(**kwargs):
+                events.append(("AIE_PREPARE", None, None))
+                return True
+
+            with patch.object(RUNNER.Path, "home", return_value=directory), \
+                 patch.object(RUNNER, "exact_standalone", return_value=(
+                     Path("/private/WSLPE/inventory"),
+                     Path("/private/WSLPE/vars"), "172.28.231.31",
+                 )), patch.object(RUNNER, "check_inventory"), \
+                 patch.object(RUNNER, "learner_password", return_value="MockStrongPassword!123"), \
+                 patch.object(RUNNER.subprocess, "run", side_effect=simulate), \
+                 patch.object(RUNNER, "prepare_standalone_aie", side_effect=prepare):
+                self.assertEqual(RUNNER.run(args), 1)
+            self.assertEqual(events[0][1], "status")
+            self.assertTrue(all(x[1:] == ("validate", "vulnerable") for x in events[1:7]))
+            self.assertEqual(events[7], ("always_install_elevated", "reset", None))
+            self.assertEqual(events[8], ("AIE_PREPARE", None, None))
+            self.assertEqual(events[9], ("always_install_elevated", "validate", "clean"))
+            self.assertEqual(events[10], ("always_install_elevated", "apply", None))
+            self.assertFalse(any(x[0] in catalog[7:] for x in events))
+
     def test_full_mocked_resume_orders_preflight_between_old_and_new_scenarios(self):
         with TemporaryDirectory() as tmp:
             directory = Path(tmp)
