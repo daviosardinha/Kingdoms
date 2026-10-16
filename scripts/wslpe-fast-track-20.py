@@ -8,7 +8,7 @@ writes a private per-step report, and never targets NORTH or a domain member.
 
 Prerequisites: existing trusted local WSLPE development VM, completed
 wslpe-foundation.yml learner account, valid WSLPE-only inventory and
-KINGDOMS_WSLPE_LEARNER_PASSWORD secret (prompted only for --execute).
+KINGDOMS_WSLPE_LEARNER_PASSWORD from an operator-only local store.
 This is NOT an isolation or commercial learner-release gate.
 """
 from __future__ import annotations
@@ -327,7 +327,8 @@ def run(args) -> int:
     print("[NOT VERIFIED] Learner isolation, RDP and course documentation")
     return 0
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Single source of truth for runtime and test argument defaults."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true",
                         help="explicitly qualify all scenarios on trusted local WSLPE")
@@ -340,6 +341,11 @@ def main():
     parser.add_argument("--report-dir", default=str(
         Path.home() / ".local/state/kingdoms-wslpe-qualification"))
     parser.add_argument("--timeout-seconds", type=int, default=900)
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
     if not 120 <= args.timeout_seconds <= 3600:
         parser.error("Per-step timeout must be between 120 and 3600 seconds")
