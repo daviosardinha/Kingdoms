@@ -84,3 +84,33 @@ WSLPE-only nft table, prove HTTPS management survives, then wait for the
 timer and re-read the complete nft ruleset to prove the table disappeared.
 Any missing rollback proof blocks persistent policy or NAT cutover.
 No automated P1-C readiness promotion is allowed.
+
+
+
+## 2026-10-16: SSH-first operation implemented (runtime pending)
+
+An operator's attempted local-console pilot from their mobile SSH session was
+correctly blocked by the earlier shell guard. We now support the SSH use case
+through `scripts/wslpe-remote-operator.sh` and the reusable
+`kingdoms/wslpe_remote_operator.py` contract. This change **does not remove
+the prior local-console restriction from the previous one-off command**.
+Use the new dedicated WSLPE remote wrapper instead.
+
+Its default `--preflight` verifies a non-VMnet return route to the operator,
+runs the source regressions and authenticated pinned WinRM HTTPS/5986,
+then verifies an independent 3-second host systemd timer by creating and
+removing a unique temporary `/run` sentinel. **No nft table is installed.**
+
+`--execute` is guarded by an interactive exact confirmation and revalidates
+the SSH route/timer before a 120-second WSLPE-only firewall pilot. The transient
+systemd timer is owned by the Kali host rather than the SSH process.
+`--verify` can be used after SSH reconnection to check the dedicated nft
+table is absent and authenticated HTTPS still works. **Table absence is not,
+by itself, cryptographic proof the timer was the removal mechanism**.
+
+Instructions and limitations:
+[WSLPE P1-C Remote Operator](WSLPE_P1C_REMOTE_OPERATOR.md).
+
+New code is committed, but source unit tests and the host-side timer
+smoke test have **not yet been executed** on the operator's Kali machine.
+NORTH remains unchanged; WSLPE remains `PROVIDED`, NOT `READY`.
