@@ -76,7 +76,11 @@
       # NORTH's existing shared role remains completely unchanged.
       # Only this standalone guest routes AIE reset through the
       # fixed two-process hive lifecycle.
-      when: not (wslpe_action == 'reset' and wslpe_techniques == ['always_install_elevated'])
+      when: >-
+        not (
+          (wslpe_action == 'reset' and wslpe_techniques == ['always_install_elevated'])
+          or ((wslpe_techniques | intersect(['sebackup_privilege', 'seimpersonate_privilege']) | length) > 0)
+        )
       vars:
         windows_lpe_action: "{{ wslpe_action }}"
         windows_lpe_profile: none
@@ -90,3 +94,7 @@
     - name: Reset standalone AlwaysInstallElevated without held registry handles
       ansible.builtin.include_tasks: wslpe-aie-reset-tasks.yml
       when: wslpe_action == 'reset' and wslpe_techniques == ['always_install_elevated']
+
+    - name: Use exact local LSA policy for WSLPE-only SeBackup and SeImpersonate
+      ansible.builtin.include_tasks: wslpe-user-rights-tasks.yml
+      when: (wslpe_techniques | intersect(['sebackup_privilege', 'seimpersonate_privilege']) | length) == 1
