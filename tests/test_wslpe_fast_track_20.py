@@ -59,7 +59,8 @@ class WslpeFastTrackTests(unittest.TestCase):
         varsfile = Path("/tmp/WSLPE/inventory_disable_vagrant")
         arg = FAST.invocation(binpath, inv, varsfile,
                               "unquoted_service_path", "validate", "clean")
-        self.assertEqual(arg[arg.index("--limit")+1], "ws01")
+        # Both the localhost safety assertions and WSLPE guest play run.
+        self.assertEqual(arg[arg.index("--limit")+1], "ws01,localhost")
         self.assertEqual(arg[arg.index("-e")+1], '{"wslpe_action":"validate","wslpe_techniques":["unquoted_service_path"],"windows_lpe_validate_state":"clean"}')
         self.assertIn("wslpe-lpe-test.yml", " ".join(arg))
         self.assertNotIn("ws01-lpe-install.yml", " ".join(arg))
