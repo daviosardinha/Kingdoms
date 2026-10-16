@@ -92,4 +92,9 @@ def learner_password(*, bootstrap: bool, path: Path = DEFAULT_PATH,
 
 def read_local_access(*, path: Path = DEFAULT_PATH) -> tuple[str, str]:
     """Called only by an explicit operator request, never in routine logs."""
+    if not path.exists() and not path.is_symlink():
+        raise ValueError(
+            "WSLPE learner credential has not been created; run "
+            "--execute --bootstrap-learner after inventory validation"
+        )
     return USERNAME, _read(path)
