@@ -13,6 +13,9 @@ on:
       - 'scripts/wslpe-45-feasibility.py'
       - 'tests/test_wslpe_batch_catalog.py'
       - 'tests/test_wslpe_batch_feasibility.py'
+      - 'tests/test_wslpe45_candidate_traversal.py'
+      - 'ansible/files/wslpe45/**'
+      - 'ansible/wslpe45/**'
       - '.github/workflows/wslpe-45-batch-source.yml'
 
 jobs:
@@ -28,7 +31,7 @@ jobs:
       - name: Validate Python, all 45 unique IDs, frozen NORTH and exact-guest negative paths
         run: |
           python -m py_compile kingdoms/wslpe_batch_catalog.py kingdoms/wslpe_batch_feasibility.py scripts/wslpe-45-batch.py scripts/wslpe-45-feasibility.py tests/test_wslpe_batch_catalog.py tests/test_wslpe_batch_feasibility.py
-          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal
           python scripts/wslpe-45-batch.py
           python scripts/wslpe-45-feasibility.py
 
@@ -69,3 +72,50 @@ jobs:
             throw 'WSLPE 45 guest script fails Windows PowerShell syntax'
           }
           Write-Output '[PASS] Windows PowerShell 5.1 native parse, no guest contacted'
+      - name: Parse #35 PowerShell source and ownership module without guest access
+        shell: pwsh
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          import yaml
+          play = yaml.safe_load(Path("ansible/wslpe45/traversal.yml").read_text(encoding="utf-8"))
+          assert len(play) == 2
+          target = Path(os.environ["RUNNER_TEMP"]) / "wslpe45-traversal-source"
+          target.mkdir(exist_ok=True)
+          scripts = []
+          for item in (play[1].get("pre_tasks", []) + play[1].get("tasks", [])):
+              src = item.get("ansible.windows.win_powershell", {}).get("script")
+              if src:
+                  scripts.append(src)
+          assert len(scripts) >= 5
+          for i, source in enumerate(scripts):
+              (target / f"task-{i}.ps1").write_text(source, encoding="utf-8-sig")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw '#35 script extraction failed' }
+          $sources = @(
+            (Get-Item 'ansible/files/wslpe45/WslpeFixture.psm1'),
+            (Get-ChildItem "$env:RUNNER_TEMP/wslpe45-traversal-source/*.ps1")
+          )
+          foreach ($entry in $sources) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $entry.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "Windows PowerShell 5.1 parsing failed: $($entry.Name)"
+            }
+          }
+          Write-Output "[PASS] Parsed fixture library and $($sources.Count) #35 PowerShell scripts"
+      - name: Compile the real #35 service on Windows, without installing it
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Get-Content 'ansible/files/wslpe45/KingdomTraversalService.cs' -Raw
+          $output = Join-Path $env:RUNNER_TEMP 'KingdomWslpe45TraversalSvc.exe'
+          Add-Type -TypeDefinition $source -Language CSharp -ReferencedAssemblies 'System.ServiceProcess.dll' -OutputAssembly $output -OutputType WindowsApplication
+          if (-not (Test-Path -LiteralPath $output)) {
+            throw 'Standalone service compilation failed'
+          }
+          Write-Output '[PASS] Isolated Windows LPE #35 service compiles; no service installed'

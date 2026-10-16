@@ -1,0 +1,219 @@
+---
+# Candidate implementation of #35 only; not yet live qualified.
+# Never imported by NORTH's shared role or the foundation 20 runner.
+- name: Guard standalone WSLPE #35 target and permitted action
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Fail closed on unexpected inventory or action
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - (wslpe_expected_address | default('')).startswith('172.')
+          - (wslpe_45_action | default('')) in ['apply', 'validate', 'reset']
+          - (wslpe_45_action | default('')) != 'validate' or (wslpe_45_validate_state | default('')) in ['vulnerable', 'clean']
+        fail_msg: 'Standalone WSLPE-WS01 target and action must be exact; NORTH is forbidden'
+
+- name: Scope each #35 operation to exact workgroup WSLPE guest
+  hosts: wslpe
+  gather_facts: false
+  vars:
+    scenario_id: privileged_path_traversal_write
+    scenario_number: 35
+    scenario_service: KingdomWslpe45TraversalSvc
+    scenario_root: 'C:\ProgramData\KingdomsWSLPE45\fixtures\privileged_path_traversal_write'
+    scenario_library: 'C:\ProgramData\KingdomsWSLPE45\lib'
+  pre_tasks:
+    - name: Verify workgroup Windows 10 and non-admin learner before any mutation
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $machine = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+              [string]$os.Caption -notmatch 'Windows 10' -or [int]$os.ProductType -ne 1) {
+              throw 'Refusing unexpected Windows guest; no NORTH access'
+          }
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if (-not $learner.Enabled) { throw 'Local learner is disabled' }
+          $admins = Get-LocalGroup -SID 'S-1-5-32-544'
+          foreach ($member in @(Get-LocalGroupMember -Group $admins.Name)) {
+              if ($member.SID.Value -eq $learner.SID.Value) {
+                  throw 'WSLPE learner must be non-admin'
+              }
+          }
+          Write-Output 'WSLPE45_EXACT_GUEST=PASS'
+      changed_when: false
+
+  tasks:
+    - name: Protect common fixture library location against reparse attacks
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\ProgramData\KingdomsWSLPE45'
+          foreach ($path in @($root, "$root\lib", "$root\fixtures")) {
+              if (Test-Path -LiteralPath $path) {
+                  $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                  if (-not $item.PSIsContainer -or
+                      (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                      throw 'Untrusted WSLPE fixture library ancestor'
+                  }
+              }
+          }
+          Write-Output 'WSLPE45_LIBRARY_ANCESTORS=PASS'
+      changed_when: false
+      when: wslpe_45_action == 'apply' or wslpe_45_action == 'reset' or (wslpe_45_action == 'validate' and wslpe_45_validate_state == 'vulnerable')
+
+    - name: Make lab-owned common library folder
+      ansible.windows.win_file:
+        path: '{{ scenario_library }}'
+        state: directory
+      when: wslpe_45_action == 'apply'
+
+    - name: Install exact standalone-only shared ownership library
+      ansible.windows.win_copy:
+        src: files/wslpe45/WslpeFixture.psm1
+        dest: '{{ scenario_library }}\WslpeFixture.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Install isolated #35 Windows service source
+      ansible.windows.win_copy:
+        src: files/wslpe45/KingdomTraversalService.cs
+        dest: '{{ scenario_library }}\KingdomTraversalService.cs'
+      when: wslpe_45_action == 'apply'
+
+    - name: Apply bounded SYSTEM writer path traversal fixture
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force
+          $name = 'KingdomWslpe45TraversalSvc'
+          $id = 'privileged_path_traversal_write'
+          if (Get-Service -Name $name -ErrorAction SilentlyContinue) {
+              throw 'Named fixture service exists; refusing to adopt or overwrite'
+          }
+          $root = New-Wslpe45OwnedFixture -Number 35 -Id $id
+          $inbox = Join-Path $root 'inbox'
+          $protected = Join-Path $root 'protected'
+          New-Item -ItemType Directory -Path $inbox -ErrorAction Stop | Out-Null
+          New-Item -ItemType Directory -Path $protected -ErrorAction Stop | Out-Null
+          Set-Content -LiteralPath (Join-Path $inbox 'request.txt') -Value 'noop.txt' -Encoding Ascii
+
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          $access = Get-Acl -LiteralPath $inbox -ErrorAction Stop
+          $rights = [Security.AccessControl.FileSystemRights]::Modify
+          $allow = [Security.AccessControl.AccessControlType]::Allow
+          $flags = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+          $propagation = [Security.AccessControl.PropagationFlags]::None
+          $learnerAccess = New-Object Security.AccessControl.FileSystemAccessRule(
+              $learner.SID, $rights, $flags, $propagation, $allow
+          )
+          $access.AddAccessRule($learnerAccess) | Out-Null
+          Set-Acl -LiteralPath $inbox -AclObject $access -ErrorAction Stop
+
+          $protectedAcl = Get-Acl -LiteralPath $protected -ErrorAction Stop
+          $protectedAcl.SetAccessRuleProtection($true, $false)
+          foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+              $principal = New-Object Security.Principal.SecurityIdentifier($sid)
+              $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+                  $principal,
+                  [Security.AccessControl.FileSystemRights]::FullControl,
+                  $flags, $propagation, $allow
+              )
+              $protectedAcl.AddAccessRule($rule) | Out-Null
+          }
+          Set-Acl -LiteralPath $protected -AclObject $protectedAcl -ErrorAction Stop
+
+          $source = Get-Content -LiteralPath 'C:\ProgramData\KingdomsWSLPE45\lib\KingdomTraversalService.cs' -Raw
+          $exe = Join-Path $root 'KingdomWslpe45TraversalSvc.exe'
+          Add-Type -TypeDefinition $source -Language CSharp -ReferencedAssemblies 'System.ServiceProcess.dll' -OutputAssembly $exe -OutputType WindowsApplication -ErrorAction Stop
+          New-Service -Name $name -BinaryPathName ('"{0}"' -f $exe) -DisplayName 'Kingdoms Standalone LPE 45 Traversal' -StartupType Manual -ErrorAction Stop | Out-Null
+
+          # Permit learner only to query/start this particular service.
+          # No SERVICE_CHANGE_CONFIG and no machine-wide SCM ACL changes.
+          $sid = $learner.SID.Value
+          $sddl = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;LCRP;;;$sid)"
+          $output = & sc.exe sdset $name $sddl 2>&1
+          if ($LASTEXITCODE -ne 0) { throw "Could not set isolated fixture service DACL: $output" }
+          Write-Output 'WSLPE45_TRAVERSAL=APPLIED'
+      when: wslpe_45_action == 'apply'
+
+    - name: Validate exact #35 vulnerability state, not exploitation
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force
+          $root = Assert-Wslpe45OwnedFixture -Number 35 -Id 'privileged_path_traversal_write'
+          $service = Get-CimInstance Win32_Service -Filter "Name='KingdomWslpe45TraversalSvc'" -ErrorAction Stop
+          if (-not $service -or $service.StartName -ne 'LocalSystem') {
+              throw 'Expected dedicated LocalSystem service missing'
+          }
+          $exe = Join-Path $root 'KingdomWslpe45TraversalSvc.exe'
+          if ($service.PathName.Trim('"') -cne $exe) {
+              throw 'Service ImagePath does not match the owned fixture'
+          }
+          $inbox = Join-Path $root 'inbox'
+          $protected = Join-Path $root 'protected'
+          foreach ($item in @($exe, (Join-Path $inbox 'request.txt'), $protected)) {
+              if (-not (Test-Path -LiteralPath $item)) { throw "Missing fixture component: $item" }
+          }
+          $learnerSid = (Get-LocalUser 'lpe.trainee').SID.Value
+          $aces = @(Get-Acl -LiteralPath $inbox).Access
+          if (-not @($aces | Where-Object {
+              $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -eq $learnerSid -and
+              ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::WriteData) -ne 0
+          }).Count) { throw 'Learner cannot edit request inbox' }
+          $serviceDacl = (& sc.exe sdshow 'KingdomWslpe45TraversalSvc' | Out-String)
+          if ($LASTEXITCODE -ne 0 -or -not $serviceDacl.Contains($learnerSid)) {
+              throw 'Learner-specific service start permission missing'
+          }
+          Write-Output 'WSLPE45_TRAVERSAL=VULNERABLE_CONFIGURATION'
+      changed_when: false
+      when: wslpe_45_action == 'validate' and wslpe_45_validate_state == 'vulnerable'
+
+    - name: Reset only owned #35 service and root
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force
+          $root = Assert-Wslpe45OwnedFixture -Number 35 -Id 'privileged_path_traversal_write'
+          $exe = Join-Path $root 'KingdomWslpe45TraversalSvc.exe'
+          $service = Get-CimInstance Win32_Service -Filter "Name='KingdomWslpe45TraversalSvc'" -ErrorAction Stop
+          if ($service) {
+              if ($service.PathName.Trim('"') -cne $exe) {
+                  throw 'Refusing to remove service with non-owned ImagePath'
+              }
+              Stop-Service -Name 'KingdomWslpe45TraversalSvc' -ErrorAction SilentlyContinue
+              $delete = & sc.exe delete 'KingdomWslpe45TraversalSvc' 2>&1
+              if ($LASTEXITCODE -ne 0) { throw "Could not delete owned service: $delete" }
+              for ($attempt=0; $attempt -lt 20; $attempt++) {
+                  if (-not (Get-Service -Name 'KingdomWslpe45TraversalSvc' -ErrorAction SilentlyContinue)) { break }
+                  Start-Sleep -Milliseconds 500
+              }
+              if (Get-Service -Name 'KingdomWslpe45TraversalSvc' -ErrorAction SilentlyContinue) {
+                  throw 'Owned service did not fully stop/delete'
+              }
+          }
+          Remove-Wslpe45OwnedFixture -Number 35 -Id 'privileged_path_traversal_write'
+          Write-Output 'WSLPE45_TRAVERSAL=RESET'
+      when: wslpe_45_action == 'reset'
+
+    - name: Verify clean #35 state
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          if (Get-Service -Name 'KingdomWslpe45TraversalSvc' -ErrorAction SilentlyContinue) {
+              throw 'Standalone traversal service still present'
+          }
+          if (Test-Path -LiteralPath 'C:\ProgramData\KingdomsWSLPE45\fixtures\privileged_path_traversal_write') {
+              throw 'Standalone traversal fixture root remains'
+          }
+          Write-Output 'WSLPE45_TRAVERSAL=CLEAN'
+      changed_when: false
+      when: wslpe_45_action == 'validate' and wslpe_45_validate_state == 'clean'
