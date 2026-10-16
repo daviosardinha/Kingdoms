@@ -182,6 +182,8 @@ jobs:
           start = script.index(anchor)
           end = script.index("\n'@", start) + len("\n'@")
           native = script[start:end]
+          full_script = Path(os.environ['RUNNER_TEMP']) / 'wslpe-rights-full-script.ps1'
+          full_script.write_text(script, encoding='utf-8-sig')
           smoke = r'''
           $ErrorActionPreference = 'Stop'
           $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -193,6 +195,15 @@ jobs:
           dest.write_text(native + '\n' + smoke, encoding='utf-8-sig')
           '@ | python -
           if ($LASTEXITCODE -ne 0) { throw 'Windows LSA smoke fixture creation failed' }
+          $full = Join-Path $env:RUNNER_TEMP 'wslpe-rights-full-script.ps1'
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile($full, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'Embedded rights lifecycle PowerShell source has parsing errors'
+          }
+          Write-Host '[PASS] Full standalone SeBackup/SeImpersonate script parses natively'
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP/wslpe-lsa-query.ps1"
           if ($LASTEXITCODE -ne 0) { throw 'Windows PowerShell 5.1 LSA native enumeration failed' }
       - name: Check actual userenv.dll entry point without creating a user profile
