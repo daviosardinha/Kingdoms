@@ -233,8 +233,7 @@ bash scripts/wslpe-p1c-recovery-and-boot-gate.sh
 This command runs source tests and live read-only port/VMX
 checks. **It does NOT run the new VMX restore function on a real VM,
 register a rollback service, install persistent nftables tables,
-enable `nftables.service` or disconnect NAT.** Its results have
-not yet been collected from Kali.
+enable `nftables.service` or disconnect NAT.** Its read-only checks passed on Kali (31/31 source tests and boot-policy preview PASS).
 
 **Not yet implemented:** durable owner-context recovery bundle and
 independent timed execution of the *real* VMX restore; boot-service
@@ -248,3 +247,39 @@ a newly forwarded listener cannot prove zero exposure during the
 interval. Fail-safe startup ordering or a stronger guest-only network
 boundary must be proven, not asserted from a successful preflight.
 Until then, **NAT cutover and learner access remain locked**.
+
+
+## 2026-10-16 — 31/31 recovery and boot-policy source acceptance
+
+The Kali operator executed
+`bash scripts/wslpe-p1c-recovery-and-boot-gate.sh` and confirmed
+**31/31 source tests PASS**. The live read-only preview additionally
+confirmed the exact registered `windows_10.vmx`, Vagrant's currently
+assigned host-side TCP/2210 forwarded to guest WinRM, an exact wildcard
+`vmnet-nat` listener, existing `kingdoms_wslpe_winrm` table matching
+this port, and the fingerprinted WSLPE-only guard+exercise filter source.
+
+Acceptance marker:
+`WSLPE_P1C_RECOVERY_AND_BOOT_POLICY_PREVIEW=TRUE`.
+Explicitly **not** accepted:
+`BOOT_INSTALL_AUTHORIZED=FALSE`.
+
+Next combined implementation must do **real lifecycle testing without
+endangering NORTH** and host firewall persistence in a fail-closed
+fashion. Source success is not proof of durable protection. Independent
+recovery needs registered VMX ownership, immutable approved original
+bytes, exact current candidate match, definite powered-off state and
+an actually executing owner-side host timer before any persistent NAT
+change. VMware may rewrite VMX after a lifecycle transition; such a
+rewrite must trigger manual recovery, not blind overwrite.
+
+A post-start attempt to discover and guard the dynamic forwarded
+WinRM port cannot protect the period between port assignment and
+guard installation. The hard safety property is that **VM startup is
+blocked until a verified boot guard exists**, or its NAT forward is
+already disabled. Do not auto-enable the global `nftables.service`,
+set broad TCP port-range drops that could affect NORTH, or advertise
+vmnet2 as ARP/Layer-2 isolated.
+
+No VMware lifecycle, Windows, NAT, firewall, systemd, or NORTH state was
+changed by this acceptance command. WSLPE remains PROVIDE-only.
