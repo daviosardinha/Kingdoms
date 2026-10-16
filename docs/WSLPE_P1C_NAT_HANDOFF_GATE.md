@@ -283,3 +283,35 @@ vmnet2 as ARP/Layer-2 isolated.
 
 No VMware lifecycle, Windows, NAT, firewall, systemd, or NORTH state was
 changed by this acceptance command. WSLPE remains PROVIDE-only.
+
+
+## Recovery bundle staging — before any live NAT cutover
+
+After the clean 31/31 recovery/boot-policy acceptance, source work
+continues on the missing independent recovery prerequisite. The
+new `kingdoms/wslpe_recovery_bundle.py` creates a **private,
+write-once-by-path recovery manifest** holding exactly the original
+WSLPE VMX bytes, the deterministic Ethernet0 NAT-disabled candidate,
+both SHA256 digests, the registered VMX path, exercise VMnet and exact
+non-root owner UID. JSON parsing rejects unknown schema/fields,
+mismatched owner, registration, candidate, checksum, symlinks and
+insecure ownership/modes; the candidate is independently re-rendered
+from the original. Source regressions operate only on disposable VMX
+copies under a private temporary directory.
+
+This bundle cannot be reconstructed from the NAT-disabled VMX after a
+cutover: it **must** be captured and verified against the real registered
+WSLPE VMX while provisioning NAT is still attached. The recovery bundle
+is private and checked for accidental corruption; **SHA256 alone is not
+an authenticity signature** and does not prevent an owner with host
+filesystem access from replacing both the manifest and hashes. A live
+worker must verify a separately approved/pinned manifest digest and the
+current exact VMware identity and power state before any restore.
+
+The existing `wslpe-p1c-recovery-and-boot-gate.sh` now also runs the
+bundle source tests. The additional tests have **not yet run on Kali**.
+No systemd timer is wired to write the real VMX, and no automated cutover
+or boot firewall installation is authorized. NORTH remains frozen.
+
+For commercial learner deployment, host-only VMnet2 is NOT accepted as
+a sufficient L2 boundary against compromised SYSTEM-level guests.
