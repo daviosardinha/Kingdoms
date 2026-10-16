@@ -107,7 +107,7 @@ class WslpeRemoteOperatorTests(unittest.TestCase):
     def test_sentinel_cleanup_failure_blocks_pilot(self):
         def execute(args, **kwargs):
             if args[2:4] == ["systemctl", "is-active"]:
-                return result(stdout="active\\n")
+                return result(stdout="active\n")
             if args[2:4] == ["/usr/bin/test", "-f"]:
                 return result()
             if args[2:5] == ["/usr/bin/rm", "-f", "--"]:
