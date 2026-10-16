@@ -88,6 +88,7 @@ class WslpePacketAcceptanceTests(unittest.TestCase):
         listener.count.side_effect = [1, 2]
         with patch.object(MOD.time, "sleep"), self.assertRaises(ValueError):
             MOD.verified_guest_deny(listener, lambda _ip: False, "172.28.231.1")
+        listener.count.side_effect = [1]
         with self.assertRaises(ValueError):
             MOD.verified_guest_deny(listener, lambda _ip: True, "172.28.231.1")
 
