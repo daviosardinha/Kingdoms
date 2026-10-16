@@ -17,6 +17,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from kingdoms.wslpe_owner_recovery import owner_identity, rehearse_owner_timer
+from kingdoms.wslpe_vmrun_recovery import rehearse_vmrun_systemd, rehearse_offline_copy
 
 STAGE2 = ROOT / "scripts/wslpe-stage2-inspect.py"
 NAT_PREVIEW = ROOT / "scripts/wslpe-p1c-north-cutover-preview.py"
@@ -48,6 +49,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rehearse", action="store_true",
                         help="execute harmless timed owner-context marker")
+    parser.add_argument("--vmrun-readonly", action="store_true",
+                        help="host timer runs vmrun LIST only, plus scratch VMX restore")
     args = parser.parse_args()
     print("KINGDOMS WSLPE | OWNER-SCOPED HOST RECOVERY REHEARSAL")
     print("[NO VM WRITES] No NAT cutover, VMware restart, VMX edits or NORTH operations")
@@ -61,13 +64,23 @@ def main() -> int:
             unit = rehearse_owner_timer(uid, user)
             print(f"[PASS] WSLPE_OWNER_HOST_TIMER_FIRED=TRUE ({unit})")
             print("[PASS] Systemd host timer runs under exact WSLPE VMX owner")
-        else:
+        if args.vmrun_readonly:
+            if not args.rehearse:
+                raise ValueError("VMware list proof requires prior owner timer rehearsal")
+            data = rehearse_vmrun_systemd(vmx, uid, user)
+            print("[PASS] WSLPE_SYSTEMD_VMRUN_LIST=TRUE")
+            print(f"[INFO] VMware owner sees {data['running_vm_count']} running VM(s)")
+            before, after = rehearse_offline_copy(vmx.read_bytes(), "vmnet2", uid)
+            print("[PASS] WSLPE_SCRATCH_VMX_RESTORE_BYTE_EXACT=TRUE")
+            print(f"[INFO] Scratch original SHA256={before}")
+            print(f"[INFO] Scratch candidate SHA256={after}")
+        elif not args.rehearse:
             print("[PREVIEW] Host owner rollback timer has NOT been exercised")
     except (OSError, ValueError, KeyError, TypeError,
             subprocess.TimeoutExpired) as exc:
         print(f"[BLOCKED] {type(exc).__name__}; no VMware/NORTH changes")
         return 1
-    print("[NOT VERIFIED] Owner-context vmrun stop/start and exact VMX offline restore")
+    print("[NOT VERIFIED] Actual vmrun stop/start, real VMX restore and independent failure rollback")
     print("[NOT VERIFIED] Host reboot/firewall persistence and ARP/L2 isolation")
     print("[RELEASE BLOCKED] WSLPE NAT cutover remains unauthorized")
     return 0
