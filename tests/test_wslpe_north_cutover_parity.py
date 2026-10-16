@@ -6,6 +6,7 @@ applies nftables, contacts Windows, or executes NORTH lifecycle scripts.
 import hashlib
 import importlib.util
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
 from kingdoms.wslpe_nat_cutover_contract import (
@@ -38,6 +39,39 @@ class NorthWs01CutoverParityTests(unittest.TestCase):
     def test_north_proven_sequence_available_readonly(self):
         # NORTH is source of truth for VMX/NAT stop/edit/start sequencing.
         PREVIEW.north_source_contract()
+
+    def test_north_grep_escaped_property_names_are_validated(self):
+        runtime = PREVIEW.NORTH_RUNTIME.read_text(encoding="utf-8").lower()
+        for property_name in (
+            r"ethernet0\.connectiontype",
+            r"ethernet0\.startconnected",
+            r"ethernet1\.connectiontype",
+            r"ethernet1\.vnet",
+        ):
+            self.assertIn(property_name, runtime)
+        PREVIEW.north_source_contract()
+
+    def test_north_nic_property_drift_still_fails_closed(self):
+        source = PREVIEW.NORTH_RUNTIME.read_text(encoding="utf-8")
+        with TemporaryDirectory() as folder:
+            validator = Path(folder) / "validate-ws01-runtime.sh"
+            for key in (
+                r"ethernet0\.connectiontype",
+                r"ethernet0\.startconnected",
+                r"ethernet1\.connectiontype",
+                r"ethernet1\.vnet",
+            ):
+                with self.subTest(key=key):
+                    self.assertIn(key, source.lower())
+                    validator.write_text(
+                        source.replace(key, key.replace("ethernet", "removed"), 1),
+                        encoding="utf-8",
+                    )
+                    with patch.object(PREVIEW, "NORTH_RUNTIME", validator):
+                        with self.assertRaisesRegex(
+                            ValueError, "NORTH post-transition NIC contract drift"
+                        ):
+                            PREVIEW.north_source_contract()
 
     def test_only_one_nat_property_is_added_and_restorable(self):
         candidate = render_nat_offline(VMX, "vmnet2")
