@@ -14,6 +14,9 @@ on:
       - 'tests/test_wslpe_learner_credentials.py'
       - 'tests/test_wslpe_operator_shell_safety.py'
       - 'tests/test_wslpe_aie_profile_preflight.py'
+      - 'tests/test_wslpe_aie_reset_adapter.py'
+      - 'ansible/wslpe-aie-reset-tasks.yml'
+      - 'ansible/wslpe-lpe-test.yml'
       - 'ansible/wslpe-always-install-elevated-preflight.yml'
       - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
       - 'ansible/roles/windows_lpe/defaults/main.yml'
@@ -28,6 +31,9 @@ on:
       - 'tests/test_wslpe_learner_credentials.py'
       - 'tests/test_wslpe_operator_shell_safety.py'
       - 'tests/test_wslpe_aie_profile_preflight.py'
+      - 'tests/test_wslpe_aie_reset_adapter.py'
+      - 'ansible/wslpe-aie-reset-tasks.yml'
+      - 'ansible/wslpe-lpe-test.yml'
       - 'ansible/wslpe-always-install-elevated-preflight.yml'
       - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
       - 'ansible/roles/windows_lpe/defaults/main.yml'
@@ -56,6 +62,8 @@ jobs:
           printf '[wslpe]\nws01 ansible_connection=local\n[windows_lpe_standalone]\nws01\n' > "$RUNNER_TEMP/wslpe-ci-inventory"
           ansible-playbook -i "$RUNNER_TEMP/wslpe-ci-inventory" --syntax-check \
             ansible/wslpe-always-install-elevated-preflight.yml
+          ansible-playbook -i "$RUNNER_TEMP/wslpe-ci-inventory" --syntax-check \
+            ansible/wslpe-lpe-test.yml
       - name: Check Python syntax
         run: |
           python -m py_compile \
@@ -66,7 +74,8 @@ jobs:
             tests/test_wslpe_fast_track_resume.py \
             tests/test_wslpe_learner_credentials.py \
             tests/test_wslpe_operator_shell_safety.py \
-            tests/test_wslpe_aie_profile_preflight.py
+            tests/test_wslpe_aie_profile_preflight.py \
+            tests/test_wslpe_aie_reset_adapter.py
       - name: Run read-only source and negative-path regressions
         run: |
           python -m unittest -v \
@@ -74,7 +83,8 @@ jobs:
             tests.test_wslpe_fast_track_resume \
             tests.test_wslpe_learner_credentials \
             tests.test_wslpe_operator_shell_safety \
-            tests.test_wslpe_aie_profile_preflight
+            tests.test_wslpe_aie_profile_preflight \
+            tests.test_wslpe_aie_reset_adapter
 
   windows-native-export:
     name: Verify userenv CreateProfile symbol (Windows, no guest)
