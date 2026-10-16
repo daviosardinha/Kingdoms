@@ -76,16 +76,15 @@ cd "$HOME/kingdoms-lpe-standalone" || exit 1
 "$HOME/.goad/.venv/bin/python" scripts/wslpe-fast-track-20.py --execute
 ~~~
 
-Both commands demand the exact interactive approval. The bootstrap route
+Both commands are noninteractive: \`--execute\` authorizes the requested WSLPE-only changes. The bootstrap route
 does the native WSLPE inventory safety check **before** applying the
 foundation and then runs the existing local/domain-free `status`
 acceptance before any LPE vulnerability scenario.
 
 The runner:
 
-1. Requires interactive exact confirmation: \`QUALIFY WSLPE 20\`.
-2. Reads the local learner password securely if not supplied via a
-   private environment variable; never commits it.
+1. Uses \`--execute\` as explicit authorization; no phrase or terminal interaction.
+2. Creates one strong, unique local Windows learner password on the first \`--bootstrap-learner\`, saves it in an operator-owned \`0700\` directory as a \`0600\` file outside Git, then reuses it automatically. An existing private environment credential is also supported.
 3. Verifies the dynamic WSLPE-only instance/inventory and host IP.
 4. Runs the existing WSLPE playbook \`status\` to prove exact hostname,
    domain-free machine and existing local \`lpe.trainee\` before changes.
@@ -151,3 +150,43 @@ PY="$HOME/.goad/.venv/bin/python"
 This hotfix has not yet been validated on Kali. Do not run the
 `--execute --bootstrap-learner` branch until compile, unit tests and
 the exact WSLPE-only plan have all passed.
+
+## What the learner actually uses
+
+The Windows account is **WSLPE-WS01\lpe.trainee** (or **.\lpe.trainee**
+inside the guest). This is a *standard local Users member*, never a
+local administrator and never an Active Directory identity.
+
+The existing \`ansible/wslpe-foundation.yml\` creates/enables this
+account with the generated password and checks that it does not belong
+to local Administrators. The **vagrant** credentials are provisioning
+credentials, not learner credentials.
+
+When you need the local development login details, explicitly run:
+
+~~~bash
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-fast-track-20.py --show-learner-access
+~~~
+
+That displays the account/password **only on explicit operator request**.
+Normal commands never print them. The local private store lives under
+\`~/.local/state/kingdoms-wslpe-learner/credential\`, outside the Git
+checkout. Never commit or post that password into Discord.
+
+**RDP is not yet proven**: local account creation does not automatically
+grant Remote Desktop Users group membership or ensure RDP/NLA logon
+rights. The course must validate actual non-administrator login before
+student release. Production multi-tenant course deployments must
+generate independent credentials per learner instance and deliver them
+via the authenticated platform or Discord entitlement workflow, not
+share the developer VM credential.
+
+### No more redundant confirmations
+
+The first fast-track execution exposed an unintended
+\`sys.stdin.isatty()\`/confirmation gate. This has been removed.
+\`--execute --bootstrap-learner\` now handles credential generation
+and WSLPE-only provisioning directly; \`--show-learner-access\` remains
+a separate read-only operator operation. Actual infrastructure and
+learner-release safety preconditions still apply.
+
