@@ -5,7 +5,7 @@
 
 **Source of truth:** Existing \`ansible/roles/windows_lpe\` in this repo.
 **Scope:** Standalone WSLPE development only; NORTH is read-only/frozen.
-**Status:** Fast-track operator runner committed, first Kali qualification pending.
+**Status (2026-10-16): VERIFIED — standalone 20/20 provisioning, clean-reset and reapply lifecycle acceptance. Real learner exploitation, RDP/NLA, isolation and course release are separate pending gates.**
 
 ## What is already done and should NOT be recreated
 
@@ -589,3 +589,29 @@ newer failed-reset report to the original failed-apply parser.
 The action revalidates six earlier vulnerable states, completes only
 the partial standalone AIE reset, confirms clean, then continues
 the 20-technique qualification from scenario seven.
+
+
+## Final standalone foundation acceptance — 20/20 (2026-10-16)
+
+The final live operator output confirms
+`WSLPE_STANDALONE_20_TECHNIQUES_ACCEPTED=TRUE` and
+`WSLPE full qualification completed`. Previous 16 accepted techniques
+were independently revalidated as vulnerable, without replaying their
+apply/reset cycles. The final private report,
+`wslpe-qualification-20261016T222229Z.json`, contains **24 successful
+operations** for the last four techniques (SeBackupPrivilege,
+SeImpersonatePrivilege, writable_program_directory and
+insecure_service_registry): each passed apply → vulnerable → reset →
+clean → reapply → vulnerable, leaving the intended vulnerability active.
+**The final continuation report is not the entire 120-operation
+history**; earlier qualification/checkpoint reports preserve the other
+16 techniques' cycles.
+
+This milestone **closes only foundation provisioning and lifecycle
+qualification, not student exploitation or course-release acceptance**.
+Next WSLPE milestones are the standalone-only **+15 advanced** techniques
+and **+10 expert** techniques (45 total), with real non-admin
+`WSLPE-WS01\\lpe.trainee` attack-path proof, RDP/NLA access,
+isolation, recovery and lesson authoring validated in parallel.
+NORTH retains exactly its original 20 scenarios without changes.
+See [45-Technique Standalone Roadmap](./WSLPE_45_TECHNIQUE_ROADMAP.md).
