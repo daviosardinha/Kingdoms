@@ -35,10 +35,17 @@ First, once per checkout, run the source tests and the **non-mutating**
 exact-WSLPE catalog/target plan:
 
 ~~~bash
+# Run in an isolated subshell. Any failure returns to the Kali prompt.
+if (
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 git pull --ff-only || exit 1
 "$HOME/.goad/.venv/bin/python" -m unittest -v tests.test_wslpe_fast_track_20
 "$HOME/.goad/.venv/bin/python" scripts/wslpe-fast-track-20.py
+); then
+  printf '[PASS] WSLPE command completed; operator shell remains open\n'
+else
+  printf '[BLOCKED] Check output above; operator shell remains open\n' >&2
+fi
 ~~~
 
 The script loads the 20 techniques from the current shared role,
@@ -64,16 +71,30 @@ existing WSLPE-only foundation playbook and may perform a controlled
 Windows evaluation-rearm reboot. It never invokes NORTH:
 
 ~~~bash
+# Run in an isolated subshell. Any failure returns to the Kali prompt.
+if (
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 "$HOME/.goad/.venv/bin/python" scripts/wslpe-fast-track-20.py --execute --bootstrap-learner
+); then
+  printf '[PASS] WSLPE command completed; operator shell remains open\n'
+else
+  printf '[BLOCKED] Check output above; operator shell remains open\n' >&2
+fi
 ~~~
 
 If `lpe.trainee` already exists, avoid unnecessary provisioning and run
 only the qualification:
 
 ~~~bash
+# Run in an isolated subshell. Any failure returns to the Kali prompt.
+if (
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 "$HOME/.goad/.venv/bin/python" scripts/wslpe-fast-track-20.py --execute
+); then
+  printf '[PASS] WSLPE command completed; operator shell remains open\n'
+else
+  printf '[BLOCKED] Check output above; operator shell remains open\n' >&2
+fi
 ~~~
 
 Both commands are noninteractive: \`--execute\` authorizes the requested WSLPE-only changes. The bootstrap route
@@ -139,12 +160,19 @@ target, Ansible invocation, or scenario lifecycle.
 **Next run compiles BEFORE importing tests or executing any guest action:**
 
 ~~~bash
+# Run in an isolated subshell. Any failure returns to the Kali prompt.
+if (
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 git pull --ff-only || exit 1
 PY="$HOME/.goad/.venv/bin/python"
 "$PY" -m py_compile scripts/wslpe-fast-track-20.py tests/test_wslpe_fast_track_20.py &&
 "$PY" -m unittest -v tests.test_wslpe_fast_track_20 &&
 "$PY" scripts/wslpe-fast-track-20.py
+); then
+  printf '[PASS] WSLPE command completed; operator shell remains open\n'
+else
+  printf '[BLOCKED] Check output above; operator shell remains open\n' >&2
+fi
 ~~~
 
 This hotfix has not yet been validated on Kali. Do not run the
@@ -224,12 +252,19 @@ or vulnerability changes were made by the failed run.
 **Next combined local execution:**
 
 ~~~bash
+# Run in an isolated subshell. Any failure returns to the Kali prompt.
+if (
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 git pull --ff-only || exit 1
 PY="$HOME/.goad/.venv/bin/python"
 "$PY" -m py_compile scripts/wslpe-fast-track-20.py kingdoms/wslpe_learner_credentials.py &&
 "$PY" -m unittest -v tests.test_wslpe_fast_track_20 tests.test_wslpe_learner_credentials &&
 "$PY" scripts/wslpe-fast-track-20.py --execute --bootstrap-learner
+); then
+  printf '[PASS] WSLPE command completed; operator shell remains open\n'
+else
+  printf '[BLOCKED] Check output above; operator shell remains open\n' >&2
+fi
 ~~~
 
 The newly added tests are **not yet validated on Kali**. Explicit
@@ -306,6 +341,8 @@ After a specific fix and state review, the controlled resume workflow
 will be:
 
 ~~~bash
+# Run in an isolated subshell. Any failure returns to the Kali prompt.
+if (
 cd "$HOME/kingdoms-lpe-standalone" || exit 1
 git pull --ff-only || exit 1
 PY="$HOME/.goad/.venv/bin/python"
@@ -313,8 +350,29 @@ PY="$HOME/.goad/.venv/bin/python"
 "$PY" scripts/wslpe-fast-track-20.py \
   --resume-report "$HOME/.local/state/kingdoms-wslpe-qualification/wslpe-qualification-20261016T153256Z.json"
 # After diagnosis/repair only: append --execute to the exact command.
+); then
+  printf '[PASS] WSLPE command completed; operator shell remains open\n'
+else
+  printf '[BLOCKED] Check output above; operator shell remains open\n' >&2
+fi
 ~~~
 
 No learner, VM, firewall, NAT or NORTH changes were made by
 adding the resume parser. The new resume source tests have not yet
 run on Kali.
+
+## Operator terminal safety standard
+
+Previous copy/paste commands used top-level `|| exit 1` and could
+terminate an interactive Kali shell whenever a source test or preview
+failed. All multi-command examples in this document now wrap their work
+inside `if ( ... ); then ... else ... fi`. Failure only exits the
+**child subshell**; the parent terminal remains usable. A failed step
+still stops the child workflow before later, potentially mutating commands.
+Do not source Bash wrappers or use top-level `exit` in operator snippets.
+Python `--execute` remains explicit WSLPE-only mutation authorization.
+
+The actual seventh-technique PowerShell/Ansible failure is still unknown;
+the private `wslpe-scenario-8e06d146092c.log` must be inspected before
+running mutating resume. Source review and simulated shell safety do not
+prove the live guest state or preclude all future errors.
