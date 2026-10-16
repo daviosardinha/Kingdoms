@@ -110,7 +110,7 @@
               public static extern uint QueryDosDevice(
                   string device, StringBuilder path, int capacity);
           }
-          '@
+      '@
               Add-Type -TypeDefinition $native -ErrorAction Stop
               $buffer = New-Object System.Text.StringBuilder(4096)
               $count = [WslpeAieDosDevice]::QueryDosDevice(
