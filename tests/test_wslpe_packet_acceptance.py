@@ -119,6 +119,22 @@ class WslpePacketAcceptanceTests(unittest.TestCase):
         pilot.pilot.assert_not_called()
         positive.assert_called_once()
 
+    def test_active_mode_requires_exact_confirmation_before_loading_pilot(self):
+        with patch.dict("os.environ", {
+            "SSH_CONNECTION": "198.51.100.24 50000 192.168.1.60 22"
+        }), patch.object(MOD, "load") as loader, \
+             patch.object(sys, "argv", ["packet.py", "--execute"]), \
+             redirect_stdout(StringIO()):
+            self.assertEqual(MOD.main(), 1)
+            loader.assert_not_called()
+
+    def test_neither_baseline_nor_execute_accepts_unexpected_confirmation(self):
+        with patch.object(MOD, "load") as loader, \
+             patch.object(sys, "argv", ["packet.py", "--baseline", "--confirm", "YES"]), \
+             redirect_stdout(StringIO()):
+            self.assertEqual(MOD.main(), 1)
+            loader.assert_not_called()
+
     def test_live_three_phases_are_ordered_and_include_timer_removal(self):
         calls = []
         pilot = MagicMock()
