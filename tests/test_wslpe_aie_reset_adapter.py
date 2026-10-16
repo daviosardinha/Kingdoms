@@ -42,7 +42,7 @@ class WslpeAieResetTests(unittest.TestCase):
         self.assertIn("registry value did not restore", first)
         self.assertIn("snapshot does not belong", first)
         self.assertIn("hivelist", first)
-        self.assertIn("exact learner profile", first)
+        self.assertIn("exact learner NTUSER.DAT", first)
         self.assertIn("S-1-5-32-544", first)
         self.assertIn("PartOfDomain", first)
         self.assertIn("Get-LocalUser -Name 'lpe.trainee'", first)
