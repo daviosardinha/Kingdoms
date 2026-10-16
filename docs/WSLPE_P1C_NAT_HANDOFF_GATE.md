@@ -315,3 +315,55 @@ or boot firewall installation is authorized. NORTH remains frozen.
 
 For commercial learner deployment, host-only VMnet2 is NOT accepted as
 a sufficient L2 boundary against compromised SYSTEM-level guests.
+
+
+## 2026-10-16 — 36/36 recovery bundle acceptance, rollback timer contract staged
+
+The operator ran `bash scripts/wslpe-p1c-recovery-and-boot-gate.sh`
+after the `umask 077` fixture correction: **36/36 PASS**.
+The live read-only dynamic Vagrant WinRM forward inspection again
+confirmed exact native WSLPE `windows_10.vmx`, TCP/2210 owned by
+`vmnet-nat`, current exact-port guard verification, and the
+fingerprinted scoped nft source. No VM/guest/host changes occurred.
+`BOOT_INSTALL_AUTHORIZED=FALSE` remains correct.
+
+**New coordinated source batch** (no runtime execution yet):
+`kingdoms/wslpe_rollback_worker.py` verifies that a private
+recovery.json is pinned to an **externally approved SHA256**, rereads
+the native WSLPE instance, checks the same exact registered VMX and
+non-root owner UID, and refuses unexpected VMware VMX modifications.
+The digest must be captured before any NAT disconnection. The worker
+does not trust a bundle's own claimed VM identity as authority.
+`kingdoms/wslpe_rollback_timer_plan.py` renders a 240-second
+systemd *system* timer candidate under that exact user, with a
+unique-unit contract and fail-closed arming prerequisites.
+`scripts/wslpe-p1c-rollback-plan.py` previews registration,
+bundle digest and timer settings with **no files or units written**.
+`tests/test_wslpe_rollback_timer_plan.py` rejects wrong digest,
+NORTH/foreign registration, wrong owner, unsafe timer arguments,
+and spoofed systemd environment variables. The CLI executable
+`scripts/wslpe-p1c-rollback-worker.py` **intentionally rejects
+all real --restore invocations** until a separately approved,
+root-owned authorization context is implemented and accepted.
+A spoofable `INVOCATION_ID` or other environment flag is not
+an authorization boundary.
+
+The one command for the **entire new pending source checkpoint** is:
+
+```bash
+cd "$HOME/kingdoms-lpe-standalone" || exit 1
+git pull --ff-only || exit 1
+bash scripts/wslpe-p1c-rollback-and-boot-review.sh
+```
+
+This combines the existing recovery suite, additional timer tests,
+exact VMX registration, and dynamic WinRM port/firewall read-only
+preview. It does NOT install systemd units, schedule a real recovery
+timer, stop a VM, edit a VMX, touch nftables or NORTH.
+
+**Next release engineering (still incomplete):** independently trusted
+root-owned recovery approval, a separately proven systemd-host
+restore path, a boot-time WSLPE-only firewall/startup ordering
+contract validated across a Kali restart, and a learner-grade network
+isolation design that does not expose Kali at ARP/L2. None of these
+requirements may be marked PASS based on source tests alone.
