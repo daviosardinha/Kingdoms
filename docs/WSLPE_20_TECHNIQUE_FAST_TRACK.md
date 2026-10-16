@@ -549,3 +549,40 @@ else
   echo "[BLOCKED] WSLPE recovery stopped safely; inspect the latest private diagnostic"
 fi
 ```
+
+## AIE recovery — Windows native Hivelist identity guard (2026-10-16)
+
+The next live recovery revalidated the six previously accepted
+techniques and correctly stopped at the WSLPE-only rollback guard,
+before the separate hive unload, with:
+
+`AIE temporary registry mount cannot be identified as the exact learner profile`
+
+This is a path comparison bug in the WSLPE adapter, not evidence that
+the mount was foreign. Windows stores Hivelist mappings as native
+`\\Device\\HarddiskVolume*` paths, whereas the prior guard compared
+that mapping with a DOS `C:\\...` suffix. The adapter now maps the
+**exact learner NTUSER.DAT drive** using the Windows
+`kernel32!QueryDosDeviceW` API and requires a complete,
+case-insensitive native-path match to the existing
+`HKU\\KingdomAIE` mount. It still fails closed on missing/ambiguous
+mapping, foreign mounted profiles, reparse-point hive files or
+unexpected snapshot data. It never targets NORTH.
+
+**Double-checked before Kali:** GitHub Actions
+[run 38969256336](https://github.com/daviosardinha/Kingdoms/actions/runs/38969256336)
+passed **33/33** tests and both playbook syntax checks.
+On a clean native Windows runner, PowerShell AST parsed both exact
+reset scripts and the **extracted real guard matched that
+runner's loaded user profile against its actual Hivelist mapping**.
+This is a live native API + registry-path check; it does not prove that
+a pending `HKU\\KingdomAIE` unload will succeed under WinRM in the
+WSLPE guest.
+
+Use the original operator-only
+`wslpe-qualification-20261016T153256Z.json` checkpoint with
+`--execute --recover-aie-reset --resume-report`. Never feed the
+newer failed-reset report to the original failed-apply parser.
+The action revalidates six earlier vulnerable states, completes only
+the partial standalone AIE reset, confirms clean, then continues
+the 20-technique qualification from scenario seven.
