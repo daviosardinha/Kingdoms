@@ -122,10 +122,43 @@
           if (-not $learner.Enabled) {
             throw 'WSLPE local learner is disabled'
           }
-          $admins = (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')).Translate([System.Security.Principal.NTAccount]).Value
-          $members = @(Get-LocalGroupMember -Group $admins)
+          # Get-LocalGroupMember -Group expects the LOCAL group name,
+          # not the domain-qualified NTAccount "BUILTIN\\Administrators".
+          # Resolve by stable, language-independent builtin SID instead.
+          $admins = Get-LocalGroup -SID (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')) -ErrorAction Stop
+          $members = @(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop)
           if ($members | Where-Object { $_.SID.Value -eq $learner.SID.Value }) {
             throw 'WSLPE local learner has administrator membership'
           }
           Write-Output 'WSLPE_LOCAL_LEARNER=PASS'
+          Write-Output 'WSLPE_LOCAL_ADMIN_MEMBERSHIP=DENIED'
       changed_when: false
+
+    - name: Grant standard local learner membership in Remote Desktop Users
+      ansible.windows.win_powershell:
+        parameters:
+          LearnerName: "{{ wslpe_learner_name }}"
+        script: |
+          param([Parameter(Mandatory = $true)][string] $LearnerName)
+          $ErrorActionPreference = 'Stop'
+          $machine = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          if ($machine.PartOfDomain -or $env:COMPUTERNAME -ne 'WSLPE-WS01') {
+            throw 'WSLPE local RDP account setup must not target a domain guest'
+          }
+          $learner = Get-LocalUser -Name $LearnerName -ErrorAction Stop
+          if (-not $learner.Enabled) { throw 'WSLPE learner disabled' }
+          $rdp = Get-LocalGroup -SID (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-555')) -ErrorAction Stop
+          $members = @(Get-LocalGroupMember -Group $rdp.Name -ErrorAction Stop)
+          if (@($members | Where-Object { $_.SID.Value -eq $learner.SID.Value }).Count -eq 0) {
+            Add-LocalGroupMember -Group $rdp.Name -Member "$env:COMPUTERNAME\\$LearnerName" -ErrorAction Stop
+            $Ansible.Changed = $true
+          }
+          else {
+            $Ansible.Changed = $false
+          }
+          $after = @(Get-LocalGroupMember -Group $rdp.Name -ErrorAction Stop)
+          if (@($after | Where-Object { $_.SID.Value -eq $learner.SID.Value }).Count -ne 1) {
+            throw 'WSLPE learner RDP group membership not established'
+          }
+          Write-Output 'WSLPE_LOCAL_LEARNER_RDP_GROUP=PASS'
+      no_log: true
