@@ -105,15 +105,25 @@ class WslpeLocalRightsTests(unittest.TestCase):
         self.assertEqual(catalog[17], "seimpersonate_privilege")
         with TemporaryDirectory() as temp:
             directory = Path(temp)
+            prefix = directory / "wslpe-qualification-20261016T153256Z.json"
             checkpoint = directory / "wslpe-qualification-20261016T213032Z.json"
+            prefix_rows = [
+                {"technique": tech, "action": action,
+                 "state": state, "exit_code": 0}
+                for tech in catalog[:6] for action, state in FAST.FLOW
+            ]
+            prefix_rows.append({"technique": catalog[6], "action": "apply",
+                                "state": None, "exit_code": 2})
             records = [
                 {"technique": tech, "action": action,
                  "state": state, "exit_code": 0}
-                for tech in catalog[:16] for action, state in FAST.FLOW
+                for tech in catalog[6:16] for action, state in FAST.FLOW
             ]
             records.append({"technique": catalog[16], "action": "apply",
                             "state": None, "exit_code": 2})
+            prefix.write_text(json.dumps(prefix_rows), encoding="utf-8")
             checkpoint.write_text(json.dumps(records), encoding="utf-8")
+            prefix.chmod(0o600)
             checkpoint.chmod(0o600)
             bin_dir = directory / ".goad/.venv/bin"
             bin_dir.mkdir(parents=True)
@@ -122,6 +132,7 @@ class WslpeLocalRightsTests(unittest.TestCase):
             args = FAST.build_parser().parse_args([
                 "--execute", "--recover-user-rights",
                 "--resume-report", str(checkpoint),
+                "--resume-prefix-report", str(prefix),
                 "--report-dir", str(directory),
             ])
             events = []
