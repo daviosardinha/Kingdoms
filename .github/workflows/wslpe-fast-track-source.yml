@@ -13,6 +13,8 @@ on:
       - 'tests/test_wslpe_fast_track_resume.py'
       - 'tests/test_wslpe_learner_credentials.py'
       - 'tests/test_wslpe_operator_shell_safety.py'
+      - 'tests/test_wslpe_aie_profile_preflight.py'
+      - 'ansible/wslpe-always-install-elevated-preflight.yml'
       - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
       - 'ansible/roles/windows_lpe/defaults/main.yml'
   pull_request:
@@ -25,6 +27,8 @@ on:
       - 'tests/test_wslpe_fast_track_resume.py'
       - 'tests/test_wslpe_learner_credentials.py'
       - 'tests/test_wslpe_operator_shell_safety.py'
+      - 'tests/test_wslpe_aie_profile_preflight.py'
+      - 'ansible/wslpe-always-install-elevated-preflight.yml'
       - 'docs/WSLPE_20_TECHNIQUE_FAST_TRACK.md'
       - 'ansible/roles/windows_lpe/defaults/main.yml'
 
@@ -52,11 +56,13 @@ jobs:
             tests/test_wslpe_fast_track_20.py \
             tests/test_wslpe_fast_track_resume.py \
             tests/test_wslpe_learner_credentials.py \
-            tests/test_wslpe_operator_shell_safety.py
+            tests/test_wslpe_operator_shell_safety.py \
+            tests/test_wslpe_aie_profile_preflight.py
       - name: Run read-only source and negative-path regressions
         run: |
           python -m unittest -v \
             tests.test_wslpe_fast_track_20 \
             tests.test_wslpe_fast_track_resume \
             tests.test_wslpe_learner_credentials \
-            tests.test_wslpe_operator_shell_safety
+            tests.test_wslpe_operator_shell_safety \
+            tests.test_wslpe_aie_profile_preflight
