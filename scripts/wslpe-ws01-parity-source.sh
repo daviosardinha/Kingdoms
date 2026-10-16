@@ -22,6 +22,7 @@ echo "KINGDOMS WSLPE | NORTH WS01 SOURCE PARITY (READ ONLY)"
     tests.test_wslpe_packet_acceptance \
     tests.test_wslpe_nat_readiness \
     tests.test_wslpe_north_cutover_parity \
+    tests.test_wslpe_owner_recovery \
     tests.test_windows_lpe_learner_adapters
 "$PY" scripts/windows-lpe-standalone-audit.py --strict
 echo "[PASS] WSLPE/NORTH source contract"
