@@ -145,6 +145,24 @@ class WslpeRollbackTimerTests(unittest.TestCase):
         keys["host_l2_isolation_verified"] = False
         self.assertEqual(len(approve_arming(**keys)), 1)
 
+    def test_local_development_cannot_promote_learner_isolation(self):
+        base = dict(
+            boot_guard_reboot_verified=True,
+            management_return_route_verified=True,
+            exact_workstation_vm_owner_verified=True,
+            recovery_live_test_verified=True,
+            host_l2_isolation_verified=False,
+        )
+        self.assertEqual(
+            approve_arming(**base, deployment_scope="local_dev"), [])
+        self.assertEqual(len(approve_arming(
+            **base, deployment_scope="learner")), 1)
+        self.assertEqual(len(approve_arming(**base)), 1)
+        with self.assertRaises(ValueError):
+            approve_arming(**base, deployment_scope="NORTH")
+        unsafe = dict(base, boot_guard_reboot_verified=False)
+        self.assertTrue(approve_arming(**unsafe, deployment_scope="local_dev"))
+
     def test_restore_cli_requires_armed_systemd_context_before_vmware_calls(self):
         from contextlib import redirect_stdout
         from io import StringIO
