@@ -1,0 +1,165 @@
+---
+# All 25 NEW scenarios: native API probes only. No deployment and no NORTH.
+- name: Fail-closed WSLPE-only batch authorization
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require exactly the native standalone WSLPE inventory
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - (wslpe_expected_address | default('')) | length > 6
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+        fail_msg: 'Refusing any WSLPE feasibility probe outside exact standalone inventory'
+
+- name: Inspect native Windows APIs for the full WSLPE expansion in one shot
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Verify exact workgroup learner and gather read-only API capabilities
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $system = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $system.PartOfDomain) {
+              throw 'Incorrect computer or domain membership; WSLPE only'
+          }
+          if ($os.Caption -notmatch 'Windows 10') {
+              throw 'WSLPE requires Windows 10 for these feasibility probes'
+          }
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if (-not $learner.Enabled) { throw 'Expected local learner is disabled' }
+          $admins = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          $members = @(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop)
+          if (@($members | Where-Object { $_.SID.Value -eq $learner.SID.Value }).Count -ne 0) {
+              throw 'Learner is not an unprivileged local user'
+          }
+
+          # Each check MUST remain a read operation. Passing a check proves only
+          # an API prerequisite, never a writable ACL or real escalation.
+          $checks = [ordered]@{
+              scheduled_task_definition_acl = {
+                  $com = New-Object -ComObject 'Schedule.Service'
+                  $com.Connect()
+                  $task = $com.GetFolder('\').GetTask('KingdomTaskBinary')
+                  $sddl = [string]$task.GetSecurityDescriptor(4)
+                  if ([string]::IsNullOrWhiteSpace($sddl)) { throw 'Missing task descriptor' }
+                  [void](New-Object System.Security.AccessControl.RawSecurityDescriptor($sddl))
+              }
+              scm_create_service_acl = {
+                  $out = & sc.exe sdshow scmanager 2>&1
+                  if ($LASTEXITCODE -ne 0 -or -not ([string]($out -join '')).Contains('D:')) {
+                      throw 'SCM descriptor unavailable'
+                  }
+              }
+              privileged_service_config_injection = {
+                  [void](Get-CimClass Win32_Service -ErrorAction Stop)
+              }
+              privileged_updater_hijack = {
+                  [void](Get-Service Schedule -ErrorAction Stop)
+              }
+              msi_repair_custom_action = {
+                  [void](Get-Service msiserver -ErrorAction Stop)
+                  [void](Get-Command msiexec.exe -ErrorAction Stop)
+              }
+              ifeo_debugger_acl_hijack = {
+                  [void](Get-Item 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options' -ErrorAction Stop)
+              }
+              com_clsid_registration_hijack = {
+                  [void](Get-Item 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID' -ErrorAction Stop)
+              }
+              app_paths_registry_hijack = {
+                  [void](Get-Item 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths' -ErrorAction Stop)
+              }
+              named_pipe_authorization = {
+                  if ($null -eq [System.IO.Pipes.NamedPipeServerStream]) { throw 'No pipe API' }
+              }
+              jea_role_capability_misconfig = {
+                  [void](Get-Command Register-PSSessionConfiguration -ErrorAction Stop)
+                  [void](Get-Service WinRM -ErrorAction Stop)
+              }
+              setakeownership_privilege = {
+                  [void](Get-Command whoami.exe -ErrorAction Stop)
+              }
+              serestore_privilege = {
+                  [void](Get-Command whoami.exe -ErrorAction Stop)
+              }
+              sedebug_privilege = {
+                  [void](Get-CimClass Win32_Process -ErrorAction Stop)
+              }
+              ntfs_link_redirection = {
+                  [void](Get-Command fsutil.exe -ErrorAction Stop)
+              }
+              privileged_path_traversal_write = {
+                  [void][System.IO.Path]::GetFullPath('C:\Kingdom LPE\Test\..\Marker')
+              }
+              wmi_privileged_provider_authorization = {
+                  [void](Get-CimClass Win32_Process -ErrorAction Stop)
+              }
+              wmi_permanent_consumer_hijack = {
+                  [void](Get-CimClass -Namespace 'root\subscription' -ClassName '__EventFilter' -ErrorAction Stop)
+              }
+              dcom_server_launch_acl = {
+                  [void](Get-CimClass Win32_DCOMApplication -ErrorAction Stop)
+              }
+              privileged_loopback_http_authz = {
+                  if ($null -eq [System.Net.HttpListener]) { throw 'No HTTP listener API' }
+              }
+              custom_rpc_authorization = {
+                  [void](Get-Service RpcSs -ErrorAction Stop)
+              }
+              privileged_argument_injection = {
+                  [void](Get-Command cmd.exe -ErrorAction Stop)
+              }
+              privileged_child_environment_trust = {
+                  [void][System.Environment]::GetEnvironmentVariables()
+              }
+              elevated_plugin_signature_bypass = {
+                  [void](Get-Command Add-Type -ErrorAction Stop)
+              }
+              privileged_file_toctou = {
+                  [void](Get-Command Get-Item -ErrorAction Stop)
+              }
+              privileged_backup_restore_api = {
+                  [void](Get-Service VSS -ErrorAction Stop)
+              }
+          }
+          if ($checks.Count -ne 25) { throw 'Expected 25 distinct new native checks' }
+          $rows = New-Object System.Collections.Generic.List[object]
+          foreach ($item in $checks.GetEnumerator()) {
+              $state = 'native_api_available'
+              try {
+                  & $item.Value
+              }
+              catch {
+                  $state = 'native_api_blocked'
+              }
+              $rows.Add([pscustomobject]@{
+                  id = [string]$item.Key
+                  native_api = $state
+                  fixture = 'not_implemented'
+                  learner_exploitation = 'not_tested'
+              })
+          }
+          $body = [pscustomobject]@{
+              schema = 'kingdoms.wslpe.feasibility.v1'
+              hostname = 'WSLPE-WS01'
+              domain_joined = $false
+              os = 'Windows 10'
+              readonly = $true
+              results = @($rows.ToArray())
+          }
+          $json = $body | ConvertTo-Json -Depth 5 -Compress
+          $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json))
+          Write-Output ('WSLPE_45_FEASIBILITY_B64=' + $encoded)
+      changed_when: false
+      register: wslpe45_native_result
+    - name: Report only bounded structured read-only result
+      ansible.builtin.debug:
+        var: wslpe45_native_result.output
