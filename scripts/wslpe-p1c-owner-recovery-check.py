@@ -59,6 +59,9 @@ def main() -> int:
         preview = mod(NAT_PREVIEW, "wslpe_owner_nat_preview")
         preview.north_source_contract()
         preview.running_exact(vmx)
+        candidate = preview.collect()
+        if candidate["vmx"].resolve() != vmx.resolve():
+            raise ValueError("VMX registered identity changed during recovery preflight")
         print("[PASS] Exact WSLPE VMware owner and running VMX validated")
         if args.rehearse:
             unit = rehearse_owner_timer(uid, user)
@@ -70,7 +73,7 @@ def main() -> int:
             data = rehearse_vmrun_systemd(vmx, uid, user)
             print("[PASS] WSLPE_SYSTEMD_VMRUN_LIST=TRUE")
             print(f"[INFO] VMware owner sees {data['running_vm_count']} running VM(s)")
-            before, after = rehearse_offline_copy(vmx.read_bytes(), "vmnet2", uid)
+            before, after = rehearse_offline_copy(vmx.read_bytes(), candidate["vmnet"], uid)
             print("[PASS] WSLPE_SCRATCH_VMX_RESTORE_BYTE_EXACT=TRUE")
             print(f"[INFO] Scratch original SHA256={before}")
             print(f"[INFO] Scratch candidate SHA256={after}")
