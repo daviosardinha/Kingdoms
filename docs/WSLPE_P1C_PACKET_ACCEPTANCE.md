@@ -1,6 +1,6 @@
 # WSLPE P1-C — Controlled guest-to-host packet-path acceptance
 
-**Status: SOURCE COMMITTED; new packet acceptance not yet executed on Kali.**
+**Status: THREE-PHASE IPv4 GUEST-TO-HOST PACKET ACCEPTANCE — LIVE PASS (2026-10-16).**
 NORTH is frozen. WSLPE stays PROVIDED, not READY.
 
 ## What the prior pilot proved
@@ -131,3 +131,54 @@ New regression tests and live packet-path probes remain pending operator
 execution. The `--execute` option is still state-changing and requires
 the exact typed confirmation string. Exercise NAT remains attached and
 guest L2/IPv6/NORTH isolation remains unverified.
+
+
+## 2026-10-16 — Three-phase IPv4 packet acceptance: LIVE PASS
+
+The operator executed `bash scripts/wslpe-p1c-packet-review.sh --execute`
+from the **local Kali desktop** and provided the complete terminal result.
+
+Observed results:
+- **38 source regression tests PASS, 0 failures**.
+- **Independent host-side rollback timer smoke test PASS**.
+- Exact guest identity `WSLPE-WS01`, standalone/domain-free, on the
+  dedicated exercise network `vmnet2` (`172.28.231.0/24`); native
+  registered WSLPE VMX confirmed. No other *running* VMware VMX was
+  explicitly assigned to vmnet2 (five checked).
+- **Positive before filtering:** Windows `172.28.231.31` initiated a
+  connection to Kali's dedicated `172.28.231.1:47381` listener. The
+  Windows socket returned OPEN **and** the Kali listener observed the
+  accepted peer from exactly the expected guest IPv4.
+- **Negative while filtering:** The bounded nftables policy was active on
+  `vmnet2`. Certificate-verified authenticated WinRM HTTPS continued
+  working. Windows returned CLOSED and the Kali listener did **not**
+  observe a guest connection:
+  `WSLPE_GUEST_HOST_TCP_BLOCKED_WHILE_FILTERED=TRUE`.
+- **Recovery after 180-second timer window:** The unique WSLPE-owned nft
+  table was absent (`WSLPE_FILTER_TABLE_ABSENT_AFTER_TIMER_WINDOW=TRUE`),
+  the Windows TCP positive control returned OPEN again, the host listener
+  accepted the exact peer, and verified HTTPS management remained healthy.
+  `WSLPE_HOST_FILTER_PACKET_PROOF_AND_ROLLBACK=TRUE`.
+
+**Result:** The narrow WSLPE *IPv4 guest-to-owned-Kali TCP INPUT filtering*
+acceptance is now **complete**. A systemd smoke-test separately proved
+the host timer infrastructure can execute. Table absence after the
+scheduled interval does not alone establish the particular removal cause.
+No WSLPE VMware NAT disconnect, Windows settings, host routing changes,
+NORTH guest modification, or permanent host firewall installation
+was requested by the test.
+
+**Release gates still open:** IPv6, ARP/Layer 2 and hypervisor/VMware
+paths; any other host service or routed packet path; guest NAT
+egress/removal; exact VMX-only reversible NAT lifecycle with independent
+management and restore; persistent host enforcement across restart;
+non-admin learner/RDP access; 20 independently restorable LPE scenarios.
+**WSLPE remains PROVIDED, NOT READY.**
+
+**Next engineering batch (read-only before any cutover):** In one
+consolidated WSLPE-only run, re-verify authenticated independent management,
+NAT NIC and persistent VMX mapping, IPv4/IPv6 guest routes, current
+guest/host VMnet exposure, host guard lifetime and exact-VM rollback
+mechanism. No NORTH tests or changes. Design a bounded NAT cutover that
+cannot affect shared VMware NAT services; require explicit approval
+before modifying Ethernet0.
