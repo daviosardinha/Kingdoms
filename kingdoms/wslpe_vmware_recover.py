@@ -12,7 +12,7 @@ import subprocess
 import time
 
 from kingdoms.wslpe_exact_restore import (
-    RecoveryPlan, inspect_recovery_state, atomic_restore_offline,
+    RecoveryPlan, atomic_restore_offline,
 )
 
 
@@ -23,8 +23,13 @@ def parse_inventory(output: str, expected: Path) -> bool:
     count = int(lines[0].split(":", 1)[1].strip())
     if count != len(lines) - 1 or len(set(lines[1:])) != count:
         raise ValueError("VMware inventory count/paths inconsistent")
-    return sum(1 for name in lines[1:]
-               if Path(name).resolve() == expected.resolve()) == 1
+    target = expected.resolve(strict=True)
+    matched = sum(1 for name in lines[1:] if Path(name).resolve() == target)
+    if matched > 1:
+        # Two different inventory strings may alias the same registered VMX.
+        # Never confuse this with a safely stopped guest.
+        raise ValueError("VMware inventory aliases registered WSLPE VMX")
+    return matched == 1
 
 
 def vmrun_list(vmrun: str, execute=subprocess.run) -> str:
