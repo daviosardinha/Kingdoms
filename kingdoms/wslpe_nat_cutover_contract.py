@@ -77,7 +77,13 @@ def render_nat_offline(source: str, exercise_vmnet: str) -> str:
         if anchor not in found:
             raise ValueError("No exact provisioning ethernet0 anchor")
         suffix = "\r\n" if "\r\n" in source else "\n"
-        lines.insert(found[anchor] + 1, f'ethernet0.startConnected = "FALSE"{suffix}')
+        at = found[anchor]
+        # NORTH's audited offline transition appends one explicit
+        # ethernet0 flag. WSLPE inserts immediately after the verified NAT
+        # adapter anchor, retaining every unrelated VMware setting bytewise.
+        if not lines[at].endswith(("\r", "\n")):
+            lines[at] += suffix
+        lines.insert(at + 1, f'ethernet0.startConnected = "FALSE"{suffix}')
     candidate = "".join(lines)
     updated = parse_vmx_networks(candidate)
     before = parse_vmx_networks(source)
