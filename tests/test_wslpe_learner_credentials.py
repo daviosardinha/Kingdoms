@@ -62,6 +62,13 @@ class WslpeLearnerCredentialsTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 learner_password(bootstrap=False, path=linked, environ={})
 
+    def test_explicit_access_before_bootstrap_gives_actionable_error(self):
+        with TemporaryDirectory() as temp:
+            path = Path(temp) / "missing" / "credential"
+            with self.assertRaisesRegex(ValueError, "bootstrap-learner"):
+                read_local_access(path=path)
+            self.assertFalse(path.exists())
+
     def test_environment_password_must_have_minimum_strength(self):
         with TemporaryDirectory() as temp:
             path = Path(temp) / "credential"
