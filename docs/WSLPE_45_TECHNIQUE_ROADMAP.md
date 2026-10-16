@@ -34,15 +34,16 @@ The existing 20 are the starting library, not the intended final standalone cour
 
 ## Current known checkpoint (2026-10-16)
 
-- Standalone guest exists with an independent local learner account, WinRM foundation and WSLPE-specific adapters.
-- **16 of the original 20** have completed the full six-step standalone provisioning/validation cycle.
-- SeBackupPrivilege (technique 17) was the most recent live blocker; the WSLPE-only LSA rights adapter and two-checkpoint recovery path passed source/Windows query CI but still require live guest acceptance.
-- All **25 expansion techniques remain future work**; there is no claim of a finished list or live deployment.
-- NORTH's original 20 remain the fixed curriculum.
+- **FOUNDATION ACCEPTED — 20/20 standalone WSLPE scenario lifecycles.** The operator's successful qualification output includes `WSLPE_STANDALONE_20_TECHNIQUES_ACCEPTED=TRUE` and independently revalidated the earlier 16 vulnerable scenario states.
+- The final private continuation report, `wslpe-qualification-20261016T222229Z.json`, records **24/24 passing steps** for SeBackupPrivilege, SeImpersonatePrivilege, writable program directory and insecure service registry. Each of these four completed apply → vulnerable → reset → clean → reapply → vulnerable. The earlier accepted scenarios are recorded in the prior private reports; **the final JSON is not, by itself, a 120-step artifact**.
+- Standalone guest has a local non-admin learner account and working management-side WinRM. This establishes provisioning/rollback validation, **not** real learner exploitation.
+- **25 additional standalone scenarios remain to be designed and implemented:** +15 advanced and +10 expert, targeting **45/45**. Do not claim the course is complete.
+- **Still unverified for learner release:** actual non-admin RDP/NLA login, hands-on privilege escalation evidence, learner isolation, repeatable startup/recovery and lesson content.
+- NORTH's original 20 remain fixed and untouched.
 
 ## Execution milestones
 
-1. Reach **20/20** standalone deployment/reset/validation acceptance, preserving NORTH.
+1. **COMPLETE:** reach **20/20** standalone deployment/reset/validation acceptance, preserving NORTH.
 2. Specify and implement the **advanced +15** standalone-only catalog; qualify **35/35**.
 3. Specify and implement the **expert +10** standalone-only catalog; qualify **45/45**.
 4. In parallel, validate local learner login and real non-admin-to-elevated attack paths, reset consistency, host isolation and course walkthroughs. Release only after **45/45 + learner exploitation + isolation + lifecycle + content** acceptance.
