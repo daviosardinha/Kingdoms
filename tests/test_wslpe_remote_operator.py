@@ -55,6 +55,7 @@ class WslpeRemoteOperatorTests(unittest.TestCase):
             '[{"dev":"vmnet2"}]',
             '[{"dev":"vmnet2"},{"dev":"wlp2s0"}]',
             '[{"dev":"wlp2s0","prefsrc":"172.28.231.1"}]',
+            '[{"dev":"wlp2s0"}]',
             '{}',
             'malformed',
         ):
@@ -102,6 +103,18 @@ class WslpeRemoteOperatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             host_timer_smoke_test(executor, lambda _: None)
         self.assertEqual(calls[-1][2:5], ["/usr/bin/rm", "-f", "--"])
+
+    def test_sentinel_cleanup_failure_blocks_pilot(self):
+        def execute(args, **kwargs):
+            if args[2:4] == ["systemctl", "is-active"]:
+                return result(stdout="active\\n")
+            if args[2:4] == ["/usr/bin/test", "-f"]:
+                return result()
+            if args[2:5] == ["/usr/bin/rm", "-f", "--"]:
+                return result(rc=1)
+            return result()
+        with self.assertRaises(ValueError):
+            host_timer_smoke_test(execute, lambda _: None)
 
     def test_source_contains_no_general_firewall_or_north_mutations(self):
         script = (ROOT / "kingdoms/wslpe_remote_operator.py").read_text()
