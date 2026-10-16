@@ -60,12 +60,13 @@ def ssh_management_path(vmnet: str, subnet: str,
             or device == vmnet):
         raise ValueError("SSH route may traverse the vulnerable WSLPE vmnet")
     source = routes[0].get("prefsrc") or routes[0].get("src")
-    if source:
-        try:
-            if ipaddress.ip_address(source) in exercise:
-                raise ValueError("SSH return path sources from WSLPE exercise subnet")
-        except ValueError as exc:
-            raise ValueError("SSH source route is untrusted") from exc
+    if not source:
+        raise ValueError("SSH source route lacks a verifiable local address")
+    try:
+        if ipaddress.ip_address(source) in exercise:
+            raise ValueError("SSH return path sources from WSLPE exercise subnet")
+    except ValueError as exc:
+        raise ValueError("SSH source route is untrusted") from exc
     return device
 
 
@@ -104,4 +105,6 @@ def host_timer_smoke_test(executor=command, sleeper=time.sleep) -> str:
     finally:
         # This is the only artifact this test ever deletes. No /etc,
         # nftables tables, VMX, host network or NORTH path is touched.
-        executor(["sudo", "-n", "/usr/bin/rm", "-f", "--", sentinel])
+        clean = executor(["sudo", "-n", "/usr/bin/rm", "-f", "--", sentinel])
+        if clean.returncode:
+            raise ValueError("WSLPE host timer test sentinel cleanup failed")
