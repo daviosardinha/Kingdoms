@@ -273,6 +273,24 @@ def run(args) -> int:
             return 2
         print(f"[PASS] Previous WSLPE scenario still vulnerable: {technique}", flush=True)
 
+    if args.resume_report:
+        # A failed apply may have changed only half its registry/profile
+        # fixture. Never retry it blindly: demand a clean baseline first.
+        failed_technique = catalog[resume_index]
+        clean_cmd = invocation(
+            ansible, inventory, varsfile, failed_technique, "validate", "clean")
+        clean = subprocess.run(
+            clean_cmd, cwd=ROOT, env=env, capture_output=True, text=True,
+            timeout=args.timeout_seconds, check=False)
+        if clean.returncode:
+            private_log = private_failure_log(
+                report_root, "resume-clean-check", clean.stdout + "\n" + clean.stderr)
+            print(f"[BLOCKED] Previous failed apply may have partial state: {failed_technique}")
+            print(f"[DIAGNOSTIC] {private_log} (redact before sharing)")
+            print("[STOP] Inspect and restore the exact WSLPE fixture before retry")
+            return 2
+        print(f"[PASS] Previously failed scenario is clean: {failed_technique}")
+
     report = report_root / ("wslpe-qualification-" +
                      datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".json")
     records = []
