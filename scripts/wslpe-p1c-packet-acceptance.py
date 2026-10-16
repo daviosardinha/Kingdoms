@@ -116,15 +116,16 @@ def wait_for_table_removal(pilot, seconds: int, started: float) -> None:
     print("[PASS] WSLPE_FILTER_TABLE_ABSENT_AFTER_TIMER_WINDOW=TRUE")
 
 
-def execute_phases(pilot, witness, probe, host: str, vmnet: str) -> None:
+def execute_phases(pilot, witness, probe, host: str, vmnet: str, remote: bool) -> None:
     """All 3 proof phases while one exact host-only listener is alive."""
     print("===== BASELINE: POSITIVE GUEST -> OWNED KALI LISTENER =====", flush=True)
     verified_guest_connection(witness, probe, host)
 
     print("===== TEMPORARY FILTER: EXPECT GUEST -> KALI DENIAL =====", flush=True)
-    # pilot.pilot rechecks unique VMX, SSH route, short timer smoke, HTTPS,
-    # dedicated nft ownership and rollback timer before applying anything.
-    pilot.pilot(PILOT_SECONDS, remote=True)
+    # pilot.pilot rechecks unique VMX, nft ownership, HTTPS and arms a host
+    # rollback timer before applying. Remote mode rechecks SSH route and
+    # timer smoke; local mode had its own timer proof before this phase.
+    pilot.pilot(PILOT_SECONDS, remote=remote)
     if not pilot.installed_exact_policy(vmnet):
         raise ValueError("WSLPE filter was not installed with expected identity")
     verified_guest_deny(witness, probe, host)
@@ -157,8 +158,10 @@ def main() -> int:
         if args.execute:
             if args.confirm != CONFIRM:
                 raise ValueError("Exact WSLPE packet proof confirmation required")
-            if not os.environ.get("SSH_CONNECTION"):
-                raise ValueError("Remote packet proof requires guarded SSH route")
+            # Local console and guarded SSH are independent operator modes.
+            # Never permit noninteractive local scripts to change a firewall.
+            if not os.environ.get("SSH_CONNECTION") and not sys.stdin.isatty():
+                raise ValueError("Local firewall pilot requires interactive Kali console")
         elif args.confirm:
             raise ValueError("Confirmation requires --execute")
 
@@ -168,9 +171,15 @@ def main() -> int:
         network = str(ipaddress.ip_interface(f"{host}/24").network)
         validate_target(host, guest, network, PORT)
         print(f"[PASS] WSLPE-only native target={guest} listener={host}:{PORT}")
-        if os.environ.get("SSH_CONNECTION"):
-            # Timer smoke creates an ephemeral /run marker only.
+        remote = bool(os.environ.get("SSH_CONNECTION"))
+        if remote:
+            # SSH route must be disjoint from every VMware vmnet.
             pilot.remote_preflight(vmnet, host)
+        elif args.execute:
+            # Prove local host-side rollback timer actually runs before
+            # applying a rule. The one /run sentinel is removed afterward.
+            unit = pilot.host_timer_smoke_test()
+            print(f"[PASS] Local host rollback timer smoke test fired: {unit}")
         audit = auth.tls_audit_module()
         address, der = auth.checked_certificate(audit, EXPECTED_SHA1)
         if address != guest:
@@ -182,7 +191,7 @@ def main() -> int:
                     # This flag is set before invocation because pilot may have
                     # installed the table before raising an error.
                     applied = True
-                    execute_phases(pilot, witness, probe, host, vmnet)
+                    execute_phases(pilot, witness, probe, host, vmnet, remote=remote)
                 else:
                     verified_guest_connection(witness, probe, host)
                     print("[PASS] WSLPE_PACKET_BASELINE=TRUE")
