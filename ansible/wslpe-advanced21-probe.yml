@@ -62,3 +62,8 @@
           Write-Output 'WSLPE_ADV21_TASK_COM_DACL_READ=PASS'
           Write-Output 'WSLPE_ADV21_PROBE_READ_ONLY=TRUE'
       changed_when: false
+      register: wslpe_advanced21_probe_result
+
+    - name: Emit only safe read-only probe result markers
+      ansible.builtin.debug:
+        var: wslpe_advanced21_probe_result.output
