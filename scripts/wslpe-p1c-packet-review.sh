@@ -34,12 +34,17 @@ if [[ "$MODE" == "--baseline" ]]; then
   exit 0
 fi
 
-[[ -n "${SSH_CONNECTION:-}" ]] || {
-  echo '[BLOCKED] State-changing pilot requires independent SSH operator path'
-  exit 1
-}
+if [[ -n "${SSH_CONNECTION:-}" ]]; then
+  echo '[INFO] SSH operator detected: remote route and rollback checks required'
+else
+  [[ -t 0 && -t 1 ]] || {
+    echo '[BLOCKED] Local execution requires an interactive Kali console'
+    exit 1
+  }
+  echo '[INFO] Kali local operator: independent host timer check required'
+fi
 echo 'The confirmed pilot temporarily filters WSLPE-only vmnet2 for 180s.'
-echo 'Only proceed with host-side timer and SSH recovery available.'
+echo 'Continue only with host-side recovery available.'
 printf 'Type PROVE WSLPE PACKET ISOLATION to continue: '
 CONFIRM=''
 IFS= read -r CONFIRM </dev/tty || {
