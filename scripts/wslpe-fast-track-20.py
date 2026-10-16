@@ -113,6 +113,30 @@ def invocation(ansible: Path, inventory: Path, varsfile: Path,
             "--limit", "ws01,localhost", str(PLAYBOOK), "-e",
             json.dumps(variables, separators=(",", ":"))]
 
+def private_report_dir(location: str) -> Path:
+    # Do not resolve a symlink and mistake it for an approved private store.
+    target = Path(location).expanduser()
+    if target.is_symlink():
+        raise ValueError("WSLPE report directory is a symlink")
+    target.mkdir(parents=True, mode=0o700, exist_ok=True)
+    if (not target.is_dir() or target.stat().st_uid != os.geteuid()
+            or target.stat().st_mode & 0o077):
+        raise ValueError("WSLPE report directory must be owner-only (0700)")
+    return target.resolve()
+
+
+def private_failure_log(root: Path, label: str, diagnostic: str) -> Path:
+    from secrets import token_hex
+    if not re.fullmatch(r"[a-z0-9_-]+", label):
+        raise ValueError("Invalid WSLPE failure log label")
+    logfile = root / f"wslpe-{label}-{token_hex(6)}.log"
+    fd = os.open(logfile, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(diagnostic[-120_000:])
+        stream.write("\n")
+    return logfile
+
+
 def run(args) -> int:
     catalog = load_catalog()
     inventory, varsfile, expected = exact_standalone()
@@ -152,6 +176,7 @@ def run(args) -> int:
     if validate.returncode:
         raise ValueError("WSLPE Ansible inventory resolution failed")
     check_inventory(json.loads(validate.stdout), expected)
+    report_root = private_report_dir(args.report_dir)
 
     # Generate ONE unique local learner credential on the first approved
     # bootstrap and reuse it on every subsequent qualification. No prompt.
@@ -174,7 +199,10 @@ def run(args) -> int:
             timeout=3600, check=False,
         )
         if setup.returncode:
+            private_log = private_failure_log(
+                report_root, "learner-foundation", setup.stdout + "\n" + setup.stderr)
             print(f"[BLOCKED] Standalone learner foundation exit={setup.returncode}")
+            print(f"[DIAGNOSTIC] Private Ansible log: {private_log} (redact before sharing)")
             print("[STOP] No LPE scenario was applied")
             return 2
         print("[PASS] WSLPE standalone learner foundation")
@@ -188,17 +216,14 @@ def run(args) -> int:
     status = subprocess.run(status_cmd, cwd=ROOT, env=env,
                             capture_output=True, text=True, timeout=600)
     if status.returncode:
+        private_log = private_failure_log(
+            report_root, "learner-status", status.stdout + "\n" + status.stderr)
         print("[BLOCKED] WSLPE status/learner preflight failed; no scenarios changed")
-        print("[NEXT] Complete the standalone learner foundation, then rerun")
+        print(f"[DIAGNOSTIC] Private Ansible log: {private_log} (redact before sharing)")
+        print("[NEXT] Inspect the precise WSLPE-only failure above, not NORTH")
         return 2
 
-    root = Path(args.report_dir).expanduser().resolve()
-    if root.exists() and (root.is_symlink() or not root.is_dir()):
-        raise ValueError("Untrusted report directory")
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if root.stat().st_uid != os.geteuid() or root.stat().st_mode & 0o077:
-        raise ValueError("Report directory must be owned by operator and mode 0700")
-    report = root / ("wslpe-qualification-" +
+    report = report_root / ("wslpe-qualification-" +
                      datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".json")
     records = []
     for technique in catalog:
@@ -218,7 +243,10 @@ def run(args) -> int:
             report.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
             report.chmod(0o600)
             if outcome:
+                private_log = private_failure_log(
+                    report_root, "scenario", diagnostic)
                 print(f"[BLOCKED] Failed: {technique} {action}/{state or '-'} (exit {outcome})")
+                print(f"[DIAGNOSTIC] Private Ansible log: {private_log} (redact before sharing)")
                 print(f"[REPORT] {report}")
                 print("[STOP] No additional scenario will be modified")
                 return 1
