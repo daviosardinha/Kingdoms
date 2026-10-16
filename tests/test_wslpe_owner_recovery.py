@@ -1,5 +1,6 @@
 """Safe WSLPE-only host owner recovery gate, with mocked independent timer."""
 import os
+import pwd
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -53,13 +54,16 @@ class WslpeOwnerRecoveryTests(unittest.TestCase):
                 marker = Path(argv[-1])
                 self.assertEqual(marker.name, "fired")
                 self.assertEqual(marker.parent.stat().st_uid, os.getuid())
-                self.assertIn("--property=User=stark", argv)
+                self.assertIn(
+                    f"--property=User={pwd.getpwuid(os.getuid()).pw_name}", argv
+                )
                 marker.touch()
                 return completed()
             if argv[:4] == ["sudo", "-n", "systemctl", "is-active"]:
                 return completed(stdout="active\n")
             return completed(rc=1)
-        unit = rehearse_owner_timer(os.getuid(), "stark", runner, lambda _: None)
+        username = pwd.getpwuid(os.getuid()).pw_name
+        unit = rehearse_owner_timer(os.getuid(), username, runner, lambda _: None)
         self.assertRegex(unit, r"^kingdoms-wslpe-owner-check-[a-f0-9]{16}$")
         self.assertFalse(Path(calls[0][-1]).exists())
 
