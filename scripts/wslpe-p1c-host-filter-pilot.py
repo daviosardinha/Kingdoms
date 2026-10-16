@@ -220,6 +220,7 @@ def main() -> int:
     modes.add_argument("--pilot", action="store_true")
     modes.add_argument("--rollback", action="store_true")
     modes.add_argument("--remote-preflight", action="store_true")
+    modes.add_argument("--verify-rollback", action="store_true")
     parser.add_argument("--remote", action="store_true",
                         help="explicitly authorize bounded remote SSH pilot after host timer smoke proof")
     parser.add_argument("--confirm", default="")
@@ -237,6 +238,15 @@ def main() -> int:
                 print("[PASS] Scoped WSLPE table rolled back")
             else:
                 print("[PASS] WSLPE table already absent; no modification")
+        elif args.verify_rollback:
+            if args.confirm or args.remote:
+                raise ValueError("Read-only rollback verification takes no confirmation")
+            if scoped_objects(nft_json("ruleset")):
+                raise ValueError("WSLPE host firewall pilot table still present")
+            print("[PASS] WSLPE_AUTOMATIC_ROLLBACK=TRUE")
+            if not check_https():
+                raise ValueError("Post-rollback authenticated HTTPS failed")
+            print("[PASS] WSLPE_POST_ROLLBACK_HTTPS=TRUE")
         elif args.remote_preflight:
             if args.confirm or args.remote:
                 raise ValueError("Remote smoke-test does not accept pilot confirmation")
