@@ -39,12 +39,12 @@ def main() -> int:
     print("KINGDOMS WSLPE | EXACT-REGISTERED VMX ROLLBACK WORKER", flush=True)
     try:
         if args.restore:
-            # An interactive shell may not impersonate an armed recovery unit.
-            # This flag must be set by the future separately reviewed unit
-            # installer; its presence alone is not an isolation guarantee.
-            if (not os.environ.get("INVOCATION_ID")
-                    or os.environ.get("KINGDOMS_WSLPE_ROLLBACK_ENABLED") != "TRUE"):
-                raise ValueError("Standalone shell may not restore the VMX")
+            # A systemd environment variable is not an authorization
+            # boundary: an owner could spoof INVOCATION_ID in a shell.
+            # Until a root-owned, independently pinned approval unit and
+            # host boot-guard are installed and live-proven, this executable
+            # intentionally has NO mutating entrypoint.
+            raise ValueError("Real VMX restoration is not armed in this release")
         vmrun = shutil.which("vmrun")
         if not vmrun:
             raise ValueError("No VMware Workstation owner executable")
