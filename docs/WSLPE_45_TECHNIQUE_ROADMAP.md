@@ -41,6 +41,12 @@ The existing 20 are the starting library, not the intended final standalone cour
 - **Still unverified for learner release:** actual non-admin RDP/NLA login, hands-on privilege escalation evidence, learner isolation, repeatable startup/recovery and lesson content.
 - NORTH's original 20 remain fixed and untouched.
 
+## Advanced 21–35 engineering is underway (source-only)
+
+The **15 individual planned attack surfaces, overlap comparisons, fixture requirements and feasibility gates** now live in [Advanced 21–35 Plan](./WSLPE_ADVANCED_21_35_PLAN.md) and machine-readable `kingdoms/wslpe_advanced_catalog.yml`. All remain **planned**, not accepted. The first candidate, scheduled task *definition* ACL abuse (#21), has a read-only Windows Task Scheduler COM feasibility probe in `ansible/wslpe-advanced21-probe.yml`; it does not install vulnerabilities or alter the qualified foundation.
+
+Keep the standalone expansion catalog separate from NORTH's shared 20. Do not register the +15 IDs in `ansible/roles/windows_lpe/defaults/main.yml` or in the 20-scenario runner.
+
 ## Execution milestones
 
 1. **COMPLETE:** reach **20/20** standalone deployment/reset/validation acceptance, preserving NORTH.
