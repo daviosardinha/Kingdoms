@@ -1,6 +1,6 @@
 # WSLPE #30 — JEA PS5.1 WinRM lifecycle incident and safe release gate
 
-**2026-10-17 status: JEA functional on existing WSLPE-WS01; remote apply/reset blocked; local-console lifecycle source implemented but not yet executed.**
+**2026-10-17 update: JEA #30 local-console reset/clean/reapply and post-reapply learner proof were observed successfully on WSLPE-WS01; automated batch qualification and effective administrator-token proof remain pending.**
 This is a verified user-observed Windows runtime incident, not just source inference.
 Scope is the exact standalone WSLPE-WS01 workgroup guest. NORTH/GOAD VMs and
 the shared 20-technique role remain untouched. Vagrant bootstrap stays enabled
@@ -98,9 +98,10 @@ different public credential.
 | Learner Status and bounded Proof operations | PASS |
 | JEA virtual account context and restricted command surface | PASS |
 | Effective local Administrators token membership | NOT YET PROVEN |
-| Safe independent JEA apply/reset/reapply lifecycle | SOURCE PREPARED, LIVE TEST PENDING |
-| Independent WinRM service recovery after future registrations | SOURCE PREPARED, LIVE TEST PENDING |
-| Full six-stage technique qualification | PENDING |
+| Safe independent JEA reset/clean/reapply lifecycle on existing guest | PASS — witnessed local console + Kali checks (2026-10-17) |
+| WinRM recovery from local reset/reapply, plus authenticated HTTPS after each | PASS — observed (2026-10-17) |
+| Manual JEA six-stage demonstration | PASS — initial functional test, reset, clean, reapply, final functional test |
+| Automated 25-technique six-stage qualification | PENDING |
 | Student-ready Windows 45-exercise image and vagrant retirement | PENDING |
 
 The original snapshot is a developer recovery point, not a final student
@@ -108,7 +109,7 @@ image. No change to NORTH/shared role, no VM/snapshot mutation, and no
 automatic Vagrant account retirement is part of this source-only safety fix.
 
 
-## JEA #30 — independent local-console lifecycle (SOURCE PREPARED)
+## JEA #30 — independent local-console lifecycle (LIVE TESTED ON EXISTING GUEST)
 
 The remote Ansible JEA scenario remains deliberately blocked for apply/reset.
 On Windows PowerShell 5.1, the previously used -NoServiceRestart was
@@ -160,11 +161,12 @@ Between Reset and Apply, verify JEA is actually clean using the existing
 certificate-pinned Kali inspection. After Apply, verify management HTTPS and
 learner Status/Proof/negative-command behavior independently again.
 
-**Limit:** local WinRM Running/listener checks do not prove authenticated
-management will work. A partial Reset failure can leave a registered or
-file-only state; do not automatically retry or delete unknown files. All
-six-stage live acceptance remains pending. NORTH, Vagrant bootstrap, and
-the frozen 20-technique shared role are unchanged.
+**Limit:** local WinRM Running/listener checks alone do not prove authenticated
+management, but the pinned Kali HTTPS audit was independently repeated and
+passed after both reset and reapply. A future partial failure can still leave
+partial state; do not retry automatically or delete unknown files. Manual
+six-stage evidence has passed; automated qualification and release gates are
+pending. NORTH, Vagrant bootstrap, and frozen shared role remain unchanged.
 
 For unattended commercial cloud image creation, an independently running
 SYSTEM task or equivalent guest-local stage is still required; that future
@@ -192,8 +194,39 @@ direct apply/reset attempts, avoiding duplicate inconsistent checks.
 Official API documentation:
 https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-wtsgetactiveconsolesessionid
 
-The improved guard is source-only until re-staged and verified in the
-existing elevated console. First run ONLY Invoke-Wslpe45JeaLocal -Action
-Inspect, which makes no endpoint changes. Do not run Reset or Apply
-until the corrected inspection succeeds and separate explicit approval
-is given for destructive lifecycle testing.
+The corrected guard was re-staged and verified in the existing elevated
+console. The operator subsequently completed a separately authorized local
+Reset and local Apply successfully. See the dated evidence summary below.
+
+
+## 2026-10-17 witnessed live JEA #30 lifecycle checkpoint
+
+These are operator-observed terminal and screenshot results for the
+standalone WSLPE-WS01 VM, not claims of automated batch execution.
+
+| Step | Observed evidence | Result |
+| --- | --- | --- |
+| Initial learner access | Standard WSLPE-WS01\lpe.trainee invoked JEA Status and Proof; Get-LocalUser was rejected by the restricted endpoint. | PASS |
+| Console inspection | WSLPE45_JEA_ENDPOINT_COUNT=1, correct owner marker, WSLPE45_JEA_LOCAL_INSPECTION=PASS. | PASS |
+| Reset | WSLPE45_JEA_WINRM_LOCAL_RECOVERY=PASS; WSLPE45_JEA_LOCAL_RESET=PASS. | PASS |
+| Independent clean-state proof | Kali pinned HTTPS passed; JEA registrations=0, module=False, fixture=False; WSLPE_JEA_CLEAN_PREEXISTING_STATE=TRUE. | PASS |
+| Reapply | WSLPE45_JEA_WINRM_LOCAL_RECOVERY=PASS; WSLPE45_JEA_LOCAL_APPLY=PASS. | PASS |
+| Post-reapply management | Kali certificate-pinned authenticated HTTPS returned WSLPE_AUTHENTICATED_HTTPS=TRUE and WSLPE_DOMAIN_FREE=TRUE. | PASS |
+| Post-reapply learner check | JEA Status returned WSLPE45_JEA_STATUS; Proof returned WSLPE45_JEA_PROOF_WRITTEN; unapproved Get-LocalUser rejected. | PASS |
+| Reinstalled proof identity | New proof.txt contained WSLPE45_JEA_PROOF=WinRM Virtual Users\WinRM VA_2_WSLPE-WS01_lpe.trainee. | PASS — distinct virtual-account identity |
+
+The manual developer-local lifecycle is working on the existing Windows 10
+workgroup guest without another snapshot restore. The proof identity is a
+WinRM virtual account, not NT AUTHORITY\SYSTEM. Effective local Administrators
+membership and a full administrator token inside that virtual account were
+NOT VERIFIED by this screenshot. The learner_proof and six_stage_qualification
+fields in kingdoms/wslpe45_implementation_index.yml remain pending because
+those fields cover the broader learner privilege and formal automated
+qualification contract.
+
+Next: independently prove the virtual account's effective administrative
+boundary with a lab-owned bounded proof, incorporate the local-console
+lifecycle into the formal qualification framework, and later validate a
+fresh WSLPE install. The 24 other new candidates, cloud student instantiation,
+Vagrant retirement, persistent NAT/network isolation and release approval are
+not granted by this #30 manual proof. NORTH and the shared role remain frozen.
