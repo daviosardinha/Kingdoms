@@ -9,6 +9,7 @@ import sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from kingdoms.wslpe_operator_credentials import operator_secret
+from kingdoms.wslpe_fixture_credentials import fixture_vars_file
 STAGE=ROOT/"scripts/wslpe-stage2-inspect.py"
 
 def exact_native_id() -> str:
@@ -30,21 +31,27 @@ def main()->int:
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prepare",action="store_true",
                         help="create private per-instance operator secret, but do not change Windows")
+    parser.add_argument("--prepare-fixtures",action="store_true",
+                        help="generate five unique WSLPE fixture credentials without changing Windows")
     args=parser.parse_args()
     print("KINGDOMS WSLPE | DEDICATED OPERATOR CREDENTIAL PREPARATION")
     print("[NO GUEST CHANGES] No Windows account, WinRM, VMware or NORTH mutation")
     try:
         ident=exact_native_id()
         print(f"[SCOPE] Exact registered WSLPE instance: {ident}")
-        if not args.prepare:
-            print("[PLAN ONLY] Use --prepare to generate a private credential once")
+        if not args.prepare and not args.prepare_fixtures:
+            print("[PLAN ONLY] --prepare or --prepare-fixtures generate private credentials only")
             return 0
-        operator_secret(ident,prepare=True)
+        if args.prepare:
+            operator_secret(ident,prepare=True)
+            print("[PASS] Per-instance operator secret prepared/reused; never printed")
+        if args.prepare_fixtures:
+            fixture_vars_file(ident,prepare=True)
+            print("[PASS] Five distinct per-instance LPE fixture secrets prepared/reused")
     except Exception as exc:
         print(f"[BLOCKED] {type(exc).__name__}; no guest changes")
         return 1
-    print("[PASS] Private operator secret prepared/reused; never printed")
-    print("[NOT DEPLOYED] Windows account absent until separately approved provisioning")
+    print("[NOT DEPLOYED] Windows accounts unchanged; source secrets are not yet applied")
     print("[NO RELEASE] vagrant stays enabled pending independent authenticated HTTPS")
     return 0
 

@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from kingdoms.wslpe_learner_credentials import learner_password, read_local_access
+from kingdoms.wslpe_fixture_credentials import fixture_vars_file
 from kingdoms.wslpe_fast_track_resume import load_private_checkpoint, load_chained_private_checkpoint
 CATALOG = ROOT / "ansible/roles/windows_lpe/defaults/main.yml"
 PLAYBOOK = ROOT / "ansible/wslpe-lpe-test.yml"
@@ -265,6 +266,14 @@ def run(args) -> int:
     env["KINGDOMS_WSLPE_LEARNER_PASSWORD"] = learner_password(
         bootstrap=args.bootstrap_learner, environ=env)
     print("[PASS] Reusable WSLPE-WS01 local learner credential resolved")
+
+    # Only the standalone WSLPE adapter receives private instance-specific
+    # exercise credentials. The frozen NORTH role is not rewritten.
+    # A missing overlay blocks execution BEFORE touching Windows.
+    env["KINGDOMS_WSLPE_INSTANCE_ID"] = inventory.parent.name
+    overlay = fixture_vars_file(inventory.parent.name, prepare=False)
+    env["KINGDOMS_WSLPE_FIXTURE_VARS_FILE"] = str(overlay)
+    print("[PASS] WSLPE-only private fixture passwords resolved; never logged")
 
     # Optional, explicitly approved local learner foundation using
     # the existing WSLPE playbook, not NORTH's domain-joined baseline.

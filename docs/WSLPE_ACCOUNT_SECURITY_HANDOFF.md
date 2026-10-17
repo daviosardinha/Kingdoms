@@ -20,7 +20,7 @@ The standalone Windows LPE course intentionally contains vulnerable local admini
 | kingdom.runas | Credential Manager/RunAs fixture | Keep but assign unique per-instance exercise secret |
 | kingdom.autologon | Winlogon credential fixture | Keep but assign unique per-instance exercise secret |
 
-The five fixture accounts are defined in ansible/roles/windows_lpe/defaults/main.yml and their role-specific technique tasks. Their source passwords are currently fixed and publicly visible. The NORTH/shared role must remain **frozen**; WSLPE-only per-instance overrides are a **release blocker not yet implemented**.
+The five fixture accounts are defined in ansible/roles/windows_lpe/defaults/main.yml and their role-specific technique tasks. Their source passwords are currently fixed and publicly visible. The NORTH/shared role remains **frozen**. A WSLPE-only private override adapter is source-implemented but **not yet applied or Windows-tested**; current guest credential artifacts remain an active release blocker.
 
 ## Stage A0 — read-only account inspection (permitted)
 
@@ -34,8 +34,9 @@ Uses exact registration and pinned authenticated HTTPS, checks existence/enablem
 
     python3 scripts/wslpe-operator-secret.py
     python3 scripts/wslpe-operator-secret.py --prepare
+    python3 scripts/wslpe-operator-secret.py --prepare-fixtures
 
-The second command explicitly prepares one unique operator secret stored in a mode-0700 directory and mode-0600 file under ~/.local/state/kingdoms-wslpe-operator/<native-instance-id>/credential. No password is printed; existing secrets are reused, never silently rotated. Do not commit, screenshot or distribute it.
+The --prepare command explicitly prepares one unique operator secret stored in a mode-0700 directory and mode-0600 file under ~/.local/state/kingdoms-wslpe-operator/<native-instance-id>/credential. The --prepare-fixtures command prepares five distinct unique passwords in an owner-only per-instance JSON overlay under ~/.local/state/kingdoms-wslpe-fixtures/<native-instance-id>/overlay.json. These are LOCAL FILE OPERATIONS only. No password is printed; existing secrets are reused, never silently rotated. Do not commit, screenshot or distribute it.
 
 ## Stage A2 — controlled operator creation (NOT AUTHORIZED)
 
@@ -48,7 +49,7 @@ Before this stage: demonstrate independent VMware Workstation console access to 
 1. Authenticate kingdom.operator via an independent, pinned TLS WinRM HTTPS/5986 session. Prove working administrative control and intact nonadmin learner, independently of vagrant.
 2. Update **only WSLPE** inventory, operator secrets and all provisioning workflows to use the new identity, verify that Vagrant/bootstrap dependence is absent, and re-check VMware recovery.
 3. Under a separately approved, verified out-of-band rollback, disable vagrant from the new operator context. Confirm old default credentials are rejected and new HTTPS management continues. Never disable vagrant by running generic ansible/disable_vagrant.yml: that file targets the domain inventory.
-4. Override source-fixed passwords for five intended privilege escalation fixtures with unique per-instance WSLPE secrets, without touching the frozen NORTH role. Prove each exercise still has its intended discovery path.
+4. Use the new WSLPE-only fixture overlay in the 20-technique harness without changing the frozen NORTH role. The harness now refuses non-status runs unless private per-instance credentials are resolved. **Existing guest fixtures do not rotate by themselves:** reset/reapply under an explicitly approved snapshot-backed window and validate each intended credential-hunting exercise.
 5. Verify host isolation and complete the fresh-install acceptance gate. Only then capture the final fully vulnerable local baseline snapshot.
 
 ## Immutable boundaries

@@ -20,6 +20,8 @@
 - name: Validate WSLPE-specific manual technique selection
   hosts: localhost
   gather_facts: false
+  vars_files:
+    - "{{ lookup('env', 'KINGDOMS_WSLPE_FIXTURE_VARS_FILE') | default(playbook_dir + '/wslpe-secrets-unset.yml', true) }}"
   vars:
     wslpe_action: status
     wslpe_techniques: []
@@ -35,6 +37,24 @@
           Use a single WSLPE Windows host and exactly one named technique
           for apply/validate/reset. A full profile is not yet approved.
 
+    - name: Refuse source-visible fixture credentials in any non-status action
+      ansible.builtin.assert:
+        that:
+          - wslpe_fixture_private | default(false) | bool
+          - (wslpe_fixture_instance_id | default('')) == lookup('env', 'KINGDOMS_WSLPE_INSTANCE_ID')
+          - (wslpe_fixture_instance_id | default('') | length) > 0
+          - windows_lpe_unattend_credentials is defined
+          - windows_lpe_powershell_history_credentials is defined
+          - windows_lpe_hardcoded_application_credentials is defined
+          - windows_lpe_stored_runas_credentials is defined
+          - windows_lpe_stored_winlogon_credentials is defined
+        fail_msg: >-
+          WSLPE-only private fixture credentials missing, wrong instance or
+          not prepared. Never deploy the shared role's public default passwords.
+        quiet: true
+      when: wslpe_action != 'status'
+      no_log: true
+
     - name: Require the local learner secret for technique application
       ansible.builtin.assert:
         that:
@@ -49,6 +69,8 @@
 - name: Exercise the shared Windows LPE role on WSLPE only
   hosts: wslpe
   gather_facts: false
+  vars_files:
+    - "{{ lookup('env', 'KINGDOMS_WSLPE_FIXTURE_VARS_FILE') | default(playbook_dir + '/wslpe-secrets-unset.yml', true) }}"
   vars:
     wslpe_action: status
     wslpe_techniques: []
