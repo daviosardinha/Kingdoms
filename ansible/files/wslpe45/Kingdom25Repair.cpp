@@ -6,20 +6,21 @@
 #include <windows.h>
 #include <msi.h>
 #include <msiquery.h>
+#include <stdio.h>
 #pragma comment(lib, "msi.lib")
 
 extern "C" __declspec(dllexport) UINT __stdcall Kingdom25Repair(MSIHANDLE session) {
     // No shell, no command execution, no caller-selected absolute paths.
     // CustomActionData must be explicitly set by an installed MSI.
     WCHAR data[64] = {};
-    DWORD length = static_cast<DWORD>(_countof(data));
+    DWORD length = static_cast<DWORD>(64);
     UINT result = MsiGetPropertyW(session, L"CustomActionData", data, &length);
     if (result != ERROR_SUCCESS || lstrcmpW(data, L"WSLPE25-REPAIR") != 0) {
         return ERROR_INSTALL_FAILURE;
     }
     const WCHAR* root = L"C:\\ProgramData\\KingdomsWSLPE45\\fixtures\\msi_repair_custom_action";
     WCHAR proof[MAX_PATH] = {};
-    if (swprintf_s(proof, _countof(proof), L"%s\\repair-proof.txt", root) < 0) {
+    if (swprintf_s(proof, MAX_PATH, L"%s\\repair-proof.txt", root) < 0) {
         return ERROR_INSTALL_FAILURE;
     }
     // This marker is bounded to this fixture. A later Windows-native
