@@ -4,6 +4,7 @@ No guest calls, no installer invocation, and no source-to-candidate promotion.
 """
 from pathlib import Path
 import unittest
+import xml.etree.ElementTree as ET
 
 import yaml
 
@@ -39,6 +40,37 @@ class FinalFourSourceBatchTests(unittest.TestCase):
                     self.assertIn(token, body)
                 self.assertNotIn("GOAD-WS01", body)
         self.assertFalse((SRC / "Kingdom38DcomServer.cpp").exists())
+
+    def test_msi_repair_package_is_per_machine_and_repair_only(self):
+        src = (SRC / "Kingdom25RepairPackage.wxs").read_text(encoding="utf-8")
+        root = ET.fromstring(src)
+        namespace = {"w": "http://wixtoolset.org/schemas/v4/wxs"}
+        pkg = root.find("w:Package", namespace)
+        self.assertIsNotNone(pkg)
+        self.assertEqual(pkg.attrib["Scope"], "perMachine")
+        self.assertEqual(pkg.attrib["UpgradeStrategy"], "none")
+        actions = {e.attrib["Id"]: e for e in pkg.findall("w:CustomAction", namespace)}
+        repair = actions["Kingdom25RepairCA"].attrib
+        self.assertEqual(repair["DllEntry"], "Kingdom25Repair")
+        self.assertEqual(repair["Execute"], "deferred")
+        self.assertEqual(repair["Impersonate"], "no")
+        self.assertEqual(repair["Return"], "check")
+        self.assertEqual(repair["HideTarget"], "yes")
+        self.assertEqual(actions["ScheduleKingdom25Repair"].attrib["Property"],
+                         "Kingdom25RepairCA")
+        self.assertEqual(actions["ScheduleKingdom25Repair"].attrib["Value"],
+                         "WSLPE25-REPAIR")
+        seq = pkg.find("w:InstallExecuteSequence", namespace)
+        events = {e.attrib["Action"]: e for e in seq.findall("w:Custom", namespace)}
+        self.assertEqual(set(events), {"ScheduleKingdom25Repair",
+                                        "Kingdom25RepairCA"})
+        for event in events.values():
+            self.assertIn("REINSTALL", event.attrib["Condition"])
+            self.assertIn("NOT REMOVE", event.attrib["Condition"])
+        self.assertEqual(events["Kingdom25RepairCA"].attrib["After"], "InstallFiles")
+        self.assertNotIn("AlwaysInstallElevated", src)
+        self.assertNotIn("GOAD-WS01", src)
+        self.assertTrue((SRC / "Kingdom25Payload.txt").is_file())
 
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()

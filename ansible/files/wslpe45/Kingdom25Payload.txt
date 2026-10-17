@@ -1,0 +1,2 @@
+Kingdoms WSLPE25 standalone Windows Installer fixture payload.
+Source-only build input. No install or repair authorized.

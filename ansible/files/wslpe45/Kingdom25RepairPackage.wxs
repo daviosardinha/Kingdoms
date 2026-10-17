@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- WSLPE #25 source-build ONLY. This package must never be installed by CI.
+     The per-machine repair path is deliberately bounded to an owned marker.
+     Native runtime verification, rollback and learner proof remain pending. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Id="NomadKingdom.WSLPE25.RepairFixture"
+           Name="Kingdoms WSLPE25 Repair Fixture"
+           Manufacturer="Nomad Kingdom"
+           Version="0.1.0"
+           Scope="perMachine"
+           UpgradeStrategy="none">
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="KingdomsWSLPE25">
+        <Component Id="Kingdom25PayloadComponent" Guid="*">
+          <File Id="Kingdom25PayloadFile" Source="$(var.PayloadFile)" KeyPath="yes"/>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Kingdom25Feature" Title="Kingdoms WSLPE25 Fixture" Level="1">
+      <ComponentRef Id="Kingdom25PayloadComponent" />
+    </Feature>
+
+    <Binary Id="Kingdom25RepairBinary" SourceFile="$(var.RepairDll)"/>
+    <CustomAction Id="ScheduleKingdom25Repair"
+                  Property="Kingdom25RepairCA"
+                  Value="WSLPE25-REPAIR"
+                  Execute="immediate" />
+    <CustomAction Id="Kingdom25RepairCA"
+                  BinaryRef="Kingdom25RepairBinary"
+                  DllEntry="Kingdom25Repair"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check"
+                  HideTarget="yes"/>
+    <InstallExecuteSequence>
+      <Custom Action="ScheduleKingdom25Repair"
+              Before="Kingdom25RepairCA"
+              Condition="REINSTALL AND NOT REMOVE~=&quot;ALL&quot;"/>
+      <Custom Action="Kingdom25RepairCA"
+              After="InstallFiles"
+              Condition="REINSTALL AND NOT REMOVE~=&quot;ALL&quot;"/>
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

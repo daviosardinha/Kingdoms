@@ -615,3 +615,36 @@ jobs:
           Add-Type -TypeDefinition $source -Language CSharp -OutputAssembly $out -ReferencedAssemblies @('System.Management.dll','System.Core.dll') -OutputType ConsoleApplication -ErrorAction Stop
           if (-not (Test-Path -LiteralPath $out)) { throw 'WMI provider binary missing' }
           Write-Output '[PASS] Managed WMI source compiled only; no provider installed'
+
+      - name: Build and inspect WSLPE25 repair MSI without installation
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $toolDir=Join-Path $env:RUNNER_TEMP 'wix-tools'
+          dotnet tool install wix --version 6.0.2 --tool-path $toolDir
+          if($LASTEXITCODE -ne 0){throw 'Pinned WiX 6.0.2 installation failed'}
+          $wix=Join-Path $toolDir 'wix.exe'
+          $dll=Join-Path $env:RUNNER_TEMP 'Kingdom25Repair.dll'
+          $payload=(Resolve-Path 'ansible/files/wslpe45/Kingdom25Payload.txt').Path
+          $msi=Join-Path $env:RUNNER_TEMP 'Kingdom25Repair.msi'
+          if(-not (Test-Path -LiteralPath $dll)){throw 'Built MSI custom action missing'}
+          & $wix build -arch x64 -d "RepairDll=$dll" -d "PayloadFile=$payload" -out $msi 'ansible/files/wslpe45/Kingdom25RepairPackage.wxs'
+          if($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $msi)){throw 'Native MSI packaging failed'}
+          # Windows Installer database reads only: NEVER call msiexec.
+          $installer=New-Object -ComObject WindowsInstaller.Installer
+          $database=$installer.OpenDatabase($msi,0)
+          $view=$database.OpenView('SELECT `Action`, `Type`, `Source`, `Target` FROM `CustomAction`')
+          $view.Execute()
+          $found=$false
+          while($record=$view.Fetch()){
+            if($record.StringData(1) -eq 'Kingdom25RepairCA'){
+              $type=$record.IntegerData(2)
+              if($record.StringData(4) -ne 'Kingdom25Repair' -or ($type -band 1024) -eq 0 -or ($type -band 2048) -eq 0){
+                throw 'Expected deferred/no-impersonate MSI custom action missing'
+              }
+              $found=$true
+            }
+          }
+          $view.Close()
+          if(-not $found){throw 'No WSLPE25 repair custom action in native MSI'}
+          Write-Output '[PASS] Genuine MSI built and CustomAction table inspected read-only; not installed'
