@@ -31,15 +31,16 @@ class OperatorTests(unittest.TestCase):
                           "privileged_path_traversal_write",
                           "privileged_loopback_http_authz",
                           "privileged_argument_injection",
+                          "privileged_child_environment_trust",
                           "privileged_file_toctou",
                           "privileged_backup_restore_api"])
-        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 10)
+        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 9)
         self.assertTrue(all(r["learner_proof"] == "pending" for r in rows))
 
     def test_no_partial_live_execution_and_no_guest_contact(self):
         rows, blockers = batch.source_readiness()
         self.assertEqual(len(rows), 25)
-        self.assertEqual(len(blockers), 10)
+        self.assertEqual(len(blockers), 9)
         self.assertTrue(all("no source-qualified fixture" in reason for reason in blockers))
         args = SimpleNamespace(execute=True, timeout_seconds=900,
                                report_dir="/tmp/unused")

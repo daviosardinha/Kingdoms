@@ -154,9 +154,9 @@ techniques:
     six_stage_qualification: pending
   - number: 42
     id: privileged_child_environment_trust
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/privileged_child_environment_trust.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 43
