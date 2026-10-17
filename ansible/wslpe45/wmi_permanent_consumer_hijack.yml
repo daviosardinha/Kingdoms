@@ -1,0 +1,100 @@
+---
+# Standalone-only WMI permanent consumer fixture, not student attack acceptance.
+- name: Verify exact WSLPE inventory for WMI permanent consumer candidate
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Fail closed on incorrect guest or stage
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - (wslpe_45_action | default('')) in ['apply', 'validate', 'reset']
+          - (wslpe_45_technique | default('')) == 'wmi_permanent_consumer_hijack'
+          - (wslpe_45_stage_label | default('')) in ['apply','vulnerable','reset','clean','reapply','revulnerable']
+          - (wslpe_45_action != 'apply') or wslpe_45_stage_label in ['apply','reapply']
+          - (wslpe_45_action != 'reset') or wslpe_45_stage_label == 'reset'
+          - (wslpe_45_action != 'validate') or ((wslpe_45_validate_state == 'clean' and wslpe_45_stage_label == 'clean') or (wslpe_45_validate_state == 'vulnerable' and wslpe_45_stage_label in ['vulnerable','revulnerable']))
+        fail_msg: 'Only exact standalone workgroup WSLPE can receive this registry fixture'
+
+- name: Exercise dedicated WSLPE WMI permanent consumer scenario
+  hosts: wslpe
+  gather_facts: false
+  pre_tasks:
+    - name: Verify original Windows 10 learner identity and workgroup
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $machine = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+              [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10') {
+              throw 'Not the WSLPE-WS01 standalone Windows 10 guest'
+          }
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if (-not $learner.Enabled) { throw 'Learner disabled' }
+          $admins = Get-LocalGroup -SID 'S-1-5-32-544'
+          foreach ($member in @(Get-LocalGroupMember -Group $admins.Name)) {
+              if ($member.SID.Value -eq $learner.SID.Value) { throw 'Learner belongs to Administrators' }
+          }
+          Write-Output 'WSLPE45_TARGET=EXACT'
+      changed_when: false
+  tasks:
+    - name: Require existing library parent not be a reparse point
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @('C:\ProgramData\KingdomsWSLPE45','C:\ProgramData\KingdomsWSLPE45\lib')) {
+              if (Test-Path -LiteralPath $path) {
+                  $info=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                  if (-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                      throw 'Untrusted standalone library ancestor'
+                  }
+              }
+          }
+      changed_when: false
+
+    - name: Ensure common lab library directory on apply
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\KingdomsWSLPE45\lib'
+        state: directory
+      when: wslpe_45_action == 'apply'
+
+    - name: Protect shared standalone source library before copying code
+      ansible.builtin.import_tasks: lockdown-library.yml
+
+    - name: Stage owned fixture verification module
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeFixture.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Stage WMI permanent consumer implementation
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeWmiConsumer.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeWmiConsumer.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Stage isolated WMI process-start trigger source
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/Kingdom45WmiWake.cs
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\Kingdom45WmiWake.cs'
+      when: wslpe_45_action == 'apply'
+
+    - name: Execute exact isolated WMI permanent consumer lifecycle
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeWmiConsumer.psm1' -Force
+          $result = @(Invoke-Wslpe45WmiConsumer -Action '{{ wslpe_45_action }}' -Stage '{{ wslpe_45_stage_label }}')
+          $marker = 'WSLPE45_BATCH_STAGE=wmi_permanent_consumer_hijack:{{ wslpe_45_stage_label }}:PASS'
+          if (@($result | Where-Object { $_ -ceq $marker }).Count -ne 1) {
+              throw 'Registry trust fixture did not emit exact lifecycle evidence'
+          }
+          Write-Output $result
+      changed_when: wslpe_45_action in ['apply', 'reset']
