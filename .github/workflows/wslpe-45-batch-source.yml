@@ -369,7 +369,12 @@ jobs:
           if(-not (Test-Path -LiteralPath $binary)) {
             throw 'Custom service CSharp source did not produce binary'
           }
-          Write-Output '[PASS] Three scoped service-consumer modes compile without installation'
+          $child = Get-Content -LiteralPath 'ansible/files/wslpe45/Kingdom45EnvironmentChild.cs' -Raw
+          $childOutput = Join-Path $env:RUNNER_TEMP 'Kingdom45EnvironmentChild.exe'
+          Add-Type -TypeDefinition $child -Language CSharp -OutputAssembly $childOutput -OutputType ConsoleApplication
+          if (!(Test-Path -LiteralPath $childOutput -PathType Leaf)) { throw 'Environment child build failed' }
+          Write-Output '[PASS] Four source-only service-consumer modes and fixed environment child compile'
+
 
       - name: Parse common exact-guest library lockdown task on Windows PowerShell 5.1
         shell: pwsh

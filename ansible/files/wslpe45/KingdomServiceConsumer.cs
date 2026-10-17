@@ -50,6 +50,17 @@ public sealed class Kingdom45ServiceConsumer : ServiceBase
                     return;
                 child = new ProcessStartInfo(path);
             }
+            else if (Mode == "privileged_child_environment_trust")
+            {
+                // Lab-specific environment trust mistake. The privileged
+                // parent forwards learner-controlled data into a fixed child.
+                // The child may only create a lab-owned proof marker.
+                string trustedChild = Path.Combine(Root, "Kingdom45EnvironmentChild.exe");
+                if (!File.Exists(trustedChild))
+                    return;
+                child = new ProcessStartInfo(trustedChild);
+                child.EnvironmentVariables["KINGDOMS_WSLPE45_CHILD_ACTION"] = supplied;
+            }
             else if (Mode == "privileged_argument_injection")
             {
                 // The flaw: command argument reaches cmd.exe rather than a

@@ -5,7 +5,7 @@ import yaml
 
 ROOT=Path(__file__).resolve().parents[1]
 NAMES=("privileged_service_config_injection","privileged_updater_hijack",
-       "privileged_argument_injection")
+       "privileged_argument_injection","privileged_child_environment_trust")
 
 class ServiceConsumerCandidates(unittest.TestCase):
     def test_real_distinct_unsafe_data_boundaries(self):
@@ -19,6 +19,8 @@ class ServiceConsumerCandidates(unittest.TestCase):
         self.assertIn("whoami.exe",cs)
         self.assertIn("child.UseShellExecute = false",cs)
         self.assertIn("child.WorkingDirectory = inbox",cs)
+        self.assertIn('Mode == "privileged_child_environment_trust"',cs)
+        self.assertIn("KINGDOMS_WSLPE45_CHILD_ACTION",cs)
         for forbidden in ("GOAD-WS01","10.4.10.31","LSASS","Set-MpPreference"):
             self.assertNotIn(forbidden,cs)
 
@@ -27,7 +29,8 @@ class ServiceConsumerCandidates(unittest.TestCase):
         for number,id,service in (
             (23,"privileged_service_config_injection","Kingdom45ConfigSvc"),
             (24,"privileged_updater_hijack","Kingdom45UpdateSvc"),
-            (41,"privileged_argument_injection","Kingdom45ArgsSvc")
+            (41,"privileged_argument_injection","Kingdom45ArgsSvc"),
+            (42,"privileged_child_environment_trust","Kingdom45EnvSvc")
         ):
             with self.subTest(name=id):
                 path=ROOT/f"ansible/wslpe45/{id}.yml"
@@ -53,6 +56,17 @@ class ServiceConsumerCandidates(unittest.TestCase):
         self.assertIn("LocalSystem",module)
         self.assertIn("WSLPE45_BATCH_STAGE=",module)
         self.assertNotIn("sc.exe sdset scmanager",module)
+
+    def test_environment_input_is_inherited_only_by_fixed_child(self):
+        child=(ROOT/"ansible/files/wslpe45/Kingdom45EnvironmentChild.cs").read_text()
+        for needle in ("Environment.GetEnvironmentVariable", "environment-proof.txt",
+                       'String.Equals(job, "PROOF"', "WindowsIdentity.GetCurrent().Name"):
+            self.assertIn(needle,child)
+        self.assertNotIn("Process.Start",child)
+        wrapper=(ROOT/"ansible/wslpe45/privileged_child_environment_trust.yml").read_text()
+        self.assertIn("Kingdom45EnvironmentChild.cs",wrapper)
+        self.assertIn("lockdown-library.yml",wrapper)
+        self.assertNotIn("10.4.10.31",wrapper)
 
 if __name__=="__main__":
     unittest.main()

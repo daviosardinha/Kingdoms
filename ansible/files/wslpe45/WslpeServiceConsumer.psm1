@@ -1,4 +1,4 @@
-# Three distinct standalone service-consumer LPE source candidates.
+# Four standalone service-consumer candidates with distinct trust boundaries.
 # No import-time effects; only an exact scoped action mutates WSLPE-WS01.
 Set-StrictMode -Version Latest
 
@@ -6,7 +6,7 @@ function Invoke-Wslpe45ServiceConsumer {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('privileged_service_config_injection','privileged_updater_hijack','privileged_argument_injection')]
+        [ValidateSet('privileged_service_config_injection','privileged_updater_hijack','privileged_argument_injection','privileged_child_environment_trust')]
         [string]$Id,
         [Parameter(Mandatory=$true)]
         [ValidateSet('apply','reset','validate')]
@@ -22,14 +22,17 @@ function Invoke-Wslpe45ServiceConsumer {
         privileged_service_config_injection=23
         privileged_updater_hijack=24
         privileged_argument_injection=41
+        privileged_child_environment_trust=42
     }[$Id]
-    if($number -notin @(23,24,41)) { throw 'Unexpected service consumer identity' }
+    if($number -notin @(23,24,41,42)) { throw 'Unexpected service consumer identity' }
     $root=Get-Wslpe45FixturePath -Id $Id
     $inbox=Join-Path $root 'inbox'
     $request=Join-Path $inbox 'request.txt'
     $binary=Join-Path $root 'Kingdom45Consumer.exe'
-    $serviceName=if($number -eq 23){'Kingdom45ConfigSvc'}elseif($number -eq 24){'Kingdom45UpdateSvc'}else{'Kingdom45ArgsSvc'}
+    $serviceName=if($number -eq 23){'Kingdom45ConfigSvc'}elseif($number -eq 24){'Kingdom45UpdateSvc'}elseif($number -eq 41){'Kingdom45ArgsSvc'}else{'Kingdom45EnvSvc'}
     $template='C:\ProgramData\KingdomsWSLPE45\lib\KingdomServiceConsumer.cs'
+    $childTemplate='C:\ProgramData\KingdomsWSLPE45\lib\Kingdom45EnvironmentChild.cs'
+    $childBinary=Join-Path $root 'Kingdom45EnvironmentChild.exe'
     $existing=Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction Stop
 
     if($Action -eq 'apply') {
@@ -57,6 +60,12 @@ function Invoke-Wslpe45ServiceConsumer {
             @('__MODE__',$Id),@('__ROOT__',$root),@('__SERVICE__',$serviceName)
         )) {
             $source=$source.Replace($pair[0],$pair[1])
+        }
+        if($number -eq 42) {
+            New-Item -ItemType Directory -Path (Join-Path $root 'protected') -ErrorAction Stop | Out-Null
+            if(-not (Test-Path -LiteralPath $childTemplate -PathType Leaf)) { throw 'Fixed environment child source is missing' }
+            $childSource=(Get-Content -LiteralPath $childTemplate -Raw -ErrorAction Stop).Replace('__ROOT__',$root)
+            Add-Type -TypeDefinition $childSource -Language CSharp -OutputAssembly $childBinary -OutputType ConsoleApplication -ErrorAction Stop
         }
         Add-Type -TypeDefinition $source -Language CSharp -ReferencedAssemblies 'System.ServiceProcess.dll' -OutputAssembly $binary -OutputType WindowsApplication -ErrorAction Stop
         New-Service -Name $serviceName -DisplayName ('Standalone WSLPE ' + $Id) -BinaryPathName ('"{0}"' -f $binary) -StartupType Manual -ErrorAction Stop | Out-Null
@@ -118,6 +127,7 @@ function Invoke-Wslpe45ServiceConsumer {
             }
         }
         if(-not $learnerMayModify) { throw 'Learner cannot edit service request input' }
+        if($number -eq 42 -and (-not (Test-Path -LiteralPath $childBinary -PathType Leaf) -or -not (Test-Path -LiteralPath (Join-Path $root 'protected') -PathType Container))) { throw 'Fixed environment-trust child and protected proof sink missing' }
         $sd=(& sc.exe sdshow $serviceName 2>&1 | Out-String)
         if($LASTEXITCODE -ne 0 -or -not $sd.Contains($who.LearnerSid)) {
             throw 'Learner cannot trigger custom privileged service'
