@@ -6,6 +6,27 @@ Repository source of truth: `feature/windows-lpe-45-batch`.
 Verified source checkpoint: 21/25 accepted *source candidates*; four still planned.
 New live six-stage qualifications: 0/25. New independent learner-side exploit proofs: 0/25.
 
+## 2026-10-18 offline MSI/RPC/WMI checkpoint
+
+GitHub Windows native CI on this branch now passes all three jobs, including:
+- #25: WiX 6.0.2 compiles an actual x64 per-machine MSI and read-only
+  Windows Installer database inspection confirms a repair-scheduled, deferred,
+  no-impersonation bounded custom action. **No install or repair was run.**
+- #36: The managed .NET Framework WMI provider binary compiles, and reflection
+  validates its dedicated class and two attributed management methods. **No
+  provider or WMI namespace was installed.**
+- #40: The MIDL interface generates real client/server C stubs; MSVC compiles
+  both into object files. **No RPC server, listener, or client was executed.**
+- #38: Out-of-process DCOM local-server source remains review-blocked.
+
+These are **native artifact build milestones**, NOT learner-side proof,
+runtime privilege-escalation validation, rollback acceptance, or candidate
+promotion. All four index entries remain planned/pending and execution
+authorization remains false.
+
+WiX v6 introduces an Open Source Maintenance Fee for certain commercial uses.
+Review the licensing implications before distributing Kingdoms course images.
+
 ## 2026-10-17 native prototype checkpoint
 
 The coordinated source-only preliminary batch is tracked in
