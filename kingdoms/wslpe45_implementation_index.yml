@@ -98,9 +98,9 @@ techniques:
     six_stage_qualification: pending
   - number: 34
     id: ntfs_link_redirection
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/ntfs_link_redirection.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 35
@@ -161,9 +161,9 @@ techniques:
     six_stage_qualification: pending
   - number: 43
     id: elevated_plugin_signature_bypass
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/elevated_plugin_signature_bypass.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 44
