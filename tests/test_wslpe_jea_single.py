@@ -1,61 +1,109 @@
-"""JEA #30 fail-closed PS5.1 remote lifecycle regression; zero guest actions."""
+"""#30 independent local JEA lifecycle: source-only checks; no guest calls."""
 import importlib.util
 from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts/wslpe-jea-single.py"
-PLAY = ROOT / "ansible/wslpe45/jea_role_capability_misconfig.yml"
-SPEC = importlib.util.spec_from_file_location("wslpe_jea_single_gate", SCRIPT)
+ROOT=Path(__file__).resolve().parents[1]
+SCRIPT=ROOT/"scripts/wslpe-jea-single.py"
+STAGE=ROOT/"ansible/wslpe45/jea_local_stage.yml"
+FIXTURE=ROOT/"ansible/wslpe45/jea_role_capability_misconfig.yml"
+LOCAL=ROOT/"ansible/files/wslpe45/WslpeJeaLocal.psm1"
+MODULE=ROOT/"ansible/files/wslpe45/WslpeJea.psm1"
+LOCKDOWN=ROOT/"ansible/wslpe45/lockdown-library.yml"
+
+SPEC=importlib.util.spec_from_file_location("wslpe_jea_single_test_target",SCRIPT)
 assert SPEC and SPEC.loader
-MOD = importlib.util.module_from_spec(SPEC)
+MOD=importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MOD)
 
-class JeaSingleGateTests(unittest.TestCase):
-    def test_source_plan_never_contacts_guest_or_hypervisor(self):
-        with patch.object(sys, "argv", [str(SCRIPT)]):
-            self.assertEqual(MOD.main(), 0)
+class JeaLocalLifecycleTests(unittest.TestCase):
+    def test_plan_source_only_no_vmware_or_ansible(self):
+        with patch.object(sys,"argv",[str(SCRIPT)]), \
+             patch.object(MOD,"exact_running_vm_and_snapshot") as vm, \
+             patch.object(MOD,"stage_sources") as stage, \
+             patch.object(MOD,"pinned_https_preflight") as tls:
+            self.assertEqual(MOD.main(),0)
+            vm.assert_not_called()
+            stage.assert_not_called()
+            tls.assert_not_called()
 
-    def test_apply_refused_even_with_recovery_approved(self):
-        for flags in (["--apply"], ["--recovery-rehearsed"],
-                      ["--apply", "--recovery-rehearsed"]):
-            with self.subTest(flags=flags), patch.object(sys, "argv", [str(SCRIPT), *flags]):
-                self.assertEqual(MOD.main(), 2)
+    def test_all_remote_endpoint_mutation_flags_stay_blocked(self):
+        for args in (["--apply"],["--recovery-rehearsed"],
+                     ["--apply","--recovery-rehearsed"]):
+            with self.subTest(args=args),patch.object(sys,"argv",[str(SCRIPT),*args]), \
+                 patch.object(MOD,"stage_sources") as stage:
+                self.assertEqual(MOD.main(),2)
+                stage.assert_not_called()
 
-    def test_remote_playbook_blocks_apply_and_reset_before_windows(self):
-        plays = yaml.safe_load(PLAY.read_text(encoding="utf-8"))
-        self.assertEqual([p["hosts"] for p in plays], ["localhost", "wslpe"])
-        pre = plays[1]["pre_tasks"]
-        self.assertIn("ansible.builtin.fail", pre[0])
-        self.assertEqual(pre[0]["when"],
-                         "(wslpe_45_action | default('')) in ['apply', 'reset']")
-        self.assertEqual(pre[1]["changed_when"], False)
-        self.assertIn("win_powershell", next(iter(
-            k for k in pre[1] if k.startswith("ansible.windows."))))
-        self.assertIn("NoServiceRestart", pre[0]["ansible.builtin.fail"]["msg"])
+    def test_staging_requires_interactive_confirmation(self):
+        with patch.object(sys,"argv",[str(SCRIPT),"--stage"]), \
+             patch.object(sys.stdin,"isatty",return_value=False), \
+             patch.object(MOD,"stage_sources") as stage:
+            self.assertEqual(MOD.main(),2)
+            stage.assert_not_called()
+        with patch.object(sys,"argv",[str(SCRIPT),"--stage"]), \
+             patch.object(sys.stdin,"isatty",return_value=True), \
+             patch.object(MOD,"stage_sources") as stage:
+            self.assertEqual(MOD.main(),0)
+            stage.assert_called_once_with()
 
-    def test_source_plan_enforces_remote_guard(self):
-        self.assertEqual(MOD.local_candidate()["number"], 30)
-        original = PLAY.read_text(encoding="utf-8")
-        try:
-            # Read-only mock: do not mutate files to test the failing path.
-            with patch.object(MOD, "local_candidate",
-                              side_effect=ValueError("Missing remote guard")), \
-                 patch.object(sys, "argv", [str(SCRIPT)]):
-                self.assertEqual(MOD.main(), 2)
-        finally:
-            self.assertEqual(PLAY.read_text(encoding="utf-8"), original)
+    def test_staging_provenance_exact_owned_sources(self):
+        row=MOD.local_candidate()
+        self.assertEqual(row["number"],30)
+        plays=yaml.safe_load(STAGE.read_text(encoding="utf-8"))
+        self.assertEqual([p["hosts"] for p in plays],["localhost","wslpe"])
+        tasks=plays[1]["tasks"]
+        copies=[t["ansible.windows.win_copy"]["src"] for t in tasks
+                if "ansible.windows.win_copy" in t]
+        self.assertEqual(copies,[
+            "../files/wslpe45/WslpeFixture.psm1",
+            "../files/wslpe45/WslpeJea.psm1",
+            "../files/wslpe45/WslpeJeaLocal.psm1"])
+        self.assertTrue(all((STAGE.parent/s).is_file() for s in copies))
+        self.assertIn("wslpe_jea_stage_approved",
+                      " ".join(plays[0]["tasks"][0]["ansible.builtin.assert"]["that"]))
+        self.assertEqual(sum(
+            t.get("ansible.builtin.import_tasks")=="lockdown-library.yml"
+            for t in tasks),1)
+        self.assertIn("wslpe_45_action == 'stage'",
+                      LOCKDOWN.read_text())
+        text=STAGE.read_text()
+        for token in ("Register-PSSessionConfiguration",
+                      "Unregister-PSSessionConfiguration",
+                      "Restart-Service", "Start-Service WinRM",
+                      "Invoke-Wslpe45Jea -Action"):
+            self.assertNotIn(token,text)
 
-    def test_no_implicit_winrm_ansible_or_north_actions(self):
-        script = SCRIPT.read_text(encoding="utf-8")
-        for forbidden in ("subprocess.run(", "ansible-playbook", "Start-Service",
-                          "Restart-Service", "revertToSnapshot", "vmrun",
-                          "disable_vagrant", "GOAD-WS01", "10.4.10.31"):
-            self.assertNotIn(forbidden, script)
-        self.assertIn("[BLOCKED] PowerShell 5.1 JEA registration", script)
+    def test_remote_journal_hard_blocks_apply_reset(self):
+        plays=yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
+        self.assertEqual(plays[1]["pre_tasks"][0]["when"],
+           "(wslpe_45_action | default('')) in ['apply', 'reset']")
+        self.assertIn("ansible.builtin.fail",plays[1]["pre_tasks"][0])
 
-if __name__ == "__main__":
+    def test_local_mutation_requires_console_and_owning_admin(self):
+        local=LOCAL.read_text(encoding="utf-8")
+        module=MODULE.read_text(encoding="utf-8")
+        for token in ("SESSIONNAME","Console","PSSenderInfo",
+                      "IsInRole","Assert-Wslpe45Identity","Get-Service WinRM"):
+            self.assertIn(token,local)
+        self.assertIn("Assert-Wslpe45OwnedFixture",local)
+        self.assertIn("WSLPE45_JEA_LOCAL_INSPECTION=PASS",local)
+        self.assertIn("Restore-Wslpe45WinrmAfterLocalJea",local)
+        self.assertIn("Start-Service WinRM",local)
+        self.assertIn("Get-NetTCPConnection -LocalPort 5986",local)
+        self.assertIn("finally {",local)
+        self.assertIn("WSLPE45_JEA_HTTPS_REMOTE_PROOF=PENDING",local)
+        self.assertIn("PSSenderInfo",module)
+        self.assertIn("SESSIONNAME",module)
+        self.assertIn("WindowsPrincipal",module)
+        self.assertNotIn("-NoServiceRestart",module)
+        self.assertNotIn("Restart-Service",local)
+        for forbidden in ("revertToSnapshot","GOAD-WS01","10.4.10.31",
+                          "Disable-LocalUser","Remove-LocalUser","vmrun"):
+            self.assertNotIn(forbidden,local)
+
+if __name__=="__main__":
     unittest.main()

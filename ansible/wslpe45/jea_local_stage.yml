@@ -1,0 +1,113 @@
+---
+# WSLPE #30 ONLY. Stage owned PowerShell modules through WinRM.
+# Does not register/unregister JEA, start/stop WinRM, or execute guest lifecycle.
+- name: Require exact standalone WSLPE scope and explicit source staging approval
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Fail closed on incorrect target or action
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - (wslpe_45_action | default('')) == 'stage'
+          - (wslpe_45_technique | default('')) == 'jea_role_capability_misconfig'
+          - (wslpe_jea_stage_approved | default(false)) | bool
+        fail_msg: 'JEA module staging requires the exact WSLPE guest and explicit approval'
+
+- name: Stage standalone JEA local-console modules without endpoint mutation
+  hosts: wslpe
+  gather_facts: false
+  pre_tasks:
+    - name: Require exact workgroup Windows 10 and nonadmin learner
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+              $os.Caption -notmatch 'Windows 10' -or [int]$os.ProductType -ne 1) {
+              throw 'Unexpected WSLPE guest'
+          }
+          $learner=Get-LocalUser 'lpe.trainee' -ErrorAction Stop
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544'
+          if (-not $learner.Enabled) {throw 'Learner disabled'}
+          foreach ($m in @(Get-LocalGroupMember -Group $admins.Name)) {
+              if ($m.SID.Value -eq $learner.SID.Value) {
+                  throw 'Learner unexpectedly administrator'
+              }
+          }
+          if ((Get-Service WinRM).Status -ne 'Running') {
+              throw 'WinRM not running before staging'
+          }
+          Write-Output 'WSLPE45_JEA_STAGE_TARGET=EXACT'
+      changed_when: false
+  tasks:
+    - name: Reject reparse points in privileged library parents
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          foreach ($p in @('C:\ProgramData\KingdomsWSLPE45',
+                           'C:\ProgramData\KingdomsWSLPE45\lib')) {
+              if (Test-Path -LiteralPath $p) {
+                  $i=Get-Item -LiteralPath $p -Force -ErrorAction Stop
+                  if (-not $i.PSIsContainer -or
+                      ($i.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                      throw 'Unsafe WSLPE library path'
+                  }
+              }
+          }
+          $lib='C:\ProgramData\KingdomsWSLPE45\lib'
+          foreach ($name in @('WslpeFixture.psm1','WslpeJea.psm1','WslpeJeaLocal.psm1')) {
+              $target=Join-Path $lib $name
+              if (Test-Path -LiteralPath $target) {
+                  $item=Get-Item -LiteralPath $target -Force -ErrorAction Stop
+                  if ($item.PSIsContainer -or
+                      ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                      throw 'Untrusted existing JEA staging target'
+                  }
+              }
+          }
+      changed_when: false
+
+    - name: Ensure dedicated privileged staging library exists
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\KingdomsWSLPE45\lib'
+        state: directory
+
+    - name: Protect WSLPE-only library before file staging
+      ansible.builtin.import_tasks: lockdown-library.yml
+
+    - name: Copy WSLPE fixture ownership helper
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeFixture.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
+
+    - name: Copy JEA scenario module (not import/execute it)
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeJea.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeJea.psm1'
+
+    - name: Copy independent console-local lifecycle runner
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeJeaLocal.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeJeaLocal.psm1'
+
+    - name: Confirm staged source presence only
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $lib='C:\ProgramData\KingdomsWSLPE45\lib'
+          foreach($name in @('WslpeFixture.psm1','WslpeJea.psm1','WslpeJeaLocal.psm1')) {
+              $p=Join-Path $lib $name
+              if(-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+                  throw 'Dedicated JEA staging source missing'
+              }
+          }
+          Write-Output 'WSLPE45_JEA_LOCAL_SOURCE=STAGED_NOT_EXECUTED'
+      changed_when: false

@@ -1,6 +1,6 @@
 # WSLPE #30 — JEA PS5.1 WinRM lifecycle incident and safe release gate
 
-**2026-10-17 status: JEA FUNCTIONAL ON EXISTING WSLPE-WS01; REMOTE APPLY/RESET BLOCKED.**
+**2026-10-17 status: JEA functional on existing WSLPE-WS01; remote apply/reset blocked; local-console lifecycle source implemented but not yet executed.**
 This is a verified user-observed Windows runtime incident, not just source inference.
 Scope is the exact standalone WSLPE-WS01 workgroup guest. NORTH/GOAD VMs and
 the shared 20-technique role remain untouched. Vagrant bootstrap stays enabled
@@ -98,11 +98,74 @@ different public credential.
 | Learner Status and bounded Proof operations | PASS |
 | JEA virtual account context and restricted command surface | PASS |
 | Effective local Administrators token membership | NOT YET PROVEN |
-| Safe independent JEA apply/reset/reapply lifecycle | BLOCKED, NOT IMPLEMENTED |
-| WinRM automatic restart/resilience after future registrations | BLOCKED |
+| Safe independent JEA apply/reset/reapply lifecycle | SOURCE PREPARED, LIVE TEST PENDING |
+| Independent WinRM service recovery after future registrations | SOURCE PREPARED, LIVE TEST PENDING |
 | Full six-stage technique qualification | PENDING |
 | Student-ready Windows 45-exercise image and vagrant retirement | PENDING |
 
 The original snapshot is a developer recovery point, not a final student
 image. No change to NORTH/shared role, no VM/snapshot mutation, and no
 automatic Vagrant account retirement is part of this source-only safety fix.
+
+
+## JEA #30 — independent local-console lifecycle (SOURCE PREPARED)
+
+The remote Ansible JEA scenario remains deliberately blocked for apply/reset.
+On Windows PowerShell 5.1, the previously used -NoServiceRestart was
+ineffective; our guest WinRM actually stopped during endpoint registration.
+The repository now provides two separate phases:
+
+1. **Stage** exact owned PowerShell modules through existing pinned WSLPE
+   HTTPS/5986, without registering or removing JEA. The new
+   ansible/wslpe45/jea_local_stage.yml is scoped to WSLPE-WS01 and rejects
+   unexpected inventory, domain membership, symlinks and missing approval.
+2. **Run** endpoint Inspect, Reset or Apply from a high-integrity administrator
+   in the interactive VMware Windows guest console. The new
+   WslpeJeaLocal.psm1 validates the local console/identity and JEA ownership,
+   then performs an isolated fixture operation. Whether it succeeds or fails,
+   it checks WinRM service status, starts that service if it stopped, and
+   verifies that HTTPS/5986 listens. It never changes the TLS certificate,
+   global listener settings, firewall, NAT or any other guest.
+
+**Source-only verification from Kali:**
+
+    cd "$HOME/kingdoms-lpe-standalone"
+    git pull --ff-only
+    "$HOME/.goad/.venv/bin/python" -m unittest -v \
+      tests.test_wslpe_jea_single tests.test_wslpe45_jea_candidate
+    "$HOME/.goad/.venv/bin/python" scripts/wslpe-jea-single.py
+
+To explicitly stage source only, after inspecting the tests:
+
+    "$HOME/.goad/.venv/bin/python" scripts/wslpe-jea-single.py --stage
+
+This requires a clean feature/windows-lpe-45-batch checkout, the exact
+running WSLPE VM, the PRE-JEA snapshot, authenticated certificate-pinned HTTPS,
+an independently resolved WSLPE-only inventory, and human confirmation
+with the exact phrase STAGE WSLPE JEA 30.
+
+**Read-only verification in the existing elevated VMware Windows console:**
+
+    Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeJeaLocal.psm1' -Force
+    Invoke-Wslpe45JeaLocal -Action Inspect
+
+The current guest ALREADY contains a functioning JEA endpoint. Do not run
+Apply on it. Only in a separately approved, snapshot-backed maintenance
+window, after inspecting the current state, run exactly one of:
+
+    Invoke-Wslpe45JeaLocal -Action Reset
+    Invoke-Wslpe45JeaLocal -Action Apply
+
+Between Reset and Apply, verify JEA is actually clean using the existing
+certificate-pinned Kali inspection. After Apply, verify management HTTPS and
+learner Status/Proof/negative-command behavior independently again.
+
+**Limit:** local WinRM Running/listener checks do not prove authenticated
+management will work. A partial Reset failure can leave a registered or
+file-only state; do not automatically retry or delete unknown files. All
+six-stage live acceptance remains pending. NORTH, Vagrant bootstrap, and
+the frozen 20-technique shared role are unchanged.
+
+For unattended commercial cloud image creation, an independently running
+SYSTEM task or equivalent guest-local stage is still required; that future
+integration is NOT authorized by the developer-local console implementation.

@@ -57,4 +57,7 @@
       }
       Write-Output 'WSLPE45_SHARED_LIBRARY=PROTECTED'
   changed_when: true
-  when: wslpe_45_action == 'apply'
+  when: >-
+    wslpe_45_action == 'apply' or
+    (wslpe_45_action == 'stage' and
+     wslpe_45_technique == 'jea_role_capability_misconfig')

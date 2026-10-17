@@ -39,6 +39,8 @@ on:
       - 'tests/test_wslpe_vagrant_retirement_policy.py'
       - 'scripts/wslpe-jea-single.py'
       - 'tests/test_wslpe_jea_single.py'
+      - 'ansible/wslpe45/jea_local_stage.yml'
+      - 'ansible/wslpe45/lockdown-library.yml'
       - 'goad_nomad.py'
       - 'kingdoms/wslpe_resume.py'
       - 'ansible/wslpe-operator-foundation.yml'
@@ -522,3 +524,24 @@ jobs:
              throw 'Native WMI standard CommandLineEventConsumer class unavailable'
           }
           Write-Output '[PASS] Native WMI subscription classes and exercise source compile offline; no objects registered'
+
+      - name: Parse JEA #30 console lifecycle and staged PowerShell 5.1 scripts without execution
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $files=@(
+            'ansible/files/wslpe45/WslpeFixture.psm1',
+            'ansible/files/wslpe45/WslpeJea.psm1',
+            'ansible/files/wslpe45/WslpeJeaLocal.psm1'
+          )
+          foreach($file in $files) {
+            $t=$null; $e=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file).Path,[ref]$t,[ref]$e)
+            if($e.Count -ne 0) {
+              $e | ForEach-Object { Write-Error $_.Message }
+              throw "WSLPE #30 Windows PowerShell 5.1 parse failed: $file"
+            }
+          }
+          python -c "import yaml,pathlib; p=yaml.safe_load(pathlib.Path('ansible/wslpe45/jea_local_stage.yml').read_text()); assert [x['hosts'] for x in p]==['localhost','wslpe']; print('[PASS] JEA staging source parses and is scoped')"
+          Write-Output '[PASS] JEA console lifecycle PowerShell 5.1 AST parsed; no guest execution'
