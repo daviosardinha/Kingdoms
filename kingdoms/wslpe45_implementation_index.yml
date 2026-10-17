@@ -4,6 +4,7 @@ schema: kingdoms.wslpe45.impl-index.v1
 scope: standalone-wslpe-only
 target: WSLPE-WS01
 shared_north_role_frozen: true
+batch_execution_authorized: false
 techniques:
   - number: 21
     id: scheduled_task_definition_acl

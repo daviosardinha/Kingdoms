@@ -56,6 +56,9 @@ def index_rows() -> list[dict]:
         "target": "WSLPE-WS01",
         "shared_north_role_frozen": True,
     }
+    approval = data.get("batch_execution_authorized")
+    if type(approval) is not bool:
+        raise BatchBlocked("Execution approval must be an explicit boolean")
     for field, expected in contract.items():
         if type(data.get(field)) is not type(expected) or data[field] != expected:
             raise BatchBlocked(f"Invalid standalone index contract: {field}")
@@ -207,6 +210,9 @@ def run(args) -> int:
         return 0
     if blockers:
         print(f"[BLOCKED] All 25 source fixtures required before ANY guest change; remaining={len(blockers)}", flush=True)
+        return 2
+    if yaml.safe_load(INDEX.read_text(encoding="utf-8"))["batch_execution_authorized"] is not True:
+        print("[BLOCKED] Independent live-execution approval is still disabled", flush=True)
         return 2
     if args.timeout_seconds < 60 or args.timeout_seconds > 3600:
         raise BatchBlocked("Timeout must be within 60-3600 seconds")

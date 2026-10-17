@@ -52,6 +52,18 @@ class OperatorTests(unittest.TestCase):
             safety.assert_not_called()
             command.assert_not_called()
 
+    def test_source_complete_does_not_authorize_live_guest_access(self):
+        self.assertFalse(batch.yaml.safe_load(batch.INDEX.read_text())["batch_execution_authorized"])
+        rows = batch.index_rows()
+        args = SimpleNamespace(execute=True, timeout_seconds=900,
+                               report_dir="/tmp/unused")
+        with patch.object(batch, "source_readiness", return_value=(rows, [])), patch.object(
+                batch, "trusted_safety") as safety, patch.object(
+                batch.subprocess, "run") as subprocess_call:
+            self.assertEqual(batch.run(args), 2)
+            safety.assert_not_called()
+            subprocess_call.assert_not_called()
+
     def test_plan_mode_never_calls_inventory_or_guest(self):
         args = SimpleNamespace(execute=False, timeout_seconds=900,
                                report_dir="/tmp/unused")
