@@ -52,6 +52,9 @@
         state: directory
       when: wslpe_45_action == 'apply'
 
+    - name: Protect shared standalone source library before copying code
+      ansible.builtin.import_tasks: lockdown-library.yml
+
     - name: Install owned fixture library only on WSLPE
       ansible.windows.win_copy:
         src: ../files/wslpe45/WslpeFixture.psm1

@@ -66,6 +66,9 @@
         state: directory
       when: wslpe_45_action == 'apply'
 
+    - name: Protect shared standalone source library before copying code
+      ansible.builtin.import_tasks: lockdown-library.yml
+
     - name: Stage standalone ownership and safety module
       ansible.windows.win_copy:
         src: ../files/wslpe45/WslpeFixture.psm1

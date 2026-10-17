@@ -1,0 +1,60 @@
+---
+# Only included after exact standalone Windows 10/workgroup preflight and
+# immediately after the trusted operator creates the WSLPE library directory.
+# This task is never referenced from NORTH's shared windows_lpe role.
+- name: Lock down WSLPE-only root and privileged script library
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference='Stop'
+      $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+      if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain) {
+          throw 'Shared WSLPE fixture script protection refuses this guest'
+      }
+      $root='C:\ProgramData\KingdomsWSLPE45'
+      $library=Join-Path $root 'lib'
+      foreach($path in @($root,$library)) {
+          if(-not (Test-Path -LiteralPath $path -PathType Container)) {
+              throw "Owned fixture directory missing: $path"
+          }
+          $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+          if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw 'Fixture library ancestor is a reparse point'
+          }
+          $acl=Get-Acl -LiteralPath $path -ErrorAction Stop
+          $acl.SetAccessRuleProtection($true,$false)
+          $flags=[Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+          $prop=[Security.AccessControl.PropagationFlags]::None
+          $allow=[Security.AccessControl.AccessControlType]::Allow
+          foreach($sid in @('S-1-5-18','S-1-5-32-544')) {
+              $principal=[Security.Principal.SecurityIdentifier]::new($sid)
+              $rule=[Security.AccessControl.FileSystemAccessRule]::new(
+                  $principal,
+                  [Security.AccessControl.FileSystemRights]::FullControl,
+                  $flags,$prop,$allow
+              )
+              $acl.AddAccessRule($rule) | Out-Null
+          }
+          # Allow standard users to traverse the fixture tree without being
+          # able to replace operator scripts, ownership metadata, or binaries.
+          $users=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
+          $read=[Security.AccessControl.FileSystemAccessRule]::new(
+              $users,[Security.AccessControl.FileSystemRights]::ReadAndExecute,
+              $flags,$prop,$allow
+          )
+          $acl.AddAccessRule($read) | Out-Null
+          Set-Acl -LiteralPath $path -AclObject $acl -ErrorAction Stop
+          $effective=Get-Acl -LiteralPath $path -ErrorAction Stop
+          foreach($entry in $effective.Access) {
+              $subject=$null
+              try{$subject=$entry.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value}catch{}
+              if($subject -eq 'S-1-5-32-545' -and $entry.AccessControlType -eq 'Allow' -and
+                (($entry.FileSystemRights -band [Security.AccessControl.FileSystemRights]::WriteData) -or
+                 ($entry.FileSystemRights -band [Security.AccessControl.FileSystemRights]::Delete) -or
+                 ($entry.FileSystemRights -band [Security.AccessControl.FileSystemRights]::ChangePermissions))) {
+                  throw 'Shared library remains writable by ordinary Windows users'
+              }
+          }
+      }
+      Write-Output 'WSLPE45_SHARED_LIBRARY=PROTECTED'
+  changed_when: true
+  when: wslpe_45_action == 'apply'
