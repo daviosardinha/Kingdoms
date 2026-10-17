@@ -32,19 +32,20 @@ class OperatorTests(unittest.TestCase):
                           "sedebug_privilege",
                           "ntfs_link_redirection",
                           "privileged_path_traversal_write",
+                          "wmi_permanent_consumer_hijack",
                           "privileged_loopback_http_authz",
                           "privileged_argument_injection",
                           "privileged_child_environment_trust",
                           "elevated_plugin_signature_bypass",
                           "privileged_file_toctou",
                           "privileged_backup_restore_api"])
-        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 5)
+        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 4)
         self.assertTrue(all(r["learner_proof"] == "pending" for r in rows))
 
     def test_no_partial_live_execution_and_no_guest_contact(self):
         rows, blockers = batch.source_readiness()
         self.assertEqual(len(rows), 25)
-        self.assertEqual(len(blockers), 5)
+        self.assertEqual(len(blockers), 4)
         self.assertTrue(all("no source-qualified fixture" in reason for reason in blockers))
         args = SimpleNamespace(execute=True, timeout_seconds=900,
                                report_dir="/tmp/unused")

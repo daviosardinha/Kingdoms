@@ -120,9 +120,9 @@ techniques:
     six_stage_qualification: pending
   - number: 37
     id: wmi_permanent_consumer_hijack
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/wmi_permanent_consumer_hijack.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 38
