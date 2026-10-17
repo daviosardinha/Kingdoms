@@ -25,6 +25,7 @@ class OperatorTests(unittest.TestCase):
                           "ifeo_debugger_acl_hijack",
                           "app_paths_registry_hijack",
                           "named_pipe_authorization",
+                          "jea_role_capability_misconfig",
                           "setakeownership_privilege",
                           "serestore_privilege",
                           "sedebug_privilege",
@@ -36,13 +37,13 @@ class OperatorTests(unittest.TestCase):
                           "elevated_plugin_signature_bypass",
                           "privileged_file_toctou",
                           "privileged_backup_restore_api"])
-        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 7)
+        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 6)
         self.assertTrue(all(r["learner_proof"] == "pending" for r in rows))
 
     def test_no_partial_live_execution_and_no_guest_contact(self):
         rows, blockers = batch.source_readiness()
         self.assertEqual(len(rows), 25)
-        self.assertEqual(len(blockers), 7)
+        self.assertEqual(len(blockers), 6)
         self.assertTrue(all("no source-qualified fixture" in reason for reason in blockers))
         args = SimpleNamespace(execute=True, timeout_seconds=900,
                                report_dir="/tmp/unused")

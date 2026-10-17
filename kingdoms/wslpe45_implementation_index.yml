@@ -71,9 +71,9 @@ techniques:
     six_stage_qualification: pending
   - number: 30
     id: jea_role_capability_misconfig
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/jea_role_capability_misconfig.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 31
