@@ -1,0 +1,17 @@
+// WSLPE #40: MIDL interface contract for a local-only educational RPC fixture.
+// NOT a complete or deployable authorization scenario. Its eventual service
+// must use ncalrpc only, reject network transports, and write only owned proof.
+import "rpc.idl";
+
+[
+  uuid(4D9A3840-AD40-4E2F-8040-5B3139D45A40),
+  version(1.0),
+  pointer_default(unique)
+]
+interface Kingdom40LocalRpc
+{
+    void Kingdom40Status(
+        [in] handle_t binding,
+        [out] long* result
+    );
+};
