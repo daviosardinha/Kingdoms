@@ -63,9 +63,9 @@ techniques:
     six_stage_qualification: pending
   - number: 29
     id: named_pipe_authorization
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/named_pipe_authorization.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 30
@@ -133,9 +133,9 @@ techniques:
     six_stage_qualification: pending
   - number: 39
     id: privileged_loopback_http_authz
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/privileged_loopback_http_authz.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 40
@@ -168,15 +168,15 @@ techniques:
     six_stage_qualification: pending
   - number: 44
     id: privileged_file_toctou
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/privileged_file_toctou.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 45
     id: privileged_backup_restore_api
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/privileged_backup_restore_api.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
