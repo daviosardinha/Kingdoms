@@ -1,6 +1,58 @@
 # Six lab-only IPC/file-link/plugin trust candidates, no external guest impact.
 Set-StrictMode -Version Latest
 
+function Remove-Wslpe45OwnedLinkJunction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$FixtureRoot,
+        [Parameter(Mandatory=$true)][string]$LearnerSid
+    )
+    # The generic fixture ownership guard intentionally rejects ALL reparse
+    # points. Only #34 may present its exact lab-owned inbox/link junction.
+    # Validate the protected owner metadata and immediate ancestors before
+    # unlinking; never traverse or recursively delete the link target.
+    foreach($parent in @($FixtureRoot,(Join-Path $FixtureRoot 'inbox'))) {
+        $info=Get-Item -LiteralPath $parent -Force -ErrorAction Stop
+        if(-not $info.PSIsContainer -or
+           ($info.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'NTFS junction recovery refuses altered fixture ancestors'
+        }
+    }
+    $ownerFile=Join-Path $FixtureRoot '.kingdoms-owned.json'
+    $owner=Get-Content -LiteralPath $ownerFile -Raw -ErrorAction Stop |
+        ConvertFrom-Json -ErrorAction Stop
+    if($owner.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or
+       $owner.machine -cne 'WSLPE-WS01' -or
+       [int]$owner.number -ne 34 -or
+       $owner.id -cne 'ntfs_link_redirection' -or
+       $owner.learner_sid -cne $LearnerSid) {
+        throw 'Refusing NTFS junction recovery without exact fixture ownership'
+    }
+    $link=Join-Path (Join-Path $FixtureRoot 'inbox') 'link'
+    $item=Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
+    if($null -eq $item) { return }
+    if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+        # Ordinary files or directories can be checked by the generic guard.
+        return
+    }
+    if($item.LinkType -cne 'Junction') {
+        throw 'Refusing to remove unexpected NTFS reparse-point type'
+    }
+    $target=[string]$item.Target
+    $expected=[IO.Path]::GetFullPath((Join-Path $FixtureRoot 'protected')).TrimEnd([char]92)
+    if([string]::IsNullOrWhiteSpace($target) -or
+       -not $target.TrimEnd([char]92).Equals($expected,[StringComparison]::OrdinalIgnoreCase)) {
+        throw 'NTFS junction target differs from owned protected directory'
+    }
+    # Windows PowerShell 5.1 recursive Remove-Item must NOT be used against
+    # directory junctions. CMD RMDIR without /S unlinks the junction itself.
+    $cmd=('rmdir "{0}"' -f $link)
+    $result=(& (Join-Path $env:WINDIR 'System32\cmd.exe') /d /c $cmd 2>&1 | Out-String)
+    if($LASTEXITCODE -ne 0 -or (Get-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue)) {
+        throw ('Dedicated NTFS junction unlink failed: '+$result)
+    }
+}
+
 function Invoke-Wslpe45Boundary {
     [CmdletBinding()]
     param(
@@ -82,6 +134,11 @@ function Invoke-Wslpe45Boundary {
         Write-Output ('WSLPE45_BOUNDARY_APPLIED='+$Id)
     }
     elseif($Action -eq 'reset'){
+        if($Id -eq 'ntfs_link_redirection'){
+            # A valid learner-created junction is expected in this fixture;
+            # detach ONLY its exact owned link before generic reparse checks.
+            Remove-Wslpe45OwnedLinkJunction -FixtureRoot $root -LearnerSid $who.LearnerSid
+        }
         $root=Assert-Wslpe45OwnedFixture -Number $number -Id $Id
         $service=Get-CimInstance Win32_Service -Filter "Name='$name'" -ErrorAction Stop
         if(-not $service -or -not ([string]$service.PathName).Trim('"').Equals(

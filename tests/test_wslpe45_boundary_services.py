@@ -72,6 +72,29 @@ class BoundaryFixtureTests(unittest.TestCase):
                 self.assertNotIn("10.4.10.31",content)
         self.assertNotIn("sc.exe sdset scmanager",m)
 
+    def test_junction_cleanup_is_exact_34_only_and_never_recursive(self):
+        module=MOD.read_text()
+        owned=(ROOT/"ansible/files/wslpe45/WslpeFixture.psm1").read_text()
+        start=module.index("function Remove-Wslpe45OwnedLinkJunction")
+        end=module.index("function Invoke-Wslpe45Boundary")
+        recovery=module[start:end]
+        for item in ("kingdoms.wslpe.fixture-owner.v1",
+                     "ntfs_link_redirection", "owner.learner_sid",
+                     "owner.number -ne 34", "LinkType -cne 'Junction'",
+                     "owned protected directory", "GetFullPath",
+                     "TrimEnd([char]92)", "System32\\cmd.exe",
+                     "rmdir"):
+            self.assertIn(item,recovery)
+        self.assertIn("if($Id -eq 'ntfs_link_redirection')",module)
+        self.assertLess(
+            module.index("Remove-Wslpe45OwnedLinkJunction -FixtureRoot"),
+            module.index("Assert-Wslpe45OwnedFixture -Number $number -Id $Id")
+        )
+        self.assertNotIn("rmdir /s",recovery.lower())
+        self.assertNotIn("Remove-Item -LiteralPath $link -Recurse",recovery)
+        self.assertIn("Assert-Wslpe45NoReparsePoints",owned)
+        self.assertIn("refusing recursive cleanup",owned.lower())
+
     def test_plugin_source_is_scoped_to_owned_proof(self):
         sample=(ROOT/"ansible/files/wslpe45/Kingdom45Plugin.cs").read_text()
         self.assertIn("namespace Kingdom45Plugin",sample)
