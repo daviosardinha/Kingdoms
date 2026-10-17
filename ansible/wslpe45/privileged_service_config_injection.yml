@@ -1,6 +1,6 @@
 ---
-# Standalone WSLPE account-right fixture; source candidate only.
-# Direct local LSA policy must not be mistaken for effective existing tokens.
+# Standalone WSLPE privileged application consumer fixture; source candidate only.
+# Configuration vulnerability is distinct from actual learner-side exploit proof.
 - name: Check exact WSLPE inventory for new service consumer fixture
   hosts: localhost
   gather_facts: false
@@ -76,6 +76,12 @@
       ansible.windows.win_copy:
         src: ../files/wslpe45/WslpeServiceConsumer.psm1
         dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeServiceConsumer.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Stage scenario-specific elevated consumer CSharp source
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/KingdomServiceConsumer.cs
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\KingdomServiceConsumer.cs'
       when: wslpe_45_action == 'apply'
 
     - name: Run real dedicated service consumer fixture action with six-stage evidence
