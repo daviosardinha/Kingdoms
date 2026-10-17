@@ -1,0 +1,84 @@
+---
+# WSLPE-only stage: provision an independent, randomly credentialed
+# management account. Does NOT disable vagrant, reconfigure WinRM,
+# modify NORTH, install scenarios, or create release authorization.
+# Operator must first verify independent VMware-console recovery.
+- name: Guard WSLPE-only operator account bootstrap
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Require exact standalone inventory, explicit authorization and private password
+      ansible.builtin.assert:
+        that:
+          - (groups.get('wslpe', []) | length) == 1
+          - (groups.get('windows_lpe_standalone', []) | length) == 1
+          - groups.get('dc', []) | length == 0
+          - groups.get('domain', []) | length == 0
+          - wslpe_operator_handoff_approved | default(false) | bool
+          - (lookup('env', 'KINGDOMS_WSLPE_OPERATOR_PASSWORD') | length) >= 24
+          - lookup('env', 'KINGDOMS_WSLPE_OPERATOR_PASSWORD') != lookup('env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD')
+        fail_msg: "WSLPE operator handoff requires explicit scope and private per-instance credentials"
+        quiet: true
+      no_log: true
+
+- name: Create dedicated management principal on WSLPE only
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Refuse incorrect or domain-joined Windows guest and preexisting operator
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $c=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $c.PartOfDomain) {
+            throw 'Not the dedicated WSLPE workgroup guest'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if(-not $learner.Enabled) { throw 'Learner missing or disabled' }
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          $members=@(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop)
+          if($members.SID.Value -contains $learner.SID.Value) {
+            throw 'WSLPE learner unexpectedly administrator'
+          }
+          if(Get-LocalUser -Name 'kingdom.operator' -ErrorAction SilentlyContinue) {
+            throw 'Operator already exists; never rotate unmanaged credential'
+          }
+          $bootstrap=Get-LocalUser -Name 'vagrant' -ErrorAction Stop
+          if(-not $bootstrap.Enabled) {throw 'Current bootstrap channel already disabled'}
+          Write-Output 'WSLPE_OPERATOR_TARGET=PASS'
+      changed_when: false
+
+    - name: Create sole new WSLPE operator account with privately supplied password
+      ansible.windows.win_user:
+        name: kingdom.operator
+        password: "{{ lookup('env', 'KINGDOMS_WSLPE_OPERATOR_PASSWORD') }}"
+        state: present
+        account_disabled: false
+        password_never_expires: true
+        update_password: on_create
+        groups:
+          - Administrators
+        groups_action: replace
+      no_log: true
+
+    - name: Validate operator membership without enabling any other guest account
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $c=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $c.PartOfDomain) {
+            throw 'Guest identity changed during operator bootstrap'
+          }
+          $operator=Get-LocalUser -Name 'kingdom.operator' -ErrorAction Stop
+          if(-not $operator.Enabled) { throw 'Operator account disabled' }
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          $members=@(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop)
+          if($members.SID.Value -notcontains $operator.SID.Value) {
+            throw 'Dedicated operator lacks local admin membership'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if($members.SID.Value -contains $learner.SID.Value) {
+            throw 'Learner unexpectedly gained administrator membership'
+          }
+          Write-Output 'WSLPE_OPERATOR_PRINCIPAL=CREATED_NOT_AUTHENTICATED'
+      changed_when: false
