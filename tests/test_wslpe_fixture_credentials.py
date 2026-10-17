@@ -27,7 +27,9 @@ class FixtureSecretTests(unittest.TestCase):
             self.assertEqual(set(data),set(FIXTURES)|{
                 "wslpe_fixture_private","wslpe_fixture_instance_id"})
             self.assertEqual(len({data[key]["password"] for key in FIXTURES}),5)
+            # Private generation must not mutate source-default snapshots.
             base=_template()
+            self.assertEqual(base, _template())
             for key in FIXTURES:
                 self.assertNotEqual(data[key]["password"],base[key]["password"])
                 self.assertEqual(

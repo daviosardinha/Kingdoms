@@ -85,7 +85,9 @@ def fixture_vars_file(instance_id: str, *, prepare: bool = False,
         return path
     if not prepare:
         raise ValueError("Fixture overlay does not exist")
-    document = dict(source)
+    # Deep-copy each fixture mapping: changing the password must not mutate
+    # the canonical default mapping used to reject source-visible secrets.
+    document = {key: dict(value) for key, value in source.items()}
     for key in FIXTURES:
         document[key]["password"] = _strong_password()
     document["wslpe_fixture_private"] = True
