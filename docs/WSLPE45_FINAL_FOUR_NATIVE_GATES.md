@@ -6,6 +6,22 @@ Repository source of truth: `feature/windows-lpe-45-batch`.
 Verified source checkpoint: 21/25 accepted *source candidates*; four still planned.
 New live six-stage qualifications: 0/25. New independent learner-side exploit proofs: 0/25.
 
+## 2026-10-17 native prototype checkpoint
+
+The coordinated source-only preliminary batch is tracked in
+[WSLPE45 final-four source batch](./WSLPE45_FINAL_FOUR_SOURCE_BATCH.md).
+Source CI now compiles the #25 native MSI custom-action **DLL** (not an MSI
+installer), the #36 managed WMI provider **prototype** (not registered on
+Windows), and the #40 local RPC **MIDL interface** (no server/client).
+The #38 out-of-process DCOM local-server source remains absent because its
+prior write was blocked by platform safety checks. Nothing from this
+checkpoint is deployed to the guest, and it is not a qualification claim.
+
+All four implementation-index rows stay planned/source_ci pending, and
+batch_execution_authorized remains false. The original 21/25 source
+candidates, 0/25 formal new six-stage qualification and learner-proof
+counts remain unchanged.
+
 ## What remains
 
 | Number | Distinct Windows-native mechanism | Source acceptance |
