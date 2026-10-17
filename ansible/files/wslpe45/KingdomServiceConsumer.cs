@@ -48,6 +48,30 @@ public sealed class Kingdom45ServiceConsumer : ServiceBase
                     !path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
                     !File.Exists(path))
                     return;
+
+                // Path.GetFullPath does not resolve Windows junctions,
+                // symbolic links or other reparse-point redirections.
+                // Reject any such component before selecting the candidate.
+                // This is a static containment check; a separate Windows
+                // runtime test must still address replacement races.
+                string trustedInbox = Path.GetFullPath(inbox).TrimEnd('\\');
+                string cursor = path;
+                bool reachedInbox = false;
+                while (cursor != null)
+                {
+                    FileAttributes attributes = File.GetAttributes(cursor);
+                    if ((attributes & FileAttributes.ReparsePoint) != 0)
+                        return;
+                    if (String.Equals(cursor, trustedInbox,
+                                      StringComparison.OrdinalIgnoreCase))
+                    {
+                        reachedInbox = true;
+                        break;
+                    }
+                    cursor = Path.GetDirectoryName(cursor);
+                }
+                if (!reachedInbox)
+                    return;
                 child = new ProcessStartInfo(path);
             }
             else if (Mode == "privileged_child_environment_trust")

@@ -24,6 +24,20 @@ class ServiceConsumerCandidates(unittest.TestCase):
         for forbidden in ("GOAD-WS01","10.4.10.31","LSASS","Set-MpPreference"):
             self.assertNotIn(forbidden,cs)
 
+    def test_updater_refuses_static_reparse_point_redirects(self):
+        consumer=(ROOT/"ansible/files/wslpe45/KingdomServiceConsumer.cs").read_text()
+        start=consumer.index('Mode == "privileged_updater_hijack"')
+        end=consumer.index('Mode == "privileged_child_environment_trust"')
+        update=consumer[start:end]
+        for expected in (
+            "Path.GetFullPath(inbox)", "File.GetAttributes(cursor)",
+            "FileAttributes.ReparsePoint", "reachedInbox",
+            "Path.GetDirectoryName(cursor)", "if (!reachedInbox)",
+        ):
+            self.assertIn(expected,update)
+        self.assertLess(update.index("FileAttributes.ReparsePoint"),
+                        update.index("new ProcessStartInfo(path)"))
+
     def test_each_exact_guest_has_unique_source_and_constrained_service(self):
         module=(ROOT/"ansible/files/wslpe45/WslpeServiceConsumer.psm1").read_text()
         for number,id,service in (
