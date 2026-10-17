@@ -20,19 +20,22 @@ class OperatorTests(unittest.TestCase):
         self.assertEqual([r["id"] for r in rows if r["status"] == "candidate"],
                          ["scheduled_task_definition_acl",
                           "scm_create_service_acl",
+                          "privileged_service_config_injection",
+                          "privileged_updater_hijack",
                           "ifeo_debugger_acl_hijack",
                           "app_paths_registry_hijack",
                           "setakeownership_privilege",
                           "serestore_privilege",
                           "sedebug_privilege",
-                          "privileged_path_traversal_write"])
-        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 17)
+                          "privileged_path_traversal_write",
+                          "privileged_argument_injection"])
+        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 14)
         self.assertTrue(all(r["learner_proof"] == "pending" for r in rows))
 
     def test_no_partial_live_execution_and_no_guest_contact(self):
         rows, blockers = batch.source_readiness()
         self.assertEqual(len(rows), 25)
-        self.assertEqual(len(blockers), 17)
+        self.assertEqual(len(blockers), 14)
         self.assertTrue(all("no source-qualified fixture" in reason for reason in blockers))
         args = SimpleNamespace(execute=True, timeout_seconds=900,
                                report_dir="/tmp/unused")

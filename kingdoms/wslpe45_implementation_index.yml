@@ -21,16 +21,16 @@ techniques:
     six_stage_qualification: pending
   - number: 23
     id: privileged_service_config_injection
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/privileged_service_config_injection.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 24
     id: privileged_updater_hijack
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/privileged_updater_hijack.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 25
@@ -147,9 +147,9 @@ techniques:
     six_stage_qualification: pending
   - number: 41
     id: privileged_argument_injection
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/privileged_argument_injection.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 42
