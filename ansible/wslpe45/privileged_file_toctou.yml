@@ -1,0 +1,100 @@
+---
+# Candidate: standalone Windows LPE dedicated boundary service.
+- name: Exact standalone-only scope and stage guard
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Reject any other inventory, target or action
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - (wslpe_45_technique | default('')) == 'privileged_file_toctou'
+          - (wslpe_45_action | default('')) in ['apply','validate','reset']
+          - (wslpe_45_stage_label | default('')) in ['apply','vulnerable','reset','clean','reapply','revulnerable']
+          - (wslpe_45_action != 'apply') or wslpe_45_stage_label in ['apply','reapply']
+          - (wslpe_45_action != 'reset') or wslpe_45_stage_label == 'reset'
+          - (wslpe_45_action != 'validate') or ((wslpe_45_validate_state == 'clean' and wslpe_45_stage_label == 'clean') or (wslpe_45_validate_state == 'vulnerable' and wslpe_45_stage_label in ['vulnerable','revulnerable']))
+        fail_msg: 'WSLPE45 requires the exact workgroup standalone guest'
+
+- name: Test exact standalone Windows service fixture lifecycle
+  hosts: wslpe
+  gather_facts: false
+  pre_tasks:
+    - name: Check exact Windows 10 workgroup and local learner identity
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $guest=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $guest.PartOfDomain -or
+             [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10'){
+              throw 'Refusing guest or operating-system mismatch'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if(-not $learner.Enabled){throw 'Local learner disabled'}
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544'
+          foreach($member in @(Get-LocalGroupMember -Group $admins.Name)){
+              if($member.SID.Value -eq $learner.SID.Value){throw 'Learner is administrator'}
+          }
+          Write-Output 'WSLPE45_BOUNDARY_TARGET=PASS'
+      changed_when: false
+  tasks:
+    - name: Refuse untrusted ProgramData WSLPE library directories
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          foreach($item in @('C:\ProgramData\KingdomsWSLPE45','C:\ProgramData\KingdomsWSLPE45\lib')){
+              if(Test-Path -LiteralPath $item){
+                  $info=Get-Item -LiteralPath $item -Force -ErrorAction Stop
+                  if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint)){
+                      throw 'Unexpected fixture library object or reparse point'
+                  }
+              }
+          }
+      changed_when: false
+
+    - name: Create privileged source library on apply only
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\KingdomsWSLPE45\lib'
+        state: directory
+      when: wslpe_45_action == 'apply'
+
+    - name: Protect privileged service source before any copy
+      ansible.builtin.import_tasks: lockdown-library.yml
+
+    - name: Copy standalone ownership module
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeFixture.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Copy exact privileged consumer source module
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeBoundary.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeBoundary.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Copy native Windows isolated service code
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/KingdomBoundaryService.cs
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\KingdomBoundaryService.cs'
+      when: wslpe_45_action == 'apply'
+
+    - name: Perform exact isolated service lifecycle action
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeBoundary.psm1' -Force
+          $output=@(Invoke-Wslpe45Boundary -Id 'privileged_file_toctou' -Action '{{ wslpe_45_action }}' -Stage '{{ wslpe_45_stage_label }}')
+          $marker='WSLPE45_BATCH_STAGE=privileged_file_toctou:{{ wslpe_45_stage_label }}:PASS'
+          if(@($output | Where-Object {$_ -ceq $marker}).Count -ne 1){
+              throw 'Native boundary fixture did not emit exactly one accepted stage'
+          }
+          Write-Output $output
+      changed_when: wslpe_45_action in ['apply','reset']
