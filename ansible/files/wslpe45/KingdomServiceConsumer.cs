@@ -7,8 +7,8 @@ using System.ServiceProcess;
 // exact standalone fixture module. Do not compile/deploy on any other host.
 public sealed class Kingdom45ServiceConsumer : ServiceBase
 {
-    private const string Mode = "__MODE__";
-    private const string Root = @"__ROOT__";
+    private static readonly string Mode = "__MODE__";
+    private static readonly string Root = @"__ROOT__";
 
     public Kingdom45ServiceConsumer()
     {
