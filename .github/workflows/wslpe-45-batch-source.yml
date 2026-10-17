@@ -20,6 +20,7 @@ on:
       - 'tests/test_wslpe45_registry_trust.py'
       - 'tests/test_wslpe45_task_definition_acl.py'
       - 'tests/test_wslpe45_lsa_rights.py'
+      - 'tests/test_wslpe45_scm_create_acl.py'
       - 'tests/test_wslpe45_candidate_traversal.py'
       - 'ansible/files/wslpe45/**'
       - 'ansible/wslpe45/**'
@@ -38,7 +39,7 @@ jobs:
       - name: Validate Python, all 45 unique IDs, frozen NORTH and exact-guest negative paths
         run: |
           python -m py_compile kingdoms/wslpe_batch_catalog.py kingdoms/wslpe_batch_feasibility.py scripts/wslpe-45-batch.py scripts/wslpe-45-feasibility.py tests/test_wslpe_batch_catalog.py tests/test_wslpe_batch_feasibility.py
-          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust tests.test_wslpe45_task_definition_acl tests.test_wslpe45_lsa_rights
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust tests.test_wslpe45_task_definition_acl tests.test_wslpe45_lsa_rights tests.test_wslpe45_scm_create_acl
           python scripts/wslpe-45-batch.py
           python scripts/wslpe-45-feasibility.py
           python scripts/wslpe-45-qualify.py
@@ -286,3 +287,35 @@ jobs:
             throw 'Standalone debug service CSharp source failed compilation'
           }
           Write-Output '[PASS] Native LSA right helper and SYSTEM test service build without deployment'
+
+      - name: Native SCM DACL snapshot and restore script parsing
+        shell: pwsh
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          import yaml
+          plays=yaml.safe_load(Path("ansible/wslpe45/scm_create_service_acl.yml").read_text(encoding="utf-8"))
+          assert len(plays)==2
+          assert [x["hosts"] for x in plays]==["localhost","wslpe"]
+          out=Path(os.environ["RUNNER_TEMP"])/"wslpe45-scm"
+          out.mkdir(exist_ok=True)
+          scripts=[]
+          for item in plays[1]["pre_tasks"]+plays[1]["tasks"]:
+              script=item.get("ansible.windows.win_powershell",{}).get("script")
+              if script: scripts.append(script)
+          assert len(scripts)>=2
+          for n,code in enumerate(scripts):
+              (out/f"scm-{n}.ps1").write_text(code,encoding="utf-8-sig")
+          '@ | python -
+          if($LASTEXITCODE -ne 0) { throw 'Cannot extract standalone SCM scripts' }
+          foreach($path in @(Get-ChildItem "$env:RUNNER_TEMP/wslpe45-scm/*.ps1")) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $path.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "SCM DACL source failed Windows PowerShell 5.1 parse: $($path.Name)"
+            }
+          }
+          Write-Output '[PASS] WSLPE-only SCM SDDL source parsed without guest access'

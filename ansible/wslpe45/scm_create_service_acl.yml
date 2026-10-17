@@ -1,0 +1,182 @@
+---
+# WSLPE #22 global SCM create-service ACL fixture; candidate only.
+# Requires exact SDDL snapshot and restoration; NORTH is never accessed.
+- name: Authorize standalone WSLPE SCM DACL fixture
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Verify exact workgroup inventory and lifecycle contract
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - (wslpe_45_technique | default('')) == 'scm_create_service_acl'
+          - (wslpe_45_action | default('')) in ['apply','validate','reset']
+          - (wslpe_45_stage_label | default('')) in ['apply','vulnerable','reset','clean','reapply','revulnerable']
+          - (wslpe_45_action != 'apply') or wslpe_45_stage_label in ['apply','reapply']
+          - (wslpe_45_action != 'reset') or wslpe_45_stage_label == 'reset'
+          - (wslpe_45_action != 'validate') or ((wslpe_45_validate_state == 'clean' and wslpe_45_stage_label == 'clean') or (wslpe_45_validate_state == 'vulnerable' and wslpe_45_stage_label in ['vulnerable','revulnerable']))
+        fail_msg: 'SCM create-service rights only permitted on exact standalone guest'
+
+- name: Standalone Service Control Manager creation-rights fixture
+  hosts: wslpe
+  gather_facts: false
+  pre_tasks:
+    - name: Prove local non-admin learner on exact Windows 10 workgroup
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+             $os.Caption -notmatch 'Windows 10' -or $os.ProductType -ne 1) {
+              throw 'Refusing wrong guest or domain member'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if(-not $learner.Enabled) { throw 'Local learner disabled' }
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544'
+          if(@(Get-LocalGroupMember -Group $admins.Name | Where-Object {
+              $_.SID.Value -eq $learner.SID.Value
+          }).Count -ne 0) { throw 'Learner is already admin' }
+          Write-Output 'WSLPE45_SCM_TARGET=PASS'
+      changed_when: false
+  tasks:
+    - name: Require exact standalone fixture ancestors are safe
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          foreach($path in @('C:\ProgramData\KingdomsWSLPE45','C:\ProgramData\KingdomsWSLPE45\lib')) {
+              if(Test-Path -LiteralPath $path) {
+                  $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                  if(-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                      throw 'Invalid WSLPE SCM fixture ancestor'
+                  }
+              }
+          }
+      changed_when: false
+
+    - name: Create WSLPE-only common source directory on apply
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\KingdomsWSLPE45\lib'
+        state: directory
+      when: wslpe_45_action == 'apply'
+
+    - name: Stage exact WSLPE-owned resource verification module
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeFixture.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Exercise SCM create-service DACL with strict snapshot and rollback
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $id='scm_create_service_acl'
+          $root='C:\ProgramData\KingdomsWSLPE45\fixtures\scm_create_service_acl'
+          $snapshot=Join-Path $root 'original-scm-sddl.json'
+          $mode='{{ wslpe_45_action }}'
+          $stage='{{ wslpe_45_stage_label }}'
+          if($mode -eq 'validate' -and $stage -eq 'clean') {
+              if(Test-Path -LiteralPath $root) { throw 'SCM fixture snapshot was not cleaned' }
+              Write-Output ('WSLPE45_BATCH_STAGE='+$id+':'+$stage+':PASS')
+              return
+          }
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force
+          $identity=Assert-Wslpe45Identity
+          $learner=[Security.Principal.SecurityIdentifier]::new($identity.LearnerSid)
+          $out=(& sc.exe sdshow scmanager 2>&1 | Out-String).Trim()
+          if($LASTEXITCODE -ne 0 -or $out -notmatch '^D:') {
+              throw 'SCM descriptor not available'
+          }
+          $originalSecurity=[Security.AccessControl.RawSecurityDescriptor]::new($out)
+          if($null -eq $originalSecurity.DiscretionaryAcl) { throw 'SCM missing DACL' }
+          $sddlAccess=$originalSecurity.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+          if($mode -eq 'apply') {
+              if(Test-Path -LiteralPath $root) { throw 'Untracked SCM snapshot already exists' }
+              foreach($item in $originalSecurity.DiscretionaryAcl) {
+                  if($item.SecurityIdentifier.Value -eq $identity.LearnerSid -and
+                     $item.AceType -eq [Security.AccessControl.AceType]::AccessAllowed -and
+                     ($item.AccessMask -band 0x0002)) {
+                      throw 'Learner already has SCM create-service access'
+                  }
+              }
+              $root=New-Wslpe45OwnedFixture -Number 22 -Id $id
+              [pscustomobject]@{
+                  schema='kingdoms.wslpe.scm-original.v1'
+                  learner_sid=$identity.LearnerSid
+                  original_sddl=$out
+              } | ConvertTo-Json -Compress | Set-Content -LiteralPath $snapshot -Encoding UTF8 -ErrorAction Stop
+              # Only the exact local learner obtains SC_MANAGER_CREATE_SERVICE.
+              # Snapshot is preserved for lossless restoration and diff.
+              $ace=[Security.AccessControl.CommonAce]::new(
+                  [Security.AccessControl.AceFlags]::None,
+                  [Security.AccessControl.AceQualifier]::AccessAllowed,
+                  0x0002,$learner,$false,$null
+              )
+              $originalSecurity.DiscretionaryAcl.InsertAce($originalSecurity.DiscretionaryAcl.Count,$ace)
+              $modified=$originalSecurity.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+              $changed=(& sc.exe sdset scmanager $modified 2>&1 | Out-String).Trim()
+              if($LASTEXITCODE -ne 0) { throw "SCM DACL update failed: $changed" }
+              $verified=(& sc.exe sdshow scmanager 2>&1 | Out-String).Trim()
+              if($LASTEXITCODE -ne 0 -or $verified -notmatch 'D:') {
+                  throw 'SCM DACL write could not be verified'
+              }
+          }
+          elseif($mode -eq 'reset') {
+              $root=Assert-Wslpe45OwnedFixture -Number 22 -Id $id
+              if(-not (Test-Path -LiteralPath $snapshot -PathType Leaf)) {
+                  throw 'Original SCM descriptor snapshot missing'
+              }
+              $state=Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json
+              if($state.schema -cne 'kingdoms.wslpe.scm-original.v1' -or
+                 $state.learner_sid -cne $identity.LearnerSid -or
+                 $state.original_sddl -notmatch '^D:') {
+                  throw 'SCM ownership snapshot malformed'
+              }
+              $current=[Security.AccessControl.RawSecurityDescriptor]::new($out)
+              $matches=0
+              for($i=$current.DiscretionaryAcl.Count-1;$i -ge 0;$i--) {
+                  $rule=$current.DiscretionaryAcl[$i]
+                  if($rule.AceType -eq [Security.AccessControl.AceType]::AccessAllowed -and
+                     $rule.SecurityIdentifier.Value -eq $identity.LearnerSid -and
+                     $rule.AccessMask -eq 0x0002) {
+                      $current.DiscretionaryAcl.RemoveAce($i)
+                      $matches++
+                  }
+              }
+              if($matches -ne 1) { throw 'Expected one and only one scoped SCM grant' }
+              $baseline=[Security.AccessControl.RawSecurityDescriptor]::new([string]$state.original_sddl)
+              if($current.GetSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne
+                 $baseline.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)) {
+                  throw 'SCM ACL changed outside the intended lab ACE; manual recovery required'
+              }
+              $restored=(& sc.exe sdset scmanager ([string]$state.original_sddl) 2>&1 | Out-String).Trim()
+              if($LASTEXITCODE -ne 0) { throw "Exact SCM DACL restore failed: $restored" }
+              $after=(& sc.exe sdshow scmanager 2>&1 | Out-String).Trim()
+              if($LASTEXITCODE -ne 0 -or
+                 [Security.AccessControl.RawSecurityDescriptor]::new($after).GetSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne
+                 $baseline.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)) {
+                  throw 'Exact SCM baseline DACL restoration not verified'
+              }
+              Remove-Wslpe45OwnedFixture -Number 22 -Id $id
+              Write-Output 'WSLPE45_SCM_CREATE=RESET'
+          }
+          else {
+              $root=Assert-Wslpe45OwnedFixture -Number 22 -Id $id
+              $found=$false
+              foreach($rule in $originalSecurity.DiscretionaryAcl) {
+                  if($rule.AceType -eq [Security.AccessControl.AceType]::AccessAllowed -and
+                     $rule.SecurityIdentifier.Value -eq $identity.LearnerSid -and
+                     ($rule.AccessMask -band 0x0002)) { $found=$true }
+              }
+              if(-not $found) { throw 'SCM create-service access ACE absent' }
+              if(-not (Test-Path -LiteralPath $snapshot -PathType Leaf)) { throw 'Original SCM snapshot absent' }
+              Write-Output 'WSLPE45_SCM_CREATE=VULNERABLE_CONFIGURATION'
+          }
+          Write-Output ('WSLPE45_BATCH_STAGE='+$id+':'+$stage+':PASS')
+      changed_when: wslpe_45_action in ['apply','reset']
