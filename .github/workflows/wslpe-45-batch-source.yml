@@ -19,6 +19,7 @@ on:
       - 'tests/test_wslpe45_batch_operator.py'
       - 'tests/test_wslpe45_registry_trust.py'
       - 'tests/test_wslpe45_task_definition_acl.py'
+      - 'tests/test_wslpe45_lsa_rights.py'
       - 'tests/test_wslpe45_candidate_traversal.py'
       - 'ansible/files/wslpe45/**'
       - 'ansible/wslpe45/**'
@@ -37,7 +38,7 @@ jobs:
       - name: Validate Python, all 45 unique IDs, frozen NORTH and exact-guest negative paths
         run: |
           python -m py_compile kingdoms/wslpe_batch_catalog.py kingdoms/wslpe_batch_feasibility.py scripts/wslpe-45-batch.py scripts/wslpe-45-feasibility.py tests/test_wslpe_batch_catalog.py tests/test_wslpe_batch_feasibility.py
-          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust tests.test_wslpe45_task_definition_acl
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust tests.test_wslpe45_task_definition_acl tests.test_wslpe45_lsa_rights
           python scripts/wslpe-45-batch.py
           python scripts/wslpe-45-feasibility.py
           python scripts/wslpe-45-qualify.py
@@ -227,3 +228,61 @@ jobs:
             }
           }
           Write-Output "[PASS] Task Scheduler DACL source parsed on Windows PowerShell 5.1"
+
+      - name: Parse and compile three standalone LSA rights fixture sources
+        shell: pwsh
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          import re
+          import yaml
+          folder=Path(os.environ["RUNNER_TEMP"]) / "wslpe45-lsa-rights"
+          folder.mkdir(exist_ok=True)
+          src=Path("ansible/files/wslpe45/WslpeLsaRights.psm1").read_text(encoding="utf-8")
+          snippets=[
+              ("lsa",r"(?s)Add-Type -TypeDefinition @'\s*\n(.*?)\n'@ -Language CSharp"),
+              ("service",r"(?s)\$serviceCode=@'\s*\n(.*?)\n'@"),
+          ]
+          for name,expression in snippets:
+              match=re.search(expression,src)
+              assert match, f"Missing distinct {name} native source"
+              (folder/f"{name}.cs").write_text(match.group(1),encoding="utf-8")
+          for number,name in ((31,"setakeownership_privilege"),(32,"serestore_privilege"),(33,"sedebug_privilege")):
+              plays=yaml.safe_load(Path(f"ansible/wslpe45/{name}.yml").read_text(encoding="utf-8"))
+              assert [p["hosts"] for p in plays]==["localhost","wslpe"]
+              for i,item in enumerate(plays[1]["pre_tasks"]+plays[1]["tasks"]):
+                  script=item.get("ansible.windows.win_powershell",{}).get("script")
+                  if script:
+                      (folder/f"{number}-{i}.ps1").write_text(script,encoding="utf-8-sig")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'LSA fixture source extraction failed' }
+          $sources=@(Get-Item 'ansible/files/wslpe45/WslpeLsaRights.psm1') +
+            @(Get-ChildItem -Path "$env:RUNNER_TEMP/wslpe45-lsa-rights/*.ps1")
+          if ($sources.Count -lt 7) { throw 'Missing native LSA scripts' }
+          foreach ($path in $sources) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $path.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "Native LSA PowerShell 5.1 source parsing failed: $($path.Name)"
+            }
+          }
+          Write-Output "[PASS] All $($sources.Count) standalone LSA PowerShell scripts parse"
+      - name: Compile scoped LSA PInvoke and non-PPL debug service on Windows
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:RUNNER_TEMP 'wslpe45-lsa-rights'
+          $lsa=Get-Content -LiteralPath (Join-Path $root 'lsa.cs') -Raw
+          Add-Type -TypeDefinition $lsa -Language CSharp -OutputAssembly (Join-Path $root 'lsa.dll')
+          if(-not (Test-Path -LiteralPath (Join-Path $root 'lsa.dll'))) {
+            throw 'Native account-right PInvoke source failed compilation'
+          }
+          $service=Get-Content -LiteralPath (Join-Path $root 'service.cs') -Raw
+          Add-Type -TypeDefinition $service -Language CSharp -ReferencedAssemblies 'System.ServiceProcess.dll' -OutputAssembly (Join-Path $root 'debug-target.exe') -OutputType WindowsApplication
+          if(-not (Test-Path -LiteralPath (Join-Path $root 'debug-target.exe'))) {
+            throw 'Standalone debug service CSharp source failed compilation'
+          }
+          Write-Output '[PASS] Native LSA right helper and SYSTEM test service build without deployment'
