@@ -88,6 +88,61 @@ def index_rows() -> list[dict]:
     return rows
 
 
+
+def controller_source_blockers(playbook: Path, plays: list[dict]) -> list[str]:
+    """Resolve all candidate-local copies/imports before guest access.
+
+    Only canonical owned WSLPE sources and the fixed protective task file
+    are allowed. This is a controller-side dependency check, not proof that
+    the deployed Windows consumer works.
+    """
+    problems: list[str] = []
+    source_dir = (ROOT / "ansible/files/wslpe45").resolve()
+    copied: list[Path] = []
+    imports = 0
+    for play in plays:
+        for section in ("pre_tasks", "tasks", "post_tasks"):
+            tasks = play.get(section, [])
+            if not isinstance(tasks, list):
+                problems.append(f"{section} must be a task list")
+                continue
+            for task in tasks:
+                if not isinstance(task, dict):
+                    problems.append("invalid task mapping")
+                    continue
+                source = task.get("ansible.windows.win_copy")
+                if source is not None:
+                    if not isinstance(source, dict):
+                        problems.append("win_copy must be a mapping")
+                        continue
+                    name = source.get("src")
+                    if not isinstance(name, str) or not re.fullmatch(
+                        r"\.\./files/wslpe45/[A-Za-z0-9_-]+\.(?:psm1|cs)", name
+                    ):
+                        problems.append(f"noncanonical controller copy source: {name!r}")
+                        continue
+                    candidate = playbook.parent / name
+                    if (candidate.is_symlink() or not candidate.is_file()
+                            or candidate.resolve().parent != source_dir):
+                        problems.append(f"missing or unsafe controller copy source: {name}")
+                    else:
+                        copied.append(candidate.resolve())
+                imported = task.get("ansible.builtin.import_tasks")
+                if imported is not None:
+                    imports += 1
+                    if (imported != "lockdown-library.yml"
+                            or (playbook.parent / imported).is_symlink()
+                            or not (playbook.parent / imported).is_file()):
+                        problems.append("unsafe or missing WSLPE library lockdown import")
+    if sum(item.name == "WslpeFixture.psm1" for item in copied) != 1:
+        problems.append("each candidate must copy one ownership library")
+    if imports != 1:
+        problems.append("each candidate must import exactly one library lockdown")
+    if not copied:
+        problems.append("candidate has no resolvable Windows source copies")
+    return problems
+
+
 def source_readiness() -> tuple[list[dict], list[str]]:
     rows = index_rows()
     blockers: list[str] = []
@@ -110,6 +165,8 @@ def source_readiness() -> tuple[list[dict], list[str]]:
                 or plays[1].get("hosts") != "wslpe"):
             blockers.append(f"#{row['number']:02d} {row['id']}: unsafe fixture plays")
             continue
+        for reason in controller_source_blockers(path, plays):
+            blockers.append(f"#{row['number']:02d} {row['id']}: {reason}")
         text = path.read_text(encoding="utf-8")
         if any(fragment in text for fragment in (
             "ansible/ws01-lpe-install.yml", "hosts: domain", "hosts: dc",

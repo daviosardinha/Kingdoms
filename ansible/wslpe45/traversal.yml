@@ -85,13 +85,13 @@
 
     - name: Install exact standalone-only shared ownership library
       ansible.windows.win_copy:
-        src: files/wslpe45/WslpeFixture.psm1
+        src: ../files/wslpe45/WslpeFixture.psm1
         dest: '{{ scenario_library }}\WslpeFixture.psm1'
       when: wslpe_45_action == 'apply'
 
     - name: Install isolated #35 Windows service source
       ansible.windows.win_copy:
-        src: files/wslpe45/KingdomTraversalService.cs
+        src: ../files/wslpe45/KingdomTraversalService.cs
         dest: '{{ scenario_library }}\KingdomTraversalService.cs'
       when: wslpe_45_action == 'apply'
 
