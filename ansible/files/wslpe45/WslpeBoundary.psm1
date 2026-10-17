@@ -1,11 +1,11 @@
-# Four standalone-only IPC/application/file-race attack fixtures.
+# Five standalone-only IPC/application/file-race/NTFS-link attack fixtures.
 Set-StrictMode -Version Latest
 
 function Invoke-Wslpe45Boundary {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('named_pipe_authorization','privileged_loopback_http_authz','privileged_file_toctou','privileged_backup_restore_api')]
+        [ValidateSet('named_pipe_authorization','privileged_loopback_http_authz','privileged_file_toctou','privileged_backup_restore_api','ntfs_link_redirection')]
         [string]$Id,
         [Parameter(Mandatory=$true)]
         [ValidateSet('apply','validate','reset')][string]$Action,
@@ -16,6 +16,7 @@ function Invoke-Wslpe45Boundary {
     Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force -ErrorAction Stop
     $who=Assert-Wslpe45Identity
     $map=@{
+        ntfs_link_redirection=@{number=34;service='Kingdom45LinkSvc'}
         named_pipe_authorization=@{number=29;service='Kingdom45PipeSvc'}
         privileged_loopback_http_authz=@{number=39;service='Kingdom45HttpSvc'}
         privileged_file_toctou=@{number=44;service='Kingdom45RaceSvc'}
@@ -49,6 +50,9 @@ function Invoke-Wslpe45Boundary {
             $sid,[Security.AccessControl.FileSystemRights]::Modify,$flags,$prop,$allow)
         $acl.AddAccessRule($rule) | Out-Null
         Set-Acl -LiteralPath $input -AclObject $acl -ErrorAction Stop
+        if($Id -eq 'ntfs_link_redirection'){
+            Set-Content -LiteralPath (Join-Path $protected 'proof.txt') -Value 'BASELINE' -Encoding Ascii -ErrorAction Stop
+        }
         if($Id -eq 'privileged_file_toctou'){
             Set-Content -LiteralPath (Join-Path $input 'request.txt') -Value 'IDLE' -Encoding Ascii
         }

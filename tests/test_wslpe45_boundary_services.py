@@ -1,4 +1,4 @@
-"""Distinct #29/#39/#44/#45 standalone Windows native consumer contracts."""
+"""Distinct #29/#34/#39/#44/#45 standalone Windows native consumer contracts."""
 from pathlib import Path
 import unittest
 import yaml
@@ -8,6 +8,7 @@ MOD=ROOT/"ansible/files/wslpe45/WslpeBoundary.psm1"
 SERVICE=ROOT/"ansible/files/wslpe45/KingdomBoundaryService.cs"
 IDS=(
     (29,"named_pipe_authorization","PipeLoop"),
+    (34,"ntfs_link_redirection","LinkProof"),
     (39,"privileged_loopback_http_authz","HttpLoop"),
     (44,"privileged_file_toctou","RaceLoop"),
     (45,"privileged_backup_restore_api","RestoreLoop"),
@@ -21,6 +22,7 @@ class BoundaryFixtureTests(unittest.TestCase):
             self.assertIn("private void "+method+"()",c)
         for fragment in (
             "NamedPipeServerStream", "PipeSecurity", "BuiltinUsersSid",
+            "GetFinalPathNameByHandle", "FileMode.Open", "SafeFileHandle",
             "HttpListener", "127.0.0.1:45939", "AuthenticationSchemes.Anonymous",
             "Thread.Sleep(1600)", "VALIDATED", "File.ReadAllText(input).Trim()",
             '"RESTORE"', '"backup.txt"', "Protected(", "WindowsIdentity.GetCurrent().Name",
@@ -35,7 +37,7 @@ class BoundaryFixtureTests(unittest.TestCase):
         for required in ("Assert-Wslpe45Identity", "New-Wslpe45OwnedFixture",
                          "Assert-Wslpe45OwnedFixture", "Remove-Wslpe45OwnedFixture",
                          "LocalSystem", "WSLPE45_BATCH_STAGE=",
-                         "Kingdom45PipeSvc", "Kingdom45HttpSvc",
+                         "Kingdom45PipeSvc", "Kingdom45LinkSvc", "Kingdom45HttpSvc",
                          "Kingdom45RaceSvc", "Kingdom45RestoreSvc",
                          "Protected", "KingdomBoundaryService.cs"):
             if required=="Protected":

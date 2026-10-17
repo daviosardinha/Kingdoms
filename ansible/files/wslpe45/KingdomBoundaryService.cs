@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Net;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.ServiceProcess;
@@ -70,6 +72,8 @@ public sealed class Kingdom45BoundaryService : ServiceBase
             RaceLoop();
         else if (Mode == "privileged_backup_restore_api")
             RestoreLoop();
+        else if (Mode == "ntfs_link_redirection")
+            LinkProof();
     }
 
     private void PipeLoop()
@@ -198,6 +202,45 @@ public sealed class Kingdom45BoundaryService : ServiceBase
             catch (IOException) { }
             Thread.Sleep(400);
         }
+    }
+
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+    private static extern uint GetFinalPathNameByHandle(
+        IntPtr hFile, StringBuilder filename, uint capacity, uint flags);
+
+    private void LinkProof()
+    {
+        // Vulnerable use: SYSTEM follows a learner-created NTFS junction
+        // from the inbox to a protected file in this private lab.
+        // Containment: open an existing file only, verify its FINAL path via
+        // the already-open handle, then write through that SAME handle.
+        // No creation or writing outside this exact fixture is permitted.
+        string alias = Path.Combine(Root, "inbox", "link", "proof.txt");
+        string expected = "\\\\?\\" + Path.GetFullPath(
+            Path.Combine(Root, "protected", "proof.txt"));
+        try
+        {
+            using (FileStream stream = new FileStream(
+                alias, FileMode.Open, FileAccess.Write, FileShare.None))
+            {
+                StringBuilder resolved = new StringBuilder(1024);
+                uint length = GetFinalPathNameByHandle(
+                    stream.SafeFileHandle.DangerousGetHandle(),
+                    resolved, (uint)resolved.Capacity, 0);
+                if (length == 0 || length >= resolved.Capacity ||
+                    !String.Equals(resolved.ToString(), expected,
+                                   StringComparison.OrdinalIgnoreCase))
+                    return;
+                byte[] proof = Encoding.ASCII.GetBytes(
+                    "WSLPE45_NTFS_LINK_PROOF=" +
+                    WindowsIdentity.GetCurrent().Name);
+                stream.SetLength(0);
+                stream.Write(proof, 0, proof.Length);
+                stream.Flush(true);
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 
     public static void Main()
