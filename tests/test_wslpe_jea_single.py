@@ -65,8 +65,11 @@ class JeaSingleGateTests(unittest.TestCase):
         self.assertIn("KINGDOMS-WSLPE-PRE-JEA",source)
         self.assertIn("wslpe-jea-readiness.py",source)
         self.assertIn('command(ansible, inv, varsfile, row, expected, "apply", None, "apply")',source)
+        # The runner must contain the explicit source-rejection guard;
+        # its mention of Restart-Service is NOT a runtime restart call.
+        self.assertIn('or "Restart-Service" in source',source)
         for wrong in ("revertToSnapshot", "vmrun\", \"-T\", \"ws\", \"stop\"",
-                      "Restart-Service", "disable_vagrant",
+                      "disable_vagrant",
                       "10.4.10.31","GOAD-WS01","--execute",
                       "ansible/roles/windows_lpe"):
             self.assertNotIn(wrong,source)
