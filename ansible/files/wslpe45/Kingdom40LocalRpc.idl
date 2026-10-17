@@ -1,7 +1,7 @@
 // WSLPE #40: MIDL interface contract for a local-only educational RPC fixture.
 // NOT a complete or deployable authorization scenario. Its eventual service
 // must use ncalrpc only, reject network transports, and write only owned proof.
-import "rpc.idl";
+// handle_t is defined by MIDL; no external rpc.idl import required.
 
 [
   uuid(4D9A3840-AD40-4E2F-8040-5B3139D45A40),
