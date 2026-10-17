@@ -65,8 +65,8 @@ Export-ModuleMember -Function Invoke-Kingdoms45Maintenance
         $definitions=@{ $principal = @{ RoleCapabilities = @('Kingdoms45Role') } }
         New-PSSessionConfigurationFile -Path $config -SessionType RestrictedRemoteServer -RunAsVirtualAccount -RoleDefinitions $definitions -ErrorAction Stop
         if(-not (Test-PSSessionConfigurationFile -Path $config -ErrorAction Stop)){throw 'JEA configuration validation failed'}
-        Register-PSSessionConfiguration -Name $name -Path $config -NoServiceRestart -Force -ErrorAction Stop | Out-Null
-        Write-Output 'WSLPE45_JEA_REGISTERED_WITHOUT_WINRM_RESTART'
+        Register-PSSessionConfiguration -Name $name -Path $config -Force -ErrorAction Stop | Out-Null
+        Write-Output 'WSLPE45_JEA_REGISTERED_FROM_LOCAL_CONSOLE'
     }
     elseif($Action -eq 'reset'){
         $root=Assert-Wslpe45OwnedFixture -Number 30 -Id $id
@@ -74,14 +74,14 @@ Export-ModuleMember -Function Invoke-Kingdoms45Maintenance
             throw 'JEA module owner marker invalid; refusing cleanup'
         }
         if(-not $existing){throw 'Dedicated JEA endpoint missing'}
-        Unregister-PSSessionConfiguration -Name $name -NoServiceRestart -Force -ErrorAction Stop
+        Unregister-PSSessionConfiguration -Name $name -Force -ErrorAction Stop
         if(Get-PSSessionConfiguration -Name $name -ErrorAction SilentlyContinue){throw 'JEA endpoint still registered'}
         foreach($path in @($moduleDir,$roles)){
             if(([IO.File]::GetAttributes($path) -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'JEA module reparse point detected'}
         }
         Remove-Item -LiteralPath $moduleDir -Recurse -Force -ErrorAction Stop
         Remove-Wslpe45OwnedFixture -Number 30 -Id $id
-        Write-Output 'WSLPE45_JEA_UNREGISTERED_WITHOUT_WINRM_RESTART'
+        Write-Output 'WSLPE45_JEA_UNREGISTERED_FROM_LOCAL_CONSOLE'
     }
     elseif($Stage -eq 'clean'){
         if($existing -or (Test-Path -LiteralPath $moduleDir) -or (Test-Path -LiteralPath $root)){throw 'JEA fixture not clean'}

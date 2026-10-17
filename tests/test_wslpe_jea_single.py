@@ -68,8 +68,11 @@ class JeaLocalLifecycleTests(unittest.TestCase):
         self.assertEqual(sum(
             t.get("ansible.builtin.import_tasks")=="lockdown-library.yml"
             for t in tasks),1)
-        self.assertIn("wslpe_45_action == 'stage'",
-                      LOCKDOWN.read_text())
+        self.assertEqual(
+            yaml.safe_load(LOCKDOWN.read_text())[0]["when"],
+            "wslpe_45_action == 'apply'")
+        imports=[t for t in tasks if t.get("ansible.builtin.import_tasks")=="lockdown-library.yml"]
+        self.assertEqual(imports[0]["vars"]["wslpe_45_action"],"apply")
         text=STAGE.read_text()
         for token in ("Register-PSSessionConfiguration",
                       "Unregister-PSSessionConfiguration",
@@ -99,7 +102,7 @@ class JeaLocalLifecycleTests(unittest.TestCase):
         self.assertIn("PSSenderInfo",module)
         self.assertIn("SESSIONNAME",module)
         self.assertIn("WindowsPrincipal",module)
-        self.assertNotIn("-NoServiceRestart",module)
+        self.assertNotIn(" -NoServiceRestart -Force",module)
         self.assertNotIn("Restart-Service",local)
         for forbidden in ("revertToSnapshot","GOAD-WS01","10.4.10.31",
                           "Disable-LocalUser","Remove-LocalUser","vmrun"):

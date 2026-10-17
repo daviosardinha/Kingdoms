@@ -46,7 +46,12 @@ function Restore-Wslpe45WinrmAfterLocalJea {
         throw 'WinRM did not recover locally; investigate from VMware console'
     }
     # Do not alter any machine-wide listener/certificate/firewall settings.
-    $https=@(Get-NetTCPConnection -LocalPort 5986 -State Listen -ErrorAction SilentlyContinue)
+    $https=@()
+    for ($j=0; $j -lt 20; $j++) {
+        $https=@(Get-NetTCPConnection -LocalPort 5986 -State Listen -ErrorAction SilentlyContinue)
+        if ($https.Count -gt 0) { break }
+        Start-Sleep -Seconds 1
+    }
     if ($https.Count -lt 1) { throw 'WinRM running but HTTPS/5986 is not listening' }
     Write-Output 'WSLPE45_JEA_WINRM_LOCAL_RECOVERY=PASS'
 }

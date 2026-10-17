@@ -82,6 +82,10 @@
 
     - name: Protect WSLPE-only library before file staging
       ansible.builtin.import_tasks: lockdown-library.yml
+      vars:
+        # Import-only override: activate the original ACL hardening task,
+        # but keep the actual staging playbook action equal to stage.
+        wslpe_45_action: apply
 
     - name: Copy WSLPE fixture ownership helper
       ansible.windows.win_copy:
