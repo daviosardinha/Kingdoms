@@ -1,4 +1,4 @@
-"""Distinct #29/#34/#39/#44/#45 standalone Windows native consumer contracts."""
+"""Distinct #29/#34/#39/#43/#44/#45 standalone Windows native consumer contracts."""
 from pathlib import Path
 import unittest
 import yaml
@@ -9,6 +9,7 @@ SERVICE=ROOT/"ansible/files/wslpe45/KingdomBoundaryService.cs"
 IDS=(
     (29,"named_pipe_authorization","PipeLoop"),
     (34,"ntfs_link_redirection","LinkProof"),
+    (43,"elevated_plugin_signature_bypass","PluginProof"),
     (39,"privileged_loopback_http_authz","HttpLoop"),
     (44,"privileged_file_toctou","RaceLoop"),
     (45,"privileged_backup_restore_api","RestoreLoop"),
@@ -23,6 +24,7 @@ class BoundaryFixtureTests(unittest.TestCase):
         for fragment in (
             "NamedPipeServerStream", "PipeSecurity", "BuiltinUsersSid",
             "GetFinalPathNameByHandle", "FileMode.Open", "SafeFileHandle",
+            "Assembly.LoadFrom", "manifest.txt", "trusted=true",
             "HttpListener", "127.0.0.1:45939", "AuthenticationSchemes.Anonymous",
             "Thread.Sleep(1600)", "VALIDATED", "File.ReadAllText(input).Trim()",
             '"RESTORE"', '"backup.txt"', "Protected(", "WindowsIdentity.GetCurrent().Name",
@@ -38,6 +40,7 @@ class BoundaryFixtureTests(unittest.TestCase):
                          "Assert-Wslpe45OwnedFixture", "Remove-Wslpe45OwnedFixture",
                          "LocalSystem", "WSLPE45_BATCH_STAGE=",
                          "Kingdom45PipeSvc", "Kingdom45LinkSvc", "Kingdom45HttpSvc",
+                         "Kingdom45PluginSvc",
                          "Kingdom45RaceSvc", "Kingdom45RestoreSvc",
                          "Protected", "KingdomBoundaryService.cs"):
             if required=="Protected":
@@ -68,6 +71,14 @@ class BoundaryFixtureTests(unittest.TestCase):
                 self.assertNotIn("hosts: dc",content)
                 self.assertNotIn("10.4.10.31",content)
         self.assertNotIn("sc.exe sdset scmanager",m)
+
+    def test_plugin_source_is_scoped_to_owned_proof(self):
+        sample=(ROOT/"ansible/files/wslpe45/Kingdom45Plugin.cs").read_text()
+        self.assertIn("namespace Kingdom45Plugin",sample)
+        self.assertIn("class Entry",sample)
+        self.assertIn("protected",sample)
+        self.assertIn("WindowsIdentity.GetCurrent().Name",sample)
+        self.assertIn("Kingdom45Plugin.cs",(ROOT/"ansible/wslpe45/elevated_plugin_signature_bypass.yml").read_text())
 
 if __name__=="__main__":
     unittest.main()

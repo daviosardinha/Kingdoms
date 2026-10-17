@@ -412,4 +412,9 @@ jobs:
             (Resolve-Path 'ansible/files/wslpe45/WslpeBoundary.psm1'),
             [ref]$tokens,[ref]$errors)
           if ($errors.Count -ne 0) { throw 'Boundary PowerShell module has syntax errors' }
-          Write-Output '[PASS] Native boundary service and management module compile and parse'
+          $pluginSrc = Get-Content -LiteralPath 'ansible/files/wslpe45/Kingdom45Plugin.cs' -Raw
+          $pluginDll = Join-Path $env:RUNNER_TEMP 'Kingdom45Plugin.dll'
+          Add-Type -TypeDefinition $pluginSrc -Language CSharp -OutputAssembly $pluginDll -OutputType Library
+          if (!(Test-Path -LiteralPath $pluginDll -PathType Leaf)) { throw 'Managed plugin build failed' }
+          Write-Output '[PASS] Native boundary service, management module, and managed plugin compile'
+

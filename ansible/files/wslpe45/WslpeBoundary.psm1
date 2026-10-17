@@ -1,11 +1,11 @@
-# Five standalone-only IPC/application/file-race/NTFS-link attack fixtures.
+# Six lab-only IPC/file-link/plugin trust candidates, no external guest impact.
 Set-StrictMode -Version Latest
 
 function Invoke-Wslpe45Boundary {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('named_pipe_authorization','privileged_loopback_http_authz','privileged_file_toctou','privileged_backup_restore_api','ntfs_link_redirection')]
+        [ValidateSet('named_pipe_authorization','privileged_loopback_http_authz','privileged_file_toctou','privileged_backup_restore_api','ntfs_link_redirection','elevated_plugin_signature_bypass')]
         [string]$Id,
         [Parameter(Mandatory=$true)]
         [ValidateSet('apply','validate','reset')][string]$Action,
@@ -17,6 +17,7 @@ function Invoke-Wslpe45Boundary {
     $who=Assert-Wslpe45Identity
     $map=@{
         ntfs_link_redirection=@{number=34;service='Kingdom45LinkSvc'}
+        elevated_plugin_signature_bypass=@{number=43;service='Kingdom45PluginSvc'}
         named_pipe_authorization=@{number=29;service='Kingdom45PipeSvc'}
         privileged_loopback_http_authz=@{number=39;service='Kingdom45HttpSvc'}
         privileged_file_toctou=@{number=44;service='Kingdom45RaceSvc'}
@@ -50,6 +51,13 @@ function Invoke-Wslpe45Boundary {
             $sid,[Security.AccessControl.FileSystemRights]::Modify,$flags,$prop,$allow)
         $acl.AddAccessRule($rule) | Out-Null
         Set-Acl -LiteralPath $input -AclObject $acl -ErrorAction Stop
+        if($Id -eq 'elevated_plugin_signature_bypass'){
+            $pluginSource='C:\ProgramData\KingdomsWSLPE45\lib\Kingdom45Plugin.cs'
+            if(-not (Test-Path -LiteralPath $pluginSource -PathType Leaf)){throw 'Fixed benign plugin source missing'}
+            $plugin=Join-Path $input 'Kingdom45Plugin.dll'
+            Add-Type -TypeDefinition (Get-Content -LiteralPath $pluginSource -Raw -ErrorAction Stop) -Language CSharp -OutputAssembly $plugin -OutputType Library -ErrorAction Stop
+            Set-Content -LiteralPath (Join-Path $input 'manifest.txt') -Value 'trusted=false' -Encoding Ascii -ErrorAction Stop
+        }
         if($Id -eq 'ntfs_link_redirection'){
             Set-Content -LiteralPath (Join-Path $protected 'proof.txt') -Value 'BASELINE' -Encoding Ascii -ErrorAction Stop
         }

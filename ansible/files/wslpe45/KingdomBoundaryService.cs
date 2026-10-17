@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Net;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Security.AccessControl;
@@ -74,6 +75,8 @@ public sealed class Kingdom45BoundaryService : ServiceBase
             RestoreLoop();
         else if (Mode == "ntfs_link_redirection")
             LinkProof();
+        else if (Mode == "elevated_plugin_signature_bypass")
+            PluginProof();
     }
 
     private void PipeLoop()
@@ -241,6 +244,36 @@ public sealed class Kingdom45BoundaryService : ServiceBase
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
+    }
+
+    private void PluginProof()
+    {
+        // Intentionally defective trust decision: a learner-writable
+        // manifest string is treated as a cryptographic signature verdict.
+        // All component files and the proof sink are owned by this lab.
+        string inbox = Path.Combine(Root, "inbox");
+        string manifest = Path.Combine(inbox, "manifest.txt");
+        string assemblyPath = Path.Combine(inbox, "Kingdom45Plugin.dll");
+        try
+        {
+            if (!File.Exists(manifest) || !File.Exists(assemblyPath) ||
+                File.ReadAllText(manifest).Trim() != "trusted=true")
+                return;
+            Assembly candidate = Assembly.LoadFrom(assemblyPath);
+            Type entry = candidate.GetType("Kingdom45Plugin.Entry", false);
+            if (entry == null)
+                return;
+            MethodInfo method = entry.GetMethod("Proof",
+                BindingFlags.Public | BindingFlags.Static);
+            if (method == null || method.ReturnType != typeof(void))
+                return;
+            method.Invoke(null, new object[] {
+                Path.Combine(Root, "protected", "proof.txt")
+            });
+        }
+        catch (IOException) { }
+        catch (BadImageFormatException) { }
+        catch (TargetInvocationException) { }
     }
 
     public static void Main()
