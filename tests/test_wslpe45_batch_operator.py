@@ -18,15 +18,22 @@ class OperatorTests(unittest.TestCase):
         self.assertEqual([r["number"] for r in rows], list(range(21, 46)))
         self.assertEqual(len(set(r["id"] for r in rows)), 25)
         self.assertEqual([r["id"] for r in rows if r["status"] == "candidate"],
-                         ["privileged_path_traversal_write"])
-        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 24)
+                         ["scheduled_task_definition_acl",
+                          "scm_create_service_acl",
+                          "ifeo_debugger_acl_hijack",
+                          "app_paths_registry_hijack",
+                          "setakeownership_privilege",
+                          "serestore_privilege",
+                          "sedebug_privilege",
+                          "privileged_path_traversal_write"])
+        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 17)
         self.assertTrue(all(r["learner_proof"] == "pending" for r in rows))
 
     def test_no_partial_live_execution_and_no_guest_contact(self):
         rows, blockers = batch.source_readiness()
         self.assertEqual(len(rows), 25)
-        self.assertEqual(len(blockers), 24)
-        self.assertTrue(all("privileged_path_traversal_write" not in reason for reason in blockers))
+        self.assertEqual(len(blockers), 17)
+        self.assertTrue(all("no source-qualified fixture" in reason for reason in blockers))
         args = SimpleNamespace(execute=True, timeout_seconds=900,
                                report_dir="/tmp/unused")
         with patch.object(batch, "trusted_safety") as safety, patch.object(

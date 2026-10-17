@@ -6,8 +6,9 @@
 
 - **Foundation #1–20:** reversible six-stage lifecycle previously accepted on the standalone guest, **not** accepted for learner exploit proofs.
 - **Advanced #21–35 and Expert #36–45:** all **25/25 native Windows API checks passed** on workgroup WSLPE-WS01. A native API read does **not** prove an attack is possible or correctly simulated.
+- **#21, #22, #26, #28, #31–33 and #35:** source-qualified candidates; no live scenario acceptance.
 - **#35:** dedicated source candidate (Windows SYSTEM service) with CI parse/compile and cleanup controls; no six-stage or learner-side live proof yet.
-- **Remaining 24:** design catalog only. No implementation or deployment claim.
+- **Remaining 17:** design catalog only. No implementation or deployment claim.
 - **Course:** nowhere near a 45-technique release claim until distinct mechanisms, 150 lifecycle stages, learner-side attack evidence, isolation and course content are accepted.
 
 ## One command, not 25 stop-and-start exercises

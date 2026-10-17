@@ -7,16 +7,16 @@ shared_north_role_frozen: true
 techniques:
   - number: 21
     id: scheduled_task_definition_acl
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/scheduled_task_definition_acl.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 22
     id: scm_create_service_acl
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/scm_create_service_acl.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 23
@@ -42,9 +42,9 @@ techniques:
     six_stage_qualification: pending
   - number: 26
     id: ifeo_debugger_acl_hijack
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/ifeo_debugger_acl_hijack.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 27
@@ -56,9 +56,9 @@ techniques:
     six_stage_qualification: pending
   - number: 28
     id: app_paths_registry_hijack
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/app_paths_registry_hijack.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 29
@@ -77,23 +77,23 @@ techniques:
     six_stage_qualification: pending
   - number: 31
     id: setakeownership_privilege
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/setakeownership_privilege.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 32
     id: serestore_privilege
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/serestore_privilege.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 33
     id: sedebug_privilege
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/sedebug_privilege.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 34
