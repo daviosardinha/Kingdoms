@@ -47,3 +47,7 @@ fi
 A passing 150-stage lifecycle report is **not** proof that learner `WSLPE-WS01\\lpe.trainee` exploited a privilege boundary. Those real learner-side artifacts, repeatability, RDP/NLA access, student isolation and Windows licensing remain separate acceptance gates.
 
 There is deliberately no claim that 25 new vulnerabilities have been implemented by this coordinator.
+
+### Repository write-path verification
+
+A documentation-only commit can verify GitHub write access to this feature branch without running Ansible, contacting Windows, or modifying NORTH. This check does not qualify any additional fixture or authorize live deployment.
