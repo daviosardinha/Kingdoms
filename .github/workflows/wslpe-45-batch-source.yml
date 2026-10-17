@@ -21,6 +21,7 @@ on:
       - 'tests/test_wslpe45_task_definition_acl.py'
       - 'tests/test_wslpe45_lsa_rights.py'
       - 'tests/test_wslpe45_scm_create_acl.py'
+      - 'tests/test_wslpe45_service_consumers.py'
       - 'tests/test_wslpe45_candidate_traversal.py'
       - 'ansible/files/wslpe45/**'
       - 'ansible/wslpe45/**'
@@ -39,7 +40,7 @@ jobs:
       - name: Validate Python, all 45 unique IDs, frozen NORTH and exact-guest negative paths
         run: |
           python -m py_compile kingdoms/wslpe_batch_catalog.py kingdoms/wslpe_batch_feasibility.py scripts/wslpe-45-batch.py scripts/wslpe-45-feasibility.py tests/test_wslpe_batch_catalog.py tests/test_wslpe_batch_feasibility.py
-          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust tests.test_wslpe45_task_definition_acl tests.test_wslpe45_lsa_rights tests.test_wslpe45_scm_create_acl
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust tests.test_wslpe45_task_definition_acl tests.test_wslpe45_lsa_rights tests.test_wslpe45_scm_create_acl tests.test_wslpe45_service_consumers
           python scripts/wslpe-45-batch.py
           python scripts/wslpe-45-feasibility.py
           python scripts/wslpe-45-qualify.py
@@ -319,3 +320,51 @@ jobs:
             }
           }
           Write-Output '[PASS] WSLPE-only SCM SDDL source parsed without guest access'
+
+      - name: Parse custom privileged consumer Playbooks and Windows module
+        shell: pwsh
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          import yaml
+          target=Path(os.environ["RUNNER_TEMP"]) / "wslpe45-service-consumers"
+          target.mkdir(exist_ok=True)
+          for number,id in ((23,"privileged_service_config_injection"),
+                            (24,"privileged_updater_hijack"),
+                            (41,"privileged_argument_injection")):
+              plays=yaml.safe_load(Path(f"ansible/wslpe45/{id}.yml").read_text(encoding="utf-8"))
+              assert [p["hosts"] for p in plays]==["localhost","wslpe"]
+              scripts=[]
+              for item in plays[1]["pre_tasks"]+plays[1]["tasks"]:
+                  body=item.get("ansible.windows.win_powershell",{}).get("script")
+                  if body:scripts.append(body)
+              assert len(scripts)>=2
+              for idx,script in enumerate(scripts):
+                  (target/f"{number}-{idx}.ps1").write_text(script,encoding="utf-8-sig")
+          '@ | python -
+          if($LASTEXITCODE -ne 0) { throw 'Custom service consumer script extraction failed' }
+          $sources=@(Get-Item 'ansible/files/wslpe45/WslpeServiceConsumer.psm1') +
+            @(Get-ChildItem "$env:RUNNER_TEMP/wslpe45-service-consumers/*.ps1")
+          if ($sources.Count -lt 7) { throw 'Missing service-consumer source scripts' }
+          foreach($file in $sources) {
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "Windows PowerShell 5.1 service source parsing failed: $($file.Name)"
+            }
+          }
+          Write-Output '[PASS] Distinct service-consumer PowerShell scripts parse'
+      - name: Compile custom service consumer on native Windows runner
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source=Get-Content -LiteralPath 'ansible/files/wslpe45/KingdomServiceConsumer.cs' -Raw
+          $binary=Join-Path $env:RUNNER_TEMP 'KingdomServiceConsumer.exe'
+          Add-Type -TypeDefinition $source -Language CSharp -ReferencedAssemblies 'System.ServiceProcess.dll' -OutputAssembly $binary -OutputType WindowsApplication
+          if(-not (Test-Path -LiteralPath $binary)) {
+            throw 'Custom service CSharp source did not produce binary'
+          }
+          Write-Output '[PASS] Three scoped service-consumer modes compile without installation'

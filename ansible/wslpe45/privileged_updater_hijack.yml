@@ -1,0 +1,92 @@
+---
+# Standalone WSLPE account-right fixture; source candidate only.
+# Direct local LSA policy must not be mistaken for effective existing tokens.
+- name: Check exact WSLPE inventory for new service consumer fixture
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Fail closed on foreign guests and invalid lifecycle action
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - (wslpe_45_technique | default('')) == 'privileged_updater_hijack'
+          - (wslpe_45_action | default('')) in ['apply','validate','reset']
+          - (wslpe_45_stage_label | default('')) in ['apply','vulnerable','reset','clean','reapply','revulnerable']
+          - (wslpe_45_action != 'apply') or wslpe_45_stage_label in ['apply','reapply']
+          - (wslpe_45_action != 'reset') or wslpe_45_stage_label == 'reset'
+          - (wslpe_45_action != 'validate') or ((wslpe_45_validate_state == 'clean' and wslpe_45_stage_label == 'clean') or (wslpe_45_validate_state == 'vulnerable' and wslpe_45_stage_label in ['vulnerable','revulnerable']))
+        fail_msg: 'Exact standalone WSLPE-WS01 required for dedicated service consumer fixture'
+
+- name: Standalone-only local learner service-consumer fixture
+  hosts: wslpe
+  gather_facts: false
+  pre_tasks:
+    - name: Assert Windows 10 workgroup identity and local non-admin learner
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $system = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if ($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $system.PartOfDomain -or
+              [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10') {
+              throw 'Refusing domain member or foreign operating system'
+          }
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if (-not $learner.Enabled) { throw 'Local learner disabled' }
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          if(@(Get-LocalGroupMember -Group $admins.Name | Where-Object {
+              $_.SID.Value -eq $learner.SID.Value
+          }).Count -ne 0) { throw 'Local learner must remain standard user' }
+          Write-Output 'WSLPE45_SERVICE_TARGET=EXACT'
+      changed_when: false
+  tasks:
+    - name: Verify common standalone library ancestors are not reparse points
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($path in @('C:\ProgramData\KingdomsWSLPE45','C:\ProgramData\KingdomsWSLPE45\lib')) {
+              if (Test-Path -LiteralPath $path) {
+                  $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+                  if(-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                      throw 'Unexpected standalone fixture library object'
+                  }
+              }
+          }
+      changed_when: false
+
+    - name: Create WSLPE common script directory on apply
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\KingdomsWSLPE45\lib'
+        state: directory
+      when: wslpe_45_action == 'apply'
+
+    - name: Stage standalone ownership and safety module
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeFixture.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Stage isolated privileged service-consumer module
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeServiceConsumer.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeServiceConsumer.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Run real dedicated service consumer fixture action with six-stage evidence
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeServiceConsumer.psm1' -Force
+          $result=@(Invoke-Wslpe45ServiceConsumer -Id 'privileged_updater_hijack' -Action '{{ wslpe_45_action }}' -Stage '{{ wslpe_45_stage_label }}')
+          $marker='WSLPE45_BATCH_STAGE=privileged_updater_hijack:{{ wslpe_45_stage_label }}:PASS'
+          if(@($result | Where-Object { $_ -ceq $marker }).Count -ne 1) {
+              throw 'No exact service consumer lifecycle evidence'
+          }
+          Write-Output $result
+      changed_when: wslpe_45_action in ['apply','reset']
