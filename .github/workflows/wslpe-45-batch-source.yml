@@ -18,6 +18,7 @@ on:
       - 'scripts/wslpe-45-qualify.py'
       - 'tests/test_wslpe45_batch_operator.py'
       - 'tests/test_wslpe45_registry_trust.py'
+      - 'tests/test_wslpe45_task_definition_acl.py'
       - 'tests/test_wslpe45_candidate_traversal.py'
       - 'ansible/files/wslpe45/**'
       - 'ansible/wslpe45/**'
@@ -36,7 +37,7 @@ jobs:
       - name: Validate Python, all 45 unique IDs, frozen NORTH and exact-guest negative paths
         run: |
           python -m py_compile kingdoms/wslpe_batch_catalog.py kingdoms/wslpe_batch_feasibility.py scripts/wslpe-45-batch.py scripts/wslpe-45-feasibility.py tests/test_wslpe_batch_catalog.py tests/test_wslpe_batch_feasibility.py
-          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust tests.test_wslpe45_task_definition_acl
           python scripts/wslpe-45-batch.py
           python scripts/wslpe-45-feasibility.py
           python scripts/wslpe-45-qualify.py
@@ -192,3 +193,37 @@ jobs:
             if (-not (Test-Path -LiteralPath $output)) { throw "Missing compiled $name fixture" }
           }
           Write-Output '[PASS] Three registry trust binaries compile on native Windows without deployment'
+
+      - name: Parse standalone #21 native Task Scheduler scripts
+        shell: pwsh
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          import yaml
+          play = yaml.safe_load(Path("ansible/wslpe45/scheduled_task_definition_acl.yml").read_text(encoding="utf-8"))
+          assert len(play) == 2
+          assert [p["hosts"] for p in play] == ["localhost","wslpe"]
+          root=Path(os.environ["RUNNER_TEMP"]) / "wslpe45-task21"
+          root.mkdir(exist_ok=True)
+          scripts = []
+          for entry in play[1]["pre_tasks"] + play[1]["tasks"]:
+              body=entry.get("ansible.windows.win_powershell",{}).get("script")
+              if body:
+                  scripts.append(body)
+          assert len(scripts) == 2
+          for i, source in enumerate(scripts):
+              (root / f"task-{i}.ps1").write_text(source,encoding="utf-8-sig")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot extract exact task definition ACL Windows source' }
+          $files = @(Get-ChildItem -Path "$env:RUNNER_TEMP/wslpe45-task21/*.ps1")
+          foreach($file in $files) {
+            $tokens = $null; $issues = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName,[ref]$tokens,[ref]$issues)
+            if($issues.Count -ne 0) {
+              $issues | ForEach-Object { Write-Error $_.Message }
+              throw "Task definition script syntax failed: $($file.Name)"
+            }
+          }
+          Write-Output "[PASS] Task Scheduler DACL source parsed on Windows PowerShell 5.1"

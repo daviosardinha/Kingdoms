@@ -64,7 +64,7 @@ class OperatorTests(unittest.TestCase):
                                "172.28.231.31", "validate", "clean")
         self.assertEqual(result[result.index("--limit") + 1], "ws01,localhost")
         self.assertEqual(result[result.index("-e") + 1],
-                         '{"wslpe_expected_address":"172.28.231.31","wslpe_45_action":"validate","wslpe_45_technique":"scheduled_task_definition_acl","wslpe_45_validate_state":"clean"}')
+                         '{"wslpe_expected_address":"172.28.231.31","wslpe_45_action":"validate","wslpe_45_technique":"scheduled_task_definition_acl","wslpe_45_stage_label":"clean","wslpe_45_validate_state":"clean"}')
         self.assertTrue(result[result.index("-e") - 1].endswith(
             "scheduled_task_definition_acl.yml"))
         self.assertNotIn("ansible/ws01-lpe-install.yml", " ".join(result))

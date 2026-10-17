@@ -93,6 +93,24 @@ function New-Wslpe45OwnedFixture {
     $fixturesRoot = Split-Path -Path $root -Parent
     New-Item -ItemType Directory -Path $fixturesRoot -Force -ErrorAction Stop | Out-Null
     New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
+    # The parent under ProgramData may be traversable, but each scenario
+    # directory and its owned executables are Administrators/SYSTEM only.
+    # Individual learner-writable entry points must be granted explicitly.
+    $acl = Get-Acl -LiteralPath $root -ErrorAction Stop
+    $acl.SetAccessRuleProtection($true, $false)
+    $inheritance = [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+    $propagation = [Security.AccessControl.PropagationFlags]::None
+    $allow = [Security.AccessControl.AccessControlType]::Allow
+    foreach ($principalSid in @('S-1-5-18','S-1-5-32-544')) {
+        $principal = [Security.Principal.SecurityIdentifier]::new($principalSid)
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+            $principal,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            $inheritance, $propagation, $allow
+        )
+        $acl.AddAccessRule($rule) | Out-Null
+    }
+    Set-Acl -LiteralPath $root -AclObject $acl -ErrorAction Stop
     $metadata = [ordered]@{
         schema = 'kingdoms.wslpe.fixture-owner.v1'
         machine = $identity.Machine

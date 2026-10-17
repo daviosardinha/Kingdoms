@@ -1,0 +1,148 @@
+---
+# WSLPE #21 dedicated SYSTEM task-definition ACL fixture; candidate only.
+# Task is unique; no production or NORTH task permissions are changed.
+- name: Authorize standalone WSLPE Task Scheduler descriptor fixture
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Verify exact workgroup inventory and lifecycle contract
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - (wslpe_45_technique | default('')) == 'scheduled_task_definition_acl'
+          - (wslpe_45_action | default('')) in ['apply','validate','reset']
+          - (wslpe_45_stage_label | default('')) in ['apply','vulnerable','reset','clean','reapply','revulnerable']
+          - (wslpe_45_action != 'apply') or wslpe_45_stage_label in ['apply','reapply']
+          - (wslpe_45_action != 'reset') or wslpe_45_stage_label == 'reset'
+          - (wslpe_45_action != 'validate') or ((wslpe_45_validate_state == 'clean' and wslpe_45_stage_label == 'clean') or (wslpe_45_validate_state == 'vulnerable' and wslpe_45_stage_label in ['vulnerable','revulnerable']))
+        fail_msg: 'Wslpe task definition ACL only permitted on exact standalone guest'
+
+- name: Standalone Task Scheduler task object permissions fixture
+  hosts: wslpe
+  gather_facts: false
+  pre_tasks:
+    - name: Prove local non-admin learner on exact Windows 10 workgroup
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+             $os.Caption -notmatch 'Windows 10' -or $os.ProductType -ne 1) {
+              throw 'Refusing wrong guest or domain member'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          if(-not $learner.Enabled) { throw 'Local learner disabled' }
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544'
+          if(@(Get-LocalGroupMember -Group $admins.Name | Where-Object {
+              $_.SID.Value -eq $learner.SID.Value
+          }).Count -ne 0) { throw 'Learner is already admin' }
+          Write-Output 'WSLPE45_TASK_TARGET=PASS'
+      changed_when: false
+  tasks:
+    - name: Ensure WSLPE-only shared library exists on apply
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\KingdomsWSLPE45\lib'
+        state: directory
+      when: wslpe_45_action == 'apply'
+
+    - name: Install owned fixture library only on WSLPE
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeFixture.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
+      when: wslpe_45_action == 'apply'
+
+    - name: Execute exact Task Scheduler object ACL lifecycle
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $id='scheduled_task_definition_acl'
+          $taskName='Kingdom45DefinitionTask'
+          $root='C:\ProgramData\KingdomsWSLPE45\fixtures\scheduled_task_definition_acl'
+          $app=Join-Path $root 'Kingdom45Task21.exe'
+          $mode='{{ wslpe_45_action }}'
+          $stage='{{ wslpe_45_stage_label }}'
+          if($mode -eq 'validate' -and $stage -eq 'clean') {
+              if((Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) -or
+                 (Test-Path -LiteralPath $root)) { throw 'Task ACL fixture is not clean' }
+              Write-Output ('WSLPE45_BATCH_STAGE='+$id+':'+$stage+':PASS')
+              return
+          }
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force
+          $who=Assert-Wslpe45Identity
+          if($mode -eq 'apply') {
+              if(Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+                  throw 'Refusing existing task name before fixture apply'
+              }
+              $root=New-Wslpe45OwnedFixture -Number 21 -Id $id
+              $code=@'
+          public static class Kingdom45TaskDefinition {
+              public static void Main() {}
+          }
+          '@
+              Add-Type -TypeDefinition $code -Language CSharp -OutputAssembly $app -OutputType ConsoleApplication -ErrorAction Stop
+              $action=New-ScheduledTaskAction -Execute $app
+              $trigger=New-ScheduledTaskTrigger -Daily -At '23:45'
+              Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -User 'SYSTEM' -RunLevel Highest -ErrorAction Stop | Out-Null
+              $scheduler=New-Object -ComObject 'Schedule.Service'
+              $scheduler.Connect()
+              $task=$scheduler.GetFolder('\').GetTask($taskName)
+              $sddl=[string]$task.GetSecurityDescriptor(4)
+              if([string]::IsNullOrWhiteSpace($sddl)) { throw 'Task descriptor unreadable' }
+              $security=[Security.AccessControl.RawSecurityDescriptor]::new($sddl)
+              if($null -eq $security.DiscretionaryAcl) { throw 'Task has no readable DACL' }
+              $sid=[Security.Principal.SecurityIdentifier]::new($who.LearnerSid)
+              # Deliberate misconfiguration: full control to this custom task
+              # object only. Binary is not writable; no OS-owned tasks altered.
+              $ace=[Security.AccessControl.CommonAce]::new(
+                  [Security.AccessControl.AceFlags]::None,
+                  [Security.AccessControl.AceQualifier]::AccessAllowed,
+                  0x001f01ff,$sid,$false,$null
+              )
+              $security.DiscretionaryAcl.InsertAce($security.DiscretionaryAcl.Count,$ace)
+              $task.SetSecurityDescriptor($security.GetSddlForm([Security.AccessControl.AccessControlSections]::Access),0)
+              Write-Output 'WSLPE45_TASK_OBJECT_ACL=APPLIED'
+          }
+          elseif($mode -eq 'reset') {
+              $root=Assert-Wslpe45OwnedFixture -Number 21 -Id $id
+              $task=Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+              if(-not $task) { throw 'Owned task missing before rollback' }
+              # Learner may have edited task action; ownership is established
+              # independently by exact fixture marker and fixed unique task ID.
+              Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop
+              Remove-Wslpe45OwnedFixture -Number 21 -Id $id
+              Write-Output 'WSLPE45_TASK_OBJECT_ACL=RESET'
+          }
+          else {
+              $root=Assert-Wslpe45OwnedFixture -Number 21 -Id $id
+              $task=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+              if(-not $task -or $task.Principal.UserId -notin @('SYSTEM','S-1-5-18')) {
+                  throw 'Owned SYSTEM task missing or unexpected principal'
+              }
+              $scheduler=New-Object -ComObject 'Schedule.Service'
+              $scheduler.Connect()
+              $registered=$scheduler.GetFolder('\').GetTask($taskName)
+              $sddl=[string]$registered.GetSecurityDescriptor(4)
+              $security=[Security.AccessControl.RawSecurityDescriptor]::new($sddl)
+              $found=$false
+              foreach($ace in $security.DiscretionaryAcl) {
+                  if($ace.SecurityIdentifier.Value -eq $who.LearnerSid -and
+                     $ace.AceType -eq [Security.AccessControl.AceType]::AccessAllowed -and
+                     ($ace.AccessMask -band 0x001f01ff) -eq 0x001f01ff) {
+                      $found=$true
+                  }
+              }
+              if(-not $found) { throw 'Learner task-definition control ACE absent' }
+              if(-not (Test-Path -LiteralPath $app -PathType Leaf)) {
+                  throw 'Dedicated benign task executable missing'
+              }
+              Write-Output 'WSLPE45_TASK_OBJECT_ACL=VULNERABLE_CONFIGURATION'
+          }
+          Write-Output ('WSLPE45_BATCH_STAGE='+$id+':'+$stage+':PASS')
+      changed_when: wslpe_45_action in ['apply','reset']
