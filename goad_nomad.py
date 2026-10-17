@@ -412,6 +412,27 @@ class GoadNomad(BaseGoad):
             return False
 
         return self.do_install_instance()
+    def do_disable_vagrant(self, arg=''):
+        """Never disable the WSLPE bootstrap login before a proven release handoff.
+
+        WSLPE currently resumes through Vagrant/WinRM and is NOT a released
+        course. The normal GOAD/NORTH implementation remains unchanged.
+        """
+        selected = self._course_selection()
+        instance = self.lab_manager.get_current_instance()
+        if (
+            self.lab_manager.get_current_lab_name() == 'WSLPE'
+            or (instance is not None and instance.lab_name == 'WSLPE')
+            or (selected is not None and selected.slug == 'windows-lpe')
+        ):
+            Log.error(
+                'WSLPE vagrant is a provisioning identity. Refusing disable: '
+                'course not released, dedicated operator handoff and VMware-only '
+                'post-release start/reset have not been accepted.'
+            )
+            return False
+        return super().do_disable_vagrant(arg)
+
     def do_resume(self, arg=''):
         """Resume only the existing stopped native WSLPE guest, never install."""
         selected = self._course_selection()
