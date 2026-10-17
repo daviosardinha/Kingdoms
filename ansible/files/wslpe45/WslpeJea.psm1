@@ -8,18 +8,11 @@ function Invoke-Wslpe45Jea {
     )
     $ErrorActionPreference='Stop'
     if($Action -in @('apply','reset')){
-        # Defense in depth: no direct registration/removal inside WinRM.
-        # Windows PowerShell 5.1 ignores -NoServiceRestart for registration.
-        if((Get-Variable PSSenderInfo -ErrorAction SilentlyContinue) -or
-           $env:SESSIONNAME -cne 'Console' -or
-           [Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0) {
-            throw 'WSLPE JEA endpoint mutation must run from the elevated VMware console'
-        }
-        $principal=New-Object Security.Principal.WindowsPrincipal(
-            [Security.Principal.WindowsIdentity]::GetCurrent())
-        if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
-            throw 'Elevated local administrator required for JEA mutation'
-        }
+        # Defense in depth: use the SAME verified console guard as the
+        # independent lifecycle runner, never a potentially empty SESSIONNAME.
+        # This prevents direct invocation over WinRM from skipping validation.
+        Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeJeaLocal.psm1' -ErrorAction Stop
+        Assert-Wslpe45JeaConsole
     }
     Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force -ErrorAction Stop
     $who=Assert-Wslpe45Identity

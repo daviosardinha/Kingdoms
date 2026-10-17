@@ -29,7 +29,7 @@ class JeaContract(unittest.TestCase):
         src=MODULE.read_text(encoding="utf-8")
         for expected in ("New-PSRoleCapabilityFile","New-PSSessionConfigurationFile",
                          "Test-PSSessionConfigurationFile","Register-PSSessionConfiguration",
-                         "Unregister-PSSessionConfiguration","-NoServiceRestart",
+                         "Unregister-PSSessionConfiguration","Assert-Wslpe45JeaConsole",
                          "-RunAsVirtualAccount","Invoke-Kingdoms45Maintenance",
                          "New-Wslpe45OwnedFixture -Number 30",
                          "Assert-Wslpe45OwnedFixture -Number 30",
@@ -42,6 +42,9 @@ class JeaContract(unittest.TestCase):
                           "10.4.10.31","GOAD-WS01"):
             self.assertNotIn(forbidden,src)
         self.assertIn("CONFIGURATION_PRESENT_NOT_EXECUTION_PROOF",src)
+        self.assertIn("WslpeJeaLocal.psm1",src)
+        self.assertNotIn("$env:SESSIONNAME",src)
+        self.assertNotIn(" -NoServiceRestart -Force",src)
 
 if __name__=="__main__":
     unittest.main()

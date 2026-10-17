@@ -80,6 +80,17 @@ class JeaLocalLifecycleTests(unittest.TestCase):
                       "Invoke-Wslpe45Jea -Action"):
             self.assertNotIn(token,text)
 
+    def test_console_check_fails_closed_without_active_session(self):
+        local=LOCAL.read_text(encoding="utf-8")
+        self.assertIn("if ($consoleId -eq [uint32]::MaxValue",local)
+        self.assertIn("WTSGetActiveConsoleSessionId",local)
+        self.assertIn('Get-Variable PSSenderInfo',local)
+        self.assertIn('IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)',local)
+        self.assertNotIn("$env:SESSIONNAME -cne 'Console'",local)
+        module=MODULE.read_text(encoding="utf-8")
+        self.assertIn("Assert-Wslpe45JeaConsole",module)
+        self.assertNotIn("$env:SESSIONNAME -cne 'Console'",module)
+
     def test_remote_journal_hard_blocks_apply_reset(self):
         plays=yaml.safe_load(FIXTURE.read_text(encoding="utf-8"))
         self.assertEqual(plays[1]["pre_tasks"][0]["when"],
@@ -89,7 +100,7 @@ class JeaLocalLifecycleTests(unittest.TestCase):
     def test_local_mutation_requires_console_and_owning_admin(self):
         local=LOCAL.read_text(encoding="utf-8")
         module=MODULE.read_text(encoding="utf-8")
-        for token in ("SESSIONNAME","Console","PSSenderInfo",
+        for token in ("WTSGetActiveConsoleSessionId","Console","PSSenderInfo",
                       "IsInRole","Assert-Wslpe45Identity","Get-Service WinRM"):
             self.assertIn(token,local)
         self.assertIn("Assert-Wslpe45OwnedFixture",local)
@@ -99,9 +110,16 @@ class JeaLocalLifecycleTests(unittest.TestCase):
         self.assertIn("Get-NetTCPConnection -LocalPort 5986",local)
         self.assertIn("finally {",local)
         self.assertIn("WSLPE45_JEA_HTTPS_REMOTE_PROOF=PENDING",local)
-        self.assertIn("PSSenderInfo",module)
-        self.assertIn("SESSIONNAME",module)
-        self.assertIn("WindowsPrincipal",module)
+        self.assertIn("PSSenderInfo",local)
+        self.assertIn("Wslpe45ConsoleSessionNative",local)
+        self.assertIn("[uint32]::MaxValue",local)
+        self.assertIn("$processSessionId -eq 0",local)
+        self.assertIn("$processSessionId -ne $consoleId",local)
+        self.assertIn("Assert-Wslpe45JeaConsole",module)
+        self.assertIn("WslpeJeaLocal.psm1",module)
+        self.assertIn("Assert-Wslpe45JeaConsole",local)
+        self.assertNotIn("$env:SESSIONNAME",local)
+        self.assertNotIn("$env:SESSIONNAME",module)
         self.assertNotIn(" -NoServiceRestart -Force",module)
         self.assertNotIn("Restart-Service",local)
         for forbidden in ("revertToSnapshot","GOAD-WS01","10.4.10.31",

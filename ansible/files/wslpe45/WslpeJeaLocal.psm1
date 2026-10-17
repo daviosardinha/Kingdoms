@@ -12,9 +12,24 @@ function Assert-Wslpe45JeaConsole {
     if (Get-Variable PSSenderInfo -ErrorAction SilentlyContinue) {
         throw 'WSLPE JEA registration cannot run from a remote PowerShell session'
     }
-    if ($env:SESSIONNAME -cne 'Console' -or
-        [Diagnostics.Process]::GetCurrentProcess().SessionId -eq 0) {
-        throw 'WSLPE JEA registration requires the interactive VMware guest console'
+    # UAC over-the-shoulder elevation may leave SESSIONNAME unset even when
+    # PowerShell is running in the active physical console (confirmed guest
+    # WSLPE-WS01: process SessionId=1; quser console SessionId=1).
+    # Use the Windows console-session API rather than inherited environment.
+    if (-not ([System.Management.Automation.PSTypeName]'Wslpe45ConsoleSessionNative').Type) {
+        Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class Wslpe45ConsoleSessionNative {
+    [DllImport("kernel32.dll", ExactSpelling = true)]
+    public static extern uint WTSGetActiveConsoleSessionId();
+}
+'@ -ErrorAction Stop
+    }
+    $consoleId=[Wslpe45ConsoleSessionNative]::WTSGetActiveConsoleSessionId()
+    $processSessionId=[uint32][Diagnostics.Process]::GetCurrentProcess().SessionId
+    if ($consoleId -eq [uint32]::MaxValue -or $processSessionId -eq 0 -or
+        $processSessionId -ne $consoleId) {
+        throw 'WSLPE JEA registration requires the active interactive VMware guest console'
     }
     $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
     $principal=New-Object Security.Principal.WindowsPrincipal($identity)
@@ -118,4 +133,4 @@ function Invoke-Wslpe45JeaLocal {
     Write-Output ('WSLPE45_JEA_LOCAL_'+$Action.ToUpperInvariant()+'=PASS')
     Write-Output 'WSLPE45_JEA_HTTPS_REMOTE_PROOF=PENDING'
 }
-Export-ModuleMember -Function Invoke-Wslpe45JeaLocal
+Export-ModuleMember -Function Invoke-Wslpe45JeaLocal,Assert-Wslpe45JeaConsole

@@ -544,4 +544,14 @@ jobs:
             }
           }
           python -c "import yaml,pathlib; p=yaml.safe_load(pathlib.Path('ansible/wslpe45/jea_local_stage.yml').read_text()); assert [x['hosts'] for x in p]==['localhost','wslpe']; print('[PASS] JEA staging source parses and is scoped')"
-          Write-Output '[PASS] JEA console lifecycle PowerShell 5.1 AST parsed; no guest execution'
+          # Compile (do not invoke) the Windows console-session P/Invoke.
+          # AST parsing alone would miss invalid embedded C#.
+          $source=Get-Content -LiteralPath 'ansible/files/wslpe45/WslpeJeaLocal.psm1' -Raw
+          $match=[regex]::Match($source,"(?ms)Add-Type -TypeDefinition @'\s*\r?\n(?<native>.*?)\r?\n'@")
+          if(-not $match.Success){throw 'Missing native console-session declaration'}
+          Add-Type -TypeDefinition $match.Groups['native'].Value -ErrorAction Stop
+          $method=[Wslpe45ConsoleSessionNative].GetMethod('WTSGetActiveConsoleSessionId')
+          if($null -eq $method -or $method.ReturnType -ne [uint32]){
+            throw 'Invalid WTS console-session signature'
+          }
+          Write-Output '[PASS] JEA console PowerShell 5.1 and Win32 P/Invoke compile; no guest execution'

@@ -169,3 +169,31 @@ the frozen 20-technique shared role are unchanged.
 For unattended commercial cloud image creation, an independently running
 SYSTEM task or equivalent guest-local stage is still required; that future
 integration is NOT authorized by the developer-local console implementation.
+
+
+### 2026-10-17 local console detector correction
+
+Observed on the real VMware guest after successful WSLPE JEA source staging:
+the elevated vagrant PowerShell shows SESSIONNAME=[] and SessionId=1
+with PSSenderInfo=False, while quser reports lpe.trainee console 1 Active.
+The original local runner incorrectly rejected this legitimate console
+because it treated the inherited SESSIONNAME environment variable as
+the primary proof of interactive access.
+
+Correction: the local runner now uses the documented Win32
+WTSGetActiveConsoleSessionId API from kernel32.dll to identify the
+console session, then requires the current process SessionId to be
+nonzero and equal to that returned console ID. Reject 0xFFFFFFFF
+(no attached console), mismatched RDP/other sessions, any PowerShell
+remoting PSSenderInfo, non-admin tokens, and incorrect guest identity.
+The underlying JEA fixture invokes the SAME exported local guard for
+direct apply/reset attempts, avoiding duplicate inconsistent checks.
+
+Official API documentation:
+https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-wtsgetactiveconsolesessionid
+
+The improved guard is source-only until re-staged and verified in the
+existing elevated console. First run ONLY Invoke-Wslpe45JeaLocal -Action
+Inspect, which makes no endpoint changes. Do not run Reset or Apply
+until the corrected inspection succeeds and separate explicit approval
+is given for destructive lifecycle testing.
