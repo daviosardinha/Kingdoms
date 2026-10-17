@@ -16,7 +16,7 @@ class JeaContract(unittest.TestCase):
         for expected in ("jea_role_capability_misconfig","windows_lpe_standalone",
                          "wslpe_expected_address","groups.get('dc'","groups.get('domain'"):
             self.assertIn(expected,assertions)
-        check=plays[1]["pre_tasks"][0]["ansible.windows.win_powershell"]["script"]
+        check=plays[1]["pre_tasks"][1]["ansible.windows.win_powershell"]["script"]
         for expected in ("WSLPE-WS01","Get-LocalUser","PartOfDomain","Windows 10"):
             self.assertIn(expected,check)
         self.assertEqual(sum(x.get("ansible.builtin.import_tasks")=="lockdown-library.yml" for x in plays[1]["tasks"]),1)
@@ -25,7 +25,7 @@ class JeaContract(unittest.TestCase):
         self.assertNotIn("10.4.10.31",src)
         self.assertNotIn("GOAD-WS01",src)
 
-    def test_authentic_jea_api_and_no_winrm_restart(self):
+    def test_authentic_jea_api_and_restriction_on_winrm_mutation(self):
         src=MODULE.read_text(encoding="utf-8")
         for expected in ("New-PSRoleCapabilityFile","New-PSSessionConfigurationFile",
                          "Test-PSSessionConfigurationFile","Register-PSSessionConfiguration",

@@ -26,6 +26,19 @@
   hosts: wslpe
   gather_facts: false
   pre_tasks:
+    # PowerShell 5.1 does NOT implement Register-PSSessionConfiguration
+    # -NoServiceRestart. WinRM-hosted apply/reset disconnects its own channel.
+    # Do not remove this fail-closed guard until a separately verified
+    # out-of-band local-console registration/cleanup path exists.
+    - name: Block JEA endpoint registration or removal through WinRM
+      ansible.builtin.fail:
+        msg: >-
+          WSLPE #30 cannot register/unregister a PowerShell 5.1 JEA endpoint
+          through WinRM: -NoServiceRestart is not implemented in Windows
+          PowerShell 5.1. Preserve the running fixture and use a separately
+          approved local-console lifecycle with post-operation WinRM checks.
+      when: (wslpe_45_action | default('')) in ['apply', 'reset']
+
     - name: Verify original Windows 10 learner identity and workgroup
       ansible.windows.win_powershell:
         script: |

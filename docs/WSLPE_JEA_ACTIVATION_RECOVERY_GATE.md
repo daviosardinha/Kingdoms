@@ -1,104 +1,108 @@
-# WSLPE #30 JEA activation / independent recovery gate
+# WSLPE #30 — JEA PS5.1 WinRM lifecycle incident and safe release gate
 
-**State: JEA source-only dedicated single-stage gate prepared — Windows registration NOT EXECUTED.**
+**2026-10-17 status: JEA FUNCTIONAL ON EXISTING WSLPE-WS01; REMOTE APPLY/RESET BLOCKED.**
+This is a verified user-observed Windows runtime incident, not just source inference.
+Scope is the exact standalone WSLPE-WS01 workgroup guest. NORTH/GOAD VMs and
+the shared 20-technique role remain untouched. Vagrant bootstrap stays enabled
+until the *entire* machine is student-ready.
 
-Scope: exact registered Windows 10 workgroup `WSLPE-WS01` (local learner `WSLPE-WS01\lpe.trainee`). No NORTH, shared role, other VMware guests, NAT, routing or general WinRM modifications.
+## Confirmed evidence
 
-## Established evidence (2026-10-17)
+1. A genuine real-VM restoration of KINGDOMS-WSLPE-PRE-JEA was exercised,
+   followed by VMware-console learner sign-in and successful WinRM HTTPS/5986
+   authenticated checks. Recovery from a deliberately disrupted WinRM service
+   was accomplished manually at the VMware console, using an elevated vagrant
+   session and Start-Service WinRM. Host-level automatic recovery remains unproven.
+2. Windows showed one Kingdoms45JEA registration, a dedicated
+   Kingdoms45JEA module and a dedicated lab fixture. The module owner marker
+   matched WSLPE45:30:jea_role_capability_misconfig.
+3. The learner WSLPE-WS01\lpe.trainee (Medium integrity, nonadmin) successfully
+   invoked Invoke-Kingdoms45Maintenance -Operation Status using the dedicated
+   JEA endpoint and received WSLPE45_JEA_STATUS.
+4. The same learner invoked the deliberately scoped Proof operation and received
+   WSLPE45_JEA_PROOF_WRITTEN. The lab-owned proof.txt showed a dedicated
+   "WinRM Virtual Users\WinRM VA ..." execution identity, not the learner.
+   This proves distinct privileged-context execution, not by itself SYSTEM
+   identity or complete exploitability of any arbitrary command.
+5. Get-LocalUser sent through the endpoint was rejected as not recognized:
+   the intended restricted command surface is enforced.
+6. WinRM Operational log at 12:21:40 PM (local guest time) showed successful
+   WSMan Config/Plugin Put operations (Event IDs 145/132), service stopping
+   (211), and at 12:21:42 PM service stopped successfully (212).
+   The dedicated JEA module/file timestamps were approximately 12:21:38 PM.
+   The Windows System event 10149 corroborated that WinRM was no longer
+   listening. WinRM was Auto start and exited with code 0. Exact caller PID
+   for the service stop has not been independently established.
+7. After WinRM was manually started from the guest's elevated local console,
+   the normal pinned TLS HTTPS management worked again, and the JEA endpoint
+   remained functionally accessible to the learner.
 
-- Local 25-fixture source readiness: 21/25 source candidates; #25/#36/#38/#40 pending. No new scenario has live six-stage acceptance.
-- WSLPE WinRM HTTP baseline and HTTPS listener, RDP/NLA/TLS configuration: read-only Ansible PASS, **not learner logon evidence**.
-- Certificate pin, chain, DNS SAN, TLS >=1.2, and authenticated WinRM HTTPS/5986: operator-provided live PASS.
-- Independently scheduled owner-context host systemd timer **fired** after `sudo -v`, and the owner-context timer ran `vmrun -T ws list`; exact WSLPE VMX included. Private scratch VMX restore was byte-for-byte correct.
-- **New user-verified evidence:** VMware Workstation graphical console opened and lpe.trainee logged in independently of RDP/WinRM; RDP sign-in and medium-integrity nonadmin whoami /all proved; VMware snapshot KINGDOMS-WSLPE-PRE-JEA recorded and read-only verified; authenticated JEA inspection confirms zero registrations, no module and no fixture.
-- **Not demonstrated:** successful restoration of the REAL WSLPE snapshot, independently tested recovery after broken WinRM, or host firewall/ARP/NAT persistence. An unverified restoration remains a hard boundary before #30 registration.
+### Root cause: Windows PowerShell 5.1 NoServiceRestart is NOT implemented
 
-## Stage J0 — read-only endpoint inspection (permitted)
+Official Microsoft Windows PowerShell 5.1 reference:
+https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/register-pssessionconfiguration?view=powershell-5.1
 
-```bash
-if (
-  cd "$HOME/kingdoms-lpe-standalone" &&
-  test -z "$(git status --porcelain)" &&
-  "$HOME/.goad/.venv/bin/python" -m unittest -v tests.test_wslpe_jea_readiness &&
-  "$HOME/.goad/.venv/bin/python" scripts/wslpe-jea-readiness.py \
-    --expected-thumbprint C773EC26D02940F559FE715B83628FEDAE2AA92D
-); then
-  echo "[PASS] Read-only JEA baseline recorded"
-else
-  echo "[BLOCKED] Do not apply or restart JEA/WinRM"
-fi
-```
+Microsoft explicitly states that the -NoServiceRestart functionality on
+Register-PSSessionConfiguration is NOT implemented in Windows PowerShell 5.1,
+and won't be backported. The feature was implemented in a PowerShell 7.5
+preview. Therefore this source statement **cannot** be interpreted as a
+no-stop/no-restart guarantee in the target OS:
 
-This command uses existing WSLPE-only credentials through temporary process-local trust, verifies exact hostname and learner non-admin status, and reads only the local JEA endpoint count and lab-owned source/fixture presence. It does not prove JEA functional access, install anything or connect to NORTH. If existing JEA/fixture state is found, stop for manual review; **never infer ownership from the endpoint name alone**.
+    Register-PSSessionConfiguration -Name $name -Path $config -NoServiceRestart -Force
 
-## Stage J1 — recovery authorization before ANY guest mutation (blocked)
+The guest WinRM stop during Config/Plugin registration is consistent with
+this documented behavior. Until separately reproduced with full process
+attribution, label the component cause "strongly supported", not as an
+independently identified service-control caller.
 
-Prepare and independently verify, with a human operator:
+PowerShell 5.1 Unregister-PSSessionConfiguration has different documented
+behavior, but removal still changes the remoting plug-in. Treat BOTH
+registration and removal as potentially disruptive; schedule via a local
+independent operator channel.
 
-1. Exact registered WSLPE VMX, VM owner and only-this-guest scope; no other VM names/paths in the recovery plan.
-2. Operator console/VMware control that does not depend on WinRM/5985/5986 or on the user's current SSH shell/sudo ticket. An already-armed, bounded host systemd service can continue after the console disconnects, but a transient sudo ticket does **not** authorize unattended *new* work.
-3. Known-good recovery-point/snapshot mechanism appropriate to the live guest, and verified ability to roll back the **real** WSLPE guest safely in a separately approved rehearsal (not merely a scratch VMX).
-4. Exact rollback scope: JEA's owned endpoint, module and fixture; preserve unrelated WinRM listeners, security settings, sessions, services and machine-wide session configurations.
-5. Independent authenticated HTTPS success before and after a controlled test, plus a fail-closed stop criterion if management is lost.
-6. Reviewed human approval for the exact stage, change window and anticipated interruption; record secure recovery evidence privately. **Do not** reuse the general NAT-cutover restoration timer as a JEA/WinRM rollback implementation. They restore different state.
+## Immediate source safety correction
 
-## Stage J2 — JEA source correction and isolated activation design (not yet performed)
+- ansible/wslpe45/jea_role_capability_misconfig.yml now explicitly rejects
+  apply and reset in the WSLPE pre_tasks using the controller-side Ansible
+  fail action. The guard runs before any Windows guest change, even when a
+  caller limits execution to the WSLPE group.
+- scripts/wslpe-jea-single.py is now PLAN ONLY, and refuses --apply even
+  with --recovery-rehearsed. No broad batch or automatic restart.
+- Native JEA source and the current functioning endpoint are preserved.
+  No destructive guest action is authorized by this change.
 
-The existing `ansible/files/wslpe45/WslpeJea.psm1` uses `Register-PSSessionConfiguration -NoServiceRestart` and `Unregister-PSSessionConfiguration -NoServiceRestart`. Source checks only prove registration/role-file existence, not whether WinRM loaded and exposes the endpoint. A WinRM restart is NOT authorized by source readiness.
+## Next engineering step: independent JEA endpoint lifecycle
 
-Require separately verified JEA activation (local learner permitted for the dedicated endpoint and genuinely constrained), proof that the normal management endpoint still works, and a deliberate cleanup/rollback path. No use of a machine-wide WinRM restart without the verified J1 independent recovery contract.
+Implement a separate, narrowly scoped, auditable local-console or
+out-of-band guest-management stage **after** fixture file preparation, not
+within a WinRM-hosted Ansible execution. Verify exact registered WSLPE
+guest and WORKGROUP, snapshot backup and ownership, and an authenticated
+management session BEFORE endpoint registration. Accept that WinRM may
+stop and arrange a controlled service recovery *from outside WinRM*.
+After it returns, prove both existing HTTPS management and learner JEA
+Status again. On failures, stop; don't silently retry, clean up unrelated
+plugins, disable vagrant, touch NORTH, or run the other scenarios.
 
-## Current decision
+Do NOT try to fix this by merely increasing timeouts, blindly restarting
+WinRM inside the same remote session, ignoring TLS errors, or using a
+different public credential.
 
-**Go:** J0 read-only state inspection, source tests and further design/review.  
-**No-go:** JEA registration, activation, WinRM restart, NAT cutover, automatic VM restore, 25-fixture execution and learner release.
+## Qualification status
 
-NORTH remains frozen. Keep `batch_execution_authorized: false` throughout.
+| Gate | State |
+| --- | --- |
+| Pre-JEA snapshot exists; real restoration exercised | PASS |
+| Learner VMware console access and nonadmin security token | PASS |
+| Pinned HTTPS/5986 management after recovery | PASS |
+| JEA registration/owner evidence | PASS |
+| Learner Status and bounded Proof operations | PASS |
+| JEA virtual account context and restricted command surface | PASS |
+| Effective local Administrators token membership | NOT YET PROVEN |
+| Safe independent JEA apply/reset/reapply lifecycle | BLOCKED, NOT IMPLEMENTED |
+| WinRM automatic restart/resilience after future registrations | BLOCKED |
+| Full six-stage technique qualification | PENDING |
+| Student-ready Windows 45-exercise image and vagrant retirement | PENDING |
 
-
-## Stage J1a — real snapshot recovery rehearsal (operator approval required)
-
-The existing VMware snapshot exists, but no one has yet restored the REAL
-WSLPE-WS01 from it. A named snapshot alone is not a tested recovery channel.
-This must be tested separately and deliberately before JEA registration.
-
-- Expect the active learner VMware console/RDP session to be interrupted and all
-  Windows guest changes since that snapshot to be lost. Kali-side private
-  credential stores are separate; do NOT destroy the native Vagrant registration.
-- Verify that the snapshot is the correct PRE-JEA point, record any guest changes
-  worth saving, ensure NORTH VMs are not selected, and explicitly approve
-  restoration in VMware Workstation > VM > Snapshot > Snapshot Manager.
-- For the selected provider: WSLPE-WS01 only, restore/Go To the snapshot
-  KINGDOMS-WSLPE-PRE-JEA with GUI confirmation. Do not select a NORTH snapshot.
-  Bring up the exact VM using VMware console if needed; do not invoke a generic
-  Vagrant reprovision or delete/recreate the Windows guest.
-- Prove direct console login, lpe.trainee nonadministrator token, and the same
-  pinned HTTPS management connection after recovery. Re-run J0 and verify the
-  snapshot is still listed. Record whether an independent rollback actually
-  worked, rather than assuming it did.
-- If restoration fails or the VM does not recover, STOP. Do not register JEA.
-
-## Stage J2a — single-technique source gate now available (NOT RUN)
-
-    python3 scripts/wslpe-jea-single.py
-
-This is a source-only plan. It neither contacts Windows nor executes Ansible.
-The guarded --apply mode additionally requires:
-- --recovery-rehearsed, to be supplied ONLY after the actual J1a rehearsal;
-- exact registered running WSLPE VMX owner and the named pre-JEA snapshot;
-- live clean JEA state over existing pinned authenticated WinRM HTTPS/5986;
-- explicit interactive text confirmation before one source-qualified JEA apply;
-- strict native WSLPE inventory assertions; no NORTH, no role modification.
-
-    python3 scripts/wslpe-jea-single.py --apply --recovery-rehearsed
-
-This registers ONLY the existing #30 JEA endpoint with
--NoServiceRestart, and does NOT restart WinRM or apply any other scenario.
-Ansible success is not learner endpoint connectivity proof. Inspect local
-registration, independently confirm the normal HTTPS management channel and
-attempt bounded learner JEA invocation separately. If the registration is
-invisible to a learner until WinRM restarts, do NOT restart WinRM without
-a separately approved recovery/activation plan.
-
---apply is not approved by these documentation changes; operator must
-complete J1a first. batch_execution_authorized stays false. NORTH is frozen.
+The original snapshot is a developer recovery point, not a final student
+image. No change to NORTH/shared role, no VM/snapshot mutation, and no
+automatic Vagrant account retirement is part of this source-only safety fix.
