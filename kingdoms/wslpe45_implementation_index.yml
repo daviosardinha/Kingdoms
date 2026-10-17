@@ -50,9 +50,9 @@ techniques:
     six_stage_qualification: pending
   - number: 27
     id: com_clsid_registration_hijack
-    status: planned
+    status: candidate
     playbook: ansible/wslpe45/com_clsid_registration_hijack.yml
-    source_ci: pending
+    source_ci: passed
     learner_proof: pending
     six_stage_qualification: pending
   - number: 28
