@@ -17,6 +17,7 @@ on:
       - 'kingdoms/wslpe45_batch_operator.py'
       - 'scripts/wslpe-45-qualify.py'
       - 'tests/test_wslpe45_batch_operator.py'
+      - 'tests/test_wslpe45_registry_trust.py'
       - 'tests/test_wslpe45_candidate_traversal.py'
       - 'ansible/files/wslpe45/**'
       - 'ansible/wslpe45/**'
@@ -35,7 +36,7 @@ jobs:
       - name: Validate Python, all 45 unique IDs, frozen NORTH and exact-guest negative paths
         run: |
           python -m py_compile kingdoms/wslpe_batch_catalog.py kingdoms/wslpe_batch_feasibility.py scripts/wslpe-45-batch.py scripts/wslpe-45-feasibility.py tests/test_wslpe_batch_catalog.py tests/test_wslpe_batch_feasibility.py
-          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator
+          python -m unittest -v tests.test_wslpe_advanced_catalog tests.test_wslpe_batch_catalog tests.test_wslpe_batch_feasibility tests.test_wslpe45_candidate_traversal tests.test_wslpe45_batch_operator tests.test_wslpe45_registry_trust
           python scripts/wslpe-45-batch.py
           python scripts/wslpe-45-feasibility.py
           python scripts/wslpe-45-qualify.py
@@ -134,3 +135,60 @@ jobs:
             throw 'Standalone service compilation failed'
           }
           Write-Output '[PASS] Isolated Windows LPE #35 service compiles; no service installed'
+
+      - name: Parse independent #26/#28 Windows PowerShell 5.1 source
+        shell: pwsh
+        run: |
+          @'
+          import os
+          from pathlib import Path
+          import re
+          import yaml
+          temp = Path(os.environ["RUNNER_TEMP"]) / "wslpe45-registry-candidates"
+          temp.mkdir(exist_ok=True)
+          module = Path("ansible/files/wslpe45/WslpeRegistryTrust.psm1").read_text(encoding="utf-8")
+          for number, name in ((26,"ifeo_debugger_acl_hijack"),(28,"app_paths_registry_hijack")):
+              plays = yaml.safe_load(Path(f"ansible/wslpe45/{name}.yml").read_text(encoding="utf-8"))
+              assert len(plays) == 2
+              assert plays[0]["hosts"] == "localhost" and plays[1]["hosts"] == "wslpe"
+              for i, item in enumerate(plays[1]["pre_tasks"] + plays[1]["tasks"]):
+                  script = item.get("ansible.windows.win_powershell",{}).get("script")
+                  if script:
+                      (temp / f"{number}-{i}.ps1").write_text(script, encoding="utf-8-sig")
+          cs = (
+              ("benign",r"(?s)\$benign\s*=\s*@'\s*\n(.*?)\n'@"),
+              ("proof",r'(?s)\$proofCode\s*=\s*@"\s*\n(.*?)\n"@'),
+              ("launcher",r"(?s)\$launcherCode\s*=\s*@'\s*\n(.*?)\n'@"),
+          )
+          for name, pattern in cs:
+              found = re.search(pattern, module)
+              assert found, f"Missing {name} CSharp source"
+              (temp / f"{name}.cs").write_text(found.group(1), encoding="utf-8")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Failed extracting registry fixture scripts' }
+          $folder = Join-Path $env:RUNNER_TEMP 'wslpe45-registry-candidates'
+          $sources = @((Get-Item 'ansible/files/wslpe45/WslpeRegistryTrust.psm1')) +
+            @(Get-ChildItem -Path (Join-Path $folder '*.ps1'))
+          if ($sources.Count -lt 7) { throw "Insufficient registry fixture script coverage: $($sources.Count)" }
+          foreach ($source in $sources) {
+            $tok = $null; $err = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $source.FullName,[ref]$tok,[ref]$err)
+            if ($err.Count -ne 0) {
+              $err | ForEach-Object { Write-Error $_.Message }
+              throw "Windows PowerShell syntax: $($source.FullName)"
+            }
+          }
+          Write-Output "[PASS] Registry source parses: $($sources.Count) exact Windows scripts"
+      - name: Compile isolated registry trust binaries without installing services or tasks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $folder = Join-Path $env:RUNNER_TEMP 'wslpe45-registry-candidates'
+          foreach ($name in @('benign','proof','launcher')) {
+            $source = Get-Content (Join-Path $folder "$name.cs") -Raw
+            $output = Join-Path $folder "$name.exe"
+            Add-Type -TypeDefinition $source -Language CSharp -OutputAssembly $output -OutputType ConsoleApplication
+            if (-not (Test-Path -LiteralPath $output)) { throw "Missing compiled $name fixture" }
+          }
+          Write-Output '[PASS] Three registry trust binaries compile on native Windows without deployment'

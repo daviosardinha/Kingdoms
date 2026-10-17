@@ -25,7 +25,8 @@ class OperatorTests(unittest.TestCase):
     def test_no_partial_live_execution_and_no_guest_contact(self):
         rows, blockers = batch.source_readiness()
         self.assertEqual(len(rows), 25)
-        self.assertEqual(len(blockers), 25)
+        self.assertEqual(len(blockers), 24)
+        self.assertTrue(all("privileged_path_traversal_write" not in reason for reason in blockers))
         args = SimpleNamespace(execute=True, timeout_seconds=900,
                                report_dir="/tmp/unused")
         with patch.object(batch, "trusted_safety") as safety, patch.object(

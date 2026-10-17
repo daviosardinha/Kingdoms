@@ -18,6 +18,10 @@
           - (wslpe_expected_address | default('')).startswith('172.')
           - (wslpe_45_action | default('')) in ['apply', 'validate', 'reset']
           - (wslpe_45_action | default('')) != 'validate' or (wslpe_45_validate_state | default('')) in ['vulnerable', 'clean']
+          - (wslpe_45_stage_label | default('')) in ['apply', 'vulnerable', 'reset', 'clean', 'reapply', 'revulnerable']
+          - (wslpe_45_action != 'apply') or (wslpe_45_stage_label in ['apply', 'reapply'])
+          - (wslpe_45_action != 'reset') or (wslpe_45_stage_label == 'reset')
+          - (wslpe_45_action != 'validate') or ((wslpe_45_validate_state == 'clean' and wslpe_45_stage_label == 'clean') or (wslpe_45_validate_state == 'vulnerable' and wslpe_45_stage_label in ['vulnerable', 'revulnerable']))
         fail_msg: 'Standalone WSLPE-WS01 target and action must be exact; NORTH is forbidden'
 
 - name: Scope each #35 operation to exact workgroup WSLPE guest
@@ -142,6 +146,7 @@
           $output = & sc.exe sdset $name $sddl 2>&1
           if ($LASTEXITCODE -ne 0) { throw "Could not set isolated fixture service DACL: $output" }
           Write-Output 'WSLPE45_TRAVERSAL=APPLIED'
+          Write-Output ('WSLPE45_BATCH_STAGE=privileged_path_traversal_write:' + '{{ wslpe_45_stage_label }}' + ':PASS')
       when: wslpe_45_action == 'apply'
 
     - name: Validate exact #35 vulnerability state, not exploitation
@@ -174,6 +179,7 @@
               throw 'Learner-specific service start permission missing'
           }
           Write-Output 'WSLPE45_TRAVERSAL=VULNERABLE_CONFIGURATION'
+          Write-Output ('WSLPE45_BATCH_STAGE=privileged_path_traversal_write:' + '{{ wslpe_45_stage_label }}' + ':PASS')
       changed_when: false
       when: wslpe_45_action == 'validate' and wslpe_45_validate_state == 'vulnerable'
 
@@ -202,6 +208,7 @@
           }
           Remove-Wslpe45OwnedFixture -Number 35 -Id 'privileged_path_traversal_write'
           Write-Output 'WSLPE45_TRAVERSAL=RESET'
+          Write-Output 'WSLPE45_BATCH_STAGE=privileged_path_traversal_write:reset:PASS'
       when: wslpe_45_action == 'reset'
 
     - name: Verify clean #35 state
@@ -215,5 +222,6 @@
               throw 'Standalone traversal fixture root remains'
           }
           Write-Output 'WSLPE45_TRAVERSAL=CLEAN'
+          Write-Output 'WSLPE45_BATCH_STAGE=privileged_path_traversal_write:clean:PASS'
       changed_when: false
       when: wslpe_45_action == 'validate' and wslpe_45_validate_state == 'clean'

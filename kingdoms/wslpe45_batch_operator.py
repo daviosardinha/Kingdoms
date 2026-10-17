@@ -134,7 +134,7 @@ def trusted_safety():
 
 def command(ansible: Path, inventory: Path, varsfile: Path,
             row: dict, expected: str, action: str,
-            state: str | None) -> list[str]:
+            state: str | None, stage: str | None = None) -> list[str]:
     if row["id"] not in [r["id"] for r in catalog()[20:]]:
         raise BatchBlocked("Unrecognized standalone scenario")
     if action not in ("apply", "validate", "reset"):
@@ -143,10 +143,18 @@ def command(ansible: Path, inventory: Path, varsfile: Path,
         raise BatchBlocked("Invalid validation state")
     if action != "validate" and state is not None:
         raise BatchBlocked("Validation state on non-validation action")
+    allowed = {"apply": ("apply", "reapply"), "reset": ("reset",),
+               "validate": (("clean",) if state == "clean" else ("vulnerable", "revulnerable"))}
+    if stage is None:
+        stage = {"apply": "apply", "reset": "reset",
+                 "validate": state}[action]
+    if stage not in allowed[action]:
+        raise BatchBlocked("Requested stage label does not match action and validation state")
     variables = {
         "wslpe_expected_address": expected,
         "wslpe_45_action": action,
         "wslpe_45_technique": row["id"],
+        "wslpe_45_stage_label": stage,
     }
     if state is not None:
         variables["wslpe_45_validate_state"] = state
@@ -247,7 +255,7 @@ def run(args) -> int:
         os.close(guardfd)
         for row in rows:
             for action, state, label in FLOW:
-                requested = command(ansible, inv, varsfile, row, expected, action, state)
+                requested = command(ansible, inv, varsfile, row, expected, action, state, label)
                 try:
                     response = subprocess.run(
                         requested, cwd=ROOT, env=env, capture_output=True,
@@ -257,7 +265,7 @@ def run(args) -> int:
                 except subprocess.TimeoutExpired:
                     diagnostics, rc = "Standalone guest step timed out", 124
                 expected_marker = f"WSLPE45_BATCH_STAGE={row['id']}:{label}:PASS"
-                accepted = rc == 0 and expected_marker in diagnostics
+                accepted = rc == 0 and diagnostics.count(expected_marker) == 1
                 report["events"].append({
                     "number": row["number"], "id": row["id"],
                     "stage": label, "exit_code": rc, "accepted": accepted,
