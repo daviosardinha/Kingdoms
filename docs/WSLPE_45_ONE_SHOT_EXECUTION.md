@@ -51,3 +51,5 @@ There is deliberately no claim that 25 new vulnerabilities have been implemented
 ### Repository write-path verification
 
 A documentation-only commit can verify GitHub write access to this feature branch without running Ansible, contacting Windows, or modifying NORTH. This check does not qualify any additional fixture or authorize live deployment.
+
+Manual Kali Git write-path verification completed.
