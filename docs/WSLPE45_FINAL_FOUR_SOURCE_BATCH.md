@@ -19,6 +19,31 @@ flag must remain false. None of the four scenario playbooks is present.
 | 38 | DCOM launch permissions | **No accepted source** | Review-approved local-server native build, CLSID/AppID contract | Owned CLSID/AppID per-application security descriptor, local non-admin activation evidence and controlled unregistration; no machine-wide DCOM changes |
 | 40 | Local RPC authorization | `Kingdom40LocalRpc.idl` | MIDL-generated local client/server stubs | `ncalrpc`-only implementation, explicit bounded authorization decision, authenticated standard user test, owned endpoint shutdown and cleanup |
 
+## 2026-10-18 native packaging and metadata checkpoint
+
+An isolated WiX 6.0.2 XML package source
+ansible/files/wslpe45/Kingdom25RepairPackage.wxs and dedicated payload
+were added. GitHub Windows CI **builds** a real x64 per-machine MSI using the
+previously compiled #25 custom action DLL, then opens its Windows Installer
+database **read-only** and verifies that the repair entry is deferred,
+no-impersonation and wired to the expected DLL export.
+
+The package is repair-scheduled via the REINSTALL property; it is **not
+installed, repaired or uninstalled** in CI. This is stronger than DLL-only
+compilation but does not demonstrate a learner privilege boundary. Native
+MSI repair authorization, fixture ACL/reparse safety, independently verified
+proof, per-instance installation and rollback remain outstanding.
+
+Windows CI also checks the #36 compiled WMI assembly's management-method
+attributes and compiles the generated #40 MIDL client and server C stubs,
+without installing WMI or registering an RPC endpoint. These changes are
+offline checks only and do not promote either scenario to a candidate.
+
+**Commercial licensing note:** WiX v6 introduced an Open Source Maintenance
+Fee for some commercial uses. Nomad Kingdom must review applicable WiX
+licensing before using these build outputs in a paid course or release.
+A passing open-source CI job does not grant distribution rights.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer

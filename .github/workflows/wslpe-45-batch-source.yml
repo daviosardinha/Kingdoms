@@ -594,6 +594,10 @@ jobs:
           if errorlevel 1 exit /b 1
           midl /nologo /env x64 /out "$midlDir" "ansible\files\wslpe45\Kingdom40LocalRpc.idl"
           if errorlevel 1 exit /b 1
+          cl /nologo /c /I "$midlDir" "$midlDir\Kingdom40LocalRpc_c.c" /Fo:"$midlDir\Kingdom40LocalRpc_c.obj"
+          if errorlevel 1 exit /b 1
+          cl /nologo /c /I "$midlDir" "$midlDir\Kingdom40LocalRpc_s.c" /Fo:"$midlDir\Kingdom40LocalRpc_s.obj"
+          if errorlevel 1 exit /b 1
           exit /b 0
           "@ | Set-Content -LiteralPath $build -Encoding ASCII
           & $env:ComSpec /d /c $build
@@ -604,7 +608,11 @@ jobs:
           if (-not (Get-ChildItem -LiteralPath $midlDir -Filter '*.h')) {
             throw 'MIDL header missing'
           }
-          Write-Output '[PASS] MSI DLL + RPC MIDL interface compiled only; no guest or installer activity'
+          if(-not (Test-Path "$midlDir\Kingdom40LocalRpc_c.obj") -or
+             -not (Test-Path "$midlDir\Kingdom40LocalRpc_s.obj")){
+             throw 'MIDL-generated RPC proxy/stub object missing'
+          }
+          Write-Output '[PASS] MSI DLL + RPC MIDL interface and C stubs compiled only; no guest activity'
 
       - name: Compile managed .NET Framework WMI prototype (no registration)
         shell: powershell
@@ -614,7 +622,20 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'Kingdom36WmiProvider.exe'
           Add-Type -TypeDefinition $source -Language CSharp -OutputAssembly $out -ReferencedAssemblies @('System.Management.dll','System.Core.dll') -OutputType ConsoleApplication -ErrorAction Stop
           if (-not (Test-Path -LiteralPath $out)) { throw 'WMI provider binary missing' }
-          Write-Output '[PASS] Managed WMI source compiled only; no provider installed'
+          $assembly=[Reflection.Assembly]::LoadFrom($out)
+          $kind=$assembly.GetType('KingdomsWSLPE45.Kingdom36Maintenance',$true)
+          foreach($method in @('Status','Proof')){
+            $entry=$kind.GetMethod($method)
+            if($null -eq $entry -or -not @($entry.GetCustomAttributesData() |
+               Where-Object {$_.AttributeType.Name -eq 'ManagementTaskAttribute'}).Count){
+              throw "Missing WMI method instrumentation metadata: $method"
+            }
+          }
+          if(-not @($assembly.GetCustomAttributesData() |
+              Where-Object {$_.AttributeType.Name -eq 'WmiConfigurationAttribute'}).Count){
+            throw 'Missing dedicated WMI instrumentation namespace'
+          }
+          Write-Output '[PASS] WMI assembly and attributed method metadata inspected offline; no provider installed'
 
       - name: Build and inspect WSLPE25 repair MSI without installation
         shell: powershell
