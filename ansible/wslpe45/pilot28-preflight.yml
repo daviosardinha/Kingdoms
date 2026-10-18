@@ -47,10 +47,87 @@
                   }
               }
           }
-          # Do not modify the common library while #25 recovery is pending.
-          $partial25='C:\ProgramData\KingdomsWSLPE45\fixtures\msi_repair_custom_action'
-          if(Test-Path -LiteralPath $partial25) {
-              throw 'Existing #25 MSI fixture: finish owned recovery or use a clean clone'
+          # Allow *verified marker-only* interrupted #25 to coexist with
+          # isolated #28. The #28 apply must not rewrite common library state.
+          $base='C:\ProgramData\KingdomsWSLPE45'
+          $lib=Join-Path $base 'lib'
+          $fixtures=Join-Path $base 'fixtures'
+          $partial25=Join-Path $fixtures 'msi_repair_custom_action'
+          $found=@()
+          if(Test-Path -LiteralPath $fixtures -PathType Container) {
+              $found=@(Get-ChildItem -LiteralPath $fixtures -Force -ErrorAction Stop |
+                  Where-Object { $_.Name -ceq 'msi_repair_custom_action' })
+          }
+          if($found.Count -gt 0) {
+              if($found.Count -ne 1 -or -not $found[0].PSIsContainer -or
+                 (($found[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                  throw 'Foreign or linked #25 entry; no new pilot'
+              }
+              $admSids=@(Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop |
+                  ForEach-Object { $_.SID.Value })
+              $writeMask=(
+                  [int][Security.AccessControl.FileSystemRights]::Write -bor
+                  [int][Security.AccessControl.FileSystemRights]::Delete -bor
+                  [int][Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+                  [int][Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+                  [int][Security.AccessControl.FileSystemRights]::TakeOwnership
+              )
+              foreach($dir in @($base,$lib,$partial25)) {
+                  $entry=Get-Item -LiteralPath $dir -Force -ErrorAction Stop
+                  if(-not $entry.PSIsContainer -or
+                     (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                      throw 'Unsafe shared #25 library ancestor'
+                  }
+                  $acl=Get-Acl -LiteralPath $dir -ErrorAction Stop
+                  if(-not $acl.AreAccessRulesProtected) {
+                      throw 'Unprotected shared #25 library ancestor'
+                  }
+                  $owner=$acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+                  if($owner -notin @('S-1-5-18','S-1-5-32-544') -and
+                     $owner -notin $admSids) {
+                      throw 'Non-administrator shared library owner'
+                  }
+                  foreach($ace in $acl.GetAccessRules(
+                      $true,$true,[Security.Principal.SecurityIdentifier])) {
+                      if($ace.AccessControlType -ne
+                         [Security.AccessControl.AccessControlType]::Allow) { continue }
+                      if($ace.IdentityReference.Value -in
+                         @('S-1-5-18','S-1-5-32-544')) { continue }
+                      if($ace.IdentityReference.Value -in $admSids) { continue }
+                      if(([int]$ace.FileSystemRights -band $writeMask) -ne 0) {
+                          throw 'Foreign writer on protected #25 library'
+                      }
+                  }
+              }
+              $entries=@(Get-ChildItem -LiteralPath $partial25 -Force -ErrorAction Stop)
+              if($entries.Count -ne 1 -or $entries[0].Name -cne '.kingdoms-owned.json' -or
+                 $entries[0].PSIsContainer -or
+                 (($entries[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+                  throw 'Existing #25 must be exact owned marker-only state'
+              }
+              $marker=Get-Content -LiteralPath $entries[0].FullName -Raw -ErrorAction Stop |
+                  ConvertFrom-Json -ErrorAction Stop
+              if($marker.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or
+                 $marker.machine -cne 'WSLPE-WS01' -or
+                 [int]$marker.number -ne 25 -or
+                 $marker.id -cne 'msi_repair_custom_action' -or
+                 $marker.learner_sid -cne $learner.SID.Value) {
+                  throw 'Incorrect #25 fixture ownership'
+              }
+              if(Test-Path -LiteralPath 'C:\Program Files\KingdomsWSLPE25') {
+                  throw 'Registered #25 MSI payload may exist; no overlapping pilot'
+              }
+              $source=Join-Path $lib 'WslpeFixture.psm1'
+              $item=Get-Item -LiteralPath $source -Force -ErrorAction Stop
+              if($item.PSIsContainer -or
+                 (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) -or
+                 (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -cne
+                    '{{ wslpe_pilot_common_sha256 }}') {
+                  throw 'Shared fixture library differs from source; no #28 rewrite allowed'
+              }
+              Write-Output 'WSLPE45_PILOT28_REUSE_LIBRARY=PASS'
+          } else {
+              Write-Output 'WSLPE45_PILOT28_REUSE_LIBRARY=NO'
           }
           if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'" -ErrorAction Stop).Count -ne 0) {
               throw 'Existing #40 privileged RPC host is active; refuse overlapping test'
@@ -77,6 +154,6 @@
       register: pilot28_preflight
       changed_when: false
 
-    - name: Emit one bounded preflight proof marker for operator acceptance
+    - name: Emit bounded preflight proof markers for operator acceptance
       ansible.builtin.debug:
-        msg: "{{ (pilot28_preflight.output | default([])) | select('equalto', 'WSLPE45_PILOT28_CLEAN=PASS') | list | first | default('WSLPE45_PILOT28_CLEAN=FAIL') }}"
+        msg: "{{ (pilot28_preflight.output | default([])) | select('match', '^WSLPE45_PILOT28_') | list }}"
