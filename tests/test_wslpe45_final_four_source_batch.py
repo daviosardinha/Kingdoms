@@ -168,7 +168,19 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "GOAD-WS01",
         ):
             self.assertNotIn(forbidden, src)
-        self.assertIn("ValidateSet('Inspect','Prepare')", src)
+        # Windows PowerShell 5.1 New-Item does not implement -LiteralPath.
+        # Recovery must accept ONLY the marked, empty interrupted fixture.
+        self.assertIn("New-Item -Path $request -ItemType File", src)
+        self.assertNotIn("New-Item -LiteralPath $request", src)
+        self.assertIn("ValidateSet('Inspect','Prepare','Resume')", src)
+        for required in (
+            "Assert-Wslpe45OwnedFixture -Number 25 -Id $id",
+            "Assert-Wslpe25ProtectedParent -Path $target -RequireProtectedAcl",
+            "Resume requires exactly one ordinary existing fixture directory",
+            "Resume refuses any unexpected or partially prepared fixture entry",
+            "WSLPE25_FIXTURE_RESUMED=PASS",
+        ):
+            self.assertIn(required,src)
         self.assertNotIn("ValidateSet('Inspect','Prepare','Reset')", src)
 
     def test_msi_native_build_records_product_identity_before_any_runtime(self):
