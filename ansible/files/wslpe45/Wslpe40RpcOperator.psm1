@@ -61,8 +61,9 @@ function Invoke-Wslpe40RpcOperator {
         if(-not (Test-Path -LiteralPath $fixtures -PathType Container)) {
             throw 'Missing protected WSLPE fixtures parent'
         }
-        if(@(Get-ChildItem -LiteralPath $fixtures -Force -ErrorAction Stop |
-            Where-Object {$_.Name -ceq $id}).Count -ne 0) {
+        $existing=@(Get-ChildItem -LiteralPath $fixtures -Force -ErrorAction Stop |
+            Where-Object {$_.Name -ceq $id})
+        if($existing.Count -ne 0) {
             throw 'Refuse existing RPC fixture or linked entry'
         }
         $null=New-Wslpe45OwnedFixture -Number 40 -Id $id
@@ -100,8 +101,7 @@ function Invoke-Wslpe40RpcOperator {
         return
     }
     # Never terminate an arbitrary PID. The host must have stopped itself.
-    $running=@(Get-CimInstance Win32_Process -Filter
-        "Name = 'Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
+    $running=@(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
     if($running.Count -ne 0) {
         throw 'Refuse RPC reset while native host process exists'
     }
