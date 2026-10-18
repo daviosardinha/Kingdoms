@@ -47,7 +47,7 @@ class StageContractTests(unittest.TestCase):
                 return Failure()
         with self.assertRaisesRegex(
             ValueError,
-            r"^Guest rejected stage step: APPEND_WSLPE40RPCOPERATOR_PSM1_CHUNK_1 \\(status=1\\)$",
+            r"^Guest rejected stage step: APPEND_WSLPE40RPCOPERATOR_PSM1_CHUNK_1 \(status=1\)$",
         ) as error:
             MODULE.ps_checked(Remote(), "$null=1",
                               step="APPEND_WSLPE40RPCOPERATOR_PSM1_CHUNK_1")
@@ -61,7 +61,7 @@ class StageContractTests(unittest.TestCase):
                 raise RuntimeError("secret remote connection details")
         with self.assertRaisesRegex(
             ValueError,
-            r"^WinRM transport rejected stage step: APPEND_TEST_CHUNK_1 \\(RuntimeError\\)$",
+            r"^WinRM transport rejected stage step: APPEND_TEST_CHUNK_1 \(RuntimeError\)$",
         ) as error:
             MODULE.ps_checked(Remote(), "$null=1", step="APPEND_TEST_CHUNK_1")
         self.assertNotIn("secret", str(error.exception))
