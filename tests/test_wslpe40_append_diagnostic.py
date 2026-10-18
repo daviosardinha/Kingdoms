@@ -76,6 +76,30 @@ class AppendDiagnosticTests(unittest.TestCase):
         self.assertIn("[PASS] Postdiagnostic zero-byte orphan still unchanged",code)
         self.assertNotIn("print(response.std_err)",code)
 
+    def test_nonzero_winrm_status_preserves_structured_remote_failure(self):
+        class Result:
+            status_code=1
+            std_out=(MOD.FAILURE_MARKER+json.dumps({
+                "phase":"FILE_OPEN","exception_type":"MethodInvocationException",
+                "hresult":-2146233087})+"\n").encode()
+            std_err=b"private domain credential should never appear"
+        kind,details=MOD.classify_remote_response(Result())
+        self.assertEqual(kind,"classified_failure")
+        self.assertEqual(details["phase"],"FILE_OPEN")
+        self.assertNotIn("private",str(details))
+
+    def test_nonzero_winrm_without_marker_reports_only_bounded_metadata(self):
+        class Result:
+            status_code=1
+            std_out=b"some remote secret"
+            std_err=(b"error with secret\\r\\n"+
+                     b"FullyQualifiedErrorId : RuntimeException\\r\\n")
+        kind,details=MOD.classify_remote_response(Result())
+        self.assertEqual(kind,"unclassified_failure")
+        self.assertEqual(details["status"],1)
+        self.assertEqual(details["error_id"],"RuntimeException")
+        self.assertNotIn("secret",str(details))
+
     def test_no_unsafe_remote_mutation_and_exact_owned_file(self):
         ps=MOD.REMOTELY_NONWRITING
         for item in (
