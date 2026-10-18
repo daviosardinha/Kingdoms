@@ -10,6 +10,7 @@
 #include <oaidl.h>
 #include <oleauto.h>
 #include <stdio.h>
+#include <new>
 #pragma comment(lib, "Ole32.lib")
 #pragma comment(lib, "OleAut32.lib")
 #pragma comment(lib, "Advapi32.lib")
