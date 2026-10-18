@@ -54,7 +54,7 @@ function Assert-Wslpe25ProtectedParent {
 function Invoke-Wslpe25FixturePreparation {
     [CmdletBinding()]
     param([Parameter(Mandatory=$true)]
-          [ValidateSet('Inspect','Prepare')]
+          [ValidateSet('Inspect','Prepare','Resume')]
           [string]$Action)
 
     $ErrorActionPreference='Stop'
@@ -110,20 +110,43 @@ function Invoke-Wslpe25FixturePreparation {
     # preexisting foreign fixture must never be adopted.
     $existing=@(Get-ChildItem -LiteralPath $fixtures -Force -ErrorAction Stop |
         Where-Object {$_.Name -ceq $id})
-    if($existing.Count -ne 0) {
-        throw 'WSLPE25 refuses to adopt an existing fixture entry'
+    if($Action -eq 'Resume') {
+        # Only recover our own *incomplete preparation* after the Windows
+        # PowerShell 5.1 New-Item -LiteralPath parameter-binding failure.
+        # Never adopt arbitrary directories, links, MSI registrations or
+        # unexpected content. An ownership marker alone is insufficient
+        # unless the inventory is exactly the interrupted create state.
+        if($existing.Count -ne 1 -or
+           -not $existing[0].PSIsContainer -or
+           (($existing[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            throw 'Resume requires exactly one ordinary existing fixture directory'
+        }
+        $null=Assert-Wslpe45OwnedFixture -Number 25 -Id $id
+        Assert-Wslpe25ProtectedParent -Path $target -RequireProtectedAcl
+        $remaining=@(Get-ChildItem -LiteralPath $target -Force -ErrorAction Stop)
+        if($remaining.Count -ne 1 -or
+           $remaining[0].Name -cne '.kingdoms-owned.json' -or
+           $remaining[0].PSIsContainer -or
+           (($remaining[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+            throw 'Resume refuses any unexpected or partially prepared fixture entry'
+        }
+        if(Test-Path -LiteralPath 'C:\Program Files\KingdomsWSLPE25') {
+            throw 'Resume refuses already installed MSI payload'
+        }
+        $owned=$target
+    } else {
+        if($existing.Count -ne 0) {
+            throw 'Prepare refuses an existing fixture; use verified Resume only'
+        }
+        # Create only a new owned fixture; do not adopt unrecognized state.
+        $owned=New-Wslpe45OwnedFixture -Number 25 -Id $id
     }
-
-    # Shared helper is authoritative for identity, creation and marker.
-    # If a subsequent verification fails, preserve evidence and stop;
-    # never delete an object whose ownership is in doubt.
-    $owned=New-Wslpe45OwnedFixture -Number 25 -Id $id
     # The one intentionally learner-controlled primitive. The directory
     # and proof remain privileged. Learner may edit FILE DATA only, never
     # delete/replace the file, change its DACL, or supply a path.
     $request=Join-Path $owned 'repair-request.txt'
     if(Test-Path -LiteralPath $request){throw 'Refuse preexisting request'}
-    $file=New-Item -LiteralPath $request -ItemType File -ErrorAction Stop
+    $file=New-Item -Path $request -ItemType File -ErrorAction Stop
     Set-Content -LiteralPath $request -Value '1' -Encoding Ascii -NoNewline -ErrorAction Stop
     $learner=[Security.Principal.SecurityIdentifier]::new(
         (Assert-Wslpe45Identity).LearnerSid)
@@ -142,7 +165,7 @@ function Invoke-Wslpe25FixturePreparation {
     $acl.AddAccessRule($ace) | Out-Null
     Set-Acl -LiteralPath $request -AclObject $acl -ErrorAction Stop
     Assert-Wslpe25RepairFixture -Stage BeforeRepair
-    Write-Output 'WSLPE25_FIXTURE_PREPARED=PASS'
+    Write-Output ('WSLPE25_FIXTURE_{0}=PASS' -f $Action.ToUpperInvariant())
 }
 
 Export-ModuleMember -Function 'Invoke-Wslpe25FixturePreparation'
