@@ -776,6 +776,10 @@ jobs:
           if errorlevel 1 exit /b 1
           cl /nologo /EHsc /I "$midlDir" "ansible\files\wslpe45\Kingdom40LocalRpcClient.cpp" "$midlDir\Kingdom40LocalRpc_c.obj" /link /OUT:"$midlDir\Kingdom40LocalRpcClient.exe" Rpcrt4.lib
           if errorlevel 1 exit /b 1
+          cl /nologo /EHsc "ansible\files\wslpe45\Kingdom38DcomServer.cpp" /link /OUT:"$midlDir\Kingdom38DcomServer.exe" Ole32.lib OleAut32.lib Advapi32.lib
+          if errorlevel 1 exit /b 1
+          cl /nologo /EHsc "ansible\files\wslpe45\Kingdom38DcomClient.cpp" /link /OUT:"$midlDir\Kingdom38DcomClient.exe" Ole32.lib OleAut32.lib
+          if errorlevel 1 exit /b 1
           exit /b 0
           "@ | Set-Content -LiteralPath $build -Encoding ASCII
           & $env:ComSpec /d /c $build
