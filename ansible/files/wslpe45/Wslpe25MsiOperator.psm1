@@ -213,7 +213,8 @@ function Invoke-Wslpe25MsiOperator {
     }
     # Check the *whole* fixture inventory before any installer mutation,
     # never silently adopt unexpected objects in our dedicated directory.
-    $allowed=@('.kingdoms-owned.json','msi-product-ownership.json','repair-proof.txt')
+    $allowed=@('.kingdoms-owned.json','msi-product-ownership.json',
+               'repair-request.txt','repair-proof.txt')
     $unexpected=$false
     foreach($entry in @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)){
         if($entry.PSIsContainer -or $entry.Name -cnotin $allowed -or
