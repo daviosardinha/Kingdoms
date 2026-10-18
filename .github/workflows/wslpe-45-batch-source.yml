@@ -731,12 +731,12 @@ jobs:
             throw 'Incompatible New-Item LiteralPath parameter reintroduced'
           }
           foreach($required in @(
-            "New-Item -Path " + '$request' + " -ItemType File",
+            'New-Item -Path $request -ItemType File',
             "ValidateSet('Inspect','Prepare','Resume')",
             'Assert-Wslpe45OwnedFixture -Number 25 -Id $id',
             'WSLPE25_FIXTURE_RESUMED=PASS'
           )){
-            if(-not $content.Contains($required)){throw 'Missing MSI partial-resume contract'}
+            if(-not $content.Contains($required)){throw ('Missing MSI partial-resume contract: '+$required)}
           }
           Write-Output '[PASS] MSI 5.1 native request creation and owned Resume contract; no guest contacted'
 
