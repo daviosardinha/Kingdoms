@@ -47,11 +47,71 @@
                   }
               }
           }
-          # Do not modify the common library while #25 recovery is pending.
+          # An interrupted #25 may coexist ONLY as its exact owned,
+          # protected marker-only state. Never adopt or mutate it.
           $partial25='C:\ProgramData\KingdomsWSLPE45\fixtures\msi_repair_custom_action'
+          $mode='ABSENT'
           if(Test-Path -LiteralPath $partial25) {
-              throw 'Existing #25 MSI fixture: finish owned recovery or use a clean clone'
+              $dirs=@('C:\ProgramData\KingdomsWSLPE45',
+                      'C:\ProgramData\KingdomsWSLPE45\lib',$partial25)
+              $adminSids=@(Get-LocalGroupMember -Group $admins.Name |
+                  ForEach-Object {$_.SID.Value})
+              foreach($dir in $dirs) {
+                  $item=Get-Item -LiteralPath $dir -Force -ErrorAction Stop
+                  $acl=Get-Acl -LiteralPath $dir -ErrorAction Stop
+                  $owner=$acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+                  if(-not $item.PSIsContainer -or
+                     ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                     -not $acl.AreAccessRulesProtected -or
+                     ($owner -notin @('S-1-5-18','S-1-5-32-544') -and
+                      $owner -notin $adminSids)) {
+                      throw 'Unexpected linked/unprotected/foreign #25 ancestor'
+                  }
+                  $danger=[int][Security.AccessControl.FileSystemRights]::Write -bor
+                      [int][Security.AccessControl.FileSystemRights]::Delete -bor
+                      [int][Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+                      [int][Security.AccessControl.FileSystemRights]::TakeOwnership
+                  foreach($ace in $acl.GetAccessRules(
+                      $true,$true,[Security.Principal.SecurityIdentifier])) {
+                      if($ace.AccessControlType -ne
+                         [Security.AccessControl.AccessControlType]::Allow) {continue}
+                      $sid=$ace.IdentityReference.Value
+                      if($sid -in @('S-1-5-18','S-1-5-32-544') -or
+                         $sid -in $adminSids) {continue}
+                      if(([int]$ace.FileSystemRights -band $danger) -ne 0) {
+                          throw 'Non-admin writer in #25 protected ancestors'
+                      }
+                  }
+              }
+              $items=@(Get-ChildItem -LiteralPath $partial25 -Force -ErrorAction Stop)
+              if($items.Count -ne 1 -or
+                 $items[0].Name -cne '.kingdoms-owned.json' -or
+                 $items[0].PSIsContainer -or
+                 ($items[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw '#25 contains more than its interrupted ownership marker'
+              }
+              $marker=Get-Content -LiteralPath $items[0].FullName -Raw -ErrorAction Stop |
+                  ConvertFrom-Json -ErrorAction Stop
+              if($marker.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or
+                 $marker.machine -cne 'WSLPE-WS01' -or
+                 [int]$marker.number -ne 25 -or
+                 $marker.id -cne 'msi_repair_custom_action' -or
+                 $marker.learner_sid -cne $learner.SID.Value) {
+                  throw 'Wrong #25 ownership marker; refuse overlap'
+              }
+              if(Test-Path -LiteralPath 'C:\Program Files\KingdomsWSLPE25') {
+                  throw '#25 product files present; no overlapping deployment'
+              }
+              $source=Get-Item -LiteralPath 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force -ErrorAction Stop
+              if($source.PSIsContainer -or
+                 ($source.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                 (Get-FileHash -LiteralPath $source.FullName -Algorithm SHA256).Hash -cne
+                    '{{ wslpe_pilot_shared_sha256 }}') {
+                  throw 'Protected shared module differs from approved #28 source'
+              }
+              $mode='OWNED_MARKER_ONLY'
           }
+          Write-Output ('WSLPE45_PILOT28_25_MODE=' + $mode)
           if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'" -ErrorAction Stop).Count -ne 0) {
               throw 'Existing #40 privileged RPC host is active; refuse overlapping test'
           }
