@@ -80,6 +80,34 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         self.assertIn("CREATE_NEW", source)
         self.assertNotIn("CREATE_ALWAYS", source)
 
+    def test_msi_inspection_is_owned_read_only_and_fail_closed(self):
+        # Offline contract only: Windows PowerShell parsing and live ACLs
+        # require separate native/lab checks.
+        src = (SRC / "Wslpe25RepairInspection.psm1").read_text(encoding="utf-8")
+        for token in (
+            "Assert-Wslpe45Identity",
+            "Assert-Wslpe45OwnedFixture -Number 25",
+            "Assert-Wslpe45NoReparsePoints",
+            "Get-LocalGroupMember",
+            "GetAccessRules",
+            "AreAccessRulesProtected",
+            "BeforeRepair",
+            "AfterRepair",
+            "Get-ChildItem",
+            "WSLPE25_FIXTURE_INSPECT",
+        ):
+            self.assertIn(token, src)
+        for forbidden in (
+            "New-Wslpe45OwnedFixture",
+            "Remove-Wslpe45OwnedFixture",
+            "Set-Acl",
+            "New-Item",
+            "Remove-Item",
+            "msiexec",
+            "Start-Process",
+        ):
+            self.assertNotIn(forbidden, src)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
