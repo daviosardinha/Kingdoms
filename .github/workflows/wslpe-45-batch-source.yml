@@ -80,6 +80,8 @@ jobs:
           python scripts/wslpe45-closeout.py
           python -m py_compile scripts/wslpe45-stage-native-batch.py tests/test_wslpe45_native_batch_stage.py
           python -m unittest -v tests.test_wslpe45_native_batch_stage
+          python -m py_compile scripts/wslpe25-refresh-preparation.py tests/test_wslpe25_refresh_preparation.py
+          python -m unittest -v tests.test_wslpe25_refresh_preparation
           # Live batch execution MUST NEVER run in GitHub source CI.
           # The unit tests assert that unapproved execution fails before
           # VMware, inventory, Ansible or WinRM can be contacted.
@@ -702,6 +704,20 @@ jobs:
           python -m pip install pyyaml
           python -m unittest -v tests.test_wslpe45_final_four_source_batch
           if ($LASTEXITCODE -ne 0) { throw 'Final four prototype source contract failed' }
+
+      - name: Parse WSLPE25 owned interrupted-fixture read-only guard in PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Get-Content -LiteralPath 'scripts/wslpe25-refresh-preparation.py' -Raw
+          $segment=[regex]::Match($src, '(?s)GUARD=r"""(.*?)"""')
+          if(-not $segment.Success){throw 'Missing WSLPE25 read-only marker-only guard'}
+          $tokens=$null
+          $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseInput(
+            $segment.Groups[1].Value,[ref]$tokens,[ref]$errors)
+          if(@($errors).Count -gt 0){throw 'WSLPE25 native guard failed PowerShell 5.1 parser'}
+          Write-Output '[PASS] Marker-only guard parsed; no guest changed'
 
       - name: Enforce PowerShell 5.1 MSI request-file compatibility and partial-resume scope
         shell: powershell
