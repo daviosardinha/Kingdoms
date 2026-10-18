@@ -72,8 +72,8 @@ def diagnosed_check(session,stage,command,step):
         if re.fullmatch(
             r"(?:WINRM_ENCODED_COMMAND_TOO_LONG|"
             r"WINDOWS_COMMAND_LINE_TOO_LONG|WINDOWS_ACCESS_DENIED) at [A-Z0-9_]{3,72}|"
-            r"Guest rejected stage step: [A-Z0-9_]{3,72} \\(status=[0-9]{1,3}\\)|"
-            r"WinRM transport rejected stage step: [A-Z0-9_]{3,72} \\([A-Za-z][A-Za-z0-9_]{0,63}\\)",
+            r"Guest rejected stage step: [A-Z0-9_]{3,72} \(status=[0-9]{1,3}\)|"
+            r"WinRM transport rejected stage step: [A-Z0-9_]{3,72} \([A-Za-z][A-Za-z0-9_]{0,63}\)",
             reason
         ):
             print("[DIAG] "+reason)
