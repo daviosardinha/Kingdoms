@@ -31,11 +31,16 @@ function Assert-Wslpe25RepairFixture {
         'C:\ProgramData\KingdomsWSLPE45\fixtures',
         $root
     )
-    $dangerous=[int][Security.AccessControl.FileSystemRights]::Write -bor
-               [int][Security.AccessControl.FileSystemRights]::Delete -bor
-               [int][Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
-               [int][Security.AccessControl.FileSystemRights]::ChangePermissions -bor
-               [int][Security.AccessControl.FileSystemRights]::TakeOwnership
+    $dangerous=(
+        [int][Security.AccessControl.FileSystemRights]::Write -bor
+        [int][Security.AccessControl.FileSystemRights]::Delete -bor
+        [int][Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+        [int][Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [int][Security.AccessControl.FileSystemRights]::TakeOwnership
+    )
+    $administrators=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+    $adminSids=@(Get-LocalGroupMember -Group $administrators.Name -ErrorAction Stop |
+        ForEach-Object { $_.SID.Value })
     foreach($path in $ancestors) {
         $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
         if(-not $item.PSIsContainer -or
@@ -54,8 +59,10 @@ function Assert-Wslpe25RepairFixture {
         } catch {
             throw "Cannot independently resolve fixture directory owner: $path"
         }
-        if($ownerSid -eq $identity.LearnerSid) {
-            throw "Non-administrator learner owns protected MSI path: $path"
+        if($ownerSid -eq $identity.LearnerSid -or
+           ($ownerSid -notin @('S-1-5-18','S-1-5-32-544') -and
+            $ownerSid -notin $adminSids)) {
+            throw "MSI path is not owned by SYSTEM or a local administrator: $path"
         }
 
         $entries=$acl.GetAccessRules(
