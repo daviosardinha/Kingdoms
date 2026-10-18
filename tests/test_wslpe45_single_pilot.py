@@ -1,7 +1,8 @@
 """Source-only, no-Windows tests for the explicit #28 pilot."""
 import importlib.util
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 import unittest
 import yaml
 
@@ -57,6 +58,26 @@ class SinglePilotTests(unittest.TestCase):
         for disallowed in ('Remove-Item', 'Set-Acl', 'New-Item',
                            'Register-ScheduledTask', 'Start-Process'):
             self.assertNotIn(disallowed, source)
+
+    def test_snapshot_gate_passes_loaded_preflight_to_existing_guard(self):
+        stage = SimpleNamespace(load_preflight=Mock(return_value=object()),
+                                verify_vm_snapshot=Mock())
+        spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
+        with patch.object(pilot.importlib.util, 'spec_from_file_location', return_value=spec), \
+             patch.object(pilot.importlib.util, 'module_from_spec', return_value=stage):
+            pilot.snapshot_gate()
+        stage.load_preflight.assert_called_once_with()
+        stage.verify_vm_snapshot.assert_called_once_with(stage.load_preflight.return_value)
+
+    def test_read_only_preflight_stops_before_live_journal(self):
+        source = SCRIPT.read_text(encoding='utf-8')
+        self.assertIn('modes.add_argument("--preflight", action="store_true")', source)
+        self.assertIn('modes.add_argument("--execute", action="store_true")', source)
+        self.assertLess(source.index('if args.preflight:'),
+                        source.index('report = {"schema":'))
+        self.assertLess(source.index('if args.preflight:'),
+                        source.index('sentinel, os.O_CREAT'))
+        self.assertIn('[PASS] #28 read-only guest preflight; no scenario writes', source)
 
     def test_pilot_preserves_batch_recovery_and_no_auto_reset(self):
         script = SCRIPT.read_text(encoding='utf-8')
