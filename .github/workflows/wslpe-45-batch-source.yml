@@ -692,14 +692,17 @@ jobs:
             $query = ('SELECT `Value` FROM `Property` WHERE `Property` = ''{0}''' -f $propertyName)
             $propertyView = $database.OpenView($query)
             try {
-              $propertyView.Execute()
+              # COM method return values can be emitted into the PowerShell
+              # success stream and become extra array elements. Only the
+              # requested MSI property value may leave this function.
+              $null = $propertyView.Execute()
               $propertyRecord = $propertyView.Fetch()
               if ($null -eq $propertyRecord) {
                 throw "Missing MSI package property: $propertyName"
               }
               return [string]$propertyRecord.StringData(1)
             } finally {
-              $propertyView.Close()
+              $null = $propertyView.Close()
             }
           }
           $productCode=Read-Wslpe25MsiProperty 'ProductCode'
