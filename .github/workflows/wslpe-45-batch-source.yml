@@ -579,7 +579,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($filename in @('Wslpe25RepairInspection.psm1',
                                    'Wslpe25RepairPreparation.psm1',
-                                   'Wslpe25MsiOperator.psm1')) {
+                                   'Wslpe25MsiOperator.psm1',
+                                   'Wslpe40RpcOperator.psm1')) {
             $source = Join-Path $env:GITHUB_WORKSPACE ("ansible/files/wslpe45/" + $filename)
             $tokens = $null
             $parseErrors = $null
@@ -804,5 +805,17 @@ jobs:
             ${{ runner.temp }}/Kingdom25Repair.msi
             ${{ runner.temp }}/Kingdom25Repair.dll
             ${{ runner.temp }}/Kingdom25Repair.provenance.txt
+          if-no-files-found: error
+          retention-days: 2
+
+      
+      - name: Archive unqualified local RPC binaries for independent review
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/windows-lpe-45-batch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wslpe40-native-source-review-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/wslpe40-midl/Kingdom40LocalRpcServer.exe
+            ${{ runner.temp }}/wslpe40-midl/Kingdom40LocalRpcClient.exe
           if-no-files-found: error
           retention-days: 2
