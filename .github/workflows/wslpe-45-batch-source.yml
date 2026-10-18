@@ -689,7 +689,7 @@ jobs:
           # Preserve exact MSI product identity for later owned install/uninstall.
           # Read the package database only; do not query or modify guest state.
           function Read-Wslpe25MsiProperty([string]$propertyName) {
-            $query = "SELECT `Value` FROM `Property` WHERE `Property` = '$propertyName'"
+            $query = ('SELECT `Value` FROM `Property` WHERE `Property` = ''{0}''' -f $propertyName)
             $propertyView = $database.OpenView($query)
             try {
               $propertyView.Execute()
