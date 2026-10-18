@@ -19,6 +19,42 @@ flag must remain false. None of the four scenario playbooks is present.
 | 38 | DCOM launch permissions | **No accepted source** | Review-approved local-server native build, CLSID/AppID contract | Owned CLSID/AppID per-application security descriptor, local non-admin activation evidence and controlled unregistration; no machine-wide DCOM changes |
 | 40 | Local RPC authorization | `Kingdom40LocalRpc.idl` | MIDL-generated local client/server stubs | `ncalrpc`-only implementation, explicit bounded authorization decision, authenticated standard user test, owned endpoint shutdown and cleanup |
 
+## 2026-10-18 coordinated implementation wave — #25 / #36 / #40
+
+This checkpoint changes the previous one-technique-at-a-time workflow.
+Code for **three independent candidates** is developed and source-gated on
+the same feature branch; routine GitHub/CI diagnosis no longer requires
+repeated Kali pulls. These changes are **unqualified source**, not release.
+
+- **#25 MSI**: the partial-install recovery ledger parser regression has
+  been corrected; original native Windows PowerShell syntax failure was
+  caused by a truncated SHA-256 expression. Exact guest recovery execution
+  and actual learner-controlled repair exploitation remain unproven.
+- **#36 WMI**: the native managed provider now accepts a limited learner
+  nonce for an exclusive create operation under the exact owned fixture,
+  illustrating the *method authorization* boundary. A separate exact-local
+  WMI verifier source can request Status or Proof, without remote targets.
+  Provider registration/namespace ACLs, authorized host identity and
+  uninstall are **not implemented/approved**, and the new verifier's native
+  compile and live operation still need independent qualification.
+- **#40 local RPC**: a concrete `ncalrpc`-only server and client are present.
+  The server authenticates/im-personates the exact local learner before
+  performing a deliberately under-authorized, bounded protected marker
+  write. The client is fixed to local RPC with Windows authentication.
+  Windows CI is configured to link actual MIDL-generated client and server
+  executables; no listener is started by CI. Protected fixture preparation,
+  runtime token evidence, negative tests and reset still remain.
+- **#38 DCOM**: source is **review blocked**. No workaround for the earlier
+  rejected implementation and no substitution with #27 COM hijacking.
+  Consider another genuinely distinct candidate from the original 45
+  only through an explicit engineering decision.
+
+**Acceptance remains unchanged**: all four index entries stay
+`planned / source_ci: pending`, `batch_execution_authorized: false`,
+21/25 source-qualified, 0/25 new formal six-stage learner proofs. Native
+Windows CI and any source tests added in this wave must pass before making
+a new source-readiness claim. A native build does not establish real LPE.
+
 ## 2026-10-18 native packaging and metadata checkpoint
 
 An isolated WiX 6.0.2 XML package source
