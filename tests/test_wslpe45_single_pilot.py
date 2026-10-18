@@ -107,7 +107,7 @@ class SinglePilotTests(unittest.TestCase):
         script = SCRIPT.read_text(encoding='utf-8')
         self.assertIn('.wslpe45-recovery-required', script)
         self.assertIn('.wslpe45-single-run.lock', script)
-        self.assertIn('snapshot_gate()', script)
+        self.assertIn('snapshot_gate(workspace)', script)
         self.assertIn('base.check_inventory(', script)
         self.assertIn('learner_proof', script)
         self.assertNotIn('shell=True', script)
