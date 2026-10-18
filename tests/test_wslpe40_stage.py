@@ -116,8 +116,8 @@ class StageContractTests(unittest.TestCase):
                 value.std_err=self.message
                 return value
         for content,expected in (
-            (b"The command line is too long.\\r\\n","WINDOWS_COMMAND_LINE_TOO_LONG"),
-            (b"Access to the path is denied.\\r\\n","WINDOWS_ACCESS_DENIED"),
+            (b"The command line is too long.\r\n","WINDOWS_COMMAND_LINE_TOO_LONG"),
+            (b"Access to the path is denied.\r\n","WINDOWS_ACCESS_DENIED"),
         ):
             with self.subTest(error=expected),self.assertRaisesRegex(
                 ValueError,expected
