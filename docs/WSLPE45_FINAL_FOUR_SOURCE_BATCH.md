@@ -72,6 +72,28 @@ alone does not establish atomic filesystem safety. No install/repair/reset
 lifecycle or low-privilege authorization proof exists. All four index rows
 remain planned and execution authorization remains false.
 
+## 2026-10-18 #25 explicit fixture preparation source checkpoint
+
+Added `ansible/files/wslpe45/Wslpe25RepairPreparation.psm1`. A trusted
+local operator can explicitly request an `Inspect` or `Prepare` action
+only on the exact standalone WSLPE-WS01 machine. The preparation function
+requires an elevated local Administrator, the original protected operator
+library, protected non-writable fixture ancestor ACLs, no reparse-point
+ancestors, and a completely absent #25 fixture entry before using
+`New-Wslpe45OwnedFixture -Number 25`. It then runs the independent
+pre-repair inspection. A failed post-creation verification preserves state
+for investigation instead of attempting blind cleanup.
+
+**Source only:** importing the module has no side effects. GitHub Windows
+CI parses (but does not import or execute) both PowerShell modules, and
+the offline test suite enforces their API/guard contracts. This is not
+an approved deployment command, an installer, a non-admin repair trigger,
+or a complete teardown. The #25 package is still uninstalled; MSI product
+identity, owned uninstall/reset, negative authorization behavior, and
+learner-side six-stage qualification remain open. Do not use
+`-Action Prepare` on the existing guest without separate operator
+authorization and a reviewed recovery plan.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer
