@@ -138,6 +138,25 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         self.assertIn("ValidateSet('Inspect','Prepare')", src)
         self.assertNotIn("ValidateSet('Inspect','Prepare','Reset')", src)
 
+    def test_msi_native_build_records_product_identity_before_any_runtime(self):
+        # The Windows runner reads MSI database metadata without invoking it.
+        workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
+            encoding="utf-8"
+        )
+        for required in (
+            "Read-Wslpe25MsiProperty 'ProductCode'",
+            "Read-Wslpe25MsiProperty 'ProductName'",
+            "Read-Wslpe25MsiProperty 'Manufacturer'",
+            "Read-Wslpe25MsiProperty 'ProductVersion'",
+            "Read-Wslpe25MsiProperty 'ALLUSERS'",
+            "Get-FileHash -Algorithm SHA256",
+            "WSLPE25_PRODUCT_CODE=",
+            "WSLPE25_MSI_SHA256=",
+            "state=unqualified-not-deployable",
+            "installation_executed=false",
+        ):
+            self.assertIn(required, workflow)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
