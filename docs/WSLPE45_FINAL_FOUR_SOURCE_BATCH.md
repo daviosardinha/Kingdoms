@@ -55,6 +55,27 @@ repeated Kali pulls. These changes are **unqualified source**, not release.
 Windows CI and any source tests added in this wave must pass before making
 a new source-readiness claim. A native build does not establish real LPE.
 
+## 2026-10-18 #40 owned fixture + native artifact gate
+
+The `Wslpe40RpcOperator.psm1` module adds a **standalone, opt-in**
+Prepare/Inspect/Reset lifecycle for the dedicated local RPC proof fixture.
+It requires the exact Windows 10 workgroup guest, protected source library,
+an elevated interactive console and explicit operator approval for any
+mutation. Inspection requires exact learner-selected nonce bytes. Reset
+refuses unrecognized/linked objects or a still-running native RPC server.
+
+CI now parses the module on Windows PowerShell 5.1 and retains the native
+server and client EXEs as a two-day **source-review-only** artifact. Nothing
+is executed, registered, installed or staged on the existing guest.
+
+**Still missing:** an approved, privileged native host launch/identity
+contract, independent authentication and negative-authorization runtime
+checks, guest-owned artifact staging and reset/reapply proof. A proof file
+containing a learner nonce is evidence of a bounded privileged operation,
+**not automatically evidence of arbitrary code execution or SYSTEM takeover**.
+Do not label #40 fully qualified until the actual intended escalation
+boundary is demonstrated.
+
 ## 2026-10-18 native packaging and metadata checkpoint
 
 An isolated WiX 6.0.2 XML package source
