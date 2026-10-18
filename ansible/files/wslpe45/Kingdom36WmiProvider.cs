@@ -61,12 +61,25 @@ namespace KingdomsWSLPE45 {
             using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
                 if (identity == null || !identity.IsSystem) return 4;
             }
-            Instrumentation.RegisterAssembly(Assembly.GetExecutingAssembly());
-            Instrumentation.Publish(new Kingdom36Maintenance());
-            using (var stop = new ManualResetEvent(false)) {
-                stop.WaitOne(TimeSpan.FromMinutes(30));
+            // Decoupled provider lifetime is finite and cleans only its own
+            // assembly and exact instance. Never modify root WMI ACLs here.
+            Assembly ownAssembly = Assembly.GetExecutingAssembly();
+            Kingdom36Maintenance instance = new Kingdom36Maintenance();
+            bool registered = false;
+            bool published = false;
+            try {
+                Instrumentation.RegisterAssembly(ownAssembly);
+                registered = true;
+                Instrumentation.Publish(instance);
+                published = true;
+                using (var stop = new ManualResetEvent(false)) {
+                    stop.WaitOne(TimeSpan.FromMinutes(30));
+                }
+                return 0;
+            } finally {
+                if (published) Instrumentation.Revoke(instance);
+                if (registered) InstrumentationManager.UnregisterAssembly(ownAssembly);
             }
-            return 0;
         }
     }
 }
