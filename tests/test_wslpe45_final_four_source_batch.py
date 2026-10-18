@@ -340,6 +340,22 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             self.assertIn(token, workflow)
         self.assertNotIn("Invoke-Wslpe40RpcOperator -Action Prepare", workflow)
 
+    def test_local_rpc_requires_real_active_console_session(self):
+        src=(SRC / "Wslpe40RpcOperator.psm1").read_text(encoding="utf-8")
+        for required in (
+            "Test-Wslpe40ActiveNativeConsole",
+            "WTSGetActiveConsoleSessionId",
+            'DllImport("kernel32.dll", ExactSpelling = true)',
+            "(Get-Process -Id $PID -ErrorAction Stop).SessionId",
+            "[uint32]::MaxValue",
+            "$caller -eq $active",
+            "WindowsBuiltInRole]::Administrator",
+            "RPC fixture mutation requires the active native Windows console session",
+        ):
+            self.assertIn(required,src)
+        self.assertNotIn("$env:SESSIONNAME",src)
+        self.assertNotIn("New-Wslpe45OwnedFixture -Number 40 -Id $id\n        Write-Output 'WSLPE40_RPC_RESET",src)
+
     def test_rpc_artifact_provenance_separates_host_and_learner(self):
         workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
             encoding="utf-8"
