@@ -53,11 +53,30 @@ function Get-Wslpe25MsiIdentity {
     }
 }
 
+# Deterministic recovery dispatch. No installer, account, or file I/O.
+# Windows CI exercises positive and negative transitions independently.
+function Get-Wslpe25RecoveryDecision {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$LedgerStatus,
+        [Parameter(Mandatory=$true)][int]$ProductState,
+        [Parameter(Mandatory=$true)][bool]$OwnedAndMatching,
+        [Parameter(Mandatory=$true)][bool]$UnexpectedEntries
+    )
+    if(-not $OwnedAndMatching -or $UnexpectedEntries -or
+       $LedgerStatus -cne 'install-attempted'){
+        return 'BLOCK'
+    }
+    if($ProductState -eq 5){return 'UNINSTALL_EXACT_PRODUCT'}
+    if($ProductState -eq -1){return 'CLEAN_OWNED_FIXTURE_ONLY'}
+    return 'BLOCK'
+}
+
 function Invoke-Wslpe25MsiOperator {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('Inspect','Install','Uninstall')][string]$Action,
+        [ValidateSet('Inspect','Install','Uninstall','Recover')][string]$Action,
         [string]$ExpectedSha256,
         [string]$Approval
     )
@@ -103,7 +122,11 @@ function Invoke-Wslpe25MsiOperator {
     if($env:SESSIONNAME -cne 'Console'){
         throw 'Install/uninstall must run from the interactive VMware Windows console'
     }
-    $requiredApproval=if($Action -eq 'Install'){'INSTALL WSLPE25'}else{'UNINSTALL WSLPE25'}
+    $requiredApproval=switch($Action){
+        'Install' {'INSTALL WSLPE25'}
+        'Uninstall' {'UNINSTALL WSLPE25'}
+        'Recover' {'RECOVER WSLPE25'}
+    }
     if($Approval -cne $requiredApproval){throw 'Exact local operator approval required'}
     $null=Assert-Wslpe45OwnedFixture -Number 25 -Id 'msi_repair_custom_action'
     Assert-Wslpe45NoReparsePoints -Path $root
@@ -149,6 +172,78 @@ function Invoke-Wslpe25MsiOperator {
         return
     }
 
+    if($Action -eq 'Recover' -and
+       ($ExpectedSha256 -cnotmatch '^[0-9A-Fa-f]{64}
+       (($entries[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+        throw 'Uninstall requires exactly one regular owned ledger'
+    }
+    $owner=Get-Content -LiteralPath $ledger -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    if($owner.schema -cne 'kingdoms.wslpe25.msi-product-owner.v1' -or
+       $owner.machine -cne 'WSLPE-WS01' -or
+       $owner.learner_sid -cne $who.LearnerSid -or
+       $owner.product_code -cne $pkg.ProductCode -or
+       $owner.msi_sha256 -cne $pkg.Sha256 -or
+       ($Action -eq 'Uninstall' -and $owner.status -cne 'installed') -or
+       ($Action -eq 'Recover' -and $owner.status -cne 'install-attempted')){
+        throw 'Refuse mismatched MSI ownership or lifecycle ledger'
+    }
+    # Check the *whole* fixture inventory before any installer mutation,
+    # never silently adopt unexpected objects in our dedicated directory.
+    $allowed=@('.kingdoms-owned.json','msi-product-ownership.json','repair-proof.txt')
+    $unexpected=$false
+    foreach($entry in @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)){
+        if($entry.PSIsContainer -or $entry.Name -cnotin $allowed -or
+           (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+            $unexpected=$true
+        }
+    }
+    if($unexpected){throw 'Unexpected object in owned MSI fixture; preserve for review'}
+    if($Action -eq 'Recover'){
+        $decision=Get-Wslpe25RecoveryDecision -LedgerStatus $owner.status `
+            -ProductState $state -OwnedAndMatching $true -UnexpectedEntries $unexpected
+        if($decision -eq 'BLOCK'){
+            throw 'Recovery blocked by unknown registration or ledger state'
+        }
+    } else {
+        if($state -ne 5){throw 'Owned uninstall requires an installed product'}
+        $decision='UNINSTALL_EXACT_PRODUCT'
+    }
+    if($decision -eq 'UNINSTALL_EXACT_PRODUCT'){
+        # Native removal is permitted only for this exact ProductCode.
+        $argsText=('/x {0} /qn /norestart REBOOT=ReallySuppress' -f $pkg.ProductCode)
+        $process=Start-Process -FilePath "$env:windir\System32\msiexec.exe" -ArgumentList $argsText -Wait -PassThru
+        if($process.ExitCode -ne 0){throw "Exact MSI uninstall failed ($($process.ExitCode)); keep ledger"}
+        if([int]$installer.ProductState($pkg.ProductCode) -ne -1){
+            throw 'MSI still registered after uninstall; retain recovery evidence'
+        }
+    }
+    if(Test-Path -LiteralPath 'C:\Program Files\KingdomsWSLPE25'){
+        throw 'MSI destination not absent; keep ownership evidence'
+    }
+    # Refuse recursive teardown if anything outside our exact bounded
+    # fixture file contract has appeared since installation.
+    foreach($entry in @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)){
+        if($entry.PSIsContainer -or $entry.Name -cnotin $allowed -or
+           (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+            throw 'Unexpected MSI fixture entry after removal; preserve for review'
+        }
+    }
+    if(Test-Path -LiteralPath (Join-Path $root 'repair-proof.txt')){
+        Assert-Wslpe25RepairFixture -Stage AfterRepair
+    }
+    Remove-Wslpe45OwnedFixture -Number 25 -Id 'msi_repair_custom_action'
+    if($Action -eq 'Recover'){
+        Write-Output 'WSLPE25_MSI_EXPLICIT_RECOVERY=PASS'
+    } else {
+        Write-Output 'WSLPE25_MSI_UNINSTALLED_AND_FIXTURE_REMOVED=PASS'
+    }
+}
+
+Export-ModuleMember -Function @('Invoke-Wslpe25MsiOperator','Get-Wslpe25RecoveryDecision')
+ -or
+        $pkg.Sha256 -cne $ExpectedSha256.ToUpperInvariant())){
+        throw 'Recovery requires the exact approved MSI digest'
+    }
     if($entries.Count -ne 1 -or $entries[0].PSIsContainer -or
        (($entries[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
         throw 'Uninstall requires exactly one regular owned ledger'
