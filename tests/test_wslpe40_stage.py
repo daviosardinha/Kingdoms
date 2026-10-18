@@ -66,6 +66,65 @@ class StageContractTests(unittest.TestCase):
             MODULE.ps_checked(Remote(), "$null=1", step="APPEND_TEST_CHUNK_1")
         self.assertNotIn("secret", str(error.exception))
 
+    def test_winrm_encoded_command_budget_is_enforced_before_transport(self):
+        import base64
+        self.assertEqual(MODULE.WINRM_CHUNK_BYTES, 512)
+        self.assertEqual(MODULE.MAX_RUN_PS_ENCODED_CHARS, 6000)
+        self.assertEqual(
+            MODULE.encoded_ps_length("$a=1"),
+            len(base64.b64encode("$a=1".encode("utf-16le"))),
+        )
+        oversized = "$a='" + ("A" * 4000) + "'"
+        self.assertGreater(MODULE.encoded_ps_length(oversized), 6000)
+        class Remote:
+            called=False
+            def run_ps(self, source):
+                self.called=True
+                raise AssertionError("Must not send oversized command")
+        remote=Remote()
+        with self.assertRaisesRegex(ValueError, "WINRM_ENCODED_COMMAND_TOO_LONG"):
+            MODULE.ps_checked(remote, oversized, step="APPEND_TEST_CHUNK_1")
+        self.assertFalse(remote.called)
+
+    def test_winrm_short_script_and_long_script_budget(self):
+        import base64
+        destination=("C:\\\\ProgramData\\\\KingdomsWSLPE45\\\\lib\\\\"
+                     "Wslpe40RpcOperator.psm1.wslpe40-stage-"+("a"*24))
+        def command(payload):
+            from_b64=base64.b64encode(bytes(payload)).decode("ascii")
+            return (
+                "$ErrorActionPreference='Stop'\\n"
+                "$bytes=[Convert]::FromBase64String('" + from_b64 + "')\\n"
+                "$stream=[IO.File]::Open('"+destination+"',[IO.FileMode]::Open,\\n"
+                "    [IO.FileAccess]::Write,[IO.FileShare]::None)\\n"
+                "try{$null=$stream.Seek(0,[IO.SeekOrigin]::End);"
+                "$stream.Write($bytes,0,$bytes.Length)}\\n"
+                "finally{$stream.Dispose()}\\n"
+            )
+        self.assertLess(MODULE.encoded_ps_length(command(512)),6000)
+        self.assertGreater(MODULE.encoded_ps_length(command(2048)),8191)
+
+    def test_known_31_byte_windows_error_is_safely_classified(self):
+        class Remote:
+            def __init__(self,msg):
+                self.message=msg
+            def run_ps(self,src):
+                class Result:
+                    status_code=1
+                    std_out=b""
+                value=Result()
+                value.std_err=self.message
+                return value
+        for content,expected in (
+            (b"The command line is too long.\\r\\n","WINDOWS_COMMAND_LINE_TOO_LONG"),
+            (b"Access to the path is denied.\\r\\n","WINDOWS_ACCESS_DENIED"),
+        ):
+            with self.subTest(error=expected),self.assertRaisesRegex(
+                ValueError,expected
+            ):
+                MODULE.ps_checked(Remote(content), "$null=1",
+                                  step="APPEND_TEST_CHUNK_1")
+
     def test_no_unreviewed_guest_action_or_tls_bypass(self):
         source=(ROOT/"scripts/wslpe40-stage.py").read_text(encoding="utf-8")
         for required in (
