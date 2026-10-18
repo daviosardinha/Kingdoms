@@ -758,3 +758,16 @@ jobs:
           Write-Output ('WSLPE25_MSI_SHA256=' + $msiDigest)
           Write-Output ('WSLPE25_PACKAGE_PROVENANCE=' + $provenance)
           Write-Output '[PASS] Genuine MSI built and CustomAction table inspected read-only; not installed'
+
+      # Development-only evidence. Never install this in CI or release it.
+      - name: Archive unqualified WSLPE25 MSI for independent artifact review
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/windows-lpe-45-batch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wslpe25-source-review-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/Kingdom25Repair.msi
+            ${{ runner.temp }}/Kingdom25Repair.dll
+            ${{ runner.temp }}/Kingdom25Repair.provenance.txt
+          if-no-files-found: error
+          retention-days: 2
