@@ -38,15 +38,15 @@ class CloseoutTests(unittest.TestCase):
     def test_bad_source_index_order_blocks_without_guest_call(self):
         rows = batch.index_rows()
         rows[0] = {**rows[0], "id": "unapproved_candidate"}
-        with patch.object(closeout.batch, "index_rows", return_value=rows), (
-             patch.object(closeout.batch, "trusted_safety") as vm):
+        with patch.object(closeout.batch, "index_rows", return_value=rows), \
+             patch.object(closeout.batch, "trusted_safety") as vm:
             with self.assertRaises(ValueError):
                 closeout.report()
             vm.assert_not_called()
 
     def test_no_guest_access_even_from_cli(self):
-        with patch.object(closeout.batch, "trusted_safety") as safe, (
-             patch.object(closeout.batch.subprocess, "run") as process):
+        with patch.object(closeout.batch, "trusted_safety") as safe, \
+             patch.object(closeout.batch.subprocess, "run") as process:
             self.assertEqual(closeout.main([]), 0)
             safe.assert_not_called()
             process.assert_not_called()
