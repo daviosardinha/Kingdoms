@@ -127,6 +127,43 @@ identity. The existing regression test asserts both suppressions.
 **Native CI confirmation is pending for this change**; no installer or
 Windows guest execution has occurred.
 
+## 2026-10-18 #25 opt-in local MSI product lifecycle source
+
+The feature branch now contains `Wslpe25MsiOperator.psm1`, a standalone
+Windows PowerShell 5.1 module with separate **Inspect**, **Install**, and
+**Uninstall** operations. Import has no side effects. Actual mutating
+operations require WSLPE-WS01 identity, existing #25-owned fixture, a
+protected module directory, elevated local Administrator, interactive
+VMware console session, and an action-specific approval phrase.
+
+Install reads the fixed protected `Kingdom25Repair.msi` using the native
+Windows Installer database API, requires exact package metadata and an
+operator-approved SHA-256 digest, refuses any registered product/foreign
+Program Files folder, and writes an owned recovery ledger **before**
+invoking native `msiexec`. A failed installation leaves the ledger and
+guest state intact for manual review. No automatic retry.
+
+Uninstall requires the same staged MSI digest, exact owned ledger,
+registered ProductCode, and installed state. It invokes the native
+uninstaller only for that ProductCode, verifies no registration and no
+Program Files payload remain, checks the bounded proof if present, and
+removes only the verified dedicated fixture. Foreign files, reparse
+points, unexpected product states, or changed metadata cause refusal.
+
+**This is a code-ready operator prototype, NOT deployment approval.**
+No MSI is staged in the existing guest, no real install/repair/uninstall
+has been executed, and there is no non-admin learner repair proof or
+approved rollback rehearsal. Windows CI parses the module without
+importing or executing it; a regression test enforces source contracts.
+The operator is intentionally not wired into the batch playbooks.
+A separate artifact trust review and snapshot-backed WSLPE-WS01
+maintenance authorization are required before any mutating command.
+
+The non-admin **repair trigger** remains an independent learner-side
+exercise: the operator module installs and uninstalls only. No source
+candidate is promoted; the count remains **21/25** and
+`batch_execution_authorized: false`.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer
