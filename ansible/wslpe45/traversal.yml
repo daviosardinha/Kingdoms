@@ -87,7 +87,7 @@
       ansible.windows.win_copy:
         src: ../files/wslpe45/WslpeFixture.psm1
         dest: '{{ scenario_library }}\WslpeFixture.psm1'
-      when: wslpe_45_action == 'apply'
+      when: wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)
 
     - name: Install isolated #35 Windows service source
       ansible.windows.win_copy:
@@ -151,6 +151,7 @@
           Write-Output 'WSLPE45_TRAVERSAL=APPLIED'
           Write-Output ('WSLPE45_BATCH_STAGE=privileged_path_traversal_write:' + '{{ wslpe_45_stage_label }}' + ':PASS')
       when: wslpe_45_action == 'apply'
+      register: deploy21_result_8
 
     - name: Validate exact #35 vulnerability state, not exploitation
       ansible.windows.win_powershell:
@@ -185,6 +186,7 @@
           Write-Output ('WSLPE45_BATCH_STAGE=privileged_path_traversal_write:' + '{{ wslpe_45_stage_label }}' + ':PASS')
       changed_when: false
       when: wslpe_45_action == 'validate' and wslpe_45_validate_state == 'vulnerable'
+      register: deploy21_result_9
 
     - name: Reset only owned #35 service and root
       ansible.windows.win_powershell:
@@ -213,6 +215,7 @@
           Write-Output 'WSLPE45_TRAVERSAL=RESET'
           Write-Output 'WSLPE45_BATCH_STAGE=privileged_path_traversal_write:reset:PASS'
       when: wslpe_45_action == 'reset'
+      register: deploy21_result_10
 
     - name: Verify clean #35 state
       ansible.windows.win_powershell:
@@ -228,3 +231,11 @@
           Write-Output 'WSLPE45_BATCH_STAGE=privileged_path_traversal_write:clean:PASS'
       changed_when: false
       when: wslpe_45_action == 'validate' and wslpe_45_validate_state == 'clean'
+      register: deploy21_result_11
+
+
+  post_tasks:
+    - name: Emit selected deployment evidence from actual Windows output
+      ansible.builtin.debug:
+        msg: "{{ ((deploy21_result_8.output | default([])) + (deploy21_result_9.output | default([])) + (deploy21_result_10.output | default([])) + (deploy21_result_11.output | default([]))) | select('match', '^WSLPE45_BATCH_STAGE=') | map('replace', 'WSLPE45_BATCH_STAGE=', 'WSLPE21_STAGE=') | list }}"
+      when: wslpe_deploy21 | default(false) | bool

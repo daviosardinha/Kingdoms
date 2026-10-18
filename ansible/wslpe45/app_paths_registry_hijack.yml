@@ -98,3 +98,9 @@
     - name: Emit exact registry lifecycle proof to Ansible operator
       ansible.builtin.debug:
         msg: "{{ (pilot28_lifecycle.output | default([])) | select('equalto', 'WSLPE45_BATCH_STAGE=app_paths_registry_hijack:' ~ wslpe_45_stage_label ~ ':PASS') | list | first | default('WSLPE45_PILOT28_STAGE=FAIL') }}"
+
+  post_tasks:
+    - name: Emit selected deployment evidence from actual Windows output
+      ansible.builtin.debug:
+        msg: "{{ ((pilot28_lifecycle.output | default([]))) | select('match', '^WSLPE45_BATCH_STAGE=') | map('replace', 'WSLPE45_BATCH_STAGE=', 'WSLPE21_STAGE=') | list }}"
+      when: wslpe_deploy21 | default(false) | bool

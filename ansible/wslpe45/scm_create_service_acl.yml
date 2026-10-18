@@ -64,7 +64,7 @@
       ansible.windows.win_file:
         path: 'C:\ProgramData\KingdomsWSLPE45\lib'
         state: directory
-      when: wslpe_45_action == 'apply'
+      when: wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)
 
     - name: Protect shared standalone source library before copying code
       ansible.builtin.import_tasks: lockdown-library.yml
@@ -73,7 +73,7 @@
       ansible.windows.win_copy:
         src: ../files/wslpe45/WslpeFixture.psm1
         dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
-      when: wslpe_45_action == 'apply'
+      when: wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)
 
     - name: Exercise SCM create-service DACL with strict snapshot and rollback
       ansible.windows.win_powershell:
@@ -179,7 +179,38 @@
               }
               if(-not $found) { throw 'SCM create-service access ACE absent' }
               if(-not (Test-Path -LiteralPath $snapshot -PathType Leaf)) { throw 'Original SCM snapshot absent' }
+              $state=Get-Content -LiteralPath $snapshot -Raw -ErrorAction Stop | ConvertFrom-Json
+              if($state.schema -cne 'kingdoms.wslpe.scm-original.v1' -or
+                 $state.learner_sid -cne $identity.LearnerSid) {
+                  throw 'SCM snapshot identity mismatch'
+              }
+              $comparison=[Security.AccessControl.RawSecurityDescriptor]::new($out)
+              $count=0
+              for($i=$comparison.DiscretionaryAcl.Count-1;$i -ge 0;$i--) {
+                  $ace=$comparison.DiscretionaryAcl[$i]
+                  if($ace.AceType -eq [Security.AccessControl.AceType]::AccessAllowed -and
+                     $ace.SecurityIdentifier.Value -eq $identity.LearnerSid -and
+                     $ace.AccessMask -eq 0x0002 -and
+                     $ace.AceFlags -eq [Security.AccessControl.AceFlags]::None) {
+                      $comparison.DiscretionaryAcl.RemoveAce($i)
+                      $count++
+                  }
+              }
+              $baseline=[Security.AccessControl.RawSecurityDescriptor]::new([string]$state.original_sddl)
+              if($count -ne 1 -or
+                 $comparison.GetSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne
+                 $baseline.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)) {
+                  throw 'SCM differs by more than the one intended create-service ACE'
+              }
               Write-Output 'WSLPE45_SCM_CREATE=VULNERABLE_CONFIGURATION'
           }
           Write-Output ('WSLPE45_BATCH_STAGE='+$id+':'+$stage+':PASS')
       changed_when: wslpe_45_action in ['apply','reset']
+      register: deploy21_result_7
+
+
+  post_tasks:
+    - name: Emit selected deployment evidence from actual Windows output
+      ansible.builtin.debug:
+        msg: "{{ ((deploy21_result_7.output | default([]))) | select('match', '^WSLPE45_BATCH_STAGE=') | map('replace', 'WSLPE45_BATCH_STAGE=', 'WSLPE21_STAGE=') | list }}"
+      when: wslpe_deploy21 | default(false) | bool

@@ -64,7 +64,7 @@
       ansible.windows.win_file:
         path: 'C:\ProgramData\KingdomsWSLPE45\lib'
         state: directory
-      when: wslpe_45_action == 'apply'
+      when: wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)
 
     - name: Protect shared standalone source library before copying code
       ansible.builtin.import_tasks: lockdown-library.yml
@@ -73,7 +73,7 @@
       ansible.windows.win_copy:
         src: ../files/wslpe45/WslpeFixture.psm1
         dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1'
-      when: wslpe_45_action == 'apply'
+      when: wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)
 
     - name: Stage direct local LSA account rights module
       ansible.windows.win_copy:
@@ -93,3 +93,11 @@
           }
           Write-Output $result
       changed_when: wslpe_45_action in ['apply','reset']
+      register: deploy21_result_8
+
+
+  post_tasks:
+    - name: Emit selected deployment evidence from actual Windows output
+      ansible.builtin.debug:
+        msg: "{{ ((deploy21_result_8.output | default([]))) | select('match', '^WSLPE45_BATCH_STAGE=') | map('replace', 'WSLPE45_BATCH_STAGE=', 'WSLPE21_STAGE=') | list }}"
+      when: wslpe_deploy21 | default(false) | bool

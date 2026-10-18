@@ -27,7 +27,7 @@ class LibraryLockdownTests(unittest.TestCase):
             self.assertIn(value,code)
         self.assertNotIn("10.4.10.31",code)
         self.assertNotIn("GOAD-WS01",code)
-        self.assertEqual(tasks[0]["when"],"wslpe_45_action == 'apply'")
+        self.assertEqual(tasks[0]["when"],"wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)")
 
     def test_library_hardening_precedes_every_shared_source_copy(self):
         for name in CANDIDATES:

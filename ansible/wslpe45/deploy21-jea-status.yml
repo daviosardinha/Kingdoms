@@ -1,0 +1,61 @@
+---
+# Read-only pre-apply inspection. No fixture modules or guest writes.
+- name: Require exact standalone WSLPE inventory for selected deployment
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Refuse unrelated or ambiguous hosts
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('domain', []) | length) == 0
+          - (groups.get('dc', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+
+
+- name: Check the existing JEA endpoint from a fresh learner session
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Query only the existing restricted Status operation
+      ansible.windows.win_powershell:
+        sensitive_parameters:
+          - name: Learner
+            username: 'WSLPE-WS01\lpe.trainee'
+            password: "{{ lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') }}"
+        script: |
+          param([PSCredential]$Learner)
+          $ErrorActionPreference='Stop'
+          $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain) {
+              throw 'Not exact workgroup target'
+          }
+          $session=$null
+          try {
+              $session=New-PSSession -ComputerName localhost -ConfigurationName Kingdoms45JEA -Credential $Learner -Authentication Negotiate -ErrorAction Stop
+              $output=@(Invoke-Command -Session $session -ScriptBlock {
+                  Invoke-Kingdoms45Maintenance -Operation Status
+              } -ErrorAction Stop)
+              if($output.Count -ne 1 -or [string]$output[0] -cne 'WSLPE45_JEA_STATUS') {
+                  throw 'Fresh learner JEA session did not return exact Status result'
+              }
+              Write-Output 'WSLPE21_JEA_ACTIVE=PASS'
+          } finally {
+              if($null -ne $session) { Remove-PSSession -Session $session -ErrorAction Stop }
+          }
+      register: jea_status
+      changed_when: false
+      no_log: true
+
+    - name: Assert fresh endpoint evidence
+      ansible.builtin.assert:
+        that:
+          - jea_status.output == ['WSLPE21_JEA_ACTIVE=PASS']
+        quiet: true
+
+    - name: Emit activation result without credentials
+      ansible.builtin.debug:
+        msg: WSLPE21_JEA_ACTIVE=PASS

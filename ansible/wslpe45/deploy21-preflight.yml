@@ -1,0 +1,220 @@
+---
+# Read-only pre-apply inspection. No fixture modules or guest writes.
+- name: Require exact standalone WSLPE inventory for selected deployment
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Refuse unrelated or ambiguous hosts
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('domain', []) | length) == 0
+          - (groups.get('dc', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+
+- name: Read-only deployment preservation checks
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Verify guest, learner, excluded fixture and shared protection
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $system=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $system.PartOfDomain -or
+             [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10') {
+              throw 'Refusing foreign or domain-joined Windows guest'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          if(-not $learner.Enabled -or
+             @((Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop) |
+               Where-Object {$_.SID.Value -eq $learner.SID.Value}).Count -ne 0) {
+              throw 'Standard local learner identity is not intact'
+          }
+          foreach($ancestor in @('C:\ProgramData\KingdomsWSLPE45',
+                                'C:\ProgramData\KingdomsWSLPE45\fixtures',
+                                'C:\ProgramData\KingdomsWSLPE45\lib')) {
+              if(Test-Path -LiteralPath $ancestor) {
+                  $item=Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+                  if(-not $item.PSIsContainer -or
+                     ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                      throw 'Linked or foreign WSLPE ancestor detected'
+                  }
+              }
+          }
+          # An interrupted #25 may coexist ONLY as its exact owned,
+          # protected marker-only state. Never adopt or mutate it.
+          $fixtures='C:\ProgramData\KingdomsWSLPE45\fixtures'
+          $partial25=Join-Path $fixtures 'msi_repair_custom_action'
+          $mode='ABSENT'
+          $existing=@()
+          if(Test-Path -LiteralPath $fixtures -PathType Container) {
+              $existing=@(Get-ChildItem -LiteralPath $fixtures -Force -ErrorAction Stop |
+                  Where-Object {$_.Name -ceq 'msi_repair_custom_action'})
+          }
+          if($existing.Count -gt 1) {
+              throw 'Ambiguous #25 fixture inventory'
+          }
+          if($existing.Count -eq 1) {
+              $dirs=@('C:\ProgramData\KingdomsWSLPE45',
+                      'C:\ProgramData\KingdomsWSLPE45\lib',$partial25)
+              $adminSids=@(Get-LocalGroupMember -Group $admins.Name |
+                  ForEach-Object {$_.SID.Value})
+              foreach($dir in $dirs) {
+                  $item=Get-Item -LiteralPath $dir -Force -ErrorAction Stop
+                  $acl=Get-Acl -LiteralPath $dir -ErrorAction Stop
+                  $owner=$acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+                  if(-not $item.PSIsContainer -or
+                     ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                     -not $acl.AreAccessRulesProtected -or
+                     ($owner -notin @('S-1-5-18','S-1-5-32-544') -and
+                      $owner -notin $adminSids)) {
+                      throw 'Unexpected linked/unprotected/foreign #25 ancestor'
+                  }
+                  $danger=[int][Security.AccessControl.FileSystemRights]::Write -bor
+                      [int][Security.AccessControl.FileSystemRights]::Delete -bor
+                      [int][Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+                      [int][Security.AccessControl.FileSystemRights]::TakeOwnership
+                  foreach($ace in $acl.GetAccessRules(
+                      $true,$true,[Security.Principal.SecurityIdentifier])) {
+                      if($ace.AccessControlType -ne
+                         [Security.AccessControl.AccessControlType]::Allow) {continue}
+                      $sid=$ace.IdentityReference.Value
+                      if($sid -in @('S-1-5-18','S-1-5-32-544') -or
+                         $sid -in $adminSids) {continue}
+                      if(([int]$ace.FileSystemRights -band $danger) -ne 0) {
+                          throw 'Non-admin writer in #25 protected ancestors'
+                      }
+                  }
+              }
+              $items=@(Get-ChildItem -LiteralPath $partial25 -Force -ErrorAction Stop)
+              if($items.Count -ne 1 -or
+                 $items[0].Name -cne '.kingdoms-owned.json' -or
+                 $items[0].PSIsContainer -or
+                 ($items[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw '#25 contains more than its interrupted ownership marker'
+              }
+              $marker=Get-Content -LiteralPath $items[0].FullName -Raw -ErrorAction Stop |
+                  ConvertFrom-Json -ErrorAction Stop
+              if($marker.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or
+                 $marker.machine -cne 'WSLPE-WS01' -or
+                 [int]$marker.number -ne 25 -or
+                 $marker.id -cne 'msi_repair_custom_action' -or
+                 $marker.learner_sid -cne $learner.SID.Value) {
+                  throw 'Wrong #25 ownership marker; refuse overlap'
+              }
+              if(Test-Path -LiteralPath 'C:\Program Files\KingdomsWSLPE25') {
+                  throw '#25 product files present; no overlapping deployment'
+              }
+              $source=Get-Item -LiteralPath 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force -ErrorAction Stop
+              if($source.PSIsContainer -or
+                 ($source.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                 (Get-FileHash -LiteralPath $source.FullName -Algorithm SHA256).Hash -cne
+                    '{{ wslpe_pilot_shared_sha256 }}') {
+                  throw 'Protected shared module differs from approved #28 source'
+              }
+              $mode='OWNED_MARKER_ONLY'
+          }
+          if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'" -ErrorAction Stop).Count -ne 0) {
+              throw 'Existing #40 privileged RPC host is active; refuse overlapping test'
+          }
+          # Preserve the existing shared root/library even when #25 is absent.
+          $fingerprint=New-Object 'System.Collections.Generic.List[string]'
+          $fingerprint.Add($learner.SID.Value)
+          $fingerprint.Add($mode)
+          $adminSids=@(Get-LocalGroupMember -Group $admins.Name | ForEach-Object {$_.SID.Value})
+          $danger=[int][Security.AccessControl.FileSystemRights]::Write -bor
+              [int][Security.AccessControl.FileSystemRights]::Delete -bor
+              [int][Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+              [int][Security.AccessControl.FileSystemRights]::TakeOwnership
+          $root='C:\ProgramData\KingdomsWSLPE45'
+          $lib=Join-Path $root 'lib'
+          foreach($path in @($root,$lib,(Join-Path $lib 'WslpeFixture.psm1'))) {
+              $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+              if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw 'Shared library reparse point'
+              }
+              $acl=Get-Acl -LiteralPath $path -ErrorAction Stop
+              $owner=$acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+              if($owner -notin @('S-1-5-18','S-1-5-32-544') -and $owner -notin $adminSids) {
+                  throw 'Shared library owner is not an administrator'
+              }
+              if($item.PSIsContainer -and -not $acl.AreAccessRulesProtected) {
+                  throw 'Shared directory ACL is not protected'
+              }
+              foreach($ace in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+                  $sid=$ace.IdentityReference.Value
+                  if($ace.AccessControlType -eq 'Allow' -and
+                     $sid -notin @('S-1-5-18','S-1-5-32-544') -and $sid -notin $adminSids -and
+                     ([int]$ace.FileSystemRights -band $danger) -ne 0) {
+                      throw 'Shared library has a non-administrator writer'
+                  }
+              }
+              $fingerprint.Add($acl.Sddl)
+          }
+          $common=Join-Path $lib 'WslpeFixture.psm1'
+          $hash=(Get-FileHash -LiteralPath $common -Algorithm SHA256).Hash
+          if($hash -cne '{{ wslpe_pilot_shared_sha256 }}') {
+              throw 'Existing ownership library differs; no overwrite authorized'
+          }
+          $fingerprint.Add($hash)
+          foreach($item in @(Get-ChildItem -LiteralPath $lib -Force -ErrorAction Stop)) {
+              if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                  throw 'Unexpected linked or nested shared library entry'
+              }
+              $acl=Get-Acl -LiteralPath $item.FullName -ErrorAction Stop
+              foreach($ace in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+                  if($ace.AccessControlType -eq 'Allow' -and
+                     $ace.IdentityReference.Value -notin @('S-1-5-18','S-1-5-32-544') -and
+                     $ace.IdentityReference.Value -notin $adminSids -and
+                     ([int]$ace.FileSystemRights -band $danger) -ne 0) {
+                      throw 'Existing shared source is writable by a non-administrator'
+                  }
+              }
+          }
+          if($mode -eq 'OWNED_MARKER_ONLY') {
+              $markerPath=Join-Path $partial25 '.kingdoms-owned.json'
+              $fingerprint.Add((Get-FileHash -LiteralPath $markerPath -Algorithm SHA256).Hash)
+              $fingerprint.Add((Get-Acl -LiteralPath $markerPath).Sddl)
+          }
+          $jea='C:\Program Files\WindowsPowerShell\Modules\Kingdoms45JEA'
+          $marker=Join-Path $jea '.kingdoms45-owner.txt'
+          if(@(Get-PSSessionConfiguration -Name Kingdoms45JEA -ErrorAction Stop).Count -ne 1 -or
+             (Get-Content -LiteralPath $marker -Raw -ErrorAction Stop).Trim() -cne
+             'WSLPE45:30:jea_role_capability_misconfig') {
+              throw 'Existing owned JEA endpoint required; console recovery is separate'
+          }
+          foreach($path in @($jea,(Join-Path $jea 'RoleCapabilities'))) {
+              if(([IO.File]::GetAttributes($path) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw 'JEA ancestor is linked'
+              }
+          }
+          foreach($file in @(
+              $marker,(Join-Path $jea 'Kingdoms45JEA.psm1'),
+              (Join-Path $jea 'Kingdoms45JEA.psd1'),
+              (Join-Path $jea 'RoleCapabilities\Kingdoms45Role.psrc'),
+              'C:\ProgramData\KingdomsWSLPE45\fixtures\jea_role_capability_misconfig\Kingdoms45JEA.pssc')) {
+              if(([IO.File]::GetAttributes($file) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw 'JEA source is linked'
+              }
+              $fingerprint.Add((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash)
+              $fingerprint.Add((Get-Acl -LiteralPath $file).Sddl)
+          }
+          $sha=[Security.Cryptography.SHA256]::Create()
+          try {
+              $digest=$sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($fingerprint -join '|')))
+              $hex=([BitConverter]::ToString($digest)).Replace('-','')
+          } finally { $sha.Dispose() }
+          Write-Output ('WSLPE21_PRESERVED='+$hex)
+          Write-Output 'WSLPE21_PREFLIGHT=PASS'
+      register: deploy21_preflight
+      changed_when: false
+
+    - name: Emit bounded preflight evidence
+      ansible.builtin.debug:
+        msg: "{{ deploy21_preflight.output | select('match', '^WSLPE21_(PRESERVED|PREFLIGHT)=') | list }}"

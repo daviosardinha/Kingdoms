@@ -2,6 +2,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.ServiceProcess;
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 // Explicit lab-only elevated consumer. Tokens replaced at build time by the
 // exact standalone fixture module. Do not compile/deploy on any other host.
@@ -15,6 +18,41 @@ public sealed class Kingdom45ServiceConsumer : ServiceBase
         ServiceName = "__SERVICE__";
         CanStop = true;
         AutoLog = false;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint GetFinalPathNameByHandle(
+        SafeFileHandle handle, StringBuilder path, uint length, uint flags);
+
+    private static string StageOpenedUpdate(string path, string prefix)
+    {
+        // Pin the opened bytes against replacement/write, resolve the actual
+        // handle, then copy into the admin-owned root. Process.Start must never
+        // reopen a learner-controlled path after a containment check.
+        using (FileStream input = new FileStream(path, FileMode.Open,
+                                                FileAccess.Read, FileShare.Read))
+        {
+            StringBuilder finalName = new StringBuilder(32768);
+            uint size = GetFinalPathNameByHandle(input.SafeFileHandle, finalName,
+                                                (uint)finalName.Capacity, 0);
+            if (size == 0 || size >= finalName.Capacity)
+                throw new IOException("Cannot resolve opened update object");
+            string resolved = finalName.ToString();
+            if (!resolved.StartsWith(@"\\?\", StringComparison.Ordinal))
+                throw new IOException("Unexpected final path namespace");
+            resolved = resolved.Substring(4);
+            if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+                !String.Equals(resolved, path, StringComparison.OrdinalIgnoreCase))
+                throw new IOException("Opened update escaped the owned inbox");
+            string staged = Path.Combine(Root, "update-" + Guid.NewGuid().ToString("N") + ".exe");
+            using (FileStream output = new FileStream(staged, FileMode.CreateNew,
+                                                     FileAccess.Write, FileShare.None))
+            {
+                input.CopyTo(output);
+                output.Flush(true);
+            }
+            return staged;
+        }
     }
 
     protected override void OnStart(string[] args)
@@ -52,8 +90,8 @@ public sealed class Kingdom45ServiceConsumer : ServiceBase
                 // Path.GetFullPath does not resolve Windows junctions,
                 // symbolic links or other reparse-point redirections.
                 // Reject any such component before selecting the candidate.
-                // This is a static containment check; a separate Windows
-                // runtime test must still address replacement races.
+                // The opened-object check and protected copy below also close
+                // the check-to-execution path replacement window.
                 string trustedInbox = Path.GetFullPath(inbox).TrimEnd('\\');
                 string cursor = path;
                 bool reachedInbox = false;
@@ -72,6 +110,7 @@ public sealed class Kingdom45ServiceConsumer : ServiceBase
                 }
                 if (!reachedInbox)
                     return;
+                path = StageOpenedUpdate(path, prefix);
                 child = new ProcessStartInfo(path);
             }
             else if (Mode == "privileged_child_environment_trust")
