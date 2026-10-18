@@ -55,6 +55,23 @@ fixture provisioning, authorize a non-admin MSI repair, or provide
 uninstall/reset proof. The repair can only be repeated after a reviewed
 owned reset removes its old marker. No MSI was installed or run.
 
+## 2026-10-18 #25 owned read-only inspection checkpoint
+
+Added `ansible/files/wslpe45/Wslpe25RepairInspection.psm1`, a source-only
+Windows PowerShell inspection function. It reuses the existing exact-guest
+and ownership helpers (fixture #25), requires privileged ownership and
+non-writable ACLs along the owned fixture ancestors, refuses reparse points,
+and checks the proof-file absence before repair or exact marker after repair.
+It does not create directories, change ACLs, invoke MSI, or delete anything.
+The new offline regression check verifies these source invariants only.
+
+**Not yet qualified:** this gate has not been parsed/executed on Windows
+PowerShell 5.1; no Windows ACL evidence has been collected and no independent
+race-resistant native path/open review has occurred. A passing inspection
+alone does not establish atomic filesystem safety. No install/repair/reset
+lifecycle or low-privilege authorization proof exists. All four index rows
+remain planned and execution authorization remains false.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer
