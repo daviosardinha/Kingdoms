@@ -124,8 +124,10 @@ function result alongside the actual MSI record string.
 The reader now assigns both COM call results to `$null`, preserving strict
 per-property comparisons without trimming or weakening the expected MSI
 identity. The existing regression test asserts both suppressions.
-**Native CI confirmation is pending for this change**; no installer or
-Windows guest execution has occurred.
+**Native CI confirmation passed** in GitHub Actions run 39119544326
+(three jobs successful at source commit b8d6b88); no installer or
+Windows guest execution has occurred. The later review-artifact archiving
+change requires its own new CI confirmation.
 
 ## 2026-10-18 #25 opt-in local MSI product lifecycle source
 
