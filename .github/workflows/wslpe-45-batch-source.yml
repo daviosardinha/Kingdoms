@@ -78,6 +78,8 @@ jobs:
           python -m py_compile kingdoms/wslpe45_closeout.py scripts/wslpe45-closeout.py tests/test_wslpe45_closeout.py
           python -m unittest -v tests.test_wslpe45_closeout
           python scripts/wslpe45-closeout.py
+          python -m py_compile scripts/wslpe45-stage-native-batch.py tests/test_wslpe45_native_batch_stage.py
+          python -m unittest -v tests.test_wslpe45_native_batch_stage
           # Live batch execution MUST NEVER run in GitHub source CI.
           # The unit tests assert that unapproved execution fails before
           # VMware, inventory, Ansible or WinRM can be contacted.
