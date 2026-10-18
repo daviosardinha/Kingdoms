@@ -77,6 +77,36 @@ unexpected files and cleanup state, then positively prove restoration.
 The currently compiled package produces a new ProductCode for each build;
 pin the chosen build, manifest and SHA-256 through an entire lifecycle.
 
+## Recovery implementation checkpoint (18 October 2026)
+
+An explicit, **still unqualified** `Recover` action is now present in
+`Wslpe25MsiOperator.psm1`, independent of the standard `Uninstall`.
+This is **source only; no Windows guest has run it**. The new action requires
+the same exact WSLPE machine, elevated interactive local console, owned
+#25 fixture, native ProductCode and staged MSI digest checks as the standard
+operator, plus an action-specific recovery approval phrase and an explicitly
+supplied SHA-256 digest.
+
+Recovery only accepts a matching `install-attempted` ownership ledger.
+Registered product state `5` is handled by bounded native uninstall of
+the exact ProductCode; unregistered state `-1` is handled only by verifying
+the dedicated Program Files path is absent and cleaning the owned fixture.
+Other states, `installed` ledgers, ownership mismatch, unexpected fixture
+entries, unknown product state, or altered package digest **fail closed**.
+The owned ledger is preserved on any unsuccessful attempt. It never adopts
+a foreign MSI or edits a ledger to bypass state checks.
+
+A separate **pure, no-I/O Windows CI recovery decision matrix** covers
+registered/unregistered, foreign ownership, unexpected content, and unknown
+states. CI also parses the operator. This does not constitute a real MSI
+rollback rehearsal. Registration and filesystem state can change between
+checks, so the recovery path still needs a native security/race review and
+a separately authorized, snapshot-backed runtime test.
+
+**Blocker A is unchanged:** the fixed repair marker is not a learner-chosen
+privilege-escalation effect. No deployment or source candidate promotion is
+authorized.
+
 ## Blocker C — staging and independent operational acceptance
 
 The successful Windows CI artifact is available for *review*, not deployment.
