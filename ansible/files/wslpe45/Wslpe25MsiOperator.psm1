@@ -35,14 +35,15 @@ function Get-Wslpe25MsiIdentity {
     if(-not [guid]::TryParse($code,[ref]$guid) -or $guid -eq [guid]::Empty){
         throw 'Unusable native MSI ProductCode'
     }
-    foreach($p in @(
-        @('ProductName','Kingdoms WSLPE25 Repair Fixture'),
-        @('Manufacturer','Nomad Kingdom'),
-        @('ProductVersion','0.1.0'),
-        @('ALLUSERS','1')
-    )){
-        if((Read-Wslpe25MsiProperty $database $p[0]) -cne $p[1]){
-            throw "MSI $($p[0]) did not match dedicated package identity"
+    $expected=@{
+        ProductName='Kingdoms WSLPE25 Repair Fixture'
+        Manufacturer='Nomad Kingdom'
+        ProductVersion='0.1.0'
+        ALLUSERS='1'
+    }
+    foreach($name in @('ProductName','Manufacturer','ProductVersion','ALLUSERS')){
+        if((Read-Wslpe25MsiProperty $database $name) -cne $expected[$name]){
+            throw "MSI $name did not match dedicated package identity"
         }
     }
     [pscustomobject]@{
@@ -169,6 +170,18 @@ function Invoke-Wslpe25MsiOperator {
     }
     if(Test-Path -LiteralPath 'C:\Program Files\KingdomsWSLPE25'){
         throw 'MSI payload directory still present; retain fixture for review'
+    }
+    # Refuse recursive teardown if anything outside our exact bounded
+    # fixture file contract has appeared since installation.
+    $allowed=@('.kingdoms-owned.json','msi-product-ownership.json','repair-proof.txt')
+    foreach($entry in @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)){
+        if($entry.PSIsContainer -or $entry.Name -cnotin $allowed -or
+           (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
+            throw 'Unexpected MSI fixture entry; preserve it for manual review'
+        }
+    }
+    if(Test-Path -LiteralPath (Join-Path $root 'repair-proof.txt')){
+        Assert-Wslpe25RepairFixture -Stage AfterRepair
     }
     Remove-Wslpe45OwnedFixture -Number 25 -Id 'msi_repair_custom_action'
     Write-Output 'WSLPE25_MSI_UNINSTALLED_AND_FIXTURE_REMOVED=PASS'
