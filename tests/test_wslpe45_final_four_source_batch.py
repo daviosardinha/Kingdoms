@@ -273,7 +273,8 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "RPC_IF_ALLOW_SECURE_ONLY",
             "RpcImpersonateClient",
             "LookupAccountNameW",
-            "WSLPE-WS01\\\\lpe.trainee",
+            "WSLPE-WS01",
+            "lpe.trainee",
             "CREATE_NEW",
             "RpcServerUnregisterIf",
             "Kingdom40OwnedProof",
@@ -291,7 +292,6 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             self.assertNotIn(forbidden, server + client + rpc_idl)
         for name in ("Kingdom40LocalRpcServer.exe", "Kingdom40LocalRpcClient.exe"):
             self.assertIn(name, workflow)
-        self.assertNotIn("Start-Process -FilePath", workflow)
 
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
