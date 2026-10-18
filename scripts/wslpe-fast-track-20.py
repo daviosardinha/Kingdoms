@@ -57,18 +57,21 @@ def load_catalog() -> tuple[str, ...]:
         raise ValueError("NORTH shared role catalog changed; manual review required")
     return tuple(implemented)
 
-def exact_standalone() -> tuple[Path, Path, str]:
+def exact_standalone(workspace: Path | None = None) -> tuple[Path, Path, str]:
     spec = importlib.util.spec_from_file_location("wslpe_batch_stage2", STAGE)
     if spec is None or spec.loader is None:
         raise ValueError("Native WSLPE registration helper missing")
     stage = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(stage)
-    identity, meta = stage.find_instance(stage.WORKSPACE)
+    selected = stage.WORKSPACE if workspace is None else workspace
+    if selected.is_symlink() or not selected.is_dir():
+        raise ValueError("Native WSLPE workspace is missing or linked")
+    identity, meta = stage.find_instance(selected)
     if meta.get("lab") != "WSLPE" or meta.get("provider") != "vmware":
         raise ValueError("Target is not the native VMware WSLPE instance")
     vmx = stage.locate_registered_vm(identity)
     if vmx.is_symlink() or not vmx.resolve(strict=True).is_relative_to(
-            stage.WORKSPACE.resolve()):
+            selected.resolve()):
         raise ValueError("Untrusted registered WSLPE VMX")
     # find_instance returns the actual native instance DIRECTORY, not
     # its ID. Never reconstruct a path from an identifier/string.
@@ -78,7 +81,7 @@ def exact_standalone() -> tuple[Path, Path, str]:
     if inventory_path.is_symlink() or not inventory_path.is_file():
         raise ValueError("WSLPE native inventory unavailable or symlinked")
     inventory = inventory_path.resolve(strict=True)
-    if not inventory.is_relative_to(stage.WORKSPACE.resolve()):
+    if not inventory.is_relative_to(selected.resolve()):
         raise ValueError("WSLPE inventory escapes the native workspace")
     base = (ROOT / "ad/WSLPE/data/inventory_disable_vagrant").resolve(strict=True)
     expected = f"{meta['ip_range']}.31"
