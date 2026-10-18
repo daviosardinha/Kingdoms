@@ -177,7 +177,10 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "RECOVER WSLPE25",
             "Get-Wslpe25RecoveryDecision",
             "WSLPE25_MSI_EXPLICIT_RECOVERY=PASS",
-            "SESSIONNAME",
+            "Test-Wslpe25NativeConsole",
+            "WTSGetActiveConsoleSessionId",
+            "Wslpe25ConsoleSession",
+            "[uint32]::MaxValue",
             "IO.FileMode]::CreateNew",
             "msiexec.exe",
             "Remove-Wslpe45OwnedFixture -Number 25",
@@ -185,6 +188,7 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "WSLPE25_MSI_UNINSTALLED_AND_FIXTURE_REMOVED=PASS",
         ):
             self.assertIn(required, module)
+        self.assertNotIn("$env:SESSIONNAME", module)
         for forbidden in (
             "AlwaysInstallElevated",
             "GOAD-WS01",
