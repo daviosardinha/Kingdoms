@@ -734,5 +734,7 @@ jobs:
             'learner_proof=pending'
           ) | Set-Content -LiteralPath $provenance -Encoding UTF8
           Write-Output '[PASS] WSLPE25 MSI registered-product identity and build digests recorded read-only'
+          Write-Output ('WSLPE25_PRODUCT_CODE=' + $productCode)
+          Write-Output ('WSLPE25_MSI_SHA256=' + $msiDigest)
           Write-Output ('WSLPE25_PACKAGE_PROVENANCE=' + $provenance)
           Write-Output '[PASS] Genuine MSI built and CustomAction table inspected read-only; not installed'
