@@ -137,6 +137,21 @@ jobs:
           }
           Write-Output '[PASS] Native Windows prewrite guard parsed; no guest contacted'
 
+      - name: Compile WSLPE40 exact atomic file replacement API without guest access
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source=Get-Content -LiteralPath 'scripts/wslpe40-refresh-operator.py' -Raw
+          $pattern="(?s)Add-Type -TypeDefinition @'\\r?\\n(.*?)\\r?\\n'@ -ErrorAction Stop"
+          $match=[regex]::Match($source,$pattern)
+          if(-not $match.Success){throw 'Missing same-volume owned-file atomic replace API'}
+          $code=$match.Groups[1].Value.Replace('{{','{').Replace('}}','}')
+          Add-Type -TypeDefinition $code -ErrorAction Stop
+          if(-not [Kingdoms.Wslpe40AtomicMove].GetMethod('Execute')){
+            throw 'Missing MoveFileExW API declaration'
+          }
+          Write-Output '[PASS] Native WSLPE40 atomic replacement compiles; no guest mutation'
+
       - name: Verify native WTS active console API compiles in Windows PowerShell 5.1
         shell: powershell
         run: |
