@@ -1,6 +1,7 @@
 """Source-only, no-Windows tests for the explicit #28 pilot."""
 import importlib.util
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 import unittest
@@ -47,7 +48,8 @@ class SinglePilotTests(unittest.TestCase):
         plays = yaml.safe_load(pilot.PREFLIGHT.read_text(encoding='utf-8'))
         self.assertEqual([p['hosts'] for p in plays], ['localhost', 'wslpe'])
         tasks = plays[1]['tasks']
-        self.assertEqual(len(tasks), 1)
+        self.assertEqual(len(tasks), 2)
+        self.assertIn('pilot28_preflight.output', str(tasks[1]))
         self.assertFalse(tasks[0]['changed_when'])
         source = tasks[0]['ansible.windows.win_powershell']['script']
         for required in ('WSLPE-WS01', 'lpe.trainee', 'app_paths_registry_hijack',
@@ -65,9 +67,31 @@ class SinglePilotTests(unittest.TestCase):
         spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
         with patch.object(pilot.importlib.util, 'spec_from_file_location', return_value=spec), \
              patch.object(pilot.importlib.util, 'module_from_spec', return_value=stage):
-            pilot.snapshot_gate()
+            pilot.snapshot_gate(Path('/safe/native/workspace'))
         stage.load_preflight.assert_called_once_with()
-        stage.verify_vm_snapshot.assert_called_once_with(stage.load_preflight.return_value)
+        stage.verify_vm_snapshot.assert_called_once_with(stage.load_preflight.return_value, workspace=Path('/safe/native/workspace'))
+
+    def test_original_workspace_resolution_is_read_only_and_unique(self):
+        with TemporaryDirectory() as temp:
+            workspace = Path(temp) / 'workspace'
+            workspace.mkdir()
+            fake = SimpleNamespace(find_instance=Mock(return_value=(workspace / 'instance', {'lab': 'WSLPE'})))
+            spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
+            with patch.object(pilot.importlib.util, 'spec_from_file_location', return_value=spec), \
+                 patch.object(pilot.importlib.util, 'module_from_spec', return_value=fake):
+                self.assertEqual(pilot.runtime_workspace(str(workspace)), workspace.resolve())
+                fake.find_instance.assert_called_once_with(workspace)
+                with self.assertRaises(pilot.batch.BatchBlocked):
+                    pilot.runtime_workspace(str(workspace / 'missing'))
+
+    def test_lifecycle_playbook_exposes_single_marker(self):
+        playbook = yaml.safe_load((ROOT / 'ansible/wslpe45/app_paths_registry_hijack.yml').read_text(encoding='utf-8'))
+        tasks = playbook[1]['tasks']
+        marker = [task for task in tasks if task.get('name', '').startswith('Emit exact registry lifecycle proof')]
+        self.assertEqual(len(marker), 1)
+        self.assertIn('pilot28_lifecycle.output', str(marker[0]))
+        self.assertIn('select(', str(marker[0]))
+        self.assertIn('register: pilot28_lifecycle', (ROOT / 'ansible/wslpe45/app_paths_registry_hijack.yml').read_text())
 
     def test_read_only_preflight_stops_before_live_journal(self):
         source = SCRIPT.read_text(encoding='utf-8')
