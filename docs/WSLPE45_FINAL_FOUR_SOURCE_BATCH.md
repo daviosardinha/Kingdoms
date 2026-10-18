@@ -44,6 +44,17 @@ Fee for some commercial uses. Nomad Kingdom must review applicable WiX
 licensing before using these build outputs in a paid course or release.
 A passing open-source CI job does not grant distribution rights.
 
+## 2026-10-18 #25 non-clobbering source checkpoint
+
+The MSI custom action now uses `CREATE_NEW` rather than `CREATE_ALWAYS`
+for its fixed proof marker, refusing an existing file/link instead of
+overwriting it. A source regression test enforces the non-clobbering
+contract; the native Windows build remains the compile gate. This does
+**not** make a writable or reparse-point parent safe, implement owned
+fixture provisioning, authorize a non-admin MSI repair, or provide
+uninstall/reset proof. The repair can only be repeated after a reviewed
+owned reset removes its old marker. No MSI was installed or run.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer
