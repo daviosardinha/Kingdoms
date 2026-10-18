@@ -824,6 +824,37 @@ jobs:
           retention-days: 2
 
       
+      - name: Generate WSLPE40 exact binary handoff provenance (no execution)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'wslpe40-midl'
+          $server = Join-Path $dir 'Kingdom40LocalRpcServer.exe'
+          $client = Join-Path $dir 'Kingdom40LocalRpcClient.exe'
+          foreach ($binary in @($server,$client)) {
+            if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
+              throw 'WSLPE40 native binary missing before provenance'
+            }
+          }
+          $serverHash = (Get-FileHash -LiteralPath $server -Algorithm SHA256).Hash
+          $clientHash = (Get-FileHash -LiteralPath $client -Algorithm SHA256).Hash
+          $manifest = Join-Path $dir 'Kingdom40LocalRpc.provenance.txt'
+          @(
+            'schema=kingdoms.wslpe40.local-rpc-source.v1'
+            'state=unqualified-not-deployable'
+            "commit=$env:GITHUB_SHA"
+            'transport=ncalrpc'
+            'server_role=protected-privileged-host'
+            'client_role=separate-local-learner'
+            "server_sha256=$serverHash"
+            "client_sha256=$clientHash"
+            'native_binaries_executed=false'
+            'learner_proof=pending'
+          ) | Set-Content -LiteralPath $manifest -Encoding UTF8
+          Write-Output ('WSLPE40_SERVER_SHA256=' + $serverHash)
+          Write-Output ('WSLPE40_CLIENT_SHA256=' + $clientHash)
+          Write-Output '[PASS] WSLPE40 review provenance generated; no guest or listener activity'
+
       - name: Archive unqualified local RPC binaries for independent review
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/windows-lpe-45-batch' }}
         uses: actions/upload-artifact@v4
@@ -832,5 +863,6 @@ jobs:
           path: |
             ${{ runner.temp }}/wslpe40-midl/Kingdom40LocalRpcServer.exe
             ${{ runner.temp }}/wslpe40-midl/Kingdom40LocalRpcClient.exe
+            ${{ runner.temp }}/wslpe40-midl/Kingdom40LocalRpc.provenance.txt
           if-no-files-found: error
           retention-days: 2
