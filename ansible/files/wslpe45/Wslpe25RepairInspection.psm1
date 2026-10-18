@@ -8,7 +8,8 @@ function Assert-Wslpe25RepairFixture {
     param(
         [Parameter(Mandatory=$true)]
         [ValidateSet('BeforeRepair','AfterRepair')]
-        [string]$Stage
+        [string]$Stage,
+        [ValidateRange(0,999999)][int]$ExpectedNonce=0
     )
 
     $ErrorActionPreference='Stop'
@@ -78,6 +79,36 @@ function Assert-Wslpe25RepairFixture {
         }
     }
 
+    # Verify precisely one file has the deliberately narrow learner data
+    # access. Parents and privileged proof must remain administrator-owned.
+    $request=Join-Path $root 'repair-request.txt'
+    $req=Get-Item -LiteralPath $request -Force -ErrorAction Stop
+    if($req.PSIsContainer -or
+       (($req.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) -or
+       $req.Length -lt 1 -or $req.Length -gt 6) {
+        throw 'Refuse absent, linked or oversized MSI repair request'
+    }
+    $requestAcl=Get-Acl -LiteralPath $request -ErrorAction Stop
+    $learnerRules=@($requestAcl.GetAccessRules(
+        $true,$true,[Security.Principal.SecurityIdentifier]) |
+        Where-Object {
+            $_.IdentityReference.Value -eq $identity.LearnerSid -and
+            $_.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow
+        })
+    $wanted=[int][Security.AccessControl.FileSystemRights]::WriteData
+    $disallowed=(
+        [int][Security.AccessControl.FileSystemRights]::Delete -bor
+        [int][Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [int][Security.AccessControl.FileSystemRights]::TakeOwnership -bor
+        [int][Security.AccessControl.FileSystemRights]::AppendData -bor
+        [int][Security.AccessControl.FileSystemRights]::ExecuteFile
+    )
+    if($learnerRules.Count -ne 1 -or
+       (([int]$learnerRules[0].FileSystemRights -band $wanted) -eq 0) -or
+       (([int]$learnerRules[0].FileSystemRights -band $disallowed) -ne 0)) {
+        throw 'MSI learner request ACL is not limited to data editing'
+    }
+
     # Enumerate the directory itself: a broken symlink must not appear
     # absent merely because its target does not exist.
     $matches=@(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop |
@@ -92,8 +123,19 @@ function Assert-Wslpe25RepairFixture {
             throw 'Expected exactly one regular MSI repair proof file'
         }
         $observed=Get-Content -LiteralPath $matches[0].FullName -Raw -ErrorAction Stop
-        if($observed -cne "WSLPE45_MSI_REPAIR_ACTION_INVOKED`r`n") {
-            throw 'Unexpected MSI repair marker bytes'
+        if($observed -cnotmatch '^WSLPE45_MSI_REPAIR_NONCE=[1-9][0-9]{0,5}\r\n
+    }
+
+    Write-Output ('WSLPE25_FIXTURE_INSPECT={0}:PASS' -f $Stage)
+}
+
+Export-ModuleMember -Function 'Assert-Wslpe25RepairFixture'
+) {
+            throw 'Unexpected MSI repair nonce marker bytes'
+        }
+        if($ExpectedNonce -gt 0 -and
+           $observed -cne ("WSLPE45_MSI_REPAIR_NONCE={0}`r`n" -f $ExpectedNonce)) {
+            throw 'MSI proof nonce differs from independently selected learner nonce'
         }
     }
 
