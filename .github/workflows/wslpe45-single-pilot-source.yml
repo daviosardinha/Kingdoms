@@ -1,0 +1,83 @@
+name: WSLPE45 #28 isolated pilot source validation
+
+on:
+  push:
+    branches:
+      - feature/wslpe45-single-candidate-pilot
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-contract:
+    name: Offline Python and source contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check pyyaml
+      - name: Compile and test pilot and original batch safety gates
+        run: |
+          python -m py_compile scripts/wslpe45-single-pilot.py scripts/wslpe-fast-track-20.py scripts/wslpe40-stage.py
+          python -m unittest -v tests.test_wslpe45_single_pilot tests.test_wslpe45_batch_operator
+          python scripts/wslpe45-single-pilot.py
+          echo '[PASS] No VM or guest contacted; live deployment is operator-only'
+
+  windows-powershell-51:
+    name: Native Windows PowerShell 5.1 syntax checks
+    runs-on: windows-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check pyyaml
+      - name: Extract Windows preflight and candidate scripts without executing them
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import os
+          import yaml
+          out = Path(os.environ['RUNNER_TEMP']) / 'wslpe-pilot-powershell'
+          out.mkdir(parents=True, exist_ok=True)
+          for name in ('pilot28-preflight', 'app_paths_registry_hijack'):
+              plays = yaml.safe_load((Path('ansible/wslpe45') / (name + '.yml')).read_text(encoding='utf-8'))
+              assert len(plays) == 2
+              index = 0
+              for group in ('pre_tasks', 'tasks', 'post_tasks'):
+                  for task in plays[1].get(group, []):
+                      payload = task.get('ansible.windows.win_powershell', {})
+                      if isinstance(payload, dict) and isinstance(payload.get('script'), str):
+                          (out / (name + '-' + str(index) + '.ps1')).write_text(payload['script'], encoding='utf-8')
+                          index += 1
+              assert index >= 1
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'Failed extracting exact candidate scripts' }
+      - name: Parse exact scripts and modules under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $temp = Join-Path $env:RUNNER_TEMP 'wslpe-pilot-powershell'
+          $files = @(
+            Get-ChildItem -Path $temp -Filter '*.ps1' -File
+            Get-Item 'ansible/files/wslpe45/WslpeFixture.psm1'
+            Get-Item 'ansible/files/wslpe45/WslpeRegistryTrust.psm1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName, [ref]$tokens, [ref]$errors)
+            if (@($errors).Count -gt 0) {
+              $errors | ForEach-Object { Write-Output $_.Message }
+              throw ('PowerShell 5.1 parse failed: ' + $file.Name)
+            }
+            Write-Output ('[PASS] Native PS5.1 syntax: ' + $file.Name)
+          }
+          Write-Output '[PASS] No Windows privilege change, registry write or guest execution'
