@@ -30,6 +30,20 @@ class NativeBatchStageTests(unittest.TestCase):
                           "msiexec","reg.exe","New-Service"):
             self.assertNotIn(forbidden,MOD.REMOTE_GUARD)
 
+    def test_native_archive_flat_layout_matches_strict_stage_inventory(self):
+        workflow=(ROOT/".github/workflows/wslpe-45-batch-source.yml").read_text("utf-8")
+        self.assertIn("wslpe36-38-flat/",workflow)
+        self.assertIn("Flattened native artifact digest mismatch",workflow)
+        self.assertIn("Expected four flat native artifact leaves",workflow)
+        self.assertIn("Copy-Item -LiteralPath $manifest",workflow)
+        # Do not reintroduce mixed-root upload-artifact paths. They cause
+        # wslpe40-midl/ nested zip members rejected before guest contact.
+        block=workflow.split(
+            "      - name: Archive unqualified WSLPE36 WMI and WSLPE38 DCOM binaries",
+            1)[1].split("      - name:",1)[0]
+        self.assertIn("wslpe36-38-flat/",block)
+        self.assertNotIn("wslpe40-midl/",block)
+
     def test_provenance_parser_rejects_duplicates_and_malformed_lines(self):
         with tempfile.TemporaryDirectory() as temp:
             p=Path(temp)/"proof.txt"
