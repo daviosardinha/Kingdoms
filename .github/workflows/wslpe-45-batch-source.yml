@@ -803,7 +803,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $source = Get-Content -LiteralPath 'ansible/files/wslpe45/Kingdom36WmiProvider.cs' -Raw
           $out = Join-Path $env:RUNNER_TEMP 'Kingdom36WmiProvider.exe'
-          Add-Type -TypeDefinition $source -Language CSharp -OutputAssembly $out -ReferencedAssemblies @('System.Management.dll','System.Core.dll') -OutputType ConsoleApplication -ErrorAction Stop
+          Add-Type -TypeDefinition $source -Language CSharp -OutputAssembly $out -ReferencedAssemblies @('System.Management.dll','System.Management.Instrumentation.dll','System.Core.dll') -OutputType ConsoleApplication -ErrorAction Stop
           if (-not (Test-Path -LiteralPath $out)) { throw 'WMI provider binary missing' }
           $assembly=[Reflection.Assembly]::LoadFrom($out)
           $kind=$assembly.GetType('KingdomsWSLPE45.Kingdom36Maintenance',$true)
