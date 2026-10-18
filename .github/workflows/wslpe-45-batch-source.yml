@@ -578,7 +578,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           foreach ($filename in @('Wslpe25RepairInspection.psm1',
-                                   'Wslpe25RepairPreparation.psm1')) {
+                                   'Wslpe25RepairPreparation.psm1',
+                                   'Wslpe25MsiOperator.psm1')) {
             $source = Join-Path $env:GITHUB_WORKSPACE ("ansible/files/wslpe45/" + $filename)
             $tokens = $null
             $parseErrors = $null
