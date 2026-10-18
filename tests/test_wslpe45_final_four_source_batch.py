@@ -149,6 +149,8 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "Read-Wslpe25MsiProperty 'Manufacturer'",
             "Read-Wslpe25MsiProperty 'ProductVersion'",
             "Read-Wslpe25MsiProperty 'ALLUSERS'",
+            "$null = $propertyView.Execute()",
+            "$null = $propertyView.Close()",
             "Get-FileHash -Algorithm SHA256",
             "WSLPE25_PRODUCT_CODE=",
             "WSLPE25_MSI_SHA256=",
