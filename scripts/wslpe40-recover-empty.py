@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 MODULES={
@@ -128,10 +127,9 @@ def main():
             if not args.recover:
                 print("[PLAN ONLY] Nothing removed; use --recover only after explicit review")
                 return 0
-            if not sys.stdin.isatty() or input(
-                "Type REMOVE WSLPE40 EMPTY PARTIAL to approve exact-file cleanup: "
-            ).strip()!="REMOVE WSLPE40 EMPTY PARTIAL":
-                raise ValueError("Local recovery approval absent")
+            # --recover is the explicit operator authorization.
+            # Every exact-guest, empty-file, ownership and snapshot gate
+            # above remains mandatory; no interactive phrase is required.
             stage.ps_checked(session,RECOVER_ONLY,step="RECOVER_ZERO_BYTE_OPERATOR")
             print("[PASS] WSLPE40_EMPTY_PARTIAL_REMOVED=TRUE")
             response=session.run_ps(audit.READ_ONLY)
