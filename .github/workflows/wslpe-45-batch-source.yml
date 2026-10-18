@@ -809,6 +809,9 @@ jobs:
           if($LASTEXITCODE -ne 3){
             throw 'WMI provider refused to fail closed on a foreign machine'
           }
+          # PowerShell CI's outer wrapper checks LASTEXITCODE even after
+          # a successful expected-negative test. Normalize after asserting.
+          $global:LASTEXITCODE=0
           Write-Output '[PASS] WMI prototype rejects non-WSLPE host before registration'
           Write-Output '[PASS] WMI assembly and attributed method metadata inspected offline; no provider installed'
 
