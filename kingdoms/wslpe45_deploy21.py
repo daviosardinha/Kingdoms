@@ -84,7 +84,7 @@ def durable(root, name, value):
 def run_command(cmd, env, timeout):
     try:
         r = subprocess.run(cmd, cwd=ROOT, env=env, text=True,
-                           capture_output=True, timeout=timeout, check=False)
+                           capture_output=True, timeout=timeout, check=False, stdin=subprocess.DEVNULL)
         return r.returncode, r.stdout + "\n" + r.stderr
     except subprocess.TimeoutExpired as exc:
         def decode(x):
@@ -136,6 +136,17 @@ def deployment_loop(rows, report, checkpoint, invoke):
     checkpoint()
     return 0
 
+def save_log(base, root, label, diagnostics):
+    path = base.private_failure_log(root, label, diagnostics)
+    # Keep the complete private execution transcript rather than the legacy
+    # helper's bounded failure tail, with the same exclusive private file.
+    fd = os.open(path, os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(diagnostics)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return path
+
 def require_recovery_clear(root):
     sentinel = root / ".wslpe45-recovery-required"
     if sentinel.exists() or sentinel.is_symlink():
@@ -176,6 +187,12 @@ def run(args):
                ANSIBLE_NOCOLOR="1", ANSIBLE_STDOUT_CALLBACK="default",
                ANSIBLE_DISPLAY_ARGS_TO_STDOUT="false")
     env["KINGDOMS_WSLPE_LEARNER_PASSWORD"] = learner_password(bootstrap=False, environ=env)
+    doc = subprocess.run([str(venv / "ansible-doc"), "--json", "ansible.windows.win_powershell"],
+                         cwd=ROOT, env=env, capture_output=True, text=True, timeout=40,
+                         check=False, stdin=subprocess.DEVNULL)
+    if doc.returncode or "sensitive_parameters" not in json.loads(doc.stdout).get(
+            "ansible.windows.win_powershell", {}).get("doc", {}).get("options", {}):
+        raise batch.BatchBlocked("Installed win_powershell lacks required secure credential parameters")
     resolved = subprocess.run(base.resolved_inventory_command(inventory, inv, varsfile),
                               cwd=ROOT, env=env, capture_output=True, text=True,
                               timeout=40, check=False)
@@ -237,7 +254,7 @@ def run(args):
             return ok, rc, log
         ok, rc, log = guard()
         if not ok:
-            path = base.private_failure_log(root, "deploy21-preflight", log)
+            path = save_log(base, root, "deploy21-preflight", log)
             report["failure"] = {"stage": "preflight", "exit_code": rc, "private_log": str(path)}
             checkpoint()
             print(f"[FAIL] Read-only preflight; evidence: {path}", flush=True)
@@ -265,7 +282,7 @@ def run(args):
                 log += "\n" + guardlog
                 if not safe:
                     ok, rc = False, guardrc
-            path = base.private_failure_log(root, f"deploy21-{row['number']}-{label}", log)
+            path = save_log(base, root, f"deploy21-{row['number']}-{label}", log)
             return ok, {"exit_code": rc, "private_log": str(path),
                         "failure_details": None if ok else "Command, exact evidence or preservation check failed"}
         try:

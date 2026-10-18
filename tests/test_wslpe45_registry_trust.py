@@ -52,11 +52,15 @@ class RegistryTrustCandidates(unittest.TestCase):
                 for expected in ("WSLPE-WS01", "PartOfDomain", "Get-LocalUser",
                                  "Get-LocalGroupMember", "Windows 10"):
                     self.assertIn(expected, preflight)
-                op = plays[1]["tasks"][-1]["ansible.windows.win_powershell"]["script"]
+                lifecycle = [task for task in plays[1]["tasks"]
+                             if "Invoke-Wslpe45RegistryTrust" in
+                             task.get("ansible.windows.win_powershell",{}).get("script","")]
+                self.assertEqual(len(lifecycle),1)
+                op = lifecycle[0]["ansible.windows.win_powershell"]["script"]
                 self.assertIn("Invoke-Wslpe45RegistryTrust", op)
                 self.assertIn(f"WSLPE45_BATCH_STAGE={identifier}:", op)
                 self.assertIn("Where-Object { $_ -ceq $marker }", op)
-                self.assertIn("changed_when", plays[1]["tasks"][-1])
+                self.assertIn("changed_when", lifecycle[0])
                 self.assertNotIn("roles:", path.read_text())
                 self.assertNotIn("10.4.10.31", path.read_text())
 

@@ -134,7 +134,11 @@
               [int][Security.AccessControl.FileSystemRights]::TakeOwnership
           $root='C:\ProgramData\KingdomsWSLPE45'
           $lib=Join-Path $root 'lib'
-          foreach($path in @($root,$lib,(Join-Path $lib 'WslpeFixture.psm1'))) {
+          $protectedPaths=@($root,$lib,(Join-Path $lib 'WslpeFixture.psm1'))
+          if($mode -eq 'OWNED_MARKER_ONLY') {
+              $protectedPaths+=@($partial25,(Join-Path $partial25 '.kingdoms-owned.json'))
+          }
+          foreach($path in $protectedPaths) {
               $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
               if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
                   throw 'Shared library reparse point'

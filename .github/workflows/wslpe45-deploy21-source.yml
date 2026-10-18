@@ -29,7 +29,8 @@ jobs:
           import os, subprocess
           from kingdoms.wslpe45_deploy21 import selection, PREFLIGHT, JEA
           paths = [r['playbook'] for r in selection()] + [str(PREFLIGHT),str(JEA)]
-          env = dict(os.environ, ANSIBLE_CONFIG='/dev/null')
+          env = dict(os.environ)
+          env.pop('ANSIBLE_CONFIG',None)
           for path in paths:
               subprocess.run(['ansible-playbook','--syntax-check','-i','localhost,',str(path)],
                              env=env,check=True)
