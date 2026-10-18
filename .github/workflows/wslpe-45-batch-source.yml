@@ -592,6 +592,32 @@ jobs:
             Write-Output ("[PASS] Parsed only, no import or execution: " + $filename)
           }
 
+      - name: Validate WSLPE25 recovery state machine on Windows (no guest)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module './ansible/files/wslpe45/Wslpe25MsiOperator.psm1' -Force -ErrorAction Stop
+          $cases=@(
+            @{label='partial registered'; ledger='install-attempted'; state=5; owned=$true; extras=$false; expected='UNINSTALL_EXACT_PRODUCT'},
+            @{label='partial absent'; ledger='install-attempted'; state=-1; owned=$true; extras=$false; expected='CLEAN_OWNED_FIXTURE_ONLY'},
+            @{label='unknown product state'; ledger='install-attempted'; state=2; owned=$true; extras=$false; expected='BLOCK'},
+            @{label='invalid product state'; ledger='install-attempted'; state=-2; owned=$true; extras=$false; expected='BLOCK'},
+            @{label='installed ledger'; ledger='installed'; state=5; owned=$true; extras=$false; expected='BLOCK'},
+            @{label='foreign owner'; ledger='install-attempted'; state=5; owned=$false; extras=$false; expected='BLOCK'},
+            @{label='foreign directory entries'; ledger='install-attempted'; state=5; owned=$true; extras=$true; expected='BLOCK'},
+            @{label='missing ledger'; ledger='missing'; state=-1; owned=$true; extras=$false; expected='BLOCK'}
+          )
+          foreach($case in $cases) {
+            $actual=Get-Wslpe25RecoveryDecision -LedgerStatus $case.ledger `
+              -ProductState $case.state -OwnedAndMatching $case.owned `
+              -UnexpectedEntries $case.extras
+            if($actual -cne $case.expected) {
+              throw ("WSLPE25 recovery contract mismatch: " + $case.label + ", actual=" + $actual)
+            }
+            Write-Output ("[PASS] WSLPE25 recovery: " + $case.label + " -> " + $actual)
+          }
+          Write-Output '[PASS] WSLPE25 recovery decisions tested without MSI, guest or fixture mutation'
+
       - name: Compile Windows Installer prototype and MIDL interface (no registration)
         shell: powershell
         run: |
