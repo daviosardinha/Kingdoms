@@ -24,7 +24,15 @@ python3 -m unittest tests.test_wslpe45_single_pilot tests.test_wslpe45_batch_ope
 python3 scripts/wslpe45-single-pilot.py
 ```
 
-These are source-only and preview. If the read-only preflight and branch provenance are satisfactory, the deliberately separate live invocation is:
+Run the **separate read-only guest gate** only after reviewing the source-only results:
+
+```bash
+python3 scripts/wslpe45-single-pilot.py --preflight
+```
+
+This checks the registered snapshot, native standalone inventory and live #28 guest absence **without installing or resetting a fixture**. It refuses the currently interrupted #25 fixture. A blocked report is a genuine unresolved prerequisite, not permission to delete the #25 directory or clear a recovery sentinel.
+
+These are source-only and preview. If the read-only preflight passes, the guest is a disposable isolated WSLPE development instance, and the operator approves the first fixture write, the deliberately separate live invocation is:
 
 ```bash
 python3 scripts/wslpe45-single-pilot.py --execute
