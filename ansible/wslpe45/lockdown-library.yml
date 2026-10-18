@@ -57,4 +57,4 @@
       }
       Write-Output 'WSLPE45_SHARED_LIBRARY=PROTECTED'
   changed_when: true
-  when: wslpe_45_action == 'apply'
+  when: wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)
