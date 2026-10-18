@@ -66,12 +66,12 @@ extern "C" __declspec(dllexport) UINT __stdcall Kingdom25Repair(MSIHANDLE sessio
                                 CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE) return ERROR_INSTALL_FAILURE;
     char marker[64] = {};
-    const int length = sprintf_s(marker, sizeof(marker),
+    const int markerLength = sprintf_s(marker, sizeof(marker),
         "WSLPE45_MSI_REPAIR_NONCE=%lu\r\n", nonce);
     DWORD written = 0;
-    BOOL ok = length > 0 && WriteFile(handle, marker,
-        static_cast<DWORD>(length), &written, nullptr);
+    BOOL ok = markerLength > 0 && WriteFile(handle, marker,
+        static_cast<DWORD>(markerLength), &written, nullptr);
     CloseHandle(handle);
-    return ok && written == static_cast<DWORD>(length) ?
+    return ok && written == static_cast<DWORD>(markerLength) ?
         ERROR_SUCCESS : ERROR_INSTALL_FAILURE;
 }
