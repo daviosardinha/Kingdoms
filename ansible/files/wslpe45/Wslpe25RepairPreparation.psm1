@@ -6,7 +6,10 @@ Set-StrictMode -Version Latest
 
 function Assert-Wslpe25ProtectedParent {
     [CmdletBinding()]
-    param([Parameter(Mandatory=$true)][string]$Path)
+    param(
+        [Parameter(Mandatory=$true)][string]$Path,
+        [switch]$RequireProtectedAcl
+    )
 
     $item=Get-Item -LiteralPath $Path -Force -ErrorAction Stop
     if(-not $item.PSIsContainer -or
@@ -15,7 +18,7 @@ function Assert-Wslpe25ProtectedParent {
     }
 
     $acl=Get-Acl -LiteralPath $Path -ErrorAction Stop
-    if(-not $acl.AreAccessRulesProtected) {
+    if($RequireProtectedAcl -and -not $acl.AreAccessRulesProtected) {
         throw "WSLPE25 requires a protected fixture parent ACL: $Path"
     }
 
@@ -55,6 +58,15 @@ function Invoke-Wslpe25FixturePreparation {
           [string]$Action)
 
     $ErrorActionPreference='Stop'
+    # Trusted library provenance is mandatory before importing executable code.
+    $expectedLibrary='C:\ProgramData\KingdomsWSLPE45\lib'
+    if(-not [string]::Equals(
+        [IO.Path]::GetFullPath($PSScriptRoot).TrimEnd('\'),
+        $expectedLibrary,[StringComparison]::OrdinalIgnoreCase)) {
+        throw 'WSLPE25 module must run from the dedicated protected library'
+    }
+    Assert-Wslpe25ProtectedParent -Path 'C:\ProgramData\KingdomsWSLPE45' -RequireProtectedAcl
+    Assert-Wslpe25ProtectedParent -Path $expectedLibrary -RequireProtectedAcl
     $fixtureLibrary=Join-Path $PSScriptRoot 'WslpeFixture.psm1'
     $inspector=Join-Path $PSScriptRoot 'Wslpe25RepairInspection.psm1'
     foreach($source in @($fixtureLibrary,$inspector)) {
@@ -89,9 +101,9 @@ function Invoke-Wslpe25FixturePreparation {
 
     # Parent creation is deliberately out of scope. It must have been
     # performed and locked down by the already reviewed WSLPE bootstrap.
-    foreach($parent in @($root,$fixtures)) {
-        Assert-Wslpe25ProtectedParent -Path $parent
-    }
+    Assert-Wslpe25ProtectedParent -Path $root -RequireProtectedAcl
+    # The fixtures parent may inherit only the protected root's safe ACL.
+    Assert-Wslpe25ProtectedParent -Path $fixtures
     Assert-Wslpe45NoReparsePoints -Path $target
 
     # Enumerate the entry, not only its target. A dangling symlink or
