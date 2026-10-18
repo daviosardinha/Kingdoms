@@ -165,7 +165,11 @@ function Invoke-Wslpe25FixturePreparation {
     $acl.AddAccessRule($ace) | Out-Null
     Set-Acl -LiteralPath $request -AclObject $acl -ErrorAction Stop
     Assert-Wslpe25RepairFixture -Stage BeforeRepair
-    Write-Output ('WSLPE25_FIXTURE_{0}=PASS' -f $Action.ToUpperInvariant())
+    if($Action -eq 'Resume') {
+        Write-Output 'WSLPE25_FIXTURE_RESUMED=PASS'
+    } else {
+        Write-Output 'WSLPE25_FIXTURE_PREPARED=PASS'
+    }
 }
 
 Export-ModuleMember -Function 'Invoke-Wslpe25FixturePreparation'
