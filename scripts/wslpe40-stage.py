@@ -164,10 +164,19 @@ def managed_session(auth,address,cert,username,password):
             transport.close_session()
 
 
-def ps_checked(session,source):
-    result=session.run_ps(source)
+def ps_checked(session,source,step="UNSPECIFIED"):
+    # Log only a fixed, caller-controlled stage identifier and numeric code:
+    # remote stderr may contain sensitive environment or credential context.
+    if not re.fullmatch(r"[A-Z0-9_]{3,72}",step):
+        raise ValueError("Unsafe stage identifier")
+    try:
+        result=session.run_ps(source)
+    except Exception as exc:
+        raise ValueError("WinRM transport rejected stage step: "+step+
+                         " ("+type(exc).__name__+")") from None
     if result.status_code != 0:
-        raise ValueError("Guest refused copy-only stage; no automatic retry")
+        raise ValueError("Guest rejected stage step: "+step+
+                         " (status="+str(result.status_code)+")")
     return result.std_out.decode("utf-8",errors="strict").strip()
 
 
@@ -203,8 +212,9 @@ foreach($file in @('Wslpe40RpcOperator.psm1',
 if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'").Count -ne 0){
     throw 'RPC host already running'
 }
-""")
+""",step="GUARD_GUEST_BASELINE")
     for name in names:
+        print("[STAGE] Begin exact file: "+name,flush=True)
         path=files[name]
         body=path.read_bytes()
         digest=hashlib.sha256(body).hexdigest().upper()
@@ -221,12 +231,13 @@ if(Test-Path -LiteralPath $target){{throw 'Conflicting destination'}}
 $stream=[IO.File]::Open($partial,[IO.FileMode]::CreateNew,
     [IO.FileAccess]::Write,[IO.FileShare]::None)
 $stream.Dispose()
-""")
+""",step="CREATE_"+name.upper().replace(".","_"))
+        print("[STAGE] Empty transfer destination created for "+name,flush=True)
         # WinRM SOAP messages are size-bounded. Transfer small fixed chunks
         # and reject partial writes; partial files remain for manual review.
         import base64
-        for offset in range(0,len(body),8192):
-            segment=base64.b64encode(body[offset:offset+8192]).decode("ascii")
+        for offset in range(0,len(body),2048):
+            segment=base64.b64encode(body[offset:offset+2048]).decode("ascii")
             ps_checked(session,f"""
 $ErrorActionPreference='Stop'
 $bytes=[Convert]::FromBase64String('{segment}')
@@ -236,7 +247,7 @@ try{{
     $null=$stream.Seek(0,[IO.SeekOrigin]::End)
     $stream.Write($bytes,0,$bytes.Length)
 }} finally {{$stream.Dispose()}}
-""")
+""",step="APPEND_"+name.upper().replace(".","_")+"_CHUNK_"+str(offset//2048+1))
         ps_checked(session,f"""
 $ErrorActionPreference='Stop'
 $partial='{partial}'
@@ -247,7 +258,8 @@ if((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -cne '{digest}'){
 if(Test-Path -LiteralPath $target){{throw 'Refusing existing target'}}
 [IO.File]::Move($partial,$target)
 Write-Output 'WSLPE40_STAGED_{name}=PASS'
-""")
+""",step="FINALIZE_"+name.upper().replace(".","_"))
+        print("[PASS] Exact staged file hash validated: "+name,flush=True)
 
 
 def main():
