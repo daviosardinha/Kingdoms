@@ -25,16 +25,27 @@ namespace KingdomsWSLPE45 {
         }
 
         [ManagementTask]
-        public string Proof() {
-            // Strictly bounded teaching proof; no user-provided paths,
-            // command execution, or access to unrelated WMI namespaces.
+        public string Proof(uint nonce) {
+            // Deliberately flawed per-method authorization: an authenticated
+            // local standard user with WMI method access can request that the
+            // privileged host write an attacker-selected nonce. This remains
+            // strictly bounded to a fixed owned destination (no path/command).
+            if (nonce == 0 || nonce > 999999) {
+                throw new ArgumentOutOfRangeException("nonce");
+            }
             const string folder =
                 @"C:\ProgramData\KingdomsWSLPE45\fixtures\wmi_privileged_provider_authorization";
-            if (!Directory.Exists(folder)) {
-                throw new DirectoryNotFoundException("Exact owned fixture absent");
+            DirectoryInfo item = new DirectoryInfo(folder);
+            if (!item.Exists || (item.Attributes & FileAttributes.ReparsePoint) != 0) {
+                throw new DirectoryNotFoundException("Exact owned fixture absent or linked");
             }
             string proof = Path.Combine(folder, "wmi-provider-proof.txt");
-            File.WriteAllText(proof, "WSLPE45_WMI36_PROVIDER_INVOKED");
+            byte[] contents = System.Text.Encoding.ASCII.GetBytes(
+                "WSLPE45_WMI36_NONCE=" + nonce.ToString() + "\r\n");
+            using (FileStream output = new FileStream(
+                proof, FileMode.CreateNew, FileAccess.Write, FileShare.None)) {
+                output.Write(contents, 0, contents.Length);
+            }
             return "WSLPE45_WMI36_PROOF";
         }
     }
