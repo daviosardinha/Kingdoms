@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using System.Security.Principal;
 using System.Management.Instrumentation;
 
 [assembly: WmiConfiguration(@"root\KingdomsWSLPE45", HostingModel = ManagementHostingModel.Decoupled)]
@@ -53,6 +54,13 @@ namespace KingdomsWSLPE45 {
     public static class Kingdom36ProviderHost {
         public static int Main(string[] args) {
             if (args.Length != 1 || args[0] != "--serve-local-provider") return 2;
+            // This standalone lab service must be hosted as LocalSystem.
+            // Otherwise a learner could run a private copy and forge a proof.
+            if (!String.Equals(Environment.MachineName, "WSLPE-WS01",
+                               StringComparison.OrdinalIgnoreCase)) return 3;
+            using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+                if (identity == null || !identity.IsSystem) return 4;
+            }
             Instrumentation.RegisterAssembly(Assembly.GetExecutingAssembly());
             Instrumentation.Publish(new Kingdom36Maintenance());
             using (var stop = new ManualResetEvent(false)) {
