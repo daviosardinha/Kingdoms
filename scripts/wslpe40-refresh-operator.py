@@ -105,7 +105,7 @@ Write-Output 'WSLPE40_OPERATOR_REFRESH_PREWRITE=PASS'
 def checked_transfer(session,stage,old_hash,new_bytes:bytes):
     """Target exists and matches old hash; create a new protected staging leaf.
 
-    Final File.Replace is same-volume/atomic. On any error, no guest retry.
+    Final MoveFileExW replaces the exact same-volume leaf atomically. On any error, no guest retry.
     An orphan temp is preserved for independent review.
     """
     new_hash=digest(new_bytes)
@@ -142,7 +142,7 @@ try{{
 """
         diagnosed_check(session,stage,segment,"UPLOAD_OPERATOR_CHUNK_"+str(offset//CHUNK_BYTES+1))
     # No backup file because the named recovery snapshot is mandatory.
-    # File.Replace preserves an atomic old-or-new file, never partial target.
+    # One same-volume Win32 rename preserves old-or-new final path; no copy fallback.
     finish=f"""
 $ErrorActionPreference='Stop'
 $old='{target}'
@@ -157,7 +157,26 @@ $entry=Get-Item -LiteralPath $temp -Force -ErrorAction Stop
 if($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){{
     throw 'Unsafe temporary file'
 }}
-[IO.File]::Replace($temp,$old,$null)
+# Same-volume, write-through NTFS rename over the exact original leaf.
+# Never delete the target first or fall back to non-atomic Copy-Item.
+if(-not ('Kingdoms.Wslpe40AtomicMove' -as [type])) {{
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Kingdoms {{
+  public static class Wslpe40AtomicMove {{
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode,
+               SetLastError=true, EntryPoint="MoveFileExW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool Execute(string source, string target, uint flags);
+  }}
+}}
+'@ -ErrorAction Stop
+}}
+# MOVEFILE_REPLACE_EXISTING(0x1) | MOVEFILE_WRITE_THROUGH(0x8)
+if(-not [Kingdoms.Wslpe40AtomicMove]::Execute($temp,$old,9)) {{
+    throw 'Exact atomic operator rename was rejected'
+}}
 if((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash -cne '{new_hash}'){{
     throw 'Operator replacement digest mismatch'
 }}
