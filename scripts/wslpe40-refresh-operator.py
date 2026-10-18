@@ -158,7 +158,7 @@ if($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::Repars
     throw 'Unsafe temporary file'
 }}
 # Same-volume, write-through NTFS rename over the exact original leaf.
-# Never delete the target first or fall back to non-atomic Copy-Item.
+# Never delete the target first or fall back to non-atomic copying.
 if(-not ('Kingdoms.Wslpe40AtomicMove' -as [type])) {{
     Add-Type -TypeDefinition @'
 using System;
