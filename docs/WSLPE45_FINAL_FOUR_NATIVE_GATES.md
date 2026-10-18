@@ -6,6 +6,40 @@ Repository source of truth: `feature/windows-lpe-45-batch`.
 Verified source checkpoint: 21/25 accepted *source candidates*; four still planned.
 New live six-stage qualifications: 0/25. New independent learner-side exploit proofs: 0/25.
 
+## 2026-10-18 #40 review artifact → guest copy-only staging
+
+The `scripts/wslpe40-stage.py` handoff is now available for **opt-in
+copy-only staging**. It verifies the exact clean feature checkout, a
+successful matching native GitHub run, short-lived artifact source commit,
+three-file inventory, native server/client SHA-256 values against both
+manifest and independent CI log, unique running VMware WSLPE-WS01 VM,
+the named current-state pre-#40 snapshot, the existing certificate-pinned
+HTTPS/5986 management identity and no #40 artifacts/host in Windows.
+
+An explicit interactive `--stage` plus approval phrase are mandatory for
+copying `Wslpe40RpcOperator.psm1` and native server/client executables into
+the existing protected WSLPE library. The transfer uses the previously
+verified TLS-pinned WinRM channel and exact final paths, sends fixed-size
+chunks, checks final digests and rejects preexisting destinations. An
+interrupted copy leaves evidence for manual inspection; it does **not**
+automatically overwrite or delete files. The learner client is intended
+to run locally as standard `lpe.trainee`, never inside the privileged host.
+No RPC listener, service, fixture, Windows Installer, account or JEA endpoint
+is started or changed by this staging command.
+
+The server's source previously used synchronous
+`RpcServerListen(..., TRUE)`, which prevented the bounded 12-minute
+shutdown from being reached. The fixed native code uses
+`RpcServerListen(..., FALSE)` and checks listener stop/unregistration.
+New regression tests require this bounded lifetime. Both executables must
+come from a **new** green build after the fix, not an earlier archived binary.
+
+**Copying is not qualification or deployment approval of a privileged
+listener.** Before execution, independently review the host token,
+endpoint security, learner negative cases, proof location and exact reset.
+Keep #40 planned, 21/25 source qualified, and the batch disabled.
+Preserve JEA #30 and NORTH.
+
 ## 2026-10-18 runtime preflight — authenticated but not deployed
 
 The running standalone VMware WSLPE-WS01 has a second snapshot:
