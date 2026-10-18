@@ -93,6 +93,35 @@ class SinglePilotTests(unittest.TestCase):
         self.assertIn('select(', str(marker[0]))
         self.assertIn('register: pilot28_lifecycle', (ROOT / 'ansible/wslpe45/app_paths_registry_hijack.yml').read_text())
 
+    def test_marker_only_reuse_requires_protected_exact_ownership(self):
+        source = pilot.PREFLIGHT.read_text(encoding='utf-8')
+        for required in ('WSLPE45_PILOT28_25_MODE=', 'OWNED_MARKER_ONLY',
+                         '.kingdoms-owned.json', 'kingdoms.wslpe.fixture-owner.v1',
+                         'Get-ChildItem -LiteralPath $partial25',
+                         'AreAccessRulesProtected', 'wslpe_pilot_shared_sha256'):
+            self.assertIn(required, source)
+        self.assertIn('Get-ChildItem -LiteralPath $fixtures', source)
+        play = (ROOT / 'ansible/wslpe45/app_paths_registry_hijack.yml').read_text()
+        for required in ('wslpe_pilot_preserve_shared | default(false)',
+                         'lockdown-library.yml', 'WslpeFixture.psm1'):
+            self.assertIn(required, play)
+        self.assertIn('wslpe_pilot_shared_sha256', SCRIPT.read_text())
+        self.assertIn('if present == absent:', SCRIPT.read_text())
+
+    def test_lifecycle_command_preserves_shared_library_only_when_verified(self):
+        row = {'id': 'app_paths_registry_hijack'}
+        result = SimpleNamespace(returncode=0, stdout='WSLPE45_BATCH_STAGE=app_paths_registry_hijack:apply:PASS',
+                                 stderr='')
+        with patch.object(pilot.batch, 'command', return_value=['ansible', '-e', '{}']), \
+             patch.object(pilot.subprocess, 'run', return_value=result) as runner:
+            ok, rc, _ = pilot.execute_stage(
+                Path('/ansible'), Path('/inventory'), Path('/vars'),
+                row, '172.28.231.31', 'apply', None, 'apply', {}, 900, True)
+        self.assertTrue(ok)
+        self.assertEqual(rc, 0)
+        import json
+        self.assertIs(json.loads(runner.call_args.args[0][-1])['wslpe_pilot_preserve_shared'], True)
+
     def test_read_only_preflight_stops_before_live_journal(self):
         source = SCRIPT.read_text(encoding='utf-8')
         self.assertIn('modes.add_argument("--preflight", action="store_true")', source)
