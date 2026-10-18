@@ -78,7 +78,7 @@
       ansible.windows.win_file:
         path: '{{ scenario_library }}'
         state: directory
-      when: wslpe_45_action == 'apply'
+      when: wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)
 
     - name: Protect shared standalone source library before copying code
       ansible.builtin.import_tasks: lockdown-library.yml

@@ -134,7 +134,7 @@ class DeploymentTests(unittest.TestCase):
             for task in plays[1]["tasks"]:
                 payload = task.get("ansible.windows.win_copy",{})
                 directory = task.get("ansible.windows.win_file",{})
-                if payload.get("src","").endswith("WslpeFixture.psm1") or directory.get("path","").endswith("\\lib"):
+                if payload.get("src","").endswith("WslpeFixture.psm1") or directory:
                     self.assertIn("not (wslpe_pilot_preserve_shared",task["when"])
             self.assertIn("WSLPE21_STAGE=",str(plays[1]["post_tasks"]))
 
