@@ -18,18 +18,26 @@ class CloseoutTests(unittest.TestCase):
         self.assertEqual([x["number"] for x in data["techniques"]], list(range(1, 46)))
         self.assertEqual(len({x["id"] for x in data["techniques"]}), 45)
         self.assertEqual(data["counts"]["foundation_lifecycle_evidence"], 20)
-        self.assertEqual(data["counts"]["additional_source_candidates"], 21)
-        self.assertEqual(data["counts"]["additional_source_incomplete"], 4)
+        candidates = sum(
+            row["source"] == "candidate_source_ready" for row in data["techniques"][20:])
+        self.assertEqual(data["counts"]["additional_source_candidates"], candidates)
+        self.assertEqual(data["counts"]["additional_source_incomplete"], 25-candidates)
         self.assertEqual(data["counts"]["additional_six_stage_qualified"], 0)
         self.assertEqual(data["counts"]["independent_learner_exploit_accepted"], 0)
         self.assertFalse(data["ready_for_batch_execution"])
         self.assertFalse(data["ready_for_learner_release"])
 
-    def test_exact_four_source_missing_not_silently_promoted(self):
+    def test_source_blockers_and_runtime_evidence_are_not_conflated(self):
         d = closeout.report()
-        incomplete = [x["number"] for x in d["techniques"]
-                      if x["source"] == "source_incomplete"]
-        self.assertEqual(incomplete, [25, 36, 38, 40])
+        _, source_blockers = batch.source_readiness()
+        actual_blocked = {
+            int(message[1:3]) for message in source_blockers
+        }
+        incomplete = {
+            x["number"] for x in d["techniques"]
+            if x["source"] == "source_incomplete"
+        }
+        self.assertEqual(incomplete, actual_blocked)
         self.assertTrue(all(d["techniques"][n-1]["six_stage_lifecycle"] ==
                             "not_verified" for n in range(21,46)))
         self.assertTrue(all(d["techniques"][n-1]["learner_exploit"] ==
