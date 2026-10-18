@@ -7,6 +7,7 @@ no fixture creation, no account/JEA modifications, no NORTH access.
 from __future__ import annotations
 
 import argparse
+import base64
 from contextlib import contextmanager
 import hashlib
 import importlib.util
@@ -164,17 +165,39 @@ def managed_session(auth,address,cert,username,password):
             transport.close_session()
 
 
+MAX_RUN_PS_ENCODED_CHARS = 6000
+WINRM_CHUNK_BYTES = 512
+
+
+def encoded_ps_length(source: str) -> int:
+    """pywinrm run_ps uses PowerShell -EncodedCommand (UTF-16LE -> Base64).
+
+    This imposes a Windows command-line budget separate from SOAP limits.
+    """
+    return len(base64.b64encode(source.encode("utf-16le")))
+
+
 def ps_checked(session,source,step="UNSPECIFIED"):
     # Log only a fixed, caller-controlled stage identifier and numeric code:
     # remote stderr may contain sensitive environment or credential context.
     if not re.fullmatch(r"[A-Z0-9_]{3,72}",step):
         raise ValueError("Unsafe stage identifier")
+    if encoded_ps_length(source) > MAX_RUN_PS_ENCODED_CHARS:
+        raise ValueError("WINRM_ENCODED_COMMAND_TOO_LONG at "+step)
     try:
         result=session.run_ps(source)
     except Exception as exc:
         raise ValueError("WinRM transport rejected stage step: "+step+
                          " ("+type(exc).__name__+")") from None
     if result.status_code != 0:
+        err=(result.std_err or b"").strip()
+        categories={
+            b"The command line is too long.":"WINDOWS_COMMAND_LINE_TOO_LONG",
+            b"Access to the path is denied.":"WINDOWS_ACCESS_DENIED",
+        }
+        recognized=categories.get(err)
+        if recognized:
+            raise ValueError(recognized+" at "+step)
         raise ValueError("Guest rejected stage step: "+step+
                          " (status="+str(result.status_code)+")")
     return result.std_out.decode("utf-8",errors="strict").strip()
@@ -221,6 +244,20 @@ if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'")
         suffix=token_hex(12)
         target=GUEST_DIR+"\\"+name
         partial=target+".wslpe40-stage-"+suffix
+        # Reject unsafe command sizes BEFORE creating the first file.
+        probe_segment=base64.b64encode(bytes(WINRM_CHUNK_BYTES)).decode("ascii")
+        probe_append=f"""
+$ErrorActionPreference='Stop'
+$bytes=[Convert]::FromBase64String('{probe_segment}')
+$stream=[IO.File]::Open('{partial}',[IO.FileMode]::Open,
+    [IO.FileAccess]::Write,[IO.FileShare]::None)
+try{{
+    $null=$stream.Seek(0,[IO.SeekOrigin]::End)
+    $stream.Write($bytes,0,$bytes.Length)
+}} finally {{$stream.Dispose()}}
+"""
+        if encoded_ps_length(probe_append)>MAX_RUN_PS_ENCODED_CHARS:
+            raise ValueError("WINRM_ENCODED_COMMAND_TOO_LONG before file creation")
         # Only bytes to exact fixed destination, never executing staged files.
         ps_checked(session,f"""
 $ErrorActionPreference='Stop'
@@ -233,11 +270,12 @@ $stream=[IO.File]::Open($partial,[IO.FileMode]::CreateNew,
 $stream.Dispose()
 """,step="CREATE_"+name.upper().replace(".","_"))
         print("[STAGE] Empty transfer destination created for "+name,flush=True)
-        # WinRM SOAP messages are size-bounded. Transfer small fixed chunks
-        # and reject partial writes; partial files remain for manual review.
-        import base64
-        for offset in range(0,len(body),2048):
-            segment=base64.b64encode(body[offset:offset+2048]).decode("ascii")
+        # Windows EncodedCommand length (UTF-16LE then Base64) is the
+        # binding limit here, not just the WinRM SOAP message size.
+        # The enforced 6000-char budget is checked before every remote step.
+        # Failed writes leave evidence for explicit owned cleanup.
+        for offset in range(0,len(body),WINRM_CHUNK_BYTES):
+            segment=base64.b64encode(body[offset:offset+WINRM_CHUNK_BYTES]).decode("ascii")
             ps_checked(session,f"""
 $ErrorActionPreference='Stop'
 $bytes=[Convert]::FromBase64String('{segment}')
@@ -247,7 +285,7 @@ try{{
     $null=$stream.Seek(0,[IO.SeekOrigin]::End)
     $stream.Write($bytes,0,$bytes.Length)
 }} finally {{$stream.Dispose()}}
-""",step="APPEND_"+name.upper().replace(".","_")+"_CHUNK_"+str(offset//2048+1))
+""",step="APPEND_"+name.upper().replace(".","_")+"_CHUNK_"+str(offset//WINRM_CHUNK_BYTES+1))
         ps_checked(session,f"""
 $ErrorActionPreference='Stop'
 $partial='{partial}'
