@@ -133,11 +133,14 @@ class StageContractTests(unittest.TestCase):
             "preflight.query(auth,address,cert,user,password)",
             "run_data.get(\"conclusion\")!=\"success\"",
             "server_sha256","client_sha256",
-            "STAGE WSLPE40 SOURCE ONLY",
+            "if not args.stage:",
+            "# --stage is the explicit operator authorization.",
             "FileMode]::CreateNew",
             "WSLPE40_SOURCE_STAGED=TRUE",
         ):
             self.assertIn(required,source)
+        self.assertNotIn("input(",source)
+        self.assertNotIn("sys.stdin",source)
         for forbidden in (
             "server_cert_validation=\"ignore\"",
             "Unregister-PSSessionConfiguration",
