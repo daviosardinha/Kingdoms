@@ -142,7 +142,7 @@ jobs:
         run: |
           $ErrorActionPreference='Stop'
           $source=Get-Content -LiteralPath 'scripts/wslpe40-refresh-operator.py' -Raw
-          $pattern="(?s)Add-Type -TypeDefinition @'\\r?\\n(.*?)\\r?\\n'@ -ErrorAction Stop"
+          $pattern="(?s)Add-Type -TypeDefinition @'\r?\n(.*?)\r?\n'@ -ErrorAction Stop"
           $match=[regex]::Match($source,$pattern)
           if(-not $match.Success){throw 'Missing same-volume owned-file atomic replace API'}
           $code=$match.Groups[1].Value.Replace('{{','{').Replace('}}','}')
