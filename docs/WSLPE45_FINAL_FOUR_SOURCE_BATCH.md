@@ -19,6 +19,22 @@ flag must remain false. None of the four scenario playbooks is present.
 | 38 | DCOM launch permissions | **No accepted source** | Review-approved local-server native build, CLSID/AppID contract | Owned CLSID/AppID per-application security descriptor, local non-admin activation evidence and controlled unregistration; no machine-wide DCOM changes |
 | 40 | Local RPC authorization | `Kingdom40LocalRpc.idl` | MIDL-generated local client/server stubs | `ncalrpc`-only implementation, explicit bounded authorization decision, authenticated standard user test, owned endpoint shutdown and cleanup |
 
+## Coordinated native source round — all four prototypes, not deployment
+
+Windows native CI now builds #25's MSI with its bounded repair-request nonce,
+#36's LocalSystem-scoped WMI provider with time-bounded revocation, #38's
+bounded LocalService COM host and fixed-local IDispatch learner verifier, and
+#40's native local RPC server/client and a compiled source-only atomic operator
+refresh bridge. #38 was newly implemented as a *source prototype*; it is not
+an approved DCOM activation/registration lifecycle.
+
+#25 still requires a standard user's actual ability to trigger privileged
+repair. #36 requires owned namespace/registration permissions and cleanup.
+#38 requires unique owned CLSID/AppID and per-AppID launch rights, not global
+DCOM changes. #40 still has the original guest operator installed, with no
+approved host/learner proof. No source-only build promotes any of these to
+accepted candidates.
+
 ## 2026-10-18 coordinated implementation wave — #25 / #36 / #40
 
 This checkpoint changes the previous one-technique-at-a-time workflow.
