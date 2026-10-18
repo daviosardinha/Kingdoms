@@ -27,7 +27,7 @@ function Invoke-Wslpe40RpcOperator {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [ValidateSet('Inspect','Prepare','Serve','Reset')][string]$Action,
+        [ValidateSet('Inspect','Prepare','Reset')][string]$Action,
         [ValidateSet('BeforeProof','AfterProof')][string]$Stage='BeforeProof',
         [ValidateRange(1,999999)][uint32]$ExpectedNonce=1,
         [string]$Approval
@@ -72,11 +72,7 @@ function Invoke-Wslpe40RpcOperator {
         if(-not (Test-Wslpe40ActiveNativeConsole)) {
             throw 'RPC fixture mutation requires the active native Windows console session'
         }
-        $phrase=switch($Action){
-            'Prepare' {'PREPARE WSLPE40'}
-            'Serve' {'SERVE WSLPE40'}
-            'Reset' {'RESET WSLPE40'}
-        }
+        $phrase=if($Action -eq 'Prepare') {'PREPARE WSLPE40'} else {'RESET WSLPE40'}
         if($Approval -cne $phrase) {
             throw 'RPC fixture requires exact operator approval'
         }
@@ -105,30 +101,6 @@ function Invoke-Wslpe40RpcOperator {
            (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
             throw 'Unexpected object in bounded RPC fixture'
         }
-    }
-    if($Action -eq 'Serve') {
-        # One bounded, foreground process in the actual elevated guest
-        # console. It exits after 12 minutes or with an explicit error.
-        # No persistent SCM service, scheduled task, or detached PID.
-        if(@($entries | Where-Object {$_.Name -ceq 'rpc-proof.txt'}).Count -ne 0) {
-            throw 'Refuse RPC host once an owned proof already exists'
-        }
-        $server=Join-Path $lib 'Kingdom40LocalRpcServer.exe'
-        $item=Get-Item -LiteralPath $server -Force -ErrorAction Stop
-        if($item.PSIsContainer -or
-           (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-            throw 'Refuse unsafe RPC executable'
-        }
-        $hosts=@(Get-CimInstance -ClassName Win32_Process -Filter
-            "Name = 'Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
-        if($hosts.Count -ne 0) { throw 'Refuse existing RPC host process' }
-        Write-Output 'WSLPE40_RPC_HOST_STARTING=PASS'
-        & $server '--serve-local-only'
-        if($LASTEXITCODE -ne 0) {
-            throw 'Bounded RPC host returned an error'
-        }
-        Write-Output 'WSLPE40_RPC_HOST_EXIT=PASS'
-        return
     }
     if($Action -eq 'Inspect') {
         $matches=@($entries | Where-Object {$_.Name -ceq 'rpc-proof.txt'})
