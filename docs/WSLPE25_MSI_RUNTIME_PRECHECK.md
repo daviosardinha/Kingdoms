@@ -64,8 +64,8 @@ not acceptable solutions.
 | Owned ledger | Product state | Current safe response |
 | --- | --- | --- |
 | Absent | Not registered | Baseline only if the owned fixture and Program Files destination are also absent |
-| `install-attempted` | Not registered | Block; inspect installer logs and dedicated paths; review snapshot recovery |
-| `install-attempted` | Registered | Block; design a separately approved recovery path tied to the exact digest and ProductCode |
+| `install-attempted` | Not registered | Block live changes; offline Recover prototype requires proving exact absence and ownership |
+| `install-attempted` | Registered | Block live changes; prototype Recover can target only the exact approved ProductCode after separate authorization |
 | `installed` | Registered | Standard owned uninstall may be considered only after snapshot/review authorization |
 | `installed` | Not registered | Block; inspect partial cleanup without deleting unrelated resources |
 | Any | Foreign ProductCode, missing MSI, ACL anomaly or reparse point | Refuse mutation and preserve evidence |
@@ -126,8 +126,9 @@ pre-agreed recovery method. CI does not execute any of these stages.
 
 1. Define and independently review the missing attacker-control primitive
    before promoting or deploying #25.
-2. Design the explicit `install-attempted` recovery contract for the
-   isolated operator without broadening permissions or auto-cleaning.
+2. Independently review the committed `Recover` operator, including the
+   native product-state assumptions and failure/cleanup edge cases;
+   Windows CI evidence alone cannot qualify live rollback.
 3. Only after both reviews, authorize a pinned-artifact staging plan and
    a snapshot-backed WSLPE-WS01 test.
 4. Keep #25 `planned` and the official tally **21/25** until complete
