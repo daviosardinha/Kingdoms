@@ -230,10 +230,26 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         self.assertNotIn("Invoke-Wslpe25MsiOperator -Action Recover", workflow)
 
     def test_msi_recovery_digest_and_ledger_syntax_is_complete(self):
-        # Regression for truncated PowerShell SHA-256 guard in the Recover path.
+        # A previous edit truncated the recovery SHA-256 pattern.
         source = (SRC / "Wslpe25MsiOperator.psm1").read_text(encoding="utf-8")
         self.assertIn(
-            "($ExpectedSha256 -cnotmatch '^[0-9A-Fa-f]{64}
+            "($ExpectedSha256 -cnotmatch '^[0-9A-Fa-f]{64}$' -or",
+            source,
+        )
+        self.assertIn(
+            "$pkg.Sha256 -cne $ExpectedSha256.ToUpperInvariant()))",
+            source,
+        )
+        self.assertIn(
+            "if($entries.Count -ne 1 -or $entries[0].PSIsContainer -or",
+            source,
+        )
+        self.assertIn(
+            "Uninstall/recovery requires exactly one regular owned ledger",
+            source,
+        )
+
+    def test_msi_build_artifact_is_short_lived_and_source_review_only(self):
         workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
             encoding="utf-8"
         )
