@@ -686,4 +686,53 @@ jobs:
           }
           $view.Close()
           if(-not $found){throw 'No WSLPE25 repair custom action in native MSI'}
+          # Preserve exact MSI product identity for later owned install/uninstall.
+          # Read the package database only; do not query or modify guest state.
+          function Read-Wslpe25MsiProperty([string]$propertyName) {
+            $query = "SELECT `Value` FROM `Property` WHERE `Property` = '$propertyName'"
+            $propertyView = $database.OpenView($query)
+            try {
+              $propertyView.Execute()
+              $propertyRecord = $propertyView.Fetch()
+              if ($null -eq $propertyRecord) {
+                throw "Missing MSI package property: $propertyName"
+              }
+              return [string]$propertyRecord.StringData(1)
+            } finally {
+              $propertyView.Close()
+            }
+          }
+          $productCode=Read-Wslpe25MsiProperty 'ProductCode'
+          $productName=Read-Wslpe25MsiProperty 'ProductName'
+          $manufacturer=Read-Wslpe25MsiProperty 'Manufacturer'
+          $productVersion=Read-Wslpe25MsiProperty 'ProductVersion'
+          $allUsers=Read-Wslpe25MsiProperty 'ALLUSERS'
+          $parsedGuid=[guid]::Empty
+          if(-not [guid]::TryParse($productCode,[ref]$parsedGuid) -or
+             $parsedGuid -eq [guid]::Empty) {
+            throw 'MSI ProductCode cannot serve as a unique installed-product identity'
+          }
+          if($productName -cne 'Kingdoms WSLPE25 Repair Fixture' -or
+             $manufacturer -cne 'Nomad Kingdom' -or
+             $productVersion -cne '0.1.0' -or $allUsers -cne '1') {
+            throw 'Built MSI product identity or per-machine scope differs from source contract'
+          }
+          $msiDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $msi).Hash
+          $dllDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $dll).Hash
+          $provenance=Join-Path $env:RUNNER_TEMP 'Kingdom25Repair.provenance.txt'
+          @(
+            'schema=kingdoms.wslpe25.msi-native-source.v1'
+            'state=unqualified-not-deployable'
+            "commit=$env:GITHUB_SHA"
+            'wix_version=6.0.2'
+            "product_code=$productCode"
+            "product_version=$productVersion"
+            "scope=perMachine"
+            "msi_sha256=$msiDigest"
+            "custom_action_dll_sha256=$dllDigest"
+            'installation_executed=false'
+            'learner_proof=pending'
+          ) | Set-Content -LiteralPath $provenance -Encoding UTF8
+          Write-Output '[PASS] WSLPE25 MSI registered-product identity and build digests recorded read-only'
+          Write-Output ('WSLPE25_PACKAGE_PROVENANCE=' + $provenance)
           Write-Output '[PASS] Genuine MSI built and CustomAction table inspected read-only; not installed'
