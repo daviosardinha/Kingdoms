@@ -136,7 +136,7 @@ jobs:
         shell: powershell
         run: |
           $source=Get-Content -LiteralPath 'scripts/wslpe40-stage.py' -Raw -ErrorAction Stop
-          $extract=[regex]::Match($source, '(?s)ps_checked\(session,r"""(.*?)"""\)')
+          $extract=[regex]::Match($source, '(?s)ps_checked\(session,r"""(.*?)""",step="GUARD_GUEST_BASELINE"\)')
           if(-not $extract.Success){throw 'WSLPE40 copy-only guard source absent'}
           $tokens=$null
           $parseErrors=$null
