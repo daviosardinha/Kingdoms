@@ -2,6 +2,27 @@
 # Source-only. Import does nothing. No guest or batch execution.
 Set-StrictMode -Version Latest
 
+function Test-Wslpe40ActiveNativeConsole {
+    # SESSIONNAME is optional/unset even for real VMware console processes.
+    # WTSGetActiveConsoleSessionId is authoritative for physical/VM console.
+    if(-not ('Kingdoms.Wslpe40ActiveConsole' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Kingdoms {
+    public static class Wslpe40ActiveConsole {
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        public static extern UInt32 WTSGetActiveConsoleSessionId();
+    }
+}
+'@ -ErrorAction Stop
+    }
+    [uint32]$active=[Kingdoms.Wslpe40ActiveConsole]::WTSGetActiveConsoleSessionId()
+    [uint32]$caller=(Get-Process -Id $PID -ErrorAction Stop).SessionId
+    # 0xFFFFFFFF means the console is connecting or disconnecting.
+    return ($active -ne [uint32]::MaxValue -and $caller -eq $active)
+}
+
 function Invoke-Wslpe40RpcOperator {
     [CmdletBinding()]
     param(
@@ -48,8 +69,8 @@ function Invoke-Wslpe40RpcOperator {
             [Security.Principal.WindowsBuiltInRole]::Administrator)) {
             throw 'RPC fixture mutation requires elevated local administrator'
         }
-        if($env:SESSIONNAME -cne 'Console') {
-            throw 'RPC fixture mutation requires the local guest console'
+        if(-not (Test-Wslpe40ActiveNativeConsole)) {
+            throw 'RPC fixture mutation requires the active native Windows console session'
         }
         $phrase=if($Action -eq 'Prepare') {'PREPARE WSLPE40'} else {'RESET WSLPE40'}
         if($Approval -cne $phrase) {
