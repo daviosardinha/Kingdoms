@@ -6,6 +6,24 @@ Repository source of truth: `feature/windows-lpe-45-batch`.
 Verified source checkpoint: 21/25 accepted *source candidates*; four still planned.
 New live six-stage qualifications: 0/25. New independent learner-side exploit proofs: 0/25.
 
+## 2026-10-18 #25 security-boundary and recovery review
+
+The native MSI artifact and its build provenance passed independent Kali
+hash/manifest checks, and run 39120048388 passed all three GitHub jobs.
+That closes **artifact integrity**, not the exploitation boundary.
+
+The current fixed Windows Installer repair custom action writes an owned
+proof marker but has no identified `lpe.trainee`-controlled primitive.
+It cannot yet count as an actual Windows LPE route. In addition, the
+operator's `install-attempted` ledger can survive a partial install
+while the normal owned uninstall path requires `installed`, leaving
+a recovery gap that must be designed before guest mutation.
+
+See [#25 MSI runtime precheck and recovery blockers](./WSLPE25_MSI_RUNTIME_PRECHECK.md) for the exact evidence, failure-state
+matrix, distinct-attack acceptance criteria and release blockers.
+**Do not stage or execute #25 on WSLPE-WS01 at this checkpoint.**
+The source-qualified count remains 21/25.
+
 ## 2026-10-18 offline MSI/RPC/WMI checkpoint
 
 GitHub Windows native CI on this branch now passes all three jobs, including:
