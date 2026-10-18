@@ -712,10 +712,26 @@ jobs:
              $parsedGuid -eq [guid]::Empty) {
             throw 'MSI ProductCode cannot serve as a unique installed-product identity'
           }
-          if($productName -cne 'Kingdoms WSLPE25 Repair Fixture' -or
-             $manufacturer -cne 'Nomad Kingdom' -or
-             $productVersion -cne '0.1.0' -or $allUsers -cne '1') {
-            throw 'Built MSI product identity or per-machine scope differs from source contract'
+          # Diagnose each public MSI field independently without changing
+          # acceptance criteria. A mismatch still fails the native build.
+          $identityFields=@(
+            @{Name='ProductName'; Actual=$productName; Expected='Kingdoms WSLPE25 Repair Fixture'},
+            @{Name='Manufacturer'; Actual=$manufacturer; Expected='Nomad Kingdom'},
+            @{Name='ProductVersion'; Actual=$productVersion; Expected='0.1.0'},
+            @{Name='ALLUSERS'; Actual=$allUsers; Expected='1'}
+          )
+          $identityMismatch=$false
+          foreach($field in $identityFields) {
+            $matches=[string]::Equals([string]$field.Actual,[string]$field.Expected,[StringComparison]::Ordinal)
+            if($matches) {
+              Write-Output ('[PASS] MSI PROPERTY ' + $field.Name + '=' + $field.Actual)
+            } else {
+              Write-Output ('[FAIL] MSI PROPERTY ' + $field.Name + ' actual=[' + $field.Actual + '] expected=[' + $field.Expected + ']')
+              $identityMismatch=$true
+            }
+          }
+          if($identityMismatch) {
+            throw 'MSI identity mismatch; inspect per-field diagnostics above'
           }
           $msiDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $msi).Hash
           $dllDigest=(Get-FileHash -Algorithm SHA256 -LiteralPath $dll).Hash
