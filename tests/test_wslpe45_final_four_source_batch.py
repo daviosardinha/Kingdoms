@@ -309,6 +309,37 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         for name in ("Kingdom40LocalRpcServer.exe", "Kingdom40LocalRpcClient.exe"):
             self.assertIn(name, workflow)
 
+    def test_local_rpc_owned_lifecycle_and_native_artifact_review_only(self):
+        src = (SRC / "Wslpe40RpcOperator.psm1").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
+            encoding="utf-8"
+        )
+        for token in (
+            "ValidateSet('Inspect','Prepare','Reset')",
+            "Assert-Wslpe45Identity",
+            "New-Wslpe45OwnedFixture -Number 40",
+            "Assert-Wslpe45OwnedFixture -Number 40",
+            "Assert-Wslpe45NoReparsePoints",
+            "Remove-Wslpe45OwnedFixture -Number 40",
+            "PREPARE WSLPE40",
+            "RESET WSLPE40",
+            "WSLPE40_LOCAL_RPC_NONCE=",
+            "WSLPE40_RPC_RESET=PASS",
+        ):
+            self.assertIn(token, src)
+        for banned in ("Start-Process", "Stop-Process", "msiexec", "GOAD-WS01"):
+            self.assertNotIn(banned, src)
+        for token in (
+            "'Wslpe40RpcOperator.psm1'",
+            "Archive unqualified local RPC binaries for independent review",
+            "Kingdom40LocalRpcServer.exe",
+            "Kingdom40LocalRpcClient.exe",
+            "wslpe40-native-source-review-",
+            "retention-days: 2",
+        ):
+            self.assertIn(token, workflow)
+        self.assertNotIn("Invoke-Wslpe40RpcOperator -Action Prepare", workflow)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
