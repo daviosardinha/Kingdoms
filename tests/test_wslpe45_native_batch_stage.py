@@ -47,7 +47,7 @@ class NativeBatchStageTests(unittest.TestCase):
                     "auth.checked_certificate(auth.tls_audit_module(),stage.PIN)",
                     "stage.managed_session(auth,addr,cert,user,password)",
                     "if not args.apply:",
-                    "source/artifact retrieval",
+                    "Source/artifact retrieval",
                     "FileMode]::CreateNew",
                     "Get-FileHash -LiteralPath",
                     "NO AUTOMATIC RETRY"):
