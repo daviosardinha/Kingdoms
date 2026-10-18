@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Isolated #28 WSLPE qualification pilot; NOT the 25-scenario release gate.
 
-No guest contacts without --execute. Intentionally allows only one source-
-reviewed candidate. Failed guest writes keep a private recovery sentinel.
+Guest inspection requires --preflight; only --execute permits fixture writes.
+Intentionally allows one source-reviewed candidate and preserves failure state.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def snapshot_gate() -> None:
         raise batch.BatchBlocked("Cannot import WSLPE snapshot guard")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module.verify_vm_snapshot(None)
+    module.verify_vm_snapshot(module.load_preflight())
 
 
 def execute_stage(ansible: Path, inv: Path, varsfile: Path, row: dict,
@@ -90,7 +90,7 @@ def run(args: argparse.Namespace) -> int:
     row = source_gate(args.technique)
     print(f"[PILOT] #{row['number']} {row['id']} (only); NORTH untouched", flush=True)
     print("[NOT RELEASE] Lifecycle checks do not establish learner exploitation", flush=True)
-    if not args.execute:
+    if not args.execute and not args.preflight:
         print("[PLAN ONLY] No VMware, WinRM, Ansible or guest access", flush=True)
         print("[SEQUENCE] read-only clean preflight, then apply/validate/reset/clean/reapply/validate", flush=True)
         print("[EXECUTE] Requires a clean reviewed checkout and a native WSLPE snapshot", flush=True)
@@ -149,6 +149,9 @@ def run(args: argparse.Namespace) -> int:
             print(f"[BLOCKED] Existing/unknown #28 state; exit={rc}", flush=True)
             print(f"[PRIVATE] {failure} (redact before sharing)", flush=True)
             return 2
+        if args.preflight:
+            print("[PASS] #28 read-only guest preflight; no scenario writes", flush=True)
+            return 0
 
         report = {"schema": "kingdoms.wslpe45.single-pilot.v1", "target": "WSLPE-WS01",
                   "technique": row["id"], "number": row["number"], "commit": head,
@@ -185,7 +188,9 @@ def run(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--technique", default="app_paths_registry_hijack")
-    parser.add_argument("--execute", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--execute", action="store_true")
+    modes.add_argument("--preflight", action="store_true")
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument("--report-dir", default="~/.local/state/kingdoms-wslpe45-live")
     args = parser.parse_args(argv)
