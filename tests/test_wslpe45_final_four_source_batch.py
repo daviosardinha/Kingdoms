@@ -77,8 +77,14 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         # Parent ACL/reparse ownership and live repair proof remain pending.
         source = (SRC / "Kingdom25Repair.cpp").read_text(encoding="utf-8")
         self.assertIn("MsiGetPropertyW", source)
-        self.assertIn("CREATE_NEW", source)
+        for required in (
+            "CREATE_NEW", "repair-request.txt", "FILE_FLAG_OPEN_REPARSE_POINT",
+            "GetFileInformationByHandle", "GetFileSizeEx", "ReadFile",
+            "nonce == 0 || nonce > 999999", "WSLPE45_MSI_REPAIR_NONCE=",
+        ):
+            self.assertIn(required, source)
         self.assertNotIn("CREATE_ALWAYS", source)
+        self.assertNotIn("system(", source)
 
     def test_msi_inspection_is_owned_read_only_and_fail_closed(self):
         # Offline contract only: Windows PowerShell parsing and live ACLs
@@ -93,6 +99,9 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "AreAccessRulesProtected",
             "BeforeRepair",
             "AfterRepair",
+            "repair-request.txt",
+            "MSI_REPAIR_NONCE",
+            "ExpectedNonce",
             "Get-ChildItem",
             "WSLPE25_FIXTURE_INSPECT",
         ):
@@ -122,6 +131,10 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "Get-ChildItem",
             "WindowsBuiltInRole]::Administrator",
             "Assert-Wslpe25RepairFixture -Stage BeforeRepair",
+            "repair-request.txt",
+            "Set-Acl -LiteralPath $request",
+            "FileSystemRights]::WriteData",
+            "FileSystemRights]::ReadData",
             "WSLPE25_FIXTURE_PREPARED=PASS",
         ):
             self.assertIn(token, src)
@@ -130,7 +143,6 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "Start-Process",
             "Remove-Wslpe45OwnedFixture",
             "Remove-Item",
-            "Set-Acl",
             "Register-PSSessionConfiguration",
             "GOAD-WS01",
         ):
