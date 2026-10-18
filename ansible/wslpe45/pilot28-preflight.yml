@@ -49,9 +49,18 @@
           }
           # An interrupted #25 may coexist ONLY as its exact owned,
           # protected marker-only state. Never adopt or mutate it.
-          $partial25='C:\ProgramData\KingdomsWSLPE45\fixtures\msi_repair_custom_action'
+          $fixtures='C:\ProgramData\KingdomsWSLPE45\fixtures'
+          $partial25=Join-Path $fixtures 'msi_repair_custom_action'
           $mode='ABSENT'
-          if(Test-Path -LiteralPath $partial25) {
+          $existing=@()
+          if(Test-Path -LiteralPath $fixtures -PathType Container) {
+              $existing=@(Get-ChildItem -LiteralPath $fixtures -Force -ErrorAction Stop |
+                  Where-Object {$_.Name -ceq 'msi_repair_custom_action'})
+          }
+          if($existing.Count -gt 1) {
+              throw 'Ambiguous #25 fixture inventory'
+          }
+          if($existing.Count -eq 1) {
               $dirs=@('C:\ProgramData\KingdomsWSLPE45',
                       'C:\ProgramData\KingdomsWSLPE45\lib',$partial25)
               $adminSids=@(Get-LocalGroupMember -Group $admins.Name |
