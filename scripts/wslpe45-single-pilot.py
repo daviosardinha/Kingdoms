@@ -129,6 +129,42 @@ def execute_stage(ansible: Path, inv: Path, varsfile: Path, row: dict,
     return (rc == 0 and diagnostics.count(marker) == 1), rc, diagnostics
 
 
+def diagnostic_summary(complete_log: str) -> str:
+    """Extract a bounded Windows/Ansible failure message; never dump secrets."""
+    import re
+    for line in complete_log.splitlines():
+        if "fatal: [ws01]" not in line or "=>" not in line:
+            continue
+        try:
+            response = json.loads(line.split("=>", 1)[1].strip())
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(response, dict):
+            continue
+        errors = response.get("error", [])
+        for item in errors if isinstance(errors, list) else []:
+            if not isinstance(item, dict):
+                continue
+            exception = item.get("exception", {})
+            category = item.get("category_info", {})
+            candidate = (
+                exception.get("message") if isinstance(exception, dict) else None
+            ) or (
+                category.get("reason") if isinstance(category, dict) else None
+            )
+            if isinstance(candidate, str) and candidate.strip():
+                candidate = candidate.strip().splitlines()[0][:280]
+                if re.search(r"(?i)(password|credential|bearer|secret|token|cookie)\s*[:=]", candidate):
+                    return "Windows error details contain sensitive content; see private log"
+                return candidate
+        message = response.get("msg")
+        if isinstance(message, str) and message.strip():
+            message = message.strip().splitlines()[0][:200]
+            if not re.search(r"(?i)(password|credential|bearer|secret|token|cookie)\s*[:=]", message):
+                return message
+    return "Windows failure details unavailable; review private log"
+
+
 def run(args: argparse.Namespace) -> int:
     row = source_gate(args.technique)
     print(f"[PILOT] #{row['number']} {row['id']} (only); NORTH untouched", flush=True)
@@ -197,7 +233,8 @@ def run(args: argparse.Namespace) -> int:
             diagnostics, rc = "Standalone clean-state preflight timed out", 124
         if rc or diagnostics.count("WSLPE45_PILOT28_CLEAN=PASS") != 1:
             failure = base.private_failure_log(root, "pilot-28-preflight", diagnostics)
-            print(f"[BLOCKED] Existing/unknown #28 state; exit={rc}", flush=True)
+            print(f"[BLOCKED] #28 Windows preflight exit={rc}", flush=True)
+            print("[REASON] " + diagnostic_summary(diagnostics), flush=True)
             print(f"[PRIVATE] {failure} (redact before sharing)", flush=True)
             return 2
         present = diagnostics.count("WSLPE45_PILOT28_25_MODE=OWNED_MARKER_ONLY") == 1
