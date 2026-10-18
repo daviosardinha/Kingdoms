@@ -116,6 +116,23 @@ jobs:
             throw 'WSLPE 45 guest script fails Windows PowerShell syntax'
           }
           Write-Output '[PASS] Windows PowerShell 5.1 native parse, no guest contacted'
+      - name: Parse WSLPE40 nonmutating refresh prewrite guard on PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=Get-Content -LiteralPath 'scripts/wslpe40-refresh-operator.py' -Raw -ErrorAction Stop
+          $match=[regex]::Match($src, '(?s)READ_ONLY_REFRESH_GUARD=r"""(.*?)"""')
+          if(-not $match.Success){throw 'Expected read-only guard was not found'}
+          $tokens=$null
+          $errors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseInput(
+            $match.Groups[1].Value,[ref]$tokens,[ref]$errors)
+          if(@($errors).Count -gt 0){
+            $errors | ForEach-Object {Write-Output $_.Message}
+            throw 'The WSLPE40 read-only refresh guard is invalid PowerShell 5.1'
+          }
+          Write-Output '[PASS] Native Windows prewrite guard parsed; no guest contacted'
+
       - name: Verify native WTS active console API compiles in Windows PowerShell 5.1
         shell: powershell
         run: |
