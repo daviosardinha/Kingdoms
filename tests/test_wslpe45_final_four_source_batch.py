@@ -257,6 +257,42 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         self.assertNotIn("msiexec.exe", workflow)
         self.assertNotIn("Invoke-Wslpe25MsiOperator -Action Install", workflow)
 
+    def test_local_rpc_has_native_server_client_and_bounded_authorization(self):
+        # Source/native-build guards only; never run an RPC listener in CI.
+        rpc_idl = (SRC / "Kingdom40LocalRpc.idl").read_text(encoding="utf-8")
+        server = (SRC / "Kingdom40LocalRpcServer.cpp").read_text(encoding="utf-8")
+        client = (SRC / "Kingdom40LocalRpcClient.cpp").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Kingdom40OwnedProof", rpc_idl)
+        for token in (
+            "RpcServerUseProtseqEpW",
+            "RpcServerRegisterAuthInfoW",
+            "RPC_IF_ALLOW_LOCAL_ONLY",
+            "RPC_IF_ALLOW_SECURE_ONLY",
+            "RpcImpersonateClient",
+            "LookupAccountNameW",
+            "WSLPE-WS01\\\\lpe.trainee",
+            "CREATE_NEW",
+            "RpcServerUnregisterIf",
+            "Kingdom40OwnedProof",
+        ):
+            self.assertIn(token, server)
+        for token in (
+            "RpcStringBindingComposeW",
+            "RpcBindingSetAuthInfoW",
+            "RPC_C_AUTHN_WINNT",
+            "--proof-nonce",
+            "Kingdom40OwnedProof",
+        ):
+            self.assertIn(token, client)
+        for forbidden in ("ncacn_ip_tcp", "ncacn_np", "cmd.exe", "powershell.exe"):
+            self.assertNotIn(forbidden, server + client + rpc_idl)
+        for name in ("Kingdom40LocalRpcServer.exe", "Kingdom40LocalRpcClient.exe"):
+            self.assertIn(name, workflow)
+        self.assertNotIn("Start-Process -FilePath", workflow)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
