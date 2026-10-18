@@ -42,6 +42,40 @@ class Wslpe40OperatorRefreshTests(unittest.TestCase):
             MOD.validate_guest({"rpc_operator_staged":False,"rpc_host_count":0},
                                {},post,{})
 
+    def test_prewrite_diagnostic_has_no_file_creation_or_mutation(self):
+        class Stage:
+            steps=[]
+            def ps_checked(self, session, code, step):
+                self.steps.append(step)
+                for unsafe in ("CreateNew","[IO.File]::Replace(",
+                               "[IO.File]::Delete(",".Write(","Start-Process"):
+                    self_outer.assertNotIn(unsafe,code)
+                return "PASS"
+        self_outer=self
+        stage=Stage()
+        MOD.diagnose_prewrite(None,stage,"A"*64)
+        self.assertEqual(stage.steps,[
+            "GUARD_OPERATOR_REFRESH","VERIFY_EXISTING_OPERATOR"
+        ])
+        self.assertIn("Get-CimInstance Win32_ComputerSystem",
+                      MOD.READ_ONLY_REFRESH_GUARD)
+        self.assertIn("AreAccessRulesProtected",MOD.READ_ONLY_REFRESH_GUARD)
+        self.assertNotIn("CreateNew",MOD.READ_ONLY_REFRESH_GUARD)
+
+    def test_prewrite_diagnostic_only_exposes_bounded_stage_error(self):
+        class Stage:
+            def ps_checked(self,session,code,step):
+                raise ValueError(
+                    "Guest rejected stage step: "+step+" (status=1)"
+                )
+        with self.assertRaisesRegex(ValueError,"GUARD_OPERATOR_REFRESH"):
+            MOD.diagnose_prewrite(None,Stage(),"A"*64)
+        source=SCRIPT.read_text("utf-8")
+        self.assertIn('parser.add_argument("--diagnose",action="store_true"',source)
+        self.assertIn("if args.diagnose:",source)
+        self.assertIn("diagnose_prewrite(session,stage,expected[OPERATOR])",source)
+        self.assertNotIn("print(result.std_err)",source)
+
     def test_source_only_uses_atomic_exact_copy_no_execution(self):
         src=SCRIPT.read_text("utf-8")
         for required in (
