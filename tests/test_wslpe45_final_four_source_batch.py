@@ -108,6 +108,36 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, src)
 
+    def test_msi_fixture_preparation_reuses_owned_standalone_contract(self):
+        # Static contract: no guest/module execution in Python tests.
+        src = (SRC / "Wslpe25RepairPreparation.psm1").read_text(encoding="utf-8")
+        for token in (
+            "Invoke-Wslpe25FixturePreparation",
+            "Assert-Wslpe45Identity",
+            "New-Wslpe45OwnedFixture -Number 25 -Id $id",
+            "Assert-Wslpe45NoReparsePoints",
+            "Assert-Wslpe25ProtectedParent",
+            "AreAccessRulesProtected",
+            "GetAccessRules",
+            "Get-ChildItem",
+            "WindowsBuiltInRole]::Administrator",
+            "Assert-Wslpe25RepairFixture -Stage BeforeRepair",
+            "WSLPE25_FIXTURE_PREPARED=PASS",
+        ):
+            self.assertIn(token, src)
+        for forbidden in (
+            "msiexec",
+            "Start-Process",
+            "Remove-Wslpe45OwnedFixture",
+            "Remove-Item",
+            "Set-Acl",
+            "Register-PSSessionConfiguration",
+            "GOAD-WS01",
+        ):
+            self.assertNotIn(forbidden, src)
+        self.assertIn("ValidateSet('Inspect','Prepare')", src)
+        self.assertNotIn("ValidateSet('Inspect','Prepare','Reset')", src)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
