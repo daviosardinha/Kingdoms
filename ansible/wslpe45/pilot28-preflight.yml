@@ -74,4 +74,9 @@
               }
           } finally { $hive.Close() }
           Write-Output 'WSLPE45_PILOT28_CLEAN=PASS'
+      register: pilot28_preflight
       changed_when: false
+
+    - name: Emit one bounded preflight proof marker for operator acceptance
+      ansible.builtin.debug:
+        msg: "{{ (pilot28_preflight.output | default([])) | select('equalto', 'WSLPE45_PILOT28_CLEAN=PASS') | list | first | default('WSLPE45_PILOT28_CLEAN=FAIL') }}"
