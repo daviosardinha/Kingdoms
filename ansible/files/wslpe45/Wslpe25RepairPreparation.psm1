@@ -117,7 +117,30 @@ function Invoke-Wslpe25FixturePreparation {
     # Shared helper is authoritative for identity, creation and marker.
     # If a subsequent verification fails, preserve evidence and stop;
     # never delete an object whose ownership is in doubt.
-    $null=New-Wslpe45OwnedFixture -Number 25 -Id $id
+    $owned=New-Wslpe45OwnedFixture -Number 25 -Id $id
+    # The one intentionally learner-controlled primitive. The directory
+    # and proof remain privileged. Learner may edit FILE DATA only, never
+    # delete/replace the file, change its DACL, or supply a path.
+    $request=Join-Path $owned 'repair-request.txt'
+    if(Test-Path -LiteralPath $request){throw 'Refuse preexisting request'}
+    $file=New-Item -LiteralPath $request -ItemType File -ErrorAction Stop
+    Set-Content -LiteralPath $request -Value '1' -Encoding Ascii -NoNewline -ErrorAction Stop
+    $learner=[Security.Principal.SecurityIdentifier]::new(
+        (Assert-Wslpe45Identity).LearnerSid)
+    $acl=Get-Acl -LiteralPath $request -ErrorAction Stop
+    $rights=(
+        [Security.AccessControl.FileSystemRights]::ReadData -bor
+        [Security.AccessControl.FileSystemRights]::WriteData -bor
+        [Security.AccessControl.FileSystemRights]::ReadAttributes -bor
+        [Security.AccessControl.FileSystemRights]::ReadPermissions
+    )
+    $ace=[Security.AccessControl.FileSystemAccessRule]::new(
+        $learner,$rights,
+        [Security.AccessControl.InheritanceFlags]::None,
+        [Security.AccessControl.PropagationFlags]::None,
+        [Security.AccessControl.AccessControlType]::Allow)
+    $acl.AddAccessRule($ace) | Out-Null
+    Set-Acl -LiteralPath $request -AclObject $acl -ErrorAction Stop
     Assert-Wslpe25RepairFixture -Stage BeforeRepair
     Write-Output 'WSLPE25_FIXTURE_PREPARED=PASS'
 }
