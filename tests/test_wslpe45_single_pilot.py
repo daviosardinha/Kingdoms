@@ -122,6 +122,23 @@ class SinglePilotTests(unittest.TestCase):
         import json
         self.assertIs(json.loads(runner.call_args.args[0][-1])['wslpe_pilot_preserve_shared'], True)
 
+    def test_preflight_outputs_both_presence_and_clean_markers(self):
+        source = pilot.PREFLIGHT.read_text(encoding='utf-8')
+        self.assertIn('WSLPE45_PILOT28_25_MODE=', source)
+        self.assertIn('WSLPE45_PILOT28_CLEAN=PASS', source)
+        self.assertIn("select('match', '^WSLPE45_PILOT28_(25_MODE|CLEAN)=')", source)
+
+    def test_diagnostic_extracts_nested_windows_exception(self):
+        import json
+        sample = {"error": [{"exception": {"message": "Wrong owned #25 fixture marker"},
+                             "category_info": {"reason": "RuntimeException"}}]}
+        log = "fatal: [ws01]: FAILED! => " + json.dumps(sample)
+        self.assertEqual(pilot.diagnostic_summary(log), "Wrong owned #25 fixture marker")
+        redacted = {"error": [{"exception": {"message": "password=not-for-output"}}]}
+        self.assertIn("sensitive", pilot.diagnostic_summary(
+            "fatal: [ws01]: FAILED! => " + json.dumps(redacted)))
+        self.assertIn("unavailable", pilot.diagnostic_summary("no Ansible failure"))
+
     def test_read_only_preflight_stops_before_live_journal(self):
         source = SCRIPT.read_text(encoding='utf-8')
         self.assertIn('modes.add_argument("--preflight", action="store_true")', source)
