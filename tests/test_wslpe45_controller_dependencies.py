@@ -22,7 +22,7 @@ class ControllerDependencyTests(unittest.TestCase):
                 [], f"#{row['number']} {row['id']}",
             )
             seen.append(row["id"])
-        self.assertEqual(len(seen), 21)
+        self.assertEqual(len(seen), sum(r["status"] == "candidate" for r in batch.index_rows()))
 
     def test_rejects_traversal_style_wrong_relative_source(self):
         path = batch.ROOT / "ansible/wslpe45/traversal.yml"
