@@ -20,8 +20,12 @@ counter is allowed.
   than LocalSystem before WMI registration; the native runner verifies the
   wrong-host negative case. Dedicated provider installation, namespace
   permissions, service lifecycle and reset still need real source/runtime.
-- #38: remains **review-blocked**. Do not reproduce the previously rejected
-  DCOM local-server path or substitute COM hijacking for launch-ACL abuse.
+- #38: a new bounded COM LocalService and fixed-local IDispatch client
+  prototype now compile on native Windows CI, distinct from #27 COM hijacking
+  and #40 ncalrpc. Still **review-blocked** until the exact owned CLSID/AppID
+  registration, per-AppID LaunchPermission, local service identity,
+  non-admin COM activation and teardown are implemented and accepted.
+  No machine-wide DCOM configuration is changed.
 - #40: source refresh uses a narrowly scoped same-volume Win32 atomic rename
   after old/new hash verification, with a Windows-native compilation gate.
   **Not applied to the guest.** The independent last guest hash still matches
