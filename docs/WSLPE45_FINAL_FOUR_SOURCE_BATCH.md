@@ -94,6 +94,23 @@ learner-side six-stage qualification remain open. Do not use
 `-Action Prepare` on the existing guest without separate operator
 authorization and a reviewed recovery plan.
 
+## 2026-10-18 #25 MSI product identity and provenance gate
+
+The native Windows CI now inspects the built MSI database's ProductCode,
+ProductName, Manufacturer, ProductVersion and ALLUSERS values **read-only**,
+requires a GUID ProductCode, and records the MSI/DLL SHA-256 digests alongside
+the source commit and pinned WiX version. The build log reports the ProductCode
+and MSI digest. This prepares an explicit identity to match during later
+owned product installation/repair/uninstall, rather than guessing which
+installed package should be modified.
+
+This remains a **build-only** check. It neither invokes msiexec nor
+registers the MSI, and it does not persist or distribute an MSI artifact to
+learners. The exact installed product identity, Windows Installer privilege
+behavior under the learner account, rollback and uninstall must still be
+demonstrated on the separately approved standalone guest. No promotion of
+the four incomplete candidates or batch execution is authorized.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer
