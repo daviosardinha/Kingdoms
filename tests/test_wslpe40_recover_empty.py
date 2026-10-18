@@ -65,7 +65,10 @@ class RecoveryContractTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden,ps)
         code=(ROOT/"scripts/wslpe40-recover-empty.py").read_text(encoding="utf-8")
-        self.assertIn("REMOVE WSLPE40 EMPTY PARTIAL",code)
+        self.assertIn('parser.add_argument("--recover",action="store_true"',code)
+        self.assertIn("if not args.recover:",code)
+        self.assertIn("validate_audit(evidence)",code)
+        self.assertIn("stage.ensure_safe_guest(state)",code)
         self.assertIn("stage.verify_vm_snapshot(preflight)",code)
         self.assertIn("stage.ensure_safe_guest(state)",code)
         self.assertIn("auth.checked_certificate(",code)
