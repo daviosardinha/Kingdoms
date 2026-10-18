@@ -44,7 +44,8 @@ $names=@('Wslpe40RpcOperator.psm1','Kingdom40LocalRpcServer.exe',
          'Kingdom40LocalRpcClient.exe')
 $entries=@(Get-ChildItem -LiteralPath $lib -Force -ErrorAction Stop)
 foreach($name in $names){
-    if(@($entries | Where-Object {$_.Name -ceq $name}).Count -ne 0){
+    $matched=@($entries | Where-Object {$_.Name -ceq $name})
+    if($matched.Count -ne 0){
         throw 'An exact staged file exists; preserve it for manual review'
     }
 }
