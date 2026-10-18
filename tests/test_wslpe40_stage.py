@@ -37,6 +37,35 @@ class StageContractTests(unittest.TestCase):
         self.assertEqual(set(MODULE.NAME_MAP),{
             "Kingdom40LocalRpcServer.exe","Kingdom40LocalRpcClient.exe"})
 
+    def test_failed_winrm_step_keeps_only_fixed_status_and_step_id(self):
+        class Failure:
+            status_code = 1
+            std_out = b""
+            std_err = b"UNSAFE-SENSITIVE-REMOTE-ERROR"
+        class Remote:
+            def run_ps(self, source):
+                return Failure()
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^Guest rejected stage step: APPEND_WSLPE40RPCOPERATOR_PSM1_CHUNK_1 \\(status=1\\)$",
+        ) as error:
+            MODULE.ps_checked(Remote(), "$null=1",
+                              step="APPEND_WSLPE40RPCOPERATOR_PSM1_CHUNK_1")
+        self.assertNotIn("UNSAFE-SENSITIVE", str(error.exception))
+        with self.assertRaisesRegex(ValueError, "Unsafe stage identifier"):
+            MODULE.ps_checked(Remote(), "$null=1", step="stage-unsafe")
+
+    def test_winrm_transport_failure_reports_only_class(self):
+        class Remote:
+            def run_ps(self, source):
+                raise RuntimeError("secret remote connection details")
+        with self.assertRaisesRegex(
+            ValueError,
+            r"^WinRM transport rejected stage step: APPEND_TEST_CHUNK_1 \\(RuntimeError\\)$",
+        ) as error:
+            MODULE.ps_checked(Remote(), "$null=1", step="APPEND_TEST_CHUNK_1")
+        self.assertNotIn("secret", str(error.exception))
+
     def test_no_unreviewed_guest_action_or_tls_bypass(self):
         source=(ROOT/"scripts/wslpe40-stage.py").read_text(encoding="utf-8")
         for required in (
