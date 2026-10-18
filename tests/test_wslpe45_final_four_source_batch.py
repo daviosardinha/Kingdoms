@@ -340,6 +340,25 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             self.assertIn(token, workflow)
         self.assertNotIn("Invoke-Wslpe40RpcOperator -Action Prepare", workflow)
 
+    def test_rpc_artifact_provenance_separates_host_and_learner(self):
+        workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
+            encoding="utf-8"
+        )
+        for token in (
+            "Generate WSLPE40 exact binary handoff provenance (no execution)",
+            "Kingdom40LocalRpc.provenance.txt",
+            "schema=kingdoms.wslpe40.local-rpc-source.v1",
+            "state=unqualified-not-deployable",
+            "server_role=protected-privileged-host",
+            "client_role=separate-local-learner",
+            "server_sha256=$serverHash",
+            "client_sha256=$clientHash",
+            "native_binaries_executed=false",
+            "learner_proof=pending",
+        ):
+            self.assertIn(token, workflow)
+        self.assertNotIn("Kingdom40LocalRpcClient.exe /", workflow)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
