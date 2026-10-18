@@ -2,6 +2,26 @@
 # Import has no side effects. NOT called by Ansible, CI, or batch operator.
 Set-StrictMode -Version Latest
 
+function Test-Wslpe25NativeConsole {
+    # The environment variable SESSIONNAME may be absent in VMware console
+    # sessions. Verify process session against the native Windows console.
+    if(-not ('Kingdoms.Wslpe25ConsoleSession' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace Kingdoms {
+    public static class Wslpe25ConsoleSession {
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        public static extern UInt32 WTSGetActiveConsoleSessionId();
+    }
+}
+'@ -ErrorAction Stop
+    }
+    [uint32]$console=[Kingdoms.Wslpe25ConsoleSession]::WTSGetActiveConsoleSessionId()
+    [uint32]$processSession=(Get-Process -Id $PID -ErrorAction Stop).SessionId
+    return ($console -ne [uint32]::MaxValue -and $processSession -eq $console)
+}
+
 function Read-Wslpe25MsiProperty {
     param($Database, [string]$Name)
     if($Name -notin @('ProductCode','ProductName','Manufacturer','ProductVersion','ALLUSERS')) {
@@ -119,8 +139,8 @@ function Invoke-Wslpe25MsiOperator {
     if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
         throw 'Install/uninstall requires elevated local administrator'
     }
-    if($env:SESSIONNAME -cne 'Console'){
-        throw 'Install/uninstall must run from the interactive VMware Windows console'
+    if(-not (Test-Wslpe25NativeConsole)){
+        throw 'MSI mutation requires the native Windows console session'
     }
     $requiredApproval=switch($Action){
         'Install' {'INSTALL WSLPE25'}
