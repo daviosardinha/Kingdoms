@@ -173,9 +173,13 @@ function Invoke-Wslpe25MsiOperator {
     }
 
     if($Action -eq 'Recover' -and
-       ($ExpectedSha256 -cnotmatch '^[0-9A-Fa-f]{64}
+       ($ExpectedSha256 -cnotmatch '^[0-9A-Fa-f]{64}$' -or
+        $pkg.Sha256 -cne $ExpectedSha256.ToUpperInvariant())){
+        throw 'Recovery requires the exact approved MSI digest'
+    }
+    if($entries.Count -ne 1 -or $entries[0].PSIsContainer -or
        (($entries[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
-        throw 'Uninstall requires exactly one regular owned ledger'
+        throw 'Uninstall/recovery requires exactly one regular owned ledger'
     }
     $owner=Get-Content -LiteralPath $ledger -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
     if($owner.schema -cne 'kingdoms.wslpe25.msi-product-owner.v1' -or
