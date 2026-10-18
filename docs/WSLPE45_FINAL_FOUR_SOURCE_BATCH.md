@@ -164,6 +164,29 @@ exercise: the operator module installs and uninstalls only. No source
 candidate is promoted; the count remains **21/25** and
 `batch_execution_authorized: false`.
 
+## 2026-10-18 #25 short-lived MSI artifact handoff (source review only)
+
+The Windows native-build job now archives the actual compiled
+`Kingdom25Repair.msi`, custom-action `Kingdom25Repair.dll`, and
+`Kingdom25Repair.provenance.txt` as a two-day GitHub Actions artifact on
+pushes to the exact WSLPE feature branch. Missing files fail the job.
+The archive is **not a release, not approved for learner distribution,
+not guest staging, and not an installation authorization**.
+
+This closes the previous CI-to-operator provenance gap for review:
+an operator can obtain the exact package plus its ProductCode and hashes
+from the same build and independently compare the manifest to the files
+before considering a separate guest staging decision. No workflow step
+installs the MSI or invokes the local MSI operator.
+
+Still required before a live run: review the pinned WiX v6 commercial
+licensing implications, independently verify the artifact and package
+semantics, approve a trustworthy transfer into the WSLPE-only protected
+library, capture the guest snapshot and recovery path, and review
+the initial install, learner repair behavior, and uninstall/reset
+failure modes. The existing JEA #30 and NORTH remain untouched.
+All four source index rows remain planned/pending.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer
