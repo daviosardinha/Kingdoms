@@ -72,6 +72,14 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         self.assertNotIn("GOAD-WS01", src)
         self.assertTrue((SRC / "Kingdom25Payload.txt").is_file())
 
+    def test_msi_native_repair_marker_refuses_existing_objects(self):
+        # Static source guard only. Native CI must still compile the DLL.
+        # Parent ACL/reparse ownership and live repair proof remain pending.
+        source = (SRC / "Kingdom25Repair.cpp").read_text(encoding="utf-8")
+        self.assertIn("MsiGetPropertyW", source)
+        self.assertIn("CREATE_NEW", source)
+        self.assertNotIn("CREATE_ALWAYS", source)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
