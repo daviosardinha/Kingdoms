@@ -163,7 +163,7 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         # Source-only: never import the PowerShell module or invoke MSI in CI.
         module = (SRC / "Wslpe25MsiOperator.psm1").read_text(encoding="utf-8")
         for required in (
-            "ValidateSet('Inspect','Install','Uninstall')",
+            "ValidateSet('Inspect','Install','Uninstall','Recover')",
             "Assert-Wslpe45Identity",
             "Assert-Wslpe45OwnedFixture -Number 25",
             "Assert-Wslpe45NoReparsePoints",
@@ -174,6 +174,9 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             "ProductCode",
             "INSTALL WSLPE25",
             "UNINSTALL WSLPE25",
+            "RECOVER WSLPE25",
+            "Get-Wslpe25RecoveryDecision",
+            "WSLPE25_MSI_EXPLICIT_RECOVERY=PASS",
             "SESSIONNAME",
             "IO.FileMode]::CreateNew",
             "msiexec.exe",
@@ -195,6 +198,36 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         )
         self.assertIn("'Wslpe25MsiOperator.psm1'", workflow)
         self.assertNotIn("Invoke-Wslpe25MsiOperator -Action Install", workflow)
+
+    def test_msi_recovery_is_exact_owned_and_verified_in_native_ci(self):
+        # Read-only CI state-machine testing does not perform MSI mutations.
+        workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
+            encoding="utf-8"
+        )
+        source = (SRC / "Wslpe25MsiOperator.psm1").read_text(encoding="utf-8")
+        for required in (
+            "Get-Wslpe25RecoveryDecision",
+            "LedgerStatus -cne 'install-attempted'",
+            "ProductState -eq 5",
+            "ProductState -eq -1",
+            "OwnedAndMatching",
+            "UnexpectedEntries",
+            "ExpectedSha256",
+            "Remove-Wslpe45OwnedFixture -Number 25",
+        ):
+            self.assertIn(required, source)
+        for required in (
+            "Validate WSLPE25 recovery state machine on Windows (no guest)",
+            "partial registered",
+            "partial absent",
+            "unknown product state",
+            "foreign owner",
+            "foreign directory entries",
+            "missing ledger",
+            "without MSI, guest or fixture mutation",
+        ):
+            self.assertIn(required, workflow)
+        self.assertNotIn("Invoke-Wslpe25MsiOperator -Action Recover", workflow)
 
     def test_msi_build_artifact_is_short_lived_and_source_review_only(self):
         workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
