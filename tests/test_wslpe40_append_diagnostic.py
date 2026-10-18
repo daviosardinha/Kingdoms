@@ -40,6 +40,42 @@ class AppendDiagnosticTests(unittest.TestCase):
             with self.subTest(case=case[:50]),self.assertRaises(ValueError):
                 MOD.parse(case)
 
+    def test_classified_guest_failure_is_bounded_and_not_raw_error(self):
+        valid = {
+            "phase":"FILE_OPEN",
+            "exception_type":"MethodInvocationException",
+            "hresult":-2146233087,
+        }
+        raw=(MOD.FAILURE_MARKER+json.dumps(valid)+"\n").encode()
+        self.assertEqual(MOD.parse_failure(raw), valid)
+        invalid = (
+            raw+raw,
+            (MOD.FAILURE_MARKER+json.dumps({**valid,"phase":"NORTH"})).encode(),
+            (MOD.FAILURE_MARKER+json.dumps({**valid,"exception_type":"Bad/path"})).encode(),
+            (MOD.FAILURE_MARKER+json.dumps({**valid,"hresult":"access denied"})).encode(),
+        )
+        for candidate in invalid:
+            with self.subTest(candidate=candidate[:50]),self.assertRaises(ValueError):
+                MOD.parse_failure(candidate)
+
+    def test_nonwriting_powershell_has_fixed_phase_error_envelope(self):
+        ps=MOD.REMOTELY_NONWRITING
+        for item in (
+            "$diagPhase='IDENTITY'",
+            "$diagPhase='LIBRARY'",
+            "$diagPhase='ORPHAN'",
+            "$diagPhase='FILE_OPEN'",
+            "$diagPhase='EMIT'",
+            "WSLPE40_APPEND_FAILURE_JSON=",
+            "exception_type=$kind",
+            "hresult=[int]$_.Exception.HResult",
+        ):
+            self.assertIn(item,ps)
+        code=(ROOT/"scripts/wslpe40-append-diagnostic.py").read_text("utf-8")
+        self.assertIn("recovery.validate_audit(audit.parse_record(after.std_out))",code)
+        self.assertIn("[PASS] Postdiagnostic zero-byte orphan still unchanged",code)
+        self.assertNotIn("print(response.std_err)",code)
+
     def test_no_unsafe_remote_mutation_and_exact_owned_file(self):
         ps=MOD.REMOTELY_NONWRITING
         for item in (
