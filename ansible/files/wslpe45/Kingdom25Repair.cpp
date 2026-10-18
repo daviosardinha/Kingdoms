@@ -23,11 +23,13 @@ extern "C" __declspec(dllexport) UINT __stdcall Kingdom25Repair(MSIHANDLE sessio
     if (swprintf_s(proof, MAX_PATH, L"%s\\repair-proof.txt", root) < 0) {
         return ERROR_INSTALL_FAILURE;
     }
-    // This marker is bounded to this fixture. A later Windows-native
-    // installation contract must verify ACL ownership and reject reparse
+    // Refuse to overwrite any pre-existing proof, including a planted link.
+    // The owned reset lifecycle must remove this marker before another repair.
+    // This is defense-in-depth only: a later Windows-native installation
+    // contract MUST verify parent ACL ownership and reject directory reparse
     // points before invoking this custom action.
     HANDLE handle = CreateFileW(proof, GENERIC_WRITE, 0, nullptr,
-                                CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                                CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE) return ERROR_INSTALL_FAILURE;
     const char marker[] = "WSLPE45_MSI_REPAIR_ACTION_INVOKED\r\n";
     DWORD written = 0;
