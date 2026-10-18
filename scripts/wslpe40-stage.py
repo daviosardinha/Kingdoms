@@ -64,7 +64,7 @@ def local_source_head():
     return command("git","rev-parse","HEAD")
 
 
-def verify_vm_snapshot(preflight):
+def verify_vm_snapshot(preflight, workspace: Path | None = None):
     stage2=preflight.load_auth().tls_audit_module()
     # Resolve exact registered WSLPE VM through its existing native workspace.
     spec=importlib.util.spec_from_file_location(
@@ -73,7 +73,10 @@ def verify_vm_snapshot(preflight):
         raise ValueError("Registered WSLPE workspace guard unavailable")
     mod=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    instance,meta=mod.find_instance(mod.WORKSPACE)
+    selected=mod.WORKSPACE if workspace is None else workspace
+    if selected.is_symlink() or not selected.is_dir():
+        raise ValueError("Native WSLPE snapshot workspace missing or linked")
+    instance,meta=mod.find_instance(selected)
     if meta.get("lab")!="WSLPE" or meta.get("provider")!="vmware":
         raise ValueError("Not isolated WSLPE VM")
     vmx=mod.locate_registered_vm(instance)
