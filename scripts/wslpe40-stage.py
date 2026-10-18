@@ -304,8 +304,8 @@ def main():
                 (reason.startswith("Guest rejected stage step: ") or
                  reason.startswith("WinRM transport rejected stage step: ")) and
                 re.fullmatch(
-                    r"(?:Guest rejected stage step: [A-Z0-9_]{3,72} \\(status=[0-9]{1,3}\\)|"
-                    r"WinRM transport rejected stage step: [A-Z0-9_]{3,72} \\([A-Za-z][A-Za-z0-9_]{0,63}\\))",
+                    r"(?:Guest rejected stage step: [A-Z0-9_]{3,72} \(status=[0-9]{1,3}\)|"
+                    r"WinRM transport rejected stage step: [A-Z0-9_]{3,72} \([A-Za-z][A-Za-z0-9_]{0,63}\))",
                     reason)):
             print("[BLOCKED] "+reason)
         else:
