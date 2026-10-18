@@ -703,6 +703,27 @@ jobs:
           python -m unittest -v tests.test_wslpe45_final_four_source_batch
           if ($LASTEXITCODE -ne 0) { throw 'Final four prototype source contract failed' }
 
+      - name: Enforce PowerShell 5.1 MSI request-file compatibility and partial-resume scope
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $path='ansible/files/wslpe45/Wslpe25RepairPreparation.psm1'
+          $content=Get-Content -LiteralPath $path -Raw -ErrorAction Stop
+          $command=Get-Command New-Item -ErrorAction Stop
+          if(-not $command.Parameters.ContainsKey('Path')){throw 'New-Item lacks Path'}
+          if($content.Contains('New-Item -LiteralPath $request')){
+            throw 'Incompatible New-Item LiteralPath parameter reintroduced'
+          }
+          foreach($required in @(
+            "New-Item -Path " + '$request' + " -ItemType File",
+            "ValidateSet('Inspect','Prepare','Resume')",
+            'Assert-Wslpe45OwnedFixture -Number 25 -Id $id',
+            'WSLPE25_FIXTURE_RESUMED=PASS'
+          )){
+            if(-not $content.Contains($required)){throw 'Missing MSI partial-resume contract'}
+          }
+          Write-Output '[PASS] MSI 5.1 native request creation and owned Resume contract; no guest contacted'
+
       - name: Parse isolated WSLPE25 modules with Windows PowerShell 5.1
         shell: powershell
         run: |
