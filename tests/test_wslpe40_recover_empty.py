@@ -45,6 +45,23 @@ class RecoveryContractTests(unittest.TestCase):
             with self.subTest(case=case),self.assertRaises(ValueError):
                 MOD.validate_audit(evidence(**case))
 
+    def test_recovery_fits_actual_winrm_encoded_command_budget(self):
+        stage = MOD.load("stage")
+        actual = stage.encoded_ps_length(MOD.RECOVER_ONLY)
+        self.assertLessEqual(actual, stage.MAX_RUN_PS_ENCODED_CHARS)
+        self.assertLessEqual(actual, 6000)
+        self.assertGreater(actual, 0)
+
+    def test_no_interactive_prompt_and_only_exact_owned_cleanup(self):
+        source = (ROOT/"scripts/wslpe40-recover-empty.py").read_text("utf-8")
+        self.assertNotIn("input(", source)
+        self.assertNotIn("sys.stdin", source)
+        self.assertIn('parser.add_argument("--recover",action="store_true"', source)
+        self.assertIn("validate_audit(evidence)", source)
+        self.assertIn("stage.ensure_safe_guest(state)", source)
+        self.assertIn("stage.verify_vm_snapshot(preflight)", source)
+        self.assertIn("stage.ps_checked(session,RECOVER_ONLY", source)
+
     def test_exact_windows_guard_and_consent_no_broad_delete(self):
         ps=MOD.RECOVER_ONLY
         for token in (
