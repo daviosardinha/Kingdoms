@@ -296,7 +296,21 @@ def main():
         print("[NEXT] Run independent read-only runtime baseline again")
         return 0
     except Exception as exc:
-        print(f"[BLOCKED] {type(exc).__name__}: review exact owned guest state")
+        # Never print arbitrary exception strings: transports may embed
+        # response headers or credentials. ps_checked constructs these two
+        # diagnostic strings from fixed stage identifiers and status codes.
+        reason=str(exc)
+        if (type(exc) is ValueError and
+                (reason.startswith("Guest rejected stage step: ") or
+                 reason.startswith("WinRM transport rejected stage step: ")) and
+                re.fullmatch(
+                    r"(?:Guest rejected stage step: [A-Z0-9_]{3,72} \\(status=[0-9]{1,3}\\)|"
+                    r"WinRM transport rejected stage step: [A-Z0-9_]{3,72} \\([A-Za-z][A-Za-z0-9_]{0,63}\\))",
+                    reason)):
+            print("[BLOCKED] "+reason)
+        else:
+            print("[BLOCKED] "+type(exc).__name__+
+                  " before an independently confirmed transfer step")
         print("[NO AUTOMATIC RETRY] Preserve guest/snapshot for inspection")
         return 2
 
