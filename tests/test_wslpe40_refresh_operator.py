@@ -90,7 +90,9 @@ class Wslpe40OperatorRefreshTests(unittest.TestCase):
                 continue
             self.assertIn(required,src)
         for token in (
-            "[IO.File]::Replace($temp,$old,$null)",
+            "[Kingdoms.Wslpe40AtomicMove]::Execute($temp,$old,9)",
+            "MOVEFILE_REPLACE_EXISTING", "MOVEFILE_WRITE_THROUGH",
+            "EntryPoint=\"MoveFileExW\"",
             "GUARD_OPERATOR_REFRESH","CREATE_OPERATOR_REFRESH",
             "UPLOAD_OPERATOR_CHUNK_","COMMIT_OPERATOR_REFRESH",
             "Get-FileHash -LiteralPath $temp",
@@ -100,6 +102,7 @@ class Wslpe40OperatorRefreshTests(unittest.TestCase):
         ):
             self.assertIn(token,src)
         for forbidden in (
+            "[IO.File]::Replace(", "Move-Item", "Copy-Item", "Remove-Item",
             "input(", "sys.stdin", "Start-Process","Stop-Process",
             "Invoke-Expression","Register-PSSessionConfiguration",
             "Set-Acl","Remove-Item","msiexec","GOAD-WS01",
