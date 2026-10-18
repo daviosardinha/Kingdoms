@@ -643,7 +643,7 @@ jobs:
           if errorlevel 1 exit /b 1
           cl /nologo /c /I "$midlDir" "$midlDir\Kingdom40LocalRpc_s.c" /Fo:"$midlDir\Kingdom40LocalRpc_s.obj"
           if errorlevel 1 exit /b 1
-          cl /nologo /EHsc /I "$midlDir" "ansible\files\wslpe45\Kingdom40LocalRpcServer.cpp" "$midlDir\Kingdom40LocalRpc_s.obj" /link /OUT:"$midlDir\Kingdom40LocalRpcServer.exe" Rpcrt4.lib
+          cl /nologo /EHsc /I "$midlDir" "ansible\files\wslpe45\Kingdom40LocalRpcServer.cpp" "$midlDir\Kingdom40LocalRpc_s.obj" /link /OUT:"$midlDir\Kingdom40LocalRpcServer.exe" Rpcrt4.lib Advapi32.lib
           if errorlevel 1 exit /b 1
           cl /nologo /EHsc /I "$midlDir" "ansible\files\wslpe45\Kingdom40LocalRpcClient.cpp" "$midlDir\Kingdom40LocalRpc_c.obj" /link /OUT:"$midlDir\Kingdom40LocalRpcClient.exe" Rpcrt4.lib
           if errorlevel 1 exit /b 1
