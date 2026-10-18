@@ -573,20 +573,23 @@ jobs:
           python -m unittest -v tests.test_wslpe45_final_four_source_batch
           if ($LASTEXITCODE -ne 0) { throw 'Final four prototype source contract failed' }
 
-      - name: Parse WSLPE25 read-only inspection module in Windows PowerShell 5.1
+      - name: Parse isolated WSLPE25 modules with Windows PowerShell 5.1
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = Join-Path $env:GITHUB_WORKSPACE 'ansible/files/wslpe45/Wslpe25RepairInspection.psm1'
-          $tokens = $null
-          $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            $source, [ref]$tokens, [ref]$parseErrors) | Out-Null
-          if (@($parseErrors).Count -gt 0) {
-            $parseErrors | ForEach-Object { Write-Output $_.Message }
-            throw 'WSLPE25 read-only inspector failed native PS5.1 parsing'
+          foreach ($filename in @('Wslpe25RepairInspection.psm1',
+                                   'Wslpe25RepairPreparation.psm1')) {
+            $source = Join-Path $env:GITHUB_WORKSPACE ("ansible/files/wslpe45/" + $filename)
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $source, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if (@($parseErrors).Count -gt 0) {
+              $parseErrors | ForEach-Object { Write-Output $_.Message }
+              throw ("WSLPE25 native PS5.1 parsing failed: " + $filename)
+            }
+            Write-Output ("[PASS] Parsed only, no import or execution: " + $filename)
           }
-          Write-Output '[PASS] WSLPE25 inspection module parsed only; never imported or executed'
 
       - name: Compile Windows Installer prototype and MIDL interface (no registration)
         shell: powershell
