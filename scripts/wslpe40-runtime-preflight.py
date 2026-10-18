@@ -39,8 +39,7 @@ function ItemPresent([string]$Path) {
 }
 function IsLinked([string]$Path) {
     $entry=Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-    return $null -ne $entry -and
-        (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+    return ($null -ne $entry -and (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0))
 }
 function ProtectedAcl([string]$Path) {
     $entry=Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
@@ -48,8 +47,7 @@ function ProtectedAcl([string]$Path) {
     return [bool](Get-Acl -LiteralPath $Path -ErrorAction Stop).AreAccessRulesProtected
 }
 $endpoint=@(Get-PSSessionConfiguration -Name 'Kingdoms45JEA' -ErrorAction SilentlyContinue)
-$rpcHosts=@(Get-CimInstance -ClassName Win32_Process -Filter
-    "Name = 'Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
+$rpcHosts=@(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
 $winrm=Get-Service -Name 'WinRM' -ErrorAction Stop
 $report=[ordered]@{
     machine='WSLPE-WS01'
