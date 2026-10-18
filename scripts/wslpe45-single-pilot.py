@@ -58,8 +58,47 @@ def clean_head() -> str:
     return git("rev-parse", "HEAD")
 
 
-def snapshot_gate() -> None:
-    """Reuse the already approved registered WSLPE native VMware snapshot gate."""
+def runtime_workspace(override: str | None) -> Path:
+    """Use actual native registration, not the fresh Git worktree's empty workspace.
+
+    Only a verified, owner-controlled native WSLPE workspace may be selected.
+    Multiple valid registrations are deliberately ambiguous.
+    """
+    helper = ROOT / "scripts/wslpe-stage2-inspect.py"
+    if helper.is_symlink() or not helper.is_file():
+        raise batch.BatchBlocked("Native WSLPE registration helper unavailable")
+    spec = importlib.util.spec_from_file_location("wslpe_pilot_instance", helper)
+    if not spec or not spec.loader:
+        raise batch.BatchBlocked("Cannot load native WSLPE registration helper")
+    stage = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(stage)
+    candidates = ([Path(override).expanduser()] if override else [
+        ROOT / "workspace",
+        Path.home() / "kingdoms-lpe-standalone/workspace",
+        Path.home() / "kingdoms-rebuild/workspace",
+    ])
+    verified = []
+    for candidate in candidates:
+        if (not candidate.is_dir() or candidate.is_symlink()
+                or candidate.stat().st_uid != os.geteuid()):
+            continue
+        try:
+            stage.find_instance(candidate)
+        except (OSError, ValueError):
+            continue
+        verified.append(candidate.resolve(strict=True))
+    verified = list(dict.fromkeys(verified))
+    if len(verified) != 1:
+        raise batch.BatchBlocked(
+            "Native WSLPE registration not uniquely found (matches="
+            + str(len(verified))
+            + "); supply --workspace with the original Kingdoms workspace directory"
+        )
+    return verified[0]
+
+
+def snapshot_gate(workspace: Path) -> None:
+    """Reuse pinned native WSLPE VMware snapshot check on verified workspace."""
     path = ROOT / "scripts/wslpe40-stage.py"
     if path.is_symlink() or not path.is_file():
         raise batch.BatchBlocked("Pinned WSLPE VM snapshot guard missing")
@@ -68,7 +107,7 @@ def snapshot_gate() -> None:
         raise batch.BatchBlocked("Cannot import WSLPE snapshot guard")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module.verify_vm_snapshot(module.load_preflight())
+    module.verify_vm_snapshot(module.load_preflight(), workspace=workspace)
 
 
 def execute_stage(ansible: Path, inv: Path, varsfile: Path, row: dict,
@@ -99,11 +138,14 @@ def run(args: argparse.Namespace) -> int:
         raise batch.BatchBlocked("Pilot timeout must be between 60 and 3600 seconds")
 
     head = clean_head()
+    workspace = runtime_workspace(args.workspace)
+    print("[WORKSPACE] Unique original native WSLPE registration verified", flush=True)
     base = batch.trusted_safety()
-    inv, varsfile, expected = base.exact_standalone()
+    inv, varsfile, expected = base.exact_standalone(workspace)
     if ipaddress.ip_address(expected) in ipaddress.ip_network("10.4.0.0/16"):
         raise batch.BatchBlocked("NORTH network is never a pilot target")
-    snapshot_gate()
+    snapshot_gate(workspace)
+    print("[VMWARE] Unique registered standalone VM and recovery snapshot verified", flush=True)
 
     venv = Path.home() / ".goad/.venv/bin"
     ansible, ansible_inv = venv / "ansible-playbook", venv / "ansible-inventory"
@@ -191,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--execute", action="store_true")
     modes.add_argument("--preflight", action="store_true")
+    parser.add_argument("--workspace", default=None,
+                        help="original Kingdoms native workspace, not the fresh Git worktree")
     parser.add_argument("--timeout-seconds", type=int, default=900)
     parser.add_argument("--report-dir", default="~/.local/state/kingdoms-wslpe45-live")
     args = parser.parse_args(argv)
