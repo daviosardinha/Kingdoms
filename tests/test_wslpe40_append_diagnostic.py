@@ -92,8 +92,8 @@ class AppendDiagnosticTests(unittest.TestCase):
         class Result:
             status_code=1
             std_out=b"some remote secret"
-            std_err=(b"error with secret\\r\\n"+
-                     b"FullyQualifiedErrorId : RuntimeException\\r\\n")
+            std_err=(b"error with secret\r\n"+
+                     b"FullyQualifiedErrorId : RuntimeException\r\n")
         kind,details=MOD.classify_remote_response(Result())
         self.assertEqual(kind,"unclassified_failure")
         self.assertEqual(details["status"],1)
