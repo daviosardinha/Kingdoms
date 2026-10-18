@@ -803,6 +803,13 @@ jobs:
               Where-Object {$_.AttributeType.Name -eq 'WmiConfigurationAttribute'}).Count){
             throw 'Missing dedicated WMI instrumentation namespace'
           }
+          # A GitHub runner is never the exact WSLPE guest. This negative
+          # execution must reject the host BEFORE WMI registration/publishing.
+          & $out '--serve-local-provider'
+          if($LASTEXITCODE -ne 3){
+            throw 'WMI provider refused to fail closed on a foreign machine'
+          }
+          Write-Output '[PASS] WMI prototype rejects non-WSLPE host before registration'
           Write-Output '[PASS] WMI assembly and attributed method metadata inspected offline; no provider installed'
 
       - name: Build and inspect WSLPE25 repair MSI without installation
