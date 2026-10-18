@@ -834,6 +834,49 @@ jobs:
           Write-Output '[PASS] WMI prototype rejects non-WSLPE host before registration'
           Write-Output '[PASS] WMI assembly and attributed method metadata inspected offline; no provider installed'
 
+      - name: Stage WSLPE36 and WSLPE38 unqualified native provenance (no installation)
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $dir=Join-Path $env:RUNNER_TEMP 'wslpe40-midl'
+          $records=@(
+            @{ Number=36; Name='Kingdom36WmiProvider.exe'; Path=(Join-Path $env:RUNNER_TEMP 'Kingdom36WmiProvider.exe') },
+            @{ Number=38; Name='Kingdom38DcomServer.exe'; Path=(Join-Path $dir 'Kingdom38DcomServer.exe') },
+            @{ Number=38; Name='Kingdom38DcomClient.exe'; Path=(Join-Path $dir 'Kingdom38DcomClient.exe') }
+          )
+          foreach($entry in $records){
+            if(-not (Test-Path -LiteralPath $entry.Path -PathType Leaf)){
+              throw ('Missing native build output: '+$entry.Name)
+            }
+            $hash=(Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash
+            $entry['Sha256']=$hash
+          }
+          $manifest=Join-Path $dir 'Kingdom36_38.provenance.txt'
+          @(
+            'schema=kingdoms.wslpe36-38.native-source.v1'
+            'state=unqualified-not-deployable'
+            "commit=$env:GITHUB_SHA"
+            'guest=WSLPE-WS01'
+            'registered=false'
+            'executed=false'
+            'learner_proof=pending'
+          ) + @($records | ForEach-Object { $_.Name+'_sha256='+$_.Sha256 }) |
+            Set-Content -LiteralPath $manifest -Encoding UTF8
+          Write-Output '[PASS] WSLPE36/38 exact native artifacts and hashes recorded without guest contact'
+
+      - name: Archive unqualified WSLPE36 WMI and WSLPE38 DCOM binaries
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/windows-lpe-45-batch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: wslpe36-38-native-source-review-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/Kingdom36WmiProvider.exe
+            ${{ runner.temp }}/wslpe40-midl/Kingdom38DcomServer.exe
+            ${{ runner.temp }}/wslpe40-midl/Kingdom38DcomClient.exe
+            ${{ runner.temp }}/wslpe40-midl/Kingdom36_38.provenance.txt
+          if-no-files-found: error
+          retention-days: 2
+
       - name: Build and inspect WSLPE25 repair MSI without installation
         shell: powershell
         run: |
