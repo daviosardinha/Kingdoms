@@ -359,6 +359,17 @@ class FinalFourSourceBatchTests(unittest.TestCase):
             self.assertIn(token, workflow)
         self.assertNotIn("Kingdom40LocalRpcClient.exe /", workflow)
 
+    def test_rpc_host_runtime_is_bounded_and_nonblocking(self):
+        server = (SRC / "Kingdom40LocalRpcServer.cpp").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("RpcServerListen(1, 8, FALSE)", server)
+        self.assertNotIn("RpcServerListen(1, 8, TRUE)", server)
+        self.assertIn("Sleep(12 * 60 * 1000)", server)
+        self.assertIn("RpcMgmtStopServerListening(nullptr)", server)
+        self.assertIn("RpcServerUnregisterIf(", server)
+        self.assertIn("stopped == RPC_S_OK && unregistered == RPC_S_OK", server)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
