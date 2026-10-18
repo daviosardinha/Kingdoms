@@ -111,6 +111,22 @@ behavior under the learner account, rollback and uninstall must still be
 demonstrated on the separately approved standalone guest. No promotion of
 the four incomplete candidates or batch execution is authorized.
 
+## 2026-10-18 #25 native MSI property reader regression
+
+The initial MSI metadata provenance CI failed in the native Windows job while
+source-only and syntax jobs passed. The Windows logs showed each property
+value bracketed by spaces, consistently across ProductName, Manufacturer,
+ProductVersion, and ALLUSERS. Source review identified two COM method calls
+(`View.Execute()` and `View.Close()`) whose return values were not suppressed
+inside a PowerShell function. PowerShell can emit these values into the
+function result alongside the actual MSI record string.
+
+The reader now assigns both COM call results to `$null`, preserving strict
+per-property comparisons without trimming or weakening the expected MSI
+identity. The existing regression test asserts both suppressions.
+**Native CI confirmation is pending for this change**; no installer or
+Windows guest execution has occurred.
+
 ## Four technique-specific acceptance boundaries
 
 ### #25 — Installer
