@@ -14,4 +14,14 @@ interface Kingdom40LocalRpc
         [in] handle_t binding,
         [out] long* result
     );
+
+    // Intentionally misconfigured *per-operation authorization*:
+    // authenticated local standard-user callers may request a privileged
+    // proof of their chosen nonce in the dedicated protected fixture only.
+    // No caller-controlled paths, commands or external network transports.
+    void Kingdom40OwnedProof(
+        [in] handle_t binding,
+        [in] unsigned long nonce,
+        [out] long* result
+    );
 };
