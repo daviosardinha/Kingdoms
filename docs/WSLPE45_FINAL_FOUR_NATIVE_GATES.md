@@ -6,6 +6,28 @@ Repository source of truth: `feature/windows-lpe-45-batch`.
 Verified source checkpoint: 21/25 accepted *source candidates*; four still planned.
 New live six-stage qualifications: 0/25. New independent learner-side exploit proofs: 0/25.
 
+## 2026-10-18 runtime preflight — authenticated but not deployed
+
+The running standalone VMware WSLPE-WS01 has a second snapshot:
+`KINGDOMS-WSLPE-PRE-LPE40-20261018`. Its prior `PRE-JEA` snapshot
+remains available. The host reports 460 GiB free.
+
+A direct, TLS-pinned authenticated HTTPS/5986 audit succeeded using the
+existing `~/.goad/.venv/bin/python` interpreter. The system Python lacks
+`pywinrm`; no dependency installation was needed. Windows confirmed an
+enabled **non-administrator** `lpe.trainee`, exact workgroup host and
+running management endpoint.
+
+Existing account inventory also reported `vagrant` still active and
+`kingdom.operator` absent. These are **release blockers** but not grounds
+to rotate credentials during this isolated test; none were modified.
+
+The new `scripts/wslpe40-runtime-preflight.py` reuses that certificate-pinned
+WinRM path for a **read-only** snapshot of #40 fixture/library/proof and
+host-process presence, plus existing JEA #30 registration/module state.
+Offline evidence-contract tests and PS5.1 parse are required in CI. Do not
+stage or run native binaries based on this source addition alone.
+
 ## 2026-10-18 accelerated engineering checkpoint (latest)
 
 The current green native/source CI run is
