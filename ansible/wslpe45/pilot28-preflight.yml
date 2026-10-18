@@ -1,0 +1,77 @@
+---
+# Read-only pre-apply inspection. No fixture modules or guest writes.
+- name: Require exact standalone WSLPE inventory for registry pilot
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Refuse unrelated or ambiguous hosts
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('domain', []) | length) == 0
+          - (groups.get('dc', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+
+- name: Read-only #28 pre-install inventory
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Verify dedicated guest, learner and absent owned resources
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $system=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $system.PartOfDomain -or
+             [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10') {
+              throw 'Refusing foreign or domain-joined Windows guest'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          if(-not $learner.Enabled -or
+             @((Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop) |
+               Where-Object {$_.SID.Value -eq $learner.SID.Value}).Count -ne 0) {
+              throw 'Standard local learner identity is not intact'
+          }
+          foreach($ancestor in @('C:\ProgramData\KingdomsWSLPE45',
+                                'C:\ProgramData\KingdomsWSLPE45\fixtures',
+                                'C:\ProgramData\KingdomsWSLPE45\lib')) {
+              if(Test-Path -LiteralPath $ancestor) {
+                  $item=Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+                  if(-not $item.PSIsContainer -or
+                     ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                      throw 'Linked or foreign WSLPE ancestor detected'
+                  }
+              }
+          }
+          # Do not modify the common library while #25 recovery is pending.
+          $partial25='C:\ProgramData\KingdomsWSLPE45\fixtures\msi_repair_custom_action'
+          if(Test-Path -LiteralPath $partial25) {
+              throw 'Existing #25 MSI fixture: finish owned recovery or use a clean clone'
+          }
+          if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'" -ErrorAction Stop).Count -ne 0) {
+              throw 'Existing #40 privileged RPC host is active; refuse overlapping test'
+          }
+          $fixture='C:\ProgramData\KingdomsWSLPE45\fixtures\app_paths_registry_hijack'
+          if(Test-Path -LiteralPath $fixture) {
+              throw 'Existing #28 fixture; never adopt or reset automatically'
+          }
+          $tasks=@(Get-ScheduledTask -TaskName 'Kingdom45AppPathsConsumer' -ErrorAction SilentlyContinue)
+          if($tasks.Count -ne 0) {
+              throw 'Existing #28 scheduled task; cannot safely prepare'
+          }
+          $hive=[Microsoft.Win32.RegistryKey]::OpenBaseKey(
+              [Microsoft.Win32.RegistryHive]::LocalMachine,
+              [Microsoft.Win32.RegistryView]::Registry64)
+          try {
+              $key=$hive.OpenSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Kingdom45AppPathsProbe.exe')
+              if($null -ne $key) {
+                  $key.Close()
+                  throw 'Existing #28 registry key; cannot safely prepare'
+              }
+          } finally { $hive.Close() }
+          Write-Output 'WSLPE45_PILOT28_CLEAN=PASS'
+      changed_when: false
