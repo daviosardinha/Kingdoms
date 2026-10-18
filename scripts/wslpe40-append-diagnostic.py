@@ -11,6 +11,7 @@ from __future__ import annotations
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import json
+import re
 
 ROOT=Path(__file__).resolve().parents[1]
 MARKER="WSLPE40_APPEND_DIAGNOSTIC_JSON="
@@ -155,7 +156,7 @@ def parse_failure(raw:bytes)->dict:
     if (not isinstance(data,dict) or set(data)!={'phase','exception_type','hresult'}
             or data.get('phase') not in stages
             or not isinstance(data.get('exception_type'),str)
-            or not __import__('re').fullmatch(r'[A-Za-z][A-Za-z0-9]{0,62}',data['exception_type'])
+            or not re.fullmatch(r'[A-Za-z][A-Za-z0-9]{0,62}',data['exception_type'])
             or type(data.get('hresult')) is not int):
         raise ValueError('Unexpected classified remote failure')
     return data
@@ -183,17 +184,22 @@ def main():
             if response.status_code!=0:
                 print("[BLOCKED] Guest rejected diagnostic PowerShell; no remote exception text displayed")
                 return 2
+            failure=None
             if FAILURE_MARKER.encode() in response.std_out:
                 failure=parse_failure(response.std_out)
-                print('[BLOCKED] WSLPE40 diagnostic phase='+failure['phase'])
-                print('[STATE] exception_type='+failure['exception_type'])
-                print('[STATE] exception_hresult='+str(failure['hresult']))
-                print('[NO TRANSFER] Preserving the exact zero-byte orphan')
-                return 2
-            record=parse(response.std_out)
+            else:
+                record=parse(response.std_out)
+            # Always re-verify the unmodified guest inventory, even if the
+            # diagnostic returned an error classifier, before reporting it.
             after=session.run_ps(audit.READ_ONLY)
             if after.status_code!=0: raise ValueError("Postdiagnostic guest audit rejected")
             recovery.validate_audit(audit.parse_record(after.std_out))
+            if failure is not None:
+                print('[BLOCKED] WSLPE40 diagnostic phase='+failure['phase'])
+                print('[STATE] exception_type='+failure['exception_type'])
+                print('[STATE] exception_hresult='+str(failure['hresult']))
+                print('[PASS] Postdiagnostic zero-byte orphan still unchanged')
+                return 2
     except Exception as exc:
         print("[BLOCKED] "+type(exc).__name__+" during diagnostic preflight")
         return 2
