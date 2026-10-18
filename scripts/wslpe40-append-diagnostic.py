@@ -108,7 +108,13 @@ Write-Output ('WSLPE40_APPEND_DIAGNOSTIC_JSON='+
     # Use an allowlisted *phase*, never remote exception strings. The type
     # and numeric HRESULT allow exact triage without secrets or path leakage.
     $kind=$_.Exception.GetType().Name
-    if($kind -cnotmatch '^[A-Za-z][A-Za-z0-9]{0,62}
+    if($kind -cnotmatch '^[A-Za-z][A-Za-z0-9]{0,62}$'){$kind='OTHER'}
+    $failure=@{phase=$diagPhase; exception_type=$kind;
+               hresult=[int]$_.Exception.HResult}
+    Write-Output ('WSLPE40_APPEND_FAILURE_JSON='+
+        (ConvertTo-Json -InputObject $failure -Compress))
+}
+"""
 
 def module_from(path:Path, name:str):
     spec=spec_from_file_location(name,path)
@@ -200,92 +206,6 @@ def main():
                 print('[STATE] exception_hresult='+str(failure['hresult']))
                 print('[PASS] Postdiagnostic zero-byte orphan still unchanged')
                 return 2
-    except Exception as exc:
-        print("[BLOCKED] "+type(exc).__name__+" during diagnostic preflight")
-        return 2
-    print("[PASS] Exact guest, snapshot, elevated operator and one zero-byte partial confirmed")
-    print("[STATE] file_open_for_write="+str(record["can_reopen_write"]))
-    print("[STATE] file_open_failure="+record["open_failure"])
-    print("[STATE] file_open_hresult="+str(record["open_hresult"]))
-    print("[STATE] base64_decode_ok="+str(record["base64_decode_ok"]))
-    print("[PASS] File content remains zero bytes; native RPC host untouched")
-    if record["can_reopen_write"] and record["base64_decode_ok"]:
-        print("[NEXT] File access and base64 decode both work; inspect append script semantics")
-    else:
-        print("[NEXT] Fix exact classified permission/file-open condition before recovery or retry")
-    return 0
-
-if __name__=="__main__":
-    raise SystemExit(main())
-){$kind='OTHER'}
-    $failure=@{phase=$diagPhase; exception_type=$kind;
-               hresult=[int]$_.Exception.HResult}
-    Write-Output ('WSLPE40_APPEND_FAILURE_JSON='+
-        (ConvertTo-Json -InputObject $failure -Compress))
-}
-"""
-
-def module_from(path:Path, name:str):
-    spec=spec_from_file_location(name,path)
-    if spec is None or spec.loader is None:
-        raise ValueError("Required pinned guest module unavailable")
-    obj=module_from_spec(spec)
-    spec.loader.exec_module(obj)
-    return obj
-
-def parse(raw:bytes)->dict:
-    values=[line[len(MARKER):] for line in raw.decode("utf-8","strict").splitlines()
-            if line.startswith(MARKER)]
-    if len(values)!=1:
-        raise ValueError("Expected exactly one scoped append diagnostic record")
-    data=json.loads(values[0])
-    if not isinstance(data,dict) or set(data)!={
-        "machine","orphan_count","before_bytes","after_bytes","can_reopen_write",
-        "open_failure","open_hresult","base64_decode_ok"}:
-        raise ValueError("Unexpected remote diagnostic schema")
-    if data["machine"]!="WSLPE-WS01" or type(data["orphan_count"]) is not int or data["orphan_count"]!=1:
-        raise ValueError("Unexpected guest or orphan count")
-    if any(type(data[field]) is not int for field in
-           ("before_bytes","after_bytes","open_hresult")):
-        raise ValueError("Bad length or HRESULT type")
-    if type(data["can_reopen_write"]) is not bool or type(data["base64_decode_ok"]) is not bool:
-        raise ValueError("Unexpected diagnostic status type")
-    if data["open_failure"] not in {
-        "NONE","UnauthorizedAccessException","IOException","SecurityException",
-        "ArgumentException","NotSupportedException","OTHER"}:
-        raise ValueError("Unknown remote exception classifier")
-    if data["before_bytes"]!=0 or data["after_bytes"]!=0:
-        raise ValueError("Orphan content changed: preserve snapshot and stop")
-    if data["can_reopen_write"] and data["open_failure"]!="NONE":
-        raise ValueError("Contradictory remote diagnostic")
-    return data
-
-def main():
-    print("KINGDOMS WSLPE | #40 FIRST-CHUNK DIAGNOSTIC (NO FILE CONTENT WRITES)")
-    try:
-        stage=module_from(ROOT/"scripts/wslpe40-stage.py","wslpe40_diag_stage")
-        audit=module_from(ROOT/"scripts/wslpe40-stage-audit.py","wslpe40_diag_audit")
-        recovery=module_from(ROOT/"scripts/wslpe40-recover-empty.py","wslpe40_diag_recovery")
-        stage.local_source_head()
-        preflight=stage.load_preflight()
-        stage.verify_vm_snapshot(preflight)
-        auth=preflight.load_auth()
-        address,cert=auth.checked_certificate(auth.tls_audit_module(),stage.PIN)
-        user,password=auth.operator_credentials(address)
-        guest=preflight.query(auth,address,cert,user,password)
-        stage.ensure_safe_guest(guest)
-        with stage.managed_session(auth,address,cert,user,password) as session:
-            before=session.run_ps(audit.READ_ONLY)
-            if before.status_code!=0: raise ValueError("Remote baseline audit rejected")
-            recovery.validate_audit(audit.parse_record(before.std_out))
-            response=session.run_ps(REMOTELY_NONWRITING)
-            if response.status_code!=0:
-                print("[BLOCKED] Guest rejected diagnostic PowerShell; no remote exception text displayed")
-                return 2
-            record=parse(response.std_out)
-            after=session.run_ps(audit.READ_ONLY)
-            if after.status_code!=0: raise ValueError("Postdiagnostic guest audit rejected")
-            recovery.validate_audit(audit.parse_record(after.std_out))
     except Exception as exc:
         print("[BLOCKED] "+type(exc).__name__+" during diagnostic preflight")
         return 2
