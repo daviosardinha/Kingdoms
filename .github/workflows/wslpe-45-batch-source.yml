@@ -864,18 +864,35 @@ jobs:
             'learner_proof=pending'
           ) + @($records | ForEach-Object { $_.Name+'_sha256='+$_.Sha256 }) |
             Set-Content -LiteralPath $manifest -Encoding UTF8
-          Write-Output '[PASS] WSLPE36/38 exact native artifacts and hashes recorded without guest contact'
+          # Actions upload-artifact preserves relative directories when
+          # sources come from several parents. Stage exactly four flat leaves
+          # to match the operator's strict trusted ZIP inventory.
+          $flat=Join-Path $env:RUNNER_TEMP 'wslpe36-38-flat'
+          if(Test-Path -LiteralPath $flat){throw 'Refusing existing native artifact collection'}
+          $null=New-Item -ItemType Directory -Path $flat -ErrorAction Stop
+          foreach($entry in $records){
+            $dest=Join-Path $flat $entry.Name
+            Copy-Item -LiteralPath $entry.Path -Destination $dest -ErrorAction Stop
+            if((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash -cne $entry.Sha256){
+              throw 'Flattened native artifact digest mismatch'
+            }
+          }
+          Copy-Item -LiteralPath $manifest -Destination (Join-Path $flat 'Kingdom36_38.provenance.txt') -ErrorAction Stop
+          $actual=@(Get-ChildItem -LiteralPath $flat -Force -ErrorAction Stop)
+          $expected=@('Kingdom36WmiProvider.exe','Kingdom38DcomServer.exe',
+                      'Kingdom38DcomClient.exe','Kingdom36_38.provenance.txt')
+          if($actual.Count -ne 4 -or
+             @($actual | Where-Object {$_.PSIsContainer -or $_.Name -cnotin $expected}).Count -ne 0){
+            throw 'Expected four flat native artifact leaves'
+          }
+          Write-Output '[PASS] WSLPE36/38 exact flat native artifacts and hashes recorded without guest contact'
 
       - name: Archive unqualified WSLPE36 WMI and WSLPE38 DCOM binaries
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/feature/windows-lpe-45-batch' }}
         uses: actions/upload-artifact@v4
         with:
           name: wslpe36-38-native-source-review-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/Kingdom36WmiProvider.exe
-            ${{ runner.temp }}/wslpe40-midl/Kingdom38DcomServer.exe
-            ${{ runner.temp }}/wslpe40-midl/Kingdom38DcomClient.exe
-            ${{ runner.temp }}/wslpe40-midl/Kingdom36_38.provenance.txt
+          path: ${{ runner.temp }}/wslpe36-38-flat/
           if-no-files-found: error
           retention-days: 2
 
