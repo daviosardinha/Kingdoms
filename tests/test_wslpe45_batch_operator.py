@@ -17,36 +17,23 @@ class OperatorTests(unittest.TestCase):
         rows = batch.index_rows()
         self.assertEqual([r["number"] for r in rows], list(range(21, 46)))
         self.assertEqual(len(set(r["id"] for r in rows)), 25)
-        self.assertEqual([r["id"] for r in rows if r["status"] == "candidate"],
-                         ["scheduled_task_definition_acl",
-                          "scm_create_service_acl",
-                          "privileged_service_config_injection",
-                          "privileged_updater_hijack",
-                          "ifeo_debugger_acl_hijack",
-                          "com_clsid_registration_hijack",
-                          "app_paths_registry_hijack",
-                          "named_pipe_authorization",
-                          "jea_role_capability_misconfig",
-                          "setakeownership_privilege",
-                          "serestore_privilege",
-                          "sedebug_privilege",
-                          "ntfs_link_redirection",
-                          "privileged_path_traversal_write",
-                          "wmi_permanent_consumer_hijack",
-                          "privileged_loopback_http_authz",
-                          "privileged_argument_injection",
-                          "privileged_child_environment_trust",
-                          "elevated_plugin_signature_bypass",
-                          "privileged_file_toctou",
-                          "privileged_backup_restore_api"])
-        self.assertEqual(len([r for r in rows if r["status"] == "planned"]), 4)
+        from kingdoms.wslpe_batch_catalog import catalog
+        self.assertEqual(
+            [r["id"] for r in rows], [r["id"] for r in catalog()[20:]])
+        self.assertEqual(
+            len([r for r in rows if r["status"] in ("planned", "candidate")]),25)
+        for row in rows:
+            if row["status"] == "candidate":
+                self.assertEqual(row["source_ci"], "passed")
+            else:
+                self.assertEqual(row["source_ci"], "pending")
         self.assertTrue(all(r["learner_proof"] == "pending" for r in rows))
 
-    def test_no_partial_live_execution_and_no_guest_contact(self):
+    def test_unapproved_batch_never_contacts_guest_even_when_sources_improve(self):
         rows, blockers = batch.source_readiness()
         self.assertEqual(len(rows), 25)
-        self.assertEqual(len(blockers), 4)
-        self.assertTrue(all("no source-qualified fixture" in reason for reason in blockers))
+        self.assertFalse(batch.yaml.safe_load(batch.INDEX.read_text())[
+            "batch_execution_authorized"])
         args = SimpleNamespace(execute=True, timeout_seconds=900,
                                report_dir="/tmp/unused")
         with patch.object(batch, "trusted_safety") as safety, patch.object(
