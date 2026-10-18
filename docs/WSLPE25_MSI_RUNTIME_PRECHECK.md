@@ -21,6 +21,25 @@ or the existing JEA #30 session. This document does not authorize execution.
 - No MSI was staged, installed, repaired or uninstalled on the existing
   Windows guest. No non-admin learner proof has been executed.
 
+## Source update — dedicated learner-controlled repair nonce
+
+The custom action now reads only `repair-request.txt` from its fixed owned
+#25 directory, accepts strictly 1–6 ASCII digits with a value from 1 through
+999999, and writes that nonce into one non-overwriting protected proof file.
+The preparation module creates that *one file* with a narrowly scoped
+`lpe.trainee` data-write ACE; the fixture directory and proof remain
+administrator-owned and protected. Inspection validates the request-file
+type, reparse state, learner ACE and bounded proof, optionally against an
+independently selected `ExpectedNonce`. No caller-selected path, command
+or executable is accepted. Native CI compiles the source.
+
+**This resolves only the proposed learner-controlled input path at source
+level.** It does NOT establish that `lpe.trainee` can trigger Windows
+Installer to execute the deferred no-impersonation repair custom action in
+a privileged context. That exact trigger, file ACLs on the Windows guest,
+negative inputs, installer permissions and complete recovery still require
+independent Windows acceptance. #25 remains planned and unqualified.
+
 ## Blocker A — identify a genuine attacker-controlled LPE mechanism
 
 `Kingdom25Repair.cpp` accepts fixed `CustomActionData`, writes a fixed
