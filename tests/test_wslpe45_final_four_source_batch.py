@@ -39,7 +39,28 @@ class FinalFourSourceBatchTests(unittest.TestCase):
                 for token in expected:
                     self.assertIn(token, body)
                 self.assertNotIn("GOAD-WS01", body)
-        self.assertFalse((SRC / "Kingdom38DcomServer.cpp").exists())
+        server = (SRC / "Kingdom38DcomServer.cpp").read_text(encoding="utf-8")
+        client = (SRC / "Kingdom38DcomClient.cpp").read_text(encoding="utf-8")
+        for token in (
+            "StartServiceCtrlDispatcherW", "RegisterServiceCtrlHandlerExW",
+            "CoRegisterClassObject", "REGCLS_MULTIPLEUSE", "CLSCTX_LOCAL_SERVER",
+            "RPC_C_AUTHN_LEVEL_PKT_INTEGRITY", "CREATE_NEW",
+            "dcom_server_launch_acl", "12 * 60 * 1000",
+            "CoRevokeClassObject",
+        ):
+            self.assertIn(token, server)
+        for token in (
+            "CoCreateInstance", "CLSCTX_LOCAL_SERVER",
+            "CoSetProxyBlanket", "IID_IDispatch", "--proof-nonce",
+            "WSLPE38_DCOM",
+        ):
+            self.assertIn(token, client)
+        for forbidden in ("cmd.exe", "powershell.exe", "ncacn_ip_tcp",
+                          "HKEY_CLASSES_ROOT", "RemoteServerName"):
+            self.assertNotIn(forbidden, server + client)
+        # The source prototype still has no reviewed owned registration,
+        # per-AppID launch ACL or guest/learner proof.
+        self.assertFalse((ROOT / "ansible/wslpe45/dcom_server_launch_acl.yml").exists())
 
     def test_msi_repair_package_is_per_machine_and_repair_only(self):
         src = (SRC / "Kingdom25RepairPackage.wxs").read_text(encoding="utf-8")
