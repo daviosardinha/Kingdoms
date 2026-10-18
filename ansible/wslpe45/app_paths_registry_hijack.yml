@@ -91,4 +91,9 @@
               throw 'Registry trust fixture did not emit exact lifecycle evidence'
           }
           Write-Output $result
+      register: pilot28_lifecycle
       changed_when: wslpe_45_action in ['apply', 'reset']
+
+    - name: Emit exact registry lifecycle proof to Ansible operator
+      ansible.builtin.debug:
+        msg: "{{ (pilot28_lifecycle.output | default([])) | select('equalto', 'WSLPE45_BATCH_STAGE=app_paths_registry_hijack:' ~ wslpe_45_stage_label ~ ':PASS') | list | first | default('WSLPE45_PILOT28_STAGE=FAIL') }}"
