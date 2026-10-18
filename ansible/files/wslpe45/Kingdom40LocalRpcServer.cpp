@@ -99,11 +99,14 @@ int wmain(int argc, wchar_t** argv) {
                               RPC_IF_ALLOW_LOCAL_ONLY | RPC_IF_ALLOW_SECURE_ONLY,
                               8, static_cast<unsigned>(-1), nullptr);
     if (rc != RPC_S_OK) return 5;
-    rc = RpcServerListen(1, 8, TRUE);
+    // FALSE is essential: synchronous/TRUE listen never reaches the
+    // bounded host lifetime or owned cleanup without an external stop.
+    rc = RpcServerListen(1, 8, FALSE);
     if (rc != RPC_S_OK) return 6;
-    // Finite lab runtime, no permanent service and no remote transports.
+    // Finite guest-console session, not an installed service.
     Sleep(12 * 60 * 1000);
-    RpcMgmtStopServerListening(nullptr);
-    RpcServerUnregisterIf(Kingdom40LocalRpc_v1_0_s_ifspec, nullptr, TRUE);
-    return 0;
+    const RPC_STATUS stopped = RpcMgmtStopServerListening(nullptr);
+    const RPC_STATUS unregistered =
+        RpcServerUnregisterIf(Kingdom40LocalRpc_v1_0_s_ifspec, nullptr, TRUE);
+    return (stopped == RPC_S_OK && unregistered == RPC_S_OK) ? 0 : 7;
 }
