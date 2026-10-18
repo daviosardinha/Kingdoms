@@ -20,59 +20,39 @@ MODULES={
 
 RECOVER_ONLY=r"""
 $ErrorActionPreference='Stop'
-$machine=Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
-if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain){
-    throw 'Not the exact standalone WSLPE guest'
-}
-$identity=[Security.Principal.WindowsIdentity]::GetCurrent()
-$admin=[Security.Principal.WindowsPrincipal]::new($identity)
-if(-not $admin.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
-    throw 'Recovery requires elevated administrator'
-}
+$machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain){throw 'Identity'}
+$principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Token'}
 $root='C:\ProgramData\KingdomsWSLPE45'
 $lib=Join-Path $root 'lib'
-foreach($parent in @($root,$lib)){
-    $entry=Get-Item -LiteralPath $parent -Force -ErrorAction Stop
-    if(-not $entry.PSIsContainer -or
-       (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) -or
-       -not (Get-Acl -LiteralPath $parent -ErrorAction Stop).AreAccessRulesProtected){
-        throw 'Protected directory contract mismatch'
-    }
+foreach($path in @($root,$lib)){
+  $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+  if(-not $item.PSIsContainer -or
+     ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+     -not (Get-Acl -LiteralPath $path -ErrorAction Stop).AreAccessRulesProtected){throw 'ACL'}
 }
-$names=@('Wslpe40RpcOperator.psm1','Kingdom40LocalRpcServer.exe',
-         'Kingdom40LocalRpcClient.exe')
 $entries=@(Get-ChildItem -LiteralPath $lib -Force -ErrorAction Stop)
-foreach($name in $names){
-    $matched=@($entries | Where-Object {$_.Name -ceq $name})
-    if($matched.Count -ne 0){
-        throw 'An exact staged file exists; preserve it for manual review'
-    }
+foreach($name in @('Wslpe40RpcOperator.psm1','Kingdom40LocalRpcServer.exe',
+                   'Kingdom40LocalRpcClient.exe')){
+  $found=@($entries | Where-Object {$_.Name -ceq $name})
+  if($found.Count -ne 0){throw 'Target'}
 }
 $allPartial=@($entries | Where-Object {$_.Name -like '*.wslpe40-stage-*'})
-if($allPartial.Count -ne 1){
-    throw 'Expected exactly one WSLPE40 temporary file'
-}
+if($allPartial.Count -ne 1){throw 'PartialCount'}
 $entry=$allPartial[0]
 if($entry.Name -cnotmatch '^Wslpe40RpcOperator[.]psm1[.]wslpe40-stage-[0-9a-f]{24}$' -or
    $entry.PSIsContainer -or $entry.Length -ne 0 -or
-   (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
-    throw 'Recovery refuses nonzero, linked, or unexpected temporary content'
-}
-$running=@(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
-if($running.Count -ne 0){throw 'RPC host process exists; refuse recovery'}
-$fixture='C:\ProgramData\KingdomsWSLPE45\fixtures\custom_rpc_authorization'
-if(Test-Path -LiteralPath $fixture){throw 'RPC fixture already exists'}
+   ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Partial'}
+$running=@(Get-CimInstance Win32_Process -Filter "Name = 'Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
+if($running.Count -ne 0){throw 'RPC'}
+if(Test-Path -LiteralPath 'C:\ProgramData\KingdomsWSLPE45\fixtures\custom_rpc_authorization'){throw 'Fixture'}
 $target=Join-Path $lib $entry.Name
-# Re-fetch the exact leaf immediately before one narrowly bounded deletion.
 $again=Get-Item -LiteralPath $target -Force -ErrorAction Stop
 if($again.PSIsContainer -or $again.Length -ne 0 -or
-   (($again.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)){
-    throw 'Temp object changed; leave all files untouched'
-}
+   ($again.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'Changed'}
 [IO.File]::Delete($target)
-if(Test-Path -LiteralPath $target){
-    throw 'Temporary RPC object still present after approved deletion'
-}
+if(Test-Path -LiteralPath $target){throw 'NotDeleted'}
 Write-Output 'WSLPE40_EMPTY_PARTIAL_REMOVED=PASS'
 """
 
