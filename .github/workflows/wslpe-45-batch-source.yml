@@ -78,12 +78,10 @@ jobs:
           python -m py_compile kingdoms/wslpe45_closeout.py scripts/wslpe45-closeout.py tests/test_wslpe45_closeout.py
           python -m unittest -v tests.test_wslpe45_closeout
           python scripts/wslpe45-closeout.py
-          if python scripts/wslpe-45-qualify.py --execute; then
-            echo 'ERROR: Incomplete 25-fixture batch must refuse guest execution'
-            false
-          else
-            echo '[PASS] Incomplete batch correctly fails closed before guest contact'
-          fi
+          # Live batch execution MUST NEVER run in GitHub source CI.
+          # The unit tests assert that unapproved execution fails before
+          # VMware, inventory, Ansible or WinRM can be contacted.
+          echo '[PASS] Offline source-only gate; reviewed guest execution is separate'
 
   windows-native-syntax:
     runs-on: windows-latest
