@@ -159,6 +159,43 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         ):
             self.assertIn(required, workflow)
 
+    def test_msi_operator_is_opt_in_and_owns_install_uninstall(self):
+        # Source-only: never import the PowerShell module or invoke MSI in CI.
+        module = (SRC / "Wslpe25MsiOperator.psm1").read_text(encoding="utf-8")
+        for required in (
+            "ValidateSet('Inspect','Install','Uninstall')",
+            "Assert-Wslpe45Identity",
+            "Assert-Wslpe45OwnedFixture -Number 25",
+            "Assert-Wslpe45NoReparsePoints",
+            "Assert-Wslpe25RepairFixture -Stage BeforeRepair",
+            "Assert-Wslpe25RepairFixture -Stage AfterRepair",
+            "Get-FileHash -Algorithm SHA256",
+            "Read-Wslpe25MsiProperty",
+            "ProductCode",
+            "INSTALL WSLPE25",
+            "UNINSTALL WSLPE25",
+            "SESSIONNAME",
+            "IO.FileMode]::CreateNew",
+            "msiexec.exe",
+            "Remove-Wslpe45OwnedFixture -Number 25",
+            "WSLPE25_MSI_INSTALLED=PASS",
+            "WSLPE25_MSI_UNINSTALLED_AND_FIXTURE_REMOVED=PASS",
+        ):
+            self.assertIn(required, module)
+        for forbidden in (
+            "AlwaysInstallElevated",
+            "GOAD-WS01",
+            "Register-PSSessionConfiguration",
+            "winrm",
+            "powershell.exe -enc",
+        ):
+            self.assertNotIn(forbidden, module)
+        workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("'Wslpe25MsiOperator.psm1'", workflow)
+        self.assertNotIn("Invoke-Wslpe25MsiOperator -Action Install", workflow)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
