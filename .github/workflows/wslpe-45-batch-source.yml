@@ -116,6 +116,22 @@ jobs:
             throw 'WSLPE 45 guest script fails Windows PowerShell syntax'
           }
           Write-Output '[PASS] Windows PowerShell 5.1 native parse, no guest contacted'
+      - name: Parse WSLPE40 remote copy-only guard on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $source=Get-Content -LiteralPath 'scripts/wslpe40-stage.py' -Raw -ErrorAction Stop
+          $extract=[regex]::Match($source, '(?s)ps_checked\(session,r"""(.*?)"""\)')
+          if(-not $extract.Success){throw 'WSLPE40 copy-only guard source absent'}
+          $tokens=$null
+          $parseErrors=$null
+          [void][System.Management.Automation.Language.Parser]::ParseInput(
+            $extract.Groups[1].Value,[ref]$tokens,[ref]$parseErrors)
+          if(@($parseErrors).Count -gt 0){
+            $parseErrors | ForEach-Object {Write-Output $_.Message}
+            throw 'WSLPE40 remote stage guard failed PS5.1 parsing'
+          }
+          Write-Output '[PASS] WSLPE40 stage remote guard parses on Windows PowerShell 5.1'
+
       - name: Parse WSLPE40 staged-asset failure audit on Windows PowerShell 5.1
         shell: powershell
         run: |
