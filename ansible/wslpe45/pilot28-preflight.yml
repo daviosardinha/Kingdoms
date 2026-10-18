@@ -146,6 +146,6 @@
       register: pilot28_preflight
       changed_when: false
 
-    - name: Emit one bounded preflight proof marker for operator acceptance
+    - name: Emit both bounded read-only preflight results to the operator
       ansible.builtin.debug:
-        msg: "{{ (pilot28_preflight.output | default([])) | select('equalto', 'WSLPE45_PILOT28_CLEAN=PASS') | list | first | default('WSLPE45_PILOT28_CLEAN=FAIL') }}"
+        msg: "{{ (pilot28_preflight.output | default([])) | select('match', '^WSLPE45_PILOT28_(25_MODE|CLEAN)=') | list }}"
