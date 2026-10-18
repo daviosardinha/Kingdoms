@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import fcntl
+import hashlib
 import importlib.util
 import ipaddress
 import json
@@ -112,8 +113,11 @@ def snapshot_gate(workspace: Path) -> None:
 
 def execute_stage(ansible: Path, inv: Path, varsfile: Path, row: dict,
                   expected: str, action: str, state: str | None, label: str,
-                  env: dict, timeout: int) -> tuple[bool, int, str]:
+                  env: dict, timeout: int, preserve_shared: bool) -> tuple[bool, int, str]:
     cmd = batch.command(ansible, inv, varsfile, row, expected, action, state, label)
+    vars_requested = json.loads(cmd[-1])
+    vars_requested["wslpe_pilot_preserve_shared"] = preserve_shared
+    cmd[-1] = json.dumps(vars_requested, separators=(",", ":"))
     try:
         completed = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True,
                                    text=True, timeout=timeout, check=False)
@@ -175,9 +179,14 @@ def run(args: argparse.Namespace) -> int:
         if PREFLIGHT.is_symlink() or not PREFLIGHT.is_file():
             raise batch.BatchBlocked("Missing reviewed #28 clean-state preflight")
         print("[PREFLIGHT] Check absent #28 task/key/fixture without writing", flush=True)
+        common = ROOT / "ansible/files/wslpe45/WslpeFixture.psm1"
+        if common.is_symlink() or not common.is_file():
+            raise batch.BatchBlocked("Approved shared ownership library unavailable")
+        digest = hashlib.sha256(common.read_bytes()).hexdigest().upper()
         cmd = [str(ansible), "-i", str(inv), "-i", str(varsfile),
                "--limit", "ws01,localhost", str(PREFLIGHT), "-e",
-               json.dumps({"wslpe_expected_address": expected}, separators=(",", ":"))]
+               json.dumps({"wslpe_expected_address": expected,
+                           "wslpe_pilot_shared_sha256": digest}, separators=(",", ":"))]
         try:
             result = subprocess.run(cmd, cwd=ROOT, env=env, text=True,
                                     capture_output=True, timeout=args.timeout_seconds,
@@ -191,6 +200,12 @@ def run(args: argparse.Namespace) -> int:
             print(f"[BLOCKED] Existing/unknown #28 state; exit={rc}", flush=True)
             print(f"[PRIVATE] {failure} (redact before sharing)", flush=True)
             return 2
+        present = diagnostics.count("WSLPE45_PILOT28_25_MODE=OWNED_MARKER_ONLY") == 1
+        absent = diagnostics.count("WSLPE45_PILOT28_25_MODE=ABSENT") == 1
+        if present == absent:
+            raise batch.BatchBlocked("Cannot establish an unambiguous #25 overlap state")
+        if present:
+            print("[PRESERVE] #25 marker-only owned fixture verified; shared library writes disabled", flush=True)
         if args.preflight:
             print("[PASS] #28 read-only guest preflight; no scenario writes", flush=True)
             return 0
@@ -206,7 +221,7 @@ def run(args: argparse.Namespace) -> int:
         for action, state, label in FLOW:
             ok, rc, diagnostics = execute_stage(ansible, inv, varsfile, row,
                                                 expected, action, state, label, env,
-                                                args.timeout_seconds)
+                                                args.timeout_seconds, present)
             report["events"].append({"stage": label, "accepted": ok, "exit_code": rc})
             batch.atomic_report(root, name, report)
             if not ok:
