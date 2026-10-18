@@ -10,6 +10,27 @@ The source of truth for current states is the checked-in machine-readable
 `scripts/wslpe45-closeout.py`. No second, manually maintained success
 counter is allowed.
 
+## Coordinated native source wave (2026-10-18)
+
+- #25: exact-path learner-writable request file, bounded 1–6 digit nonce,
+  elevated repair custom-action proof and independent source checks. The
+  non-admin MSI repair trigger and owned runtime cycle remain **unverified**.
+  Windows installer execution and guest fixture setup have not occurred.
+- #36: prototype host now refuses non-WSLPE machine and any identity other
+  than LocalSystem before WMI registration; the native runner verifies the
+  wrong-host negative case. Dedicated provider installation, namespace
+  permissions, service lifecycle and reset still need real source/runtime.
+- #38: remains **review-blocked**. Do not reproduce the previously rejected
+  DCOM local-server path or substitute COM hijacking for launch-ACL abuse.
+- #40: source refresh uses a narrowly scoped same-volume Win32 atomic rename
+  after old/new hash verification, with a Windows-native compilation gate.
+  **Not applied to the guest.** The independent last guest hash still matches
+  the original module and the local RPC host remains stopped.
+
+This wave does **not** change the official 21/25 source-candidate status, the
+25 unqualified new lifecycles or the learner proof tally. It establishes real
+source improvements on three mechanisms while keeping the deployment disabled.
+
 ## Proven checkpoint
 
 - Foundation #1–20: previous standalone six-stage *provisioning lifecycle*
