@@ -168,6 +168,27 @@ def parse_failure(raw:bytes)->dict:
     return data
 
 
+def classify_remote_response(response):
+    """Inspect trusted markers BEFORE checking WinRM status. No raw remote text."""
+    out=response.std_out or b""
+    if FAILURE_MARKER.encode("ascii") in out:
+        return "classified_failure",parse_failure(out)
+    if MARKER.encode("ascii") in out and response.status_code == 0:
+        return "success",parse(out)
+    status=response.status_code
+    if type(status) is not int or status < 0 or status > 255:
+        status=-1
+    # Expose only a constrained PowerShell error identifier; never stderr,
+    # paths, credentials, exception messages or user-controlled strings.
+    err=response.std_err or b""
+    identifiers=re.findall(
+        rb"FullyQualifiedErrorId\s*:\s*([A-Za-z0-9_.-]{1,72})(?:\r?\n|$)",err)
+    fqid=identifiers[-1].decode("ascii") if identifiers else "UNCLASSIFIED"
+    return "unclassified_failure",{"status":status,"error_id":fqid,
+                                   "stdout_length":min(len(out),999999),
+                                   "stderr_length":min(len(err),999999)}
+
+
 def main():
     print("KINGDOMS WSLPE | #40 FIRST-CHUNK DIAGNOSTIC (NO FILE CONTENT WRITES)")
     try:
@@ -187,25 +208,27 @@ def main():
             if before.status_code!=0: raise ValueError("Remote baseline audit rejected")
             recovery.validate_audit(audit.parse_record(before.std_out))
             response=session.run_ps(REMOTELY_NONWRITING)
-            if response.status_code!=0:
-                print("[BLOCKED] Guest rejected diagnostic PowerShell; no remote exception text displayed")
-                return 2
-            failure=None
-            if FAILURE_MARKER.encode() in response.std_out:
-                failure=parse_failure(response.std_out)
-            else:
-                record=parse(response.std_out)
-            # Always re-verify the unmodified guest inventory, even if the
-            # diagnostic returned an error classifier, before reporting it.
+            kind,diagnostic=classify_remote_response(response)
+            # Always re-verify the unmodified guest inventory after a failed
+            # diagnostic, before trusting its evidence or error classifier.
             after=session.run_ps(audit.READ_ONLY)
             if after.status_code!=0: raise ValueError("Postdiagnostic guest audit rejected")
             recovery.validate_audit(audit.parse_record(after.std_out))
-            if failure is not None:
-                print('[BLOCKED] WSLPE40 diagnostic phase='+failure['phase'])
-                print('[STATE] exception_type='+failure['exception_type'])
-                print('[STATE] exception_hresult='+str(failure['hresult']))
+            if kind=="classified_failure":
+                print('[BLOCKED] WSLPE40 diagnostic phase='+diagnostic['phase'])
+                print('[STATE] exception_type='+diagnostic['exception_type'])
+                print('[STATE] exception_hresult='+str(diagnostic['hresult']))
                 print('[PASS] Postdiagnostic zero-byte orphan still unchanged')
                 return 2
+            if kind=="unclassified_failure":
+                print('[BLOCKED] WSLPE40 diagnostic has no trusted output marker')
+                print('[STATE] remote_status='+str(diagnostic['status']))
+                print('[STATE] remote_error_id='+diagnostic['error_id'])
+                print('[STATE] stdout_bytes='+str(diagnostic['stdout_length']))
+                print('[STATE] stderr_bytes='+str(diagnostic['stderr_length']))
+                print('[PASS] Postdiagnostic zero-byte orphan still unchanged')
+                return 2
+            record=diagnostic
     except Exception as exc:
         print("[BLOCKED] "+type(exc).__name__+" during diagnostic preflight")
         return 2
