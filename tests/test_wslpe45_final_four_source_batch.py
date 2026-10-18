@@ -196,6 +196,30 @@ class FinalFourSourceBatchTests(unittest.TestCase):
         self.assertIn("'Wslpe25MsiOperator.psm1'", workflow)
         self.assertNotIn("Invoke-Wslpe25MsiOperator -Action Install", workflow)
 
+    def test_msi_build_artifact_is_short_lived_and_source_review_only(self):
+        workflow = (ROOT / ".github/workflows/wslpe-45-batch-source.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "Archive unqualified WSLPE25 MSI for independent artifact review",
+            workflow,
+        )
+        self.assertIn("uses: actions/upload-artifact@v4", workflow)
+        self.assertIn(
+            "github.event_name == 'push' && github.ref == 'refs/heads/feature/windows-lpe-45-batch'",
+            workflow,
+        )
+        self.assertIn("retention-days: 2", workflow)
+        for name in (
+            "Kingdom25Repair.msi",
+            "Kingdom25Repair.dll",
+            "Kingdom25Repair.provenance.txt",
+            "if-no-files-found: error",
+        ):
+            self.assertIn(name, workflow)
+        self.assertNotIn("msiexec.exe", workflow)
+        self.assertNotIn("Invoke-Wslpe25MsiOperator -Action Install", workflow)
+
     def test_gate_document_preserves_native_mechanisms(self):
         text = (ROOT / "docs/WSLPE45_FINAL_FOUR_SOURCE_BATCH.md").read_text()
         for string in ("#25", "#36", "#38", "#40", "NOT DEPLOYABLE",
