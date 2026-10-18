@@ -6,6 +6,48 @@ Repository source of truth: `feature/windows-lpe-45-batch`.
 Verified source checkpoint: 21/25 accepted *source candidates*; four still planned.
 New live six-stage qualifications: 0/25. New independent learner-side exploit proofs: 0/25.
 
+## 2026-10-18 accelerated engineering checkpoint (latest)
+
+The current green native/source CI run is
+[39124084759](https://github.com/daviosardinha/Kingdoms/actions/runs/39124084759)
+on commit `55a64181bbddf84f77b81a2c7c83c94c7596dd15`.
+All three GitHub Actions jobs passed. This builds real #40 local RPC
+server/client binaries and archives them as a two-day unqualified source
+review artifact, alongside the independent #25 MSI review archive.
+The new `Wslpe40RpcOperator.psm1` parses with Windows PowerShell 5.1;
+its explicit Prepare/Inspect/Reset only operates on a dedicated owned
+fixture and is **not deployed or executed by CI**.
+
+**Do not promote based on these builds.** #40 still needs a privileged
+local host identity, exact learner authentication/authorization runtime
+proof, negative cases and six-stage owned lifecycle. #36 still needs
+native verifier acceptance, owned provider registration/namespace ACL
+review and cleanup. #25 still lacks a real attacker-controlled repair
+primitive and approved recovery rehearsal. #38 remains reviewed/blocked,
+with no workaround to the previously rejected COM local-server source.
+
+### Finish gates (no guest execution yet)
+
+- [ ] #25 — show learner-controlled MSI repair trust boundary and exact
+  registered ProductCode / owned uninstall / rollback / negative cases
+- [ ] #36 — prove exact local WMI provider registration, identity, method
+  access by `lpe.trainee`, safe negative cases and exact teardown
+- [ ] #38 — secure independent implementation review or explicitly
+  approve a genuinely distinct replacement; never repackage the
+  rejected out-of-process DCOM fixture
+- [ ] #40 — approved local privileged host, bounded native RPC learner
+  proof, negative authorization and exact owned reset/reapply
+- [ ] Record separately for **every** candidate: apply, vulnerable
+  validation, reset, clean validation, reapply and revulnerable validation,
+  with independent learner-side proof and a verified guest snapshot
+- [ ] Keep `batch_execution_authorized: false` and all four planned
+  until source acceptance and actual Windows qualification are complete
+
+GitHub Issues are disabled for this repository (API 410), so this tracked
+document holds the completion checklist. The standalone guest, existing
+JEA #30, NORTH and shared AD role remain untouched. Never use `exit 1`,
+`set -e` or `exec` in user copy/paste terminal commands.
+
 ## 2026-10-18 #25 security-boundary and recovery review
 
 The native MSI artifact and its build provenance passed independent Kali
