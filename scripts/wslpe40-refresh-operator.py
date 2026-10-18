@@ -46,18 +46,7 @@ def validate_guest(preflight,audit,poststage,hashes):
         raise ValueError("RPC operator or host state mismatch")
     poststage.validate_runtime(preflight,audit,hashes)
 
-def checked_transfer(session,stage,old_hash,new_bytes:bytes):
-    """Target exists and matches old hash; create a new protected staging leaf.
-
-    Final File.Replace is same-volume/atomic. On any error, no guest retry.
-    An orphan temp is preserved for independent review.
-    """
-    new_hash=digest(new_bytes)
-    target=REMOTE+"\\"+OPERATOR
-    # Short exact known staging name, with random suffix; no arbitrary paths.
-    from secrets import token_hex
-    temp=target+".wslpe40-refresh-"+token_hex(10)
-    source_before=r"""
+READ_ONLY_REFRESH_GUARD=r"""
 $ErrorActionPreference='Stop'
 $hostinfo=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
 if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $hostinfo.PartOfDomain){throw 'Wrong guest'}
@@ -71,6 +60,59 @@ if(-not $base.PSIsContainer -or
 if(Test-Path -LiteralPath 'C:\ProgramData\KingdomsWSLPE45\fixtures\custom_rpc_authorization'){throw 'Fixture'}
 if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'").Count -ne 0){throw 'Host running'}
 """
+
+
+def diagnosed_check(session,stage,command,step):
+    """Only expose a checked-in operation name and restricted error category."""
+    try:
+        return stage.ps_checked(session,command,step=step)
+    except ValueError as exc:
+        reason=str(exc)
+        import re
+        if re.fullmatch(
+            r"(?:WINRM_ENCODED_COMMAND_TOO_LONG|"
+            r"WINDOWS_COMMAND_LINE_TOO_LONG|WINDOWS_ACCESS_DENIED) at [A-Z0-9_]{3,72}|"
+            r"Guest rejected stage step: [A-Z0-9_]{3,72} \\(status=[0-9]{1,3}\\)|"
+            r"WinRM transport rejected stage step: [A-Z0-9_]{3,72} \\([A-Za-z][A-Za-z0-9_]{0,63}\\)",
+            reason
+        ):
+            print("[DIAG] "+reason)
+        else:
+            print("[DIAG] "+step+" failed ("+type(exc).__name__+")")
+        raise
+
+
+def diagnose_prewrite(session,stage,old_hash):
+    """Prove the actual first guest guard and original file digest; no writes."""
+    diagnosed_check(session,stage,READ_ONLY_REFRESH_GUARD,"GUARD_OPERATOR_REFRESH")
+    verified=f"""
+$ErrorActionPreference='Stop'
+$target='C:\\ProgramData\\KingdomsWSLPE45\\lib\\Wslpe40RpcOperator.psm1'
+$entry=Get-Item -LiteralPath $target -Force -ErrorAction Stop
+if($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){{
+    throw 'Unsafe target'
+}}
+if((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -cne '{old_hash}'){{
+    throw 'Old hash mismatch'
+}}
+Write-Output 'WSLPE40_OPERATOR_REFRESH_PREWRITE=PASS'
+"""
+    diagnosed_check(session,stage,verified,"VERIFY_EXISTING_OPERATOR")
+    print("[PASS] WSLPE40_OPERATOR_REFRESH_PREWRITE=TRUE")
+    print("[PLAN ONLY] No Windows files created, opened for write or replaced")
+
+
+def checked_transfer(session,stage,old_hash,new_bytes:bytes):
+    """Target exists and matches old hash; create a new protected staging leaf.
+
+    Final File.Replace is same-volume/atomic. On any error, no guest retry.
+    An orphan temp is preserved for independent review.
+    """
+    new_hash=digest(new_bytes)
+    target=REMOTE+"\\"+OPERATOR
+    # Short exact known staging name, with random suffix; no arbitrary paths.
+    from secrets import token_hex
+    temp=target+".wslpe40-refresh-"+token_hex(10)
     old_guard=f"""
 $target='{target}'
 $old=Get-Item -LiteralPath $target -Force -ErrorAction Stop
@@ -85,8 +127,8 @@ if(Test-Path -LiteralPath $temp){{throw 'Temporary file already exists'}}
 $stream=[IO.File]::Open($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
 $stream.Dispose()
 """
-    stage.ps_checked(session,source_before,step="GUARD_OPERATOR_REFRESH")
-    stage.ps_checked(session,old_guard,step="CREATE_OPERATOR_REFRESH")
+    diagnosed_check(session,stage,READ_ONLY_REFRESH_GUARD,"GUARD_OPERATOR_REFRESH")
+    diagnosed_check(session,stage,old_guard,"CREATE_OPERATOR_REFRESH")
     for offset in range(0,len(new_bytes),CHUNK_BYTES):
         encoded=base64.b64encode(new_bytes[offset:offset+CHUNK_BYTES]).decode("ascii")
         segment=f"""
@@ -98,7 +140,7 @@ try{{
   $stream.Write($data,0,$data.Length)
 }} finally {{$stream.Dispose()}}
 """
-        stage.ps_checked(session,segment,step="UPLOAD_OPERATOR_CHUNK_"+str(offset//CHUNK_BYTES+1))
+        diagnosed_check(session,stage,segment,"UPLOAD_OPERATOR_CHUNK_"+str(offset//CHUNK_BYTES+1))
     # No backup file because the named recovery snapshot is mandatory.
     # File.Replace preserves an atomic old-or-new file, never partial target.
     finish=f"""
@@ -121,13 +163,15 @@ if((Get-FileHash -LiteralPath $old -Algorithm SHA256).Hash -cne '{new_hash}'){{
 }}
 Write-Output 'WSLPE40_OPERATOR_CONSOLE_PATCH=PASS'
 """
-    stage.ps_checked(session,finish,step="COMMIT_OPERATOR_REFRESH")
+    diagnosed_check(session,stage,finish,"COMMIT_OPERATOR_REFRESH")
     return new_hash
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply",action="store_true",
         help="Replace the sole verified operator module, with no interactive prompt")
+    parser.add_argument("--diagnose",action="store_true",
+        help="Run actual prewrite guard and old-source hash without guest mutations")
     args=parser.parse_args()
     print("KINGDOMS WSLPE | #40 CONSOLE GUARD REFRESH (OPERATOR ONLY)")
     print("[SCOPE] No native server/client, RPC host, fixture, JEA or NORTH mutations")
@@ -165,6 +209,9 @@ def main():
                 validate_guest(pre_state,inventory,post,expected)
                 print("[PASS] Old operator, native binaries and JEA #30 unchanged")
                 print("[PASS] Exact WSLPE pre-#40 snapshot and protected library")
+                if args.diagnose:
+                    diagnose_prewrite(session,stage,expected[OPERATOR])
+                    return 0
                 if not args.apply:
                     print("[PLAN ONLY] No guest mutation; use --apply to patch operator module")
                     return 0
