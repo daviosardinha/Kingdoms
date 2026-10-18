@@ -123,22 +123,21 @@ function Assert-Wslpe25RepairFixture {
             throw 'Expected exactly one regular MSI repair proof file'
         }
         $observed=Get-Content -LiteralPath $matches[0].FullName -Raw -ErrorAction Stop
-        if($observed -cnotmatch '^WSLPE45_MSI_REPAIR_NONCE=[1-9][0-9]{0,5}\r\n
-    }
-
-    Write-Output ('WSLPE25_FIXTURE_INSPECT={0}:PASS' -f $Stage)
-}
-
-Export-ModuleMember -Function 'Assert-Wslpe25RepairFixture'
-) {
+        $prefix='WSLPE45_MSI_REPAIR_NONCE='
+        $lineEnding=[string][char]13+[string][char]10
+        if(-not $observed.StartsWith($prefix,[StringComparison]::Ordinal) -or
+           -not $observed.EndsWith($lineEnding,[StringComparison]::Ordinal)) {
             throw 'Unexpected MSI repair nonce marker bytes'
         }
-        if($ExpectedNonce -gt 0 -and
-           $observed -cne ("WSLPE45_MSI_REPAIR_NONCE={0}`r`n" -f $ExpectedNonce)) {
+        $nonceText=$observed.Substring($prefix.Length,
+            $observed.Length-$prefix.Length-$lineEnding.Length)
+        if($nonceText -cnotmatch '\A[1-9][0-9]{0,5}\z') {
+            throw 'MSI proof contained an invalid bounded nonce'
+        }
+        if($ExpectedNonce -gt 0 -and [int]$nonceText -ne $ExpectedNonce) {
             throw 'MSI proof nonce differs from independently selected learner nonce'
         }
     }
-
     Write-Output ('WSLPE25_FIXTURE_INSPECT={0}:PASS' -f $Stage)
 }
 
