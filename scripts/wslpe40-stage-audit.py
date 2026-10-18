@@ -60,8 +60,11 @@ foreach($name in $names){
         $report.exact_files+=@{name=$name;present=$true;linked=$linked;
                               size=[int64]$it.Length;sha256=$hash}
     }
-    $prefix=$name+'.wslpe40-stage-'
-    $temp=@($entries|Where-Object {$_.Name.StartsWith($prefix,[StringComparison]::Ordinal)})
+    $prefixes=@($name+'.wslpe40-stage-',$name+'.wslpe40-refresh-')
+    $temp=@($entries|Where-Object {
+        $candidate=$_.Name
+        @($prefixes|Where-Object {$candidate.StartsWith($_,[StringComparison]::Ordinal)}).Count -gt 0
+    })
     foreach($it in $temp){
         $report.partial_files+=@{
             target=$name
