@@ -37,7 +37,7 @@ def vmx_inventory(path: Path, master: Path) -> dict:
         raise batch.BatchBlocked("Candidate must be a separate clone, not the frozen master")
     if path.stat().st_uid != __import__("os").geteuid():
         raise batch.BatchBlocked("Candidate VMX is not owned by the operator")
-    if any(p.is_symlink() for p in actual.parents if p != actual.anchor and p.exists()):
+    if any(p.is_symlink() for p in path.parents if p.exists()):
         raise batch.BatchBlocked("Candidate VMX ancestry contains a symlink")
     text = path.read_text(encoding="utf-8", errors="replace")
     adapters: dict[int,dict] = {}
@@ -71,7 +71,9 @@ def vmx_inventory(path: Path, master: Path) -> dict:
         # Read only the header; never process/copy an entire virtual disk.
         with disk.open("rb") as stream:
             header=stream.read(8192)
-        if b"parentFileNameHint" in header or b"parentCID=" in header:
+        parent_cid = re.search(rb"(?im)^\s*parentCID\s*=\s*([0-9a-fA-F]+)\s*$",header)
+        if (b"parentFileNameHint" in header or
+                (parent_cid is not None and parent_cid.group(1).lower() != b"ffffffff")):
             raise batch.BatchBlocked("Linked/differencing VMDK detected; use an independent full clone")
     return {"vmx":str(actual),"nics":len(present),"vmdks":len(disks)}
 
@@ -85,8 +87,7 @@ def powered_off(candidate: Path, master: Path, output: str) -> None:
         raise batch.BatchBlocked("Ambiguous VMware running VM inventory")
     if candidate.resolve() in active:
         raise batch.BatchBlocked("Candidate is already running; isolate its NICs before boot")
-    if master.resolve() not in active:
-        raise batch.BatchBlocked("Frozen master VM not found under expected VMware registration")
+    # The protected reference may be powered off; only the candidate must be off.
 
 
 def main(argv=None) -> int:
