@@ -1,5 +1,7 @@
 # WSLPE 45 — one standalone batch, NORTH frozen
 
+> **Historical proposed 45-scenario batch contract.** The 2026-10-19 decision caps the current standalone Windows LPE curriculum at **41 scenarios** and de-scopes #25/#36/#38/#40. The selected 21 additions have passed installation and configuration validation; this old proposal is not the live next-phase requirement. See [final deployment closeout](./WSLPE41_DEPLOYMENT_CLOSEOUT_2026-10-19.md). Six-stage and learner proof claims below remain unachieved unless separately evidenced.
+
 **Execution boundary:** only the native workgroup `WSLPE-WS01` with local non-admin learner `WSLPE-WS01\lpe.trainee`. NORTH/GOAD WS01 is an untouched reference design, never a deployment target. The original shared 20-technique role must remain byte-for-byte unchanged by the expansion.
 
 ## Verified checkpoint and missing work
