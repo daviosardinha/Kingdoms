@@ -4,9 +4,7 @@
 # This DOES NOT reconfigure, run or modify any scheduled task.
 $ErrorActionPreference = 'Stop'
 $taskName = 'Kingdom45DefinitionTask'
-$id = 'scheduled_task_definition_acl'
 $root = 'C:\ProgramData\KingdomsWSLPE45\fixtures\scheduled_task_definition_acl'
-$markerPath = Join-Path $root '.kingdoms-owned.json'
 $expectedApp = Join-Path $root 'Kingdom45Task21.exe'
 $stage = 'LEARNER_BOUNDARY'
 
@@ -26,18 +24,12 @@ try {
     }
     Write-Output 'WSLPE41_21_LEARNER_BOUNDARY=PASS'
 
-    $stage = 'OWNED_FIXTURE'
-    $owner = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop |
-        ConvertFrom-Json -ErrorAction Stop
-    if ($owner.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or
-        $owner.machine -cne 'WSLPE-WS01' -or
-        [int]$owner.number -ne 21 -or
-        $owner.id -cne $id -or
-        $owner.learner_sid -cne $identity.User.Value -or
-        -not (Test-Path -LiteralPath $expectedApp -PathType Leaf)) {
-        throw 'Owned task fixture missing or different'
-    }
-    Write-Output 'WSLPE41_21_OWNED_FIXTURE=PASS'
+    # The owned marker and binary deliberately live inside an Administrators/
+    # SYSTEM-only fixture directory. A learner must NOT be granted file access
+    # just to satisfy the acceptance preflight. Ownership was checked with
+    # privileged deployment evidence and needs a separate operator audit
+    # on this clone; the learner only observes the dedicated task object.
+    Write-Output 'WSLPE41_21_FIXTURE_OWNERSHIP=OPERATOR_CHECK_REQUIRED'
 
     $stage = 'SYSTEM_TASK'
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
@@ -71,6 +63,7 @@ try {
         throw 'Expected scoped learner task-object DACL permission absent'
     }
     Write-Output 'WSLPE41_21_LEARNER_TASK_ACL=PASS'
+    Write-Output 'WSLPE41_21_LEARNER_TASK_PREFLIGHT=PASS'
     Write-Output 'WSLPE41_21_READONLY_PREFLIGHT=PASS'
     Write-Output 'WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED'
 }
