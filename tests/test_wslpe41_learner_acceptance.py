@@ -57,6 +57,24 @@ class Wslpe41AcceptancePlanTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 acceptance.verify_receipt(str(root/"unrelated.json"),root)
 
+    def test_scheduled_task_pilot21_is_read_only_and_scoped(self):
+        path=ROOT/"scripts/wslpe41-learner-pilot21-readonly.ps1"
+        script=path.read_text(encoding="utf-8")
+        for expected in ("Get-CimInstance Win32_ComputerSystem",
+                         "WSLPE-WS01","lpe.trainee",
+                         "Get-NetAdapter","GetSecurityDescriptor(4)",
+                         "scheduled_task_definition_acl", "Kingdom45DefinitionTask",
+                         "Kingdom45Task21.exe",
+                         "WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED",
+                         "WSLPE41_21_READONLY_PREFLIGHT=PASS"):
+            self.assertIn(expected,script)
+        for forbidden in ("SetSecurityDescriptor(","Register-ScheduledTask",
+                          "Set-ScheduledTask","Start-ScheduledTask",
+                          "Unregister-ScheduledTask","Invoke-Command",
+                          "New-ScheduledTaskAction","Set-ItemProperty",
+                          "Remove-Item","-Execute ", "New-Service"):
+            self.assertNotIn(forbidden,script)
+
     def test_no_exploit_execution_in_plan(self):
         source=(ROOT/"scripts/wslpe41-learner-acceptance.py").read_text()
         for banned in ("ansible-playbook", "Invoke-Command", "wmic ", "vmrun",
