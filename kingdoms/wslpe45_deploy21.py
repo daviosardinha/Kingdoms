@@ -504,7 +504,7 @@ def powershell51_registered27_snapshot(snapshot):
         values = entry["values"]
         if not isinstance(values, dict):
             raise batch.BatchBlocked("Expected original registry value map")
-        if any(not isinstance(k, str) or "\\x00" in k for k in values):
+        if any(not isinstance(k, str) or "\x00" in k for k in values):
             raise batch.BatchBlocked("Unexpected registry value name")
         if len({k.casefold() for k in values}) != len(values):
             raise batch.BatchBlocked("Case-fold duplicate registry value names")
