@@ -10,6 +10,7 @@ using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 // Native, Windows-10-specific, isolated test service for four DIFFERENT
 // trust-boundary errors. Source is compiled under WSLPE-WS01 only.
@@ -94,17 +95,24 @@ public sealed class Kingdom45BoundaryService : ServiceBase
             {
                 using (NamedPipeServerStream pipe = new NamedPipeServerStream(
                     "Kingdom45Pipe29", PipeDirection.InOut, 1,
-                    PipeTransmissionMode.Byte, PipeOptions.None,
+                    PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
                     1024, 1024, acl))
                 {
                     pipe.WaitForConnection();
-                    pipe.ReadTimeout = 3000;
                     using (StreamReader reader = new StreamReader(
                         pipe, Encoding.ASCII, false, 256, true))
                     using (StreamWriter writer = new StreamWriter(
                         pipe, Encoding.ASCII, 256, true))
                     {
-                        string request = reader.ReadLine();
+                        // PipeStream does not support Stream.ReadTimeout.
+                        var read = reader.ReadLineAsync();
+                        if (Task.WhenAny(read, Task.Delay(3000)).GetAwaiter().GetResult() != read)
+                        {
+                            read.ContinueWith(t => t.Exception.Handle(error => true),
+                                TaskContinuationOptions.OnlyOnFaulted);
+                            continue;
+                        }
+                        string request = read.GetAwaiter().GetResult();
                         if (String.Equals(request, "PROOF", StringComparison.Ordinal))
                         {
                             Proof("PIPE");

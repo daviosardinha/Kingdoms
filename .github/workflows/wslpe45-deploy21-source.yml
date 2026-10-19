@@ -94,6 +94,12 @@ jobs:
       - name: Test owned active RPC coexistence decisions without guest access
         shell: powershell
         run: ./tests/test_wslpe45_rpc_coexistence.ps1
+      - name: Test native stderr under Windows PowerShell 5.1
+        shell: powershell
+        run: ./tests/test_wslpe45_regasm_process.ps1
+      - name: Compile remaining sources and exercise pipe denial and timeout
+        shell: powershell
+        run: ./tests/test_wslpe45_remaining_native.ps1
       - name: Compile protected updater consumer without execution
         shell: powershell
         run: |

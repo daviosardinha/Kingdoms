@@ -2,6 +2,45 @@
 # No import-time changes. All names, CLSIDs and paths are exercise-owned.
 Set-StrictMode -Version Latest
 
+function Invoke-Wslpe45RegAsmProcess {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$RegAsm,
+        [Parameter(Mandatory=$true)][string]$Assembly,
+        [Parameter(Mandatory=$true)][ValidateSet('/codebase','/unregister')][string]$Operation
+    )
+    # Read native streams directly: PS5.1 turns 2>&1 stderr into ErrorRecords.
+    foreach($path in @($RegAsm,$Assembly)) {
+        if($path.IndexOfAny([char[]]@('"',[char]13,[char]10)) -ge 0 -or
+           -not [IO.Path]::IsPathRooted($path) -or
+           -not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw 'RegAsm requires existing absolute literal file paths'
+        }
+    }
+    $start=[Diagnostics.ProcessStartInfo]::new()
+    $start.FileName=$RegAsm
+    $start.Arguments=('"'+$Assembly+'" '+$Operation+' /nologo')
+    $start.UseShellExecute=$false
+    $start.CreateNoWindow=$true
+    $start.RedirectStandardOutput=$true
+    $start.RedirectStandardError=$true
+    $process=[Diagnostics.Process]::new()
+    $process.StartInfo=$start
+    try {
+        if(-not $process.Start()) { throw 'RegAsm did not start' }
+        $stdout=$process.StandardOutput.ReadToEndAsync()
+        $stderr=$process.StandardError.ReadToEndAsync()
+        if(-not $process.WaitForExit(120000)) {
+            throw ('RegAsm timeout; preserve partial state and inspect process '+$process.Id)
+        }
+        $output=$stdout.GetAwaiter().GetResult()
+        $errors=$stderr.GetAwaiter().GetResult()
+        $code=$process.ExitCode
+        if($code -ne 0) { throw ('RegAsm exit '+$code+': '+$output+[Environment]::NewLine+$errors) }
+        return [pscustomobject]@{ExitCode=$code;StdOut=$output;StdErr=$errors}
+    } finally { $process.Dispose() }
+}
+
 function Invoke-Wslpe45ComRegistration {
     [CmdletBinding()]
     param(
@@ -50,8 +89,10 @@ function Invoke-Wslpe45ComRegistration {
                 [Security.AccessControl.AccessControlType]::Allow)) | Out-Null
             Set-Acl -LiteralPath $inbox -AclObject $fileAcl -ErrorAction Stop
 
-            $result=(& $regasm $assembly '/codebase' '/nologo' 2>&1 | Out-String)
-            if($LASTEXITCODE -ne 0){throw ('Dedicated RegAsm registration failed: '+$result)}
+            $result=Invoke-Wslpe45RegAsmProcess -RegAsm $regasm -Assembly $assembly -Operation '/codebase'
+            Write-Output ('WSLPE45_REGASM_EXIT='+$result.ExitCode)
+            if($result.StdOut){Write-Output $result.StdOut}
+            if($result.StdErr){Write-Warning $result.StdErr}
             $clsidKey=$registry.OpenSubKey($regSub)
             if(-not $clsidKey){throw 'COM class registration absent after RegAsm'}
             $clsidKey.Close()
@@ -101,8 +142,10 @@ $instance.Proof()
             if(-not $argument.Contains($client)){throw 'Refusing foreign task action'}
             if(-not $key){throw 'Owned CLSID missing'}
             Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop
-            $result=(& $regasm $assembly '/unregister' '/nologo' 2>&1 | Out-String)
-            if($LASTEXITCODE -ne 0){throw ('COM unregister failed: '+$result)}
+            $result=Invoke-Wslpe45RegAsmProcess -RegAsm $regasm -Assembly $assembly -Operation '/unregister'
+            Write-Output ('WSLPE45_REGASM_EXIT='+$result.ExitCode)
+            if($result.StdOut){Write-Output $result.StdOut}
+            if($result.StdErr){Write-Warning $result.StdErr}
             $left=$registry.OpenSubKey($regSub)
             if($left){$left.Close();throw 'Dedicated COM CLSID not cleaned by RegAsm'}
             Remove-Wslpe45OwnedFixture -Number 27 -Id $id
