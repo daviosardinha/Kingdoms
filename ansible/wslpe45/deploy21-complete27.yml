@@ -156,3 +156,9 @@
           Write-Output $result
           Write-Output 'WSLPE21_REGISTERED27_COMPLETE=PASS'
       changed_when: true
+      register: completed_com27
+
+  post_tasks:
+    - name: Emit exact in-place COM completion marker from Windows result
+      ansible.builtin.debug:
+        msg: "{{ completed_com27.output | default([]) | select('equalto', 'WSLPE21_REGISTERED27_COMPLETE=PASS') | list }}"
