@@ -1,0 +1,156 @@
+---
+- name: Require exact standalone inventory for owned partial COM recovery
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Refuse foreign hosts and non-explicit recovery operations
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - wslpe_recover27_operation in ['cleanup','verify']
+
+- name: Recover only the journal-owned pre-registration COM fixture
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Refuse changed identity, unknown state and arbitrary paths
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed=$false
+          $operation='{{ wslpe_recover27_operation }}'
+          if($operation -cnotin @('cleanup','verify')) { throw 'Invalid recovery operation' }
+          $expected=([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
+              '{{ wslpe_recover27_expected_b64 }}')) | ConvertFrom-Json -ErrorAction Stop)
+          $root='C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack'
+          $marker=Join-Path $root '.kingdoms-owned.json'
+          $inbox=Join-Path $root 'inbox'
+          $primary=Join-Path $root 'Kingdom45ComServer.dll'
+          $alternate=Join-Path $inbox 'Kingdom45ComServer.dll'
+          $allowed=@($root,$marker,$inbox,$primary,$alternate)
+          $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+             [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10') {
+              throw 'Only exact standalone WSLPE-WS01 can recover this fixture'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          if(-not $learner.Enabled -or @((Get-LocalGroupMember -Group $admins.Name) |
+              Where-Object {$_.SID.Value -eq $learner.SID.Value}).Count -ne 0) {
+              throw 'Original nonadministrator learner required'
+          }
+          if($expected.target -cne $env:COMPUTERNAME -or
+             $expected.learner_sid -cne $learner.SID.Value -or
+             $expected.marker.machine -cne 'WSLPE-WS01' -or
+             $expected.marker.learner_sid -cne $learner.SID.Value -or
+             $expected.marker.id -cne 'com_clsid_registration_hijack' -or
+             [int]$expected.marker.number -ne 27 -or
+             @($expected.files).Count -ne 5 -or
+             @($expected.registry).Count -ne 0 -or
+             @($expected.tasks).Count -ne 0 -or
+             @($expected.regasm_processes).Count -ne 0) {
+              throw 'Original inspection not the exact partial #27 state'
+          }
+          foreach($ancestor in @('C:\ProgramData',
+              'C:\ProgramData\KingdomsWSLPE45',
+              'C:\ProgramData\KingdomsWSLPE45\fixtures')) {
+              $item=Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+              if(-not $item.PSIsContainer -or
+                 ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                  throw 'Linked or foreign ancestor'
+              }
+          }
+          $registry=[Microsoft.Win32.RegistryKey]::OpenBaseKey(
+              [Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+          try {
+              foreach($sub in @('SOFTWARE\Classes\CLSID\{7E86DE4C-10F9-414B-82B5-07CB20264527}',
+                                'SOFTWARE\Classes\Kingdoms45.ComServer')) {
+                  $key=$registry.OpenSubKey($sub,$false)
+                  if($key){$key.Close();throw 'COM registration unexpectedly exists'}
+              }
+          } finally { $registry.Close() }
+          if(@(Get-ScheduledTask -ErrorAction Stop |
+              Where-Object {$_.TaskName -ceq 'Kingdom45ComClient'}).Count -ne 0) {
+              throw 'COM consumer task unexpectedly exists'
+          }
+          if(@(Get-CimInstance Win32_Process -Filter "Name='RegAsm.exe'" -ErrorAction Stop).Count -ne 0) {
+              throw 'RegAsm still active'
+          }
+          if($operation -ceq 'verify') {
+              if(Test-Path -LiteralPath $root) { throw '#27 fixture not clean after recovery' }
+              Write-Output 'WSLPE21_RECOVER27=verify:PASS'
+              return
+          }
+          if(-not (Test-Path -LiteralPath $root -PathType Container)) {
+              throw 'Cleanup requires unchanged partial #27 fixture'
+          }
+          $observed=@($root,$marker,$inbox,$primary,$alternate)
+          if((@($expected.files | ForEach-Object {$_.path} | Sort-Object) -join '|') -cne
+             (@($allowed | Sort-Object) -join '|')) {
+              throw 'Unexpected paths in original inspection'
+          }
+          $rootNames=@(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop |
+              ForEach-Object {$_.Name} | Sort-Object)
+          if(($rootNames -join '|') -cne
+             (@('.kingdoms-owned.json','inbox','Kingdom45ComServer.dll' | Sort-Object) -join '|')) {
+              throw 'Unexpected root contents'
+          }
+          $inboxNames=@(Get-ChildItem -LiteralPath $inbox -Force -ErrorAction Stop |
+              ForEach-Object {$_.Name})
+          if(($inboxNames -join '|') -cne 'Kingdom45ComServer.dll') {
+              throw 'Unexpected inbox contents'
+          }
+          foreach($path in $observed) {
+              $record=@($expected.files | Where-Object {$_.path -ceq $path})
+              if($record.Count -ne 1) { throw 'Missing unique recorded path' }
+              $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+              if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                 [bool]$item.PSIsContainer -ne [bool]$record[0].directory -or
+                 (Get-Acl -LiteralPath $path -ErrorAction Stop).Sddl -cne $record[0].sddl) {
+                  throw 'Recorded path changed since inspection'
+              }
+              if(-not $item.PSIsContainer) {
+                  if($item.Length -ne $record[0].length -or
+                     (Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash -cne
+                        $record[0].sha256) {
+                      throw 'Recorded file changed since inspection'
+                  }
+              }
+          }
+          $owner=Get-Content -LiteralPath $marker -Raw -ErrorAction Stop |
+              ConvertFrom-Json -ErrorAction Stop
+          foreach($name in @('schema','machine','id','learner_sid','created_utc')) {
+              if($owner.$name -cne $expected.marker.$name){throw 'Owner marker changed'}
+          }
+          if([int]$owner.number -ne 27){throw 'Owner marker number changed'}
+          # Never use -Recurse, wildcard paths, reset/reapply or foreign resource operations.
+          foreach($path in @($alternate,$primary,$marker)) {
+              $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+              if($item.PSIsContainer -or
+                 ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                  throw 'Unexpected file at exact recovery path'
+              }
+              Remove-Item -LiteralPath $path -Force -ErrorAction Stop
+          }
+          foreach($dir in @($inbox,$root)) {
+              if(@(Get-ChildItem -LiteralPath $dir -Force -ErrorAction Stop).Count -ne 0) {
+                  throw 'Recovery directory not empty'
+              }
+              Remove-Item -LiteralPath $dir -Force -ErrorAction Stop
+          }
+          if(Test-Path -LiteralPath $root) {throw 'Partial fixture still present'}
+          $Ansible.Changed=$true
+          Write-Output 'WSLPE21_RECOVER27=cleanup:PASS'
+      register: recovery
+      changed_when: wslpe_recover27_operation == 'cleanup'
+
+    - name: Emit exact Windows recovery evidence
+      ansible.builtin.debug:
+        msg: "{{ recovery.output }}"
