@@ -170,3 +170,52 @@ inspection JSON to select the repair for the actual observed state.
 Count remains 20 operator-reported baseline + 5 runtime-validated additions.
 No learner exploitation is proven by this run. The target remains 41/45,
 not 45/45. Exclusions and all earlier successful installations are retained.
+
+## #27 inspection verdict and guarded recovery contract, 2026-10-19
+
+The operator completed read-only inspection on WSLPE-WS01 at source commit
+`61f83a943d45405191d8303e8ca6efa54ee355f5`. Private report:
+`wslpe45-inspect27-f0a42380da6f77f4.json` (parent:
+`wslpe45-deploy21-8e5b1f7c2a08b2d5.json`).
+
+- Preflight before and after: PASS. Both preservation digests matched
+  `9AB97BF7EB5D424B87F2893D41816BE78683F7BAC407C68B4ADAC2E5BB724D26`.
+- Read-only state inspection: PASS; `guest_mutations=false`.
+- Dedicated #27 ownership marker identifies the intended guest, scenario and
+  existing learner SID. The fixture root, inbox and both COM assembly files
+  exist; only the inbox/its DLL have the observed learner Modify permission.
+- The inspected CLSID and ProgID registration trees are absent. No dedicated
+  COM consumer scheduled task and no outstanding RegAsm process were detected.
+- Assessment stays `RECOVERY_REVIEW_REQUIRED`. Inspection PASS is **not**
+  installation or vulnerable-configuration PASS.
+
+This is an owned partial **pre-registration** fixture, not a completed COM
+scenario. The corrected RegAsm handling is committed, but the current deploy
+runner deliberately will not retry while the partial directory and its
+recovery sentinel exist.
+
+A future explicit recovery implementation must fail closed unless it confirms
+the original private journal and sentinel, exact guest/inventory/snapshot and
+unchanged preservation fingerprint. Reinspect immediately before any mutation
+and compare exact marker, SHA-256, ACL, directory entries, COM registration,
+task and process state with the recorded inspection. A mismatch requires a
+fresh review. Never adopt foreign registry entries or kill a running process.
+
+If cleanup is authorized, constrain it to these specifically enumerated
+#27-owned files/directories. The learner-writable inbox makes recursive
+deletion or path-following cleanup a poor default: reject links and unexpected
+entries, unlink only verified files, and remove empty directories without
+traversing into foreign paths. No reset/reapply of #21–26, baseline20, #25,
+#36, #38, #40 or unrelated services. Record intent before mutation, preserve
+the original journal/sentinel and stop on any uncertain state.
+
+After a successful clean #27 boundary, restart **at #27** with the committed
+RegAsm wrapper, validate #27 on Windows, and only then attempt remaining
+selected scenarios #28–45 in order, subject to exclusions and fresh
+per-scenario preservation checks. Existing #30 JEA is validation-only.
+Do not issue the original `--execute` command from a fresh batch, delete
+`.wslpe45-recovery-required`, or claim 41/45 until a reviewed resume path
+and real guest evidence exist.
+
+This paragraph records the reviewed evidence and intended recovery criteria;
+**no recovery code or guest mutation is claimed by this documentation change**.
