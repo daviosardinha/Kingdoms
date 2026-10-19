@@ -130,7 +130,7 @@
               if($owner.$name -cne $expected.marker.$name){throw 'Owner marker changed'}
           }
           if([int]$owner.number -ne 27){throw 'Owner marker number changed'}
-          # Never use -Recurse, wildcard paths, reset/reapply or foreign resource operations.
+          # Delete only verified, exact leaf files and then verified empty directories.
           foreach($path in @($alternate,$primary,$marker)) {
               $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
               if($item.PSIsContainer -or
