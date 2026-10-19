@@ -520,6 +520,47 @@ class DeploymentTests(unittest.TestCase):
             with self.assertRaises(batch.BatchBlocked):
                 deploy.validate_registered27(changed,{"target":"WSLPE-WS01"})
 
+
+    def test_ps51_registered27_default_registry_value_is_data_not_json_key(self):
+        snapshot=self.registered27_fixture()
+        original=copy.deepcopy(snapshot)
+        prepared=deploy.powershell51_registered27_snapshot(snapshot)
+        self.assertEqual(snapshot,original,"Original inspected evidence must remain unchanged")
+        self.assertEqual(len(prepared["registry"]),8)
+        path=next(row for row in prepared["registry"]
+                  if row["path"].endswith(r"Kingdoms45.ComServer\\CLSID"))
+        self.assertEqual(path["values"],[{
+            "name":"","kind":"String",
+            "value":"{7E86DE4C-10F9-414B-82B5-07CB20264527}"}])
+        serialized=json.dumps(prepared,separators=(",",":"))
+        self.assertNotIn('"":',serialized)
+        self.assertEqual(json.loads(serialized),prepared)
+        self.assertEqual(prepared["files"],original["files"])
+        self.assertEqual(prepared["tasks"],original["tasks"])
+        self.assertEqual(prepared["marker"],original["marker"])
+        self.assertEqual(prepared["registry"][4]["values"][0]["name"],"Assembly")
+
+    def test_ps51_registered27_rejects_ambiguous_value_names(self):
+        snap=self.registered27_fixture()
+        original=copy.deepcopy(snap)
+        snap["registry"][4]["values"]["CODEBASE"]={
+            "kind":"String","value":"file:///C:/other.dll"}
+        with self.assertRaises(batch.BatchBlocked):
+            deploy.powershell51_registered27_snapshot(snap)
+        snap=copy.deepcopy(original)
+        snap["registry"][4]["values"]["Nul\x00Key"]={"kind":"String","value":"x"}
+        with self.assertRaises(batch.BatchBlocked):
+            deploy.powershell51_registered27_snapshot(snap)
+
+    def test_registered27_completion_checks_value_name_list_not_psobject_map(self):
+        plays=yaml.safe_load((batch.ROOT /
+            "ansible/wslpe45/deploy21-complete27.yml").read_text())
+        script=plays[1]["tasks"][0]["ansible.windows.win_powershell"]["script"]
+        self.assertIn("$expectedValues=@($record.values)",script)
+        self.assertIn("[string]$entry.name",script)
+        self.assertIn("[string]$entry.value",script)
+        self.assertNotIn("$record.values.PSObject.Properties",script)
+
     def test_registered27_completion_playbook_is_not_regasm_or_reset(self):
         plays=yaml.safe_load((batch.ROOT/
             "ansible/wslpe45/deploy21-complete27.yml").read_text())
