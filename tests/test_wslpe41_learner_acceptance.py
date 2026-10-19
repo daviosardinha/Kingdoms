@@ -68,6 +68,12 @@ class Wslpe41AcceptancePlanTests(unittest.TestCase):
                          "WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED",
                          "WSLPE41_21_READONLY_PREFLIGHT=PASS"):
             self.assertIn(expected,script)
+        self.assertNotIn("exit 2",script)
+        self.assertIn("WSLPE41_21_FAILED_STAGE=",script)
+        self.assertIn("WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED",script)
+        self.assertIn("throw ('WSLPE41_21_READONLY_PREFLIGHT=BLOCKED at ' + $stage)",script)
+        for stage in ("LEARNER_BOUNDARY","OWNED_FIXTURE","SYSTEM_TASK","LEARNER_TASK_ACL"):
+            self.assertIn("$stage = '"+stage+"'",script)
         for forbidden in ("SetSecurityDescriptor(","Register-ScheduledTask",
                           "Set-ScheduledTask","Start-ScheduledTask",
                           "Unregister-ScheduledTask","Invoke-Command",
