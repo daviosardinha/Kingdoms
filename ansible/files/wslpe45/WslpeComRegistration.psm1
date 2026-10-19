@@ -209,4 +209,71 @@ $instance.Proof()
     }
     finally {$registry.Close()}
 }
-Export-ModuleMember -Function Invoke-Wslpe45ComRegistration, Assert-Wslpe45OwnedComCodeBase
+
+function Complete-Wslpe45OwnedComRegistration {
+    [CmdletBinding()]
+    param()
+    $ErrorActionPreference='Stop'
+    Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeFixture.psm1' -Force -ErrorAction Stop
+    $identity=Assert-Wslpe45Identity
+    $root=Assert-Wslpe45OwnedFixture -Number 27 -Id 'com_clsid_registration_hijack'
+    $assembly=Join-Path $root 'Kingdom45ComServer.dll'
+    $alternate=Join-Path $root 'inbox\Kingdom45ComServer.dll'
+    $client=Join-Path $root 'consumer.ps1'
+    foreach($path in @($assembly,$alternate,$client)) {
+        $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+        if($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'COM completion refuses linked or foreign fixture content'
+        }
+    }
+    $task=Get-ScheduledTask -TaskName 'Kingdom45ComClient' -ErrorAction Stop
+    if($task.TaskPath -cne '\' -or $task.Principal.UserId -notin @('SYSTEM','S-1-5-18') -or
+       @($task.Actions).Count -ne 1) {
+        throw 'Expected dedicated SYSTEM COM task missing or changed'
+    }
+    $expectedRunner=Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if($task.Actions[0].Execute -ine $expectedRunner -or
+       $task.Actions[0].Arguments -cne ('-NoProfile -NonInteractive -File "{0}"' -f $client)) {
+        throw 'Dedicated COM task action differs from owned consumer'
+    }
+    $clsid='{7E86DE4C-10F9-414B-82B5-07CB20264527}'
+    $reg=[Microsoft.Win32.RegistryKey]::OpenBaseKey(
+        [Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    try {
+        $base='SOFTWARE\Classes\CLSID\'+$clsid+'\InprocServer32'
+        $inproc=$reg.OpenSubKey($base,$false)
+        if(-not $inproc){throw 'Missing owned COM InprocServer32'}
+        try {
+            $versions=@($inproc.GetSubKeyNames())
+            if($versions.Count -ne 1 -or $versions[0] -cne '0.0.0.0') {
+                throw 'COM registration version mismatch'
+            }
+            Assert-Wslpe45OwnedComCodeBase -CodeBase ([string]$inproc.GetValue('CodeBase')) -Assembly $assembly
+        } finally {$inproc.Close()}
+        $version=$reg.OpenSubKey($base+'\0.0.0.0',$true)
+        if(-not $version){throw 'Versioned COM registration missing'}
+        try {
+            Assert-Wslpe45OwnedComCodeBase -CodeBase ([string]$version.GetValue('CodeBase')) -Assembly $assembly
+            $assemblyIdentity=[Reflection.AssemblyName]::GetAssemblyName($assembly).FullName
+            if($assemblyIdentity -cne [string]$version.GetValue('Assembly') -or
+               [string]$version.GetValue('Class') -cne 'Kingdoms45.Com.Server') {
+                throw 'COM registration identity differs from owned assembly'
+            }
+            $sid=[Security.Principal.SecurityIdentifier]::new($identity.LearnerSid)
+            $acl=$version.GetAccessControl()
+            $existing=@($acl.GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier]) |
+                Where-Object {$_.IdentityReference.Value -eq $identity.LearnerSid})
+            if($existing.Count -ne 0){throw 'Unexpected pre-existing learner COM registry ACE'}
+            $rule=[Security.AccessControl.RegistryAccessRule]::new(
+                $sid,[Security.AccessControl.RegistryRights]::SetValue,
+                [Security.AccessControl.InheritanceFlags]::None,
+                [Security.AccessControl.PropagationFlags]::None,
+                [Security.AccessControl.AccessControlType]::Allow)
+            $acl.AddAccessRule($rule) | Out-Null
+            $version.SetAccessControl($acl)
+        } finally {$version.Close()}
+    } finally {$reg.Close()}
+    Write-Output 'WSLPE45_COM27_OWNED_COMPLETION=PASS'
+}
+
+Export-ModuleMember -Function Invoke-Wslpe45ComRegistration, Assert-Wslpe45OwnedComCodeBase, Complete-Wslpe45OwnedComRegistration
