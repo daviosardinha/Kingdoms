@@ -193,43 +193,7 @@
                   throw 'Unexpected #40 process image path'
               }
               $escaped=[regex]::Escape($expected)
-              $commandPattern='^(?i:"'+$escaped+'"|'+$escaped+')\s+--serve-local-only\s*
-          $marker=Join-Path $jea '.kingdoms45-owner.txt'
-          if(@(Get-PSSessionConfiguration -Name Kingdoms45JEA -ErrorAction Stop).Count -ne 1 -or
-             (Get-Content -LiteralPath $marker -Raw -ErrorAction Stop).Trim() -cne
-             'WSLPE45:30:jea_role_capability_misconfig') {
-              throw 'Existing owned JEA endpoint required; console recovery is separate'
-          }
-          foreach($path in @($jea,(Join-Path $jea 'RoleCapabilities'))) {
-              if(([IO.File]::GetAttributes($path) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                  throw 'JEA ancestor is linked'
-              }
-          }
-          foreach($file in @(
-              $marker,(Join-Path $jea 'Kingdoms45JEA.psm1'),
-              (Join-Path $jea 'Kingdoms45JEA.psd1'),
-              (Join-Path $jea 'RoleCapabilities\Kingdoms45Role.psrc'),
-              'C:\ProgramData\KingdomsWSLPE45\fixtures\jea_role_capability_misconfig\Kingdoms45JEA.pssc')) {
-              if(([IO.File]::GetAttributes($file) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-                  throw 'JEA source is linked'
-              }
-              $fingerprint.Add((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash)
-              $fingerprint.Add((Get-Acl -LiteralPath $file).Sddl)
-          }
-          $sha=[Security.Cryptography.SHA256]::Create()
-          try {
-              $digest=$sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($fingerprint -join '|')))
-              $hex=([BitConverter]::ToString($digest)).Replace('-','')
-          } finally { $sha.Dispose() }
-          Write-Output ('WSLPE21_PRESERVED='+$hex)
-          Write-Output 'WSLPE21_PREFLIGHT=PASS'
-      register: deploy21_preflight
-      changed_when: false
-
-    - name: Emit bounded preflight evidence
-      ansible.builtin.debug:
-        msg: "{{ deploy21_preflight.output | select('match', '^WSLPE21_(PRESERVED|PREFLIGHT|RPC40)=') | list }}"
-
+              $commandPattern='^(?i:"'+$escaped+'"|'+$escaped+')\s+--serve-local-only\s*$'
               if(-not $Observation.CommandLine -or $Observation.CommandLine -cnotmatch $commandPattern) {
                   throw 'Unexpected #40 process arguments'
               }
@@ -355,4 +319,4 @@
 
     - name: Emit bounded preflight evidence
       ansible.builtin.debug:
-        msg: "{{ deploy21_preflight.output | select('match', '^WSLPE21_(PRESERVED|PREFLIGHT)=') | list }}"
+        msg: "{{ deploy21_preflight.output | select('match', '^WSLPE21_(PRESERVED|PREFLIGHT|RPC40)=') | list }}"
