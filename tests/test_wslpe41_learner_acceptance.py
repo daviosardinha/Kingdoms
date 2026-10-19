@@ -72,8 +72,16 @@ class Wslpe41AcceptancePlanTests(unittest.TestCase):
         self.assertIn("WSLPE41_21_FAILED_STAGE=",script)
         self.assertIn("WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED",script)
         self.assertIn("throw ('WSLPE41_21_READONLY_PREFLIGHT=BLOCKED at ' + $stage)",script)
-        for stage in ("LEARNER_BOUNDARY","OWNED_FIXTURE","SYSTEM_TASK","LEARNER_TASK_ACL"):
+        for stage in ("LEARNER_BOUNDARY","SYSTEM_TASK","LEARNER_TASK_ACL"):
             self.assertIn("$stage = '"+stage+"'",script)
+        self.assertNotIn("$stage = 'OWNED_FIXTURE'",script)
+        self.assertIn("WSLPE41_21_FIXTURE_OWNERSHIP=OPERATOR_CHECK_REQUIRED",script)
+        self.assertIn("WSLPE41_21_LEARNER_TASK_PREFLIGHT=PASS",script)
+        # Protected marker and program files intentionally are not learner-readable.
+        for forbidden_read in ("Get-Content -LiteralPath $markerPath",
+                               ".kingdoms-owned.json",
+                               "Test-Path -LiteralPath $expectedApp"):
+            self.assertNotIn(forbidden_read,script)
         for forbidden in ("SetSecurityDescriptor(","Register-ScheduledTask",
                           "Set-ScheduledTask","Start-ScheduledTask",
                           "Unregister-ScheduledTask","Invoke-Command",
