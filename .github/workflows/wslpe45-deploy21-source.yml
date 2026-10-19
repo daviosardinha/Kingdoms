@@ -91,6 +91,9 @@ jobs:
               if(@($errors).Count) { $errors | ForEach-Object {Write-Output $_}; throw $file.Name }
           }
           Write-Output '[PASS] Native PS5.1 parse; no fixture installed'
+      - name: Test owned active RPC coexistence decisions without guest access
+        shell: powershell
+        run: ./tests/test_wslpe45_rpc_coexistence.ps1
       - name: Compile protected updater consumer without execution
         shell: powershell
         run: |

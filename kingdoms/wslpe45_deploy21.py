@@ -257,6 +257,7 @@ def run(args):
             path = save_log(base, root, "deploy21-preflight", log)
             report["failure"] = {"stage": "preflight", "exit_code": rc, "private_log": str(path)}
             checkpoint()
+            print("[REASON] " + pilot.diagnostic_summary(log), flush=True)
             print(f"[FAIL] Read-only preflight; evidence: {path}", flush=True)
             return 2
         # Journal pointer is durable before the first possible guest mutation.

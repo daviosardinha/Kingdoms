@@ -120,9 +120,6 @@
               }
               $mode='OWNED_MARKER_ONLY'
           }
-          if(@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'" -ErrorAction Stop).Count -ne 0) {
-              throw 'Existing #40 privileged RPC host is active; refuse overlapping test'
-          }
           # Preserve the existing shared root/library even when #25 is absent.
           $fingerprint=New-Object 'System.Collections.Generic.List[string]'
           $fingerprint.Add($learner.SID.Value)
@@ -186,6 +183,143 @@
               $fingerprint.Add((Get-FileHash -LiteralPath $markerPath -Algorithm SHA256).Hash)
               $fingerprint.Add((Get-Acl -LiteralPath $markerPath).Sddl)
           }
+          # #40 is excluded: inspect identity and preservation only, never call RPC.
+          function Assert-Wslpe21RpcObservation {
+              param([hashtable]$Observation,[string[]]$AllowedOwnerSids)
+              if($Observation['Count'] -eq 0) { return 'ABSENT' }
+              if($Observation['Count'] -ne 1) { throw 'Ambiguous #40 process inventory' }
+              $expected='C:\ProgramData\KingdomsWSLPE45\lib\Kingdom40LocalRpcServer.exe'
+              if(-not [string]::Equals($Observation.ImagePath,$expected,[StringComparison]::OrdinalIgnoreCase)) {
+                  throw 'Unexpected #40 process image path'
+              }
+              $escaped=[regex]::Escape($expected)
+              $commandPattern='^(?i:"'+$escaped+'"|'+$escaped+')\s+--serve-local-only\s*
+          $marker=Join-Path $jea '.kingdoms45-owner.txt'
+          if(@(Get-PSSessionConfiguration -Name Kingdoms45JEA -ErrorAction Stop).Count -ne 1 -or
+             (Get-Content -LiteralPath $marker -Raw -ErrorAction Stop).Trim() -cne
+             'WSLPE45:30:jea_role_capability_misconfig') {
+              throw 'Existing owned JEA endpoint required; console recovery is separate'
+          }
+          foreach($path in @($jea,(Join-Path $jea 'RoleCapabilities'))) {
+              if(([IO.File]::GetAttributes($path) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw 'JEA ancestor is linked'
+              }
+          }
+          foreach($file in @(
+              $marker,(Join-Path $jea 'Kingdoms45JEA.psm1'),
+              (Join-Path $jea 'Kingdoms45JEA.psd1'),
+              (Join-Path $jea 'RoleCapabilities\Kingdoms45Role.psrc'),
+              'C:\ProgramData\KingdomsWSLPE45\fixtures\jea_role_capability_misconfig\Kingdoms45JEA.pssc')) {
+              if(([IO.File]::GetAttributes($file) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                  throw 'JEA source is linked'
+              }
+              $fingerprint.Add((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash)
+              $fingerprint.Add((Get-Acl -LiteralPath $file).Sddl)
+          }
+          $sha=[Security.Cryptography.SHA256]::Create()
+          try {
+              $digest=$sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($fingerprint -join '|')))
+              $hex=([BitConverter]::ToString($digest)).Replace('-','')
+          } finally { $sha.Dispose() }
+          Write-Output ('WSLPE21_PRESERVED='+$hex)
+          Write-Output 'WSLPE21_PREFLIGHT=PASS'
+      register: deploy21_preflight
+      changed_when: false
+
+    - name: Emit bounded preflight evidence
+      ansible.builtin.debug:
+        msg: "{{ deploy21_preflight.output | select('match', '^WSLPE21_(PRESERVED|PREFLIGHT|RPC40)=') | list }}"
+
+              if(-not $Observation.CommandLine -or $Observation.CommandLine -cnotmatch $commandPattern) {
+                  throw 'Unexpected #40 process arguments'
+              }
+              if(-not $Observation.OwnerSid -or $Observation.OwnerSid -notin $AllowedOwnerSids) {
+                  throw 'Unexpected #40 process owner'
+              }
+              if($Observation.OwnedFixture -ne $true) { throw 'Active #40 host lacks owned fixture' }
+              if($null -eq $Observation.NetworkEndpointCount -or $Observation.NetworkEndpointCount -ne 0) {
+                  throw '#40 host has unexpected network endpoints'
+              }
+              return 'OWNED_LOCAL_HOST'
+          }
+          $rpcRoot=Join-Path $fixtures 'custom_rpc_authorization'
+          $rpcHosts=@(Get-CimInstance Win32_Process -Filter "Name='Kingdom40LocalRpcServer.exe'" -ErrorAction Stop)
+          $rpcOwned=$false
+          $rpcPaths=New-Object 'System.Collections.Generic.List[string]'
+          # Enumerating the parent also detects dangling links instead of adopting them.
+          $rpcEntries=@(Get-ChildItem -LiteralPath $fixtures -Force -ErrorAction Stop |
+              Where-Object {$_.Name -ieq 'custom_rpc_authorization'})
+          if($rpcEntries.Count -gt 1) { throw 'Ambiguous #40 fixture inventory' }
+          if($rpcEntries.Count -eq 1) {
+              $rpcItem=$rpcEntries[0]
+              if(-not $rpcItem.PSIsContainer -or ($rpcItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                  throw 'Linked or foreign #40 fixture'
+              }
+              $rpcPaths.Add($rpcRoot)
+              foreach($entry in @(Get-ChildItem -LiteralPath $rpcRoot -Force -ErrorAction Stop)) {
+                  if($entry.PSIsContainer -or $entry.Name -cnotin @('.kingdoms-owned.json','rpc-proof.txt') -or
+                     ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                      throw 'Unexpected object in excluded #40 fixture'
+                  }
+                  $rpcPaths.Add($entry.FullName)
+              }
+              $rpcMarker=Get-Content -LiteralPath (Join-Path $rpcRoot '.kingdoms-owned.json') -Raw -ErrorAction Stop |
+                  ConvertFrom-Json -ErrorAction Stop
+              if($rpcMarker.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or
+                 $rpcMarker.machine -cne 'WSLPE-WS01' -or [int]$rpcMarker.number -ne 40 -or
+                 $rpcMarker.id -cne 'custom_rpc_authorization' -or
+                 $rpcMarker.learner_sid -cne $learner.SID.Value) {
+                  throw 'Wrong #40 ownership marker'
+              }
+              $rpcOwned=$true
+          }
+          foreach($leaf in @('Kingdom40LocalRpcServer.exe','Kingdom40LocalRpcClient.exe','Wslpe40RpcOperator.psm1')) {
+              $rpcFile=Join-Path $lib $leaf
+              if($rpcHosts.Count -gt 0 -or (Test-Path -LiteralPath $rpcFile)) {
+                  $rpcPaths.Add($rpcFile)
+              }
+          }
+          foreach($path in @($rpcPaths | Sort-Object)) {
+              $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+              if($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked #40 protected path' }
+              $acl=Get-Acl -LiteralPath $path -ErrorAction Stop
+              $owner=$acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+              if($owner -notin @('S-1-5-18','S-1-5-32-544') -and $owner -notin $adminSids) {
+                  throw 'Unexpected #40 protected path owner'
+              }
+              if($item.PSIsContainer -and -not $acl.AreAccessRulesProtected) {
+                  throw '#40 directory ACL is not protected'
+              }
+              foreach($ace in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+                  if($ace.AccessControlType -eq 'Allow' -and
+                     $ace.IdentityReference.Value -notin @('S-1-5-18','S-1-5-32-544') -and
+                     $ace.IdentityReference.Value -notin $adminSids -and
+                     ([int]$ace.FileSystemRights -band $danger) -ne 0) {
+                      throw '#40 protected path has a non-administrator writer'
+                  }
+              }
+              $fingerprint.Add($path)
+              $fingerprint.Add($acl.Sddl)
+              if(-not $item.PSIsContainer) {
+                  $fingerprint.Add((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)
+              }
+          }
+          $observation=@{Count=$rpcHosts.Count}
+          if($rpcHosts.Count -eq 1) {
+              $rpcProcess=$rpcHosts[0]
+              $rpcOwner=Invoke-CimMethod -InputObject $rpcProcess -MethodName GetOwnerSid -ErrorAction Stop
+              if($rpcOwner.ReturnValue -ne 0) { throw 'Cannot inspect #40 process owner' }
+              $tcp=@(Get-NetTCPConnection -ErrorAction Stop | Where-Object {$_.OwningProcess -eq $rpcProcess.ProcessId})
+              $udp=@(Get-NetUDPEndpoint -ErrorAction Stop | Where-Object {$_.OwningProcess -eq $rpcProcess.ProcessId})
+              $observation.ImagePath=$rpcProcess.ExecutablePath
+              $observation.CommandLine=$rpcProcess.CommandLine
+              $observation.OwnerSid=$rpcOwner.Sid
+              $observation.OwnedFixture=$rpcOwned
+              $observation.NetworkEndpointCount=$tcp.Count+$udp.Count
+          }
+          $rpcState=Assert-Wslpe21RpcObservation -Observation $observation -AllowedOwnerSids (@('S-1-5-18')+$adminSids)
+          # Process lifetime is not a preserved resource: a natural exit is allowed.
+          Write-Output ('WSLPE21_RPC40='+$rpcState)
           $jea='C:\Program Files\WindowsPowerShell\Modules\Kingdoms45JEA'
           $marker=Join-Path $jea '.kingdoms45-owner.txt'
           if(@(Get-PSSessionConfiguration -Name Kingdoms45JEA -ErrorAction Stop).Count -ne 1 -or

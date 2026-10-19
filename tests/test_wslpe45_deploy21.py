@@ -159,5 +159,36 @@ class DeploymentTests(unittest.TestCase):
         self.assertLess(source.index("path = StageOpenedUpdate(path, prefix)"),
                         source.index("child = new ProcessStartInfo(path)"))
 
+    def test_selected_sources_do_not_address_excluded_rpc_resources(self):
+        resources = ("custom_rpc_authorization", "KingdomsWSLPE40",
+                     "Kingdom40LocalRpc", "Wslpe40RpcOperator")
+        for row in deploy.selection():
+            path = batch.ROOT / row["playbook"]
+            sources = [path]
+            for play in yaml.safe_load(path.read_text()):
+                for key in ("pre_tasks", "tasks", "post_tasks"):
+                    for task in play.get(key, []):
+                        source = task.get("ansible.windows.win_copy", {}).get("src")
+                        if source:
+                            self.assertNotIn("{{", source)
+                            sources.append((path.parent / source).resolve())
+            for source in sources:
+                content = source.read_text()
+                for resource in resources:
+                    self.assertNotIn(resource, content, str(source))
+
+    def test_rpc_coexistence_checks_identity_without_invoking_rpc(self):
+        script = yaml.safe_load(deploy.PREFLIGHT.read_text())[1]["tasks"][0][
+            "ansible.windows.win_powershell"]["script"]
+        self.assertNotIn("Existing #40 privileged RPC host is active", script)
+        for required in ("Assert-Wslpe21RpcObservation", "ExecutablePath", "CommandLine",
+                         "--serve-local-only", "-MethodName GetOwnerSid",
+                         "Get-NetTCPConnection", "Get-NetUDPEndpoint", "NetworkEndpointCount",
+                         "Wrong #40 ownership marker", "WSLPE21_RPC40="):
+            self.assertIn(required, script)
+        for forbidden in ("Invoke-Wslpe40RpcOperator", "Start-Process", "Import-Module",
+                          "Kingdom40OwnedProof", "Kingdom40Status"):
+            self.assertNotIn(forbidden, script)
+
 if __name__=="__main__":
     unittest.main()

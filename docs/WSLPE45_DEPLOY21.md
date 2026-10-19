@@ -36,9 +36,15 @@ writing it, and sets the shared-preservation option for every selected
 playbook. Directory creation and WslpeFixture.psm1 copying are skipped.
 The common module itself and the index qualification claims remain unchanged.
 Shared ACL/hash, #25 marker and existing JEA file fingerprints are checked
-before and after every operation. An active #40 server blocks the operation;
-it is never killed. Existing shared source destinations must not be linked
-or writable by non-administrators.
+before and after every operation. An existing #40 server may coexist only
+when its exact protected image path, sole --serve-local-only argument,
+administrator/SYSTEM process owner, owned fixture and absence of TCP/UDP
+endpoints are verified. Multiple or unidentifiable hosts fail closed.
+Its existing fixture, staged binaries and operator module are inspected and
+fingerprinted, never modified, invoked or killed. Their contents and ACLs
+must remain unchanged throughout the batch; natural process exit is allowed.
+Existing shared source destinations must not be linked or writable by
+non-administrators.
 
 #22 remains a deliberately machine-wide SCM CREATE_SERVICE grant. It is not
 fixture-local. Its validation now requires the exact original descriptor
@@ -105,3 +111,25 @@ Evidence categories:
 - Exploitation proven: independent learner boundary-crossing evidence.
 
 This change supplies no new Windows runtime or exploitation evidence.
+
+## Correction for the observed initial preflight failure
+
+The operator's bcc4000 transcript stopped at the blanket active-#40 check,
+with changed=0 and no selected scenario application. This was an overly broad
+coexistence gate. The reviewed server uses the dedicated ncalrpc endpoint
+KingdomsWSLPE40 and its own fixture; selected playbooks and their copied
+sources do not address those resources. CI checks that separation and runs
+positive/negative identity decisions under native Windows PowerShell 5.1.
+
+The replacement gate preserves the existing host and records its protected
+files in the batch preservation fingerprint. Those recorded hashes establish
+unchanged existing bytes, not independent original-build attestation.
+No excluded #40 implementation is changed. No RPC operation is called.
+Concurrent #40 fixture writes cause preservation validation to stop the batch.
+
+After pulling the tested correction, repeat the operator command above.
+The observed initial read-only failure occurs before creation of a new
+recovery sentinel. If a sentinel from another attempt exists, it still blocks;
+do not delete it. Preflight failures now print a bounded reason as well as the
+private evidence path. This source correction supplies no guest installation,
+configuration-validation or learner-exploitation result.
