@@ -491,6 +491,36 @@ def validate_registered27(snapshot, identity):
         raise batch.BatchBlocked("Reviewed COM consumer is not exact SYSTEM task")
 
 
+
+def powershell51_registered27_snapshot(snapshot):
+    """Encode Windows registry value names as data, not JSON object keys.
+
+    PowerShell 5.1 ConvertFrom-Json rejects the empty property name used by
+    the (default) registry value. Keep the original snapshot untouched so the
+    before/after exact comparisons remain against the original evidence.
+    """
+    compatible = copy.deepcopy(snapshot)
+    for entry in compatible["registry"]:
+        values = entry["values"]
+        if not isinstance(values, dict):
+            raise batch.BatchBlocked("Expected original registry value map")
+        if any(not isinstance(k, str) or "\\x00" in k for k in values):
+            raise batch.BatchBlocked("Unexpected registry value name")
+        if len({k.casefold() for k in values}) != len(values):
+            raise batch.BatchBlocked("Case-fold duplicate registry value names")
+        serialized = []
+        for name, details in sorted(values.items()):
+            if (not isinstance(details, dict)
+                    or set(details) != {"kind", "value"}
+                    or not isinstance(details["kind"], str)
+                    or not isinstance(details["value"], str)):
+                raise batch.BatchBlocked("Unexpected registry evidence type")
+            serialized.append({"name": name, "kind": details["kind"],
+                               "value": details["value"]})
+        entry["values"] = serialized
+    return compatible
+
+
 def complete_registered27_and_resume(root, requested, inspection, identity, head, base,
                                      ansible, inv, varsfile, expected_address, env, timeout, rows):
     """Complete only inspected registered #27; then continue from #28, not #21."""
@@ -583,7 +613,8 @@ def complete_registered27_and_resume(root, requested, inspection, identity, head
     report["inflight"] = {"number": 27, "stage": "in_place_completion", "started_at": now()}
     checkpoint()
     variables = dict(common, wslpe_registered27_expected_b64=base64.b64encode(
-        json.dumps(saved,separators=(",",":")).encode("utf-8")).decode("ascii"))
+        json.dumps(powershell51_registered27_snapshot(saved),
+                   separators=(",",":")).encode("utf-8")).decode("ascii"))
     rc, log = run_command(ansible_command(
         ansible, inv, varsfile, ROOT/"ansible/wslpe45/deploy21-complete27.yml",variables),
         env,timeout)
