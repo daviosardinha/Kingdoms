@@ -392,6 +392,266 @@ def inspect_failure(root, requested, identity, head, base, ansible, inv, varsfil
     return 0
 
 
+
+def reviewed_registered27(root, recovery_path, inspection_path, identity):
+    recovery, digest = inspectable_failure_parent(root, recovery_path, identity)
+    if recovery.get("schema") != "kingdoms.wslpe45.recovery27.v1":
+        raise batch.BatchBlocked("Expected exact second #27 failure journal")
+    path = Path(inspection_path).expanduser()
+    if (path.parent != root or not re.fullmatch(
+            r"wslpe45-inspect27-[a-f0-9]{16}\.json", path.name)):
+        raise batch.BatchBlocked("Exact read-only registered-state inspection required")
+    report = json.loads(read_private_evidence(path))
+    if (report.get("schema") != "kingdoms.wslpe45.inspect27-controller.v1"
+            or report.get("parent_journal") != str(recovery_path)
+            or report.get("parent_sha256") != digest
+            or report.get("read_only") is not True
+            or report.get("completed") is not True
+            or report.get("inflight") is not None
+            or any(report.get(k) != v for k, v in identity.items())):
+        raise batch.BatchBlocked("Registered-state inspection is not bound to second failure")
+    events = report.get("events") or []
+    if ([(e.get("stage"), e.get("result"), e.get("exit_code")) for e in events] != [
+            ("before", "PASS", 0), ("state", "PASS", 0), ("after", "PASS", 0)]):
+        raise batch.BatchBlocked("Registered-state inspection preservation checks incomplete")
+    snapshot = read_inspection_state(root, events[1].get("private_log"))
+    validate_registered27(snapshot, identity)
+    return recovery, digest, snapshot, path
+
+
+def validate_registered27(snapshot, identity):
+    base = r"C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack"
+    clsid = r"SOFTWARE\Classes\CLSID\{7E86DE4C-10F9-414B-82B5-07CB20264527}"
+    progid = r"SOFTWARE\Classes\Kingdoms45.ComServer"
+    expected_paths = {
+        base, base+r"\.kingdoms-owned.json", base+r"\consumer.ps1",
+        base+r"\inbox", base+r"\inbox\Kingdom45ComServer.dll",
+        base+r"\Kingdom45ComServer.dll", base+r"\proof.txt"}
+    registry_paths = {clsid, clsid+r"\Implemented Categories",
+                      clsid+r"\Implemented Categories\{62C8FE65-4EBB-45e7-B440-6E39B2CDBF29}",
+                      clsid+r"\InprocServer32", clsid+r"\InprocServer32\0.0.0.0",
+                      clsid+r"\ProgId", progid, progid+r"\CLSID"}
+    marker = snapshot.get("marker") or {}
+    files = snapshot.get("files") or []
+    entries = snapshot.get("registry") or []
+    tasks = snapshot.get("tasks") or []
+    if (snapshot.get("schema") != "kingdoms.wslpe45.inspect27.v1"
+            or snapshot.get("target") != identity["target"]
+            or snapshot.get("guest_mutations") is not False
+            or snapshot.get("assessment") != "RECOVERY_REVIEW_REQUIRED"
+            or not re.fullmatch(r"S-1-5-21-(?:\d+-){3}\d+", str(snapshot.get("learner_sid", "")))
+            or marker.get("schema") != "kingdoms.wslpe.fixture-owner.v1"
+            or marker.get("machine") != identity["target"]
+            or marker.get("number") != 27
+            or marker.get("id") != "com_clsid_registration_hijack"
+            or marker.get("learner_sid") != snapshot.get("learner_sid")
+            or len(files) != 7 or {f.get("path") for f in files} != expected_paths
+            or len(entries) != 8 or {r.get("path") for r in entries} != registry_paths
+            or len(tasks) != 1 or snapshot.get("regasm_processes") != []):
+        raise batch.BatchBlocked("Registered COM evidence does not identify exact owned #27")
+    for file in files:
+        if not isinstance(file.get("sddl"), str) or not file["sddl"]:
+            raise batch.BatchBlocked("Missing registered fixture ACL evidence")
+        if file.get("directory") is not (file["path"] in (base,base+r"\inbox")):
+            raise batch.BatchBlocked("Registered fixture entry type differs")
+        if not file["directory"] and (
+                not re.fullmatch(r"[A-F0-9]{64}", str(file.get("sha256", "")))
+                or not isinstance(file.get("length"), int)
+                or file["length"] <= 0):
+            raise batch.BatchBlocked("Missing registered fixture hash evidence")
+        if file["path"].lower().endswith(".dll") and not str(
+                file.get("assembly_name", "")).startswith("Kingdom45ComServer, Version="):
+            raise batch.BatchBlocked("Unrelated assembly in owned COM fixture")
+    indexed = {r["path"]: r for r in entries}
+    uri = ("file:///C:/ProgramData/KingdomsWSLPE45/fixtures/"
+           "com_clsid_registration_hijack/Kingdom45ComServer.dll")
+    for key in (clsid+r"\InprocServer32", clsid+r"\InprocServer32\0.0.0.0"):
+        values = indexed[key].get("values") or {}
+        if (str((values.get("CodeBase") or {}).get("value", "")).casefold() != uri.casefold()
+                or (values.get("Class") or {}).get("value") != "Kingdoms45.Com.Server"
+                or (values.get("Assembly") or {}).get("value") !=
+                "Kingdom45ComServer, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null"):
+            raise batch.BatchBlocked("Reviewed registered CodeBase or CLR identity differs")
+    if ((indexed[clsid+r"\ProgId"].get("values") or {}).get("", {}).get("value")
+            != "Kingdoms45.ComServer"
+            or (indexed[progid+r"\CLSID"].get("values") or {}).get("", {}).get("value")
+            != "{7E86DE4C-10F9-414B-82B5-07CB20264527}"):
+        raise batch.BatchBlocked("Registered COM ProgID/CLSID mapping mismatches")
+    if not all(isinstance(r.get("sddl"), str) and r["sddl"] for r in entries):
+        raise batch.BatchBlocked("Missing registered COM registry ACL evidence")
+    if snapshot["learner_sid"] in indexed[clsid+r"\InprocServer32\0.0.0.0"]["sddl"]:
+        raise batch.BatchBlocked("Learner already has unreviewed COM registry rights")
+    task = tasks[0]
+    xml = task.get("xml", "")
+    if (task.get("name") != "Kingdom45ComClient" or task.get("path") != "\\"
+            or task.get("state") not in ("Ready","Running")
+            or "<UserId>S-1-5-18</UserId>" not in xml
+            or r"\fixtures\com_clsid_registration_hijack\consumer.ps1" not in xml
+            or r"Windows\System32\WindowsPowerShell\v1.0\powershell.exe" not in xml):
+        raise batch.BatchBlocked("Reviewed COM consumer is not exact SYSTEM task")
+
+
+def complete_registered27_and_resume(root, requested, inspection, identity, head, base,
+                                     ansible, inv, varsfile, expected_address, env, timeout, rows):
+    """Complete only inspected registered #27; then continue from #28, not #21."""
+    parent, digest, saved, report_path = reviewed_registered27(
+        root, requested, inspection, identity)
+    sentinel = root / ".wslpe45-recovery-required"
+    original = parent["parent_journal"]
+    if read_private_evidence(sentinel).decode().strip() != Path(original).name:
+        raise batch.BatchBlocked("Original recovery sentinel no longer matches")
+    report = copy.deepcopy(parent)
+    report.update(schema="kingdoms.wslpe45.resume_registered27.v1",
+                  parent_journal=str(requested), parent_sha256=digest,
+                  reviewed_inspection=str(report_path), commit=head,
+                  created_at=now(), completed=False, failure=None, inflight=None,
+                  resume_events=[], resume_index=5)
+    name = "wslpe45-resume-registered27-" + token_hex(8) + ".json"
+    baseline = report["preserved_state_sha256"]
+    common = {"wslpe_expected_address": expected_address,
+              "wslpe_pilot_shared_sha256": hashlib.sha256(
+                  (ROOT / "ansible/files/wslpe45/WslpeFixture.psm1").read_bytes()
+              ).hexdigest().upper()}
+
+    def checkpoint():
+        report["runtime_configuration_pass_count"] = sum(
+            r["configuration_validation"] == "PASS" for r in report["scenarios"])
+        durable(root, name, report)
+
+    def stage_event(stage, rc, log, marker=None):
+        success = rc == 0 and (marker is None or log.count(marker) == 1)
+        path = save_log(base, root, "resume-registered27-" + stage, log)
+        report["resume_events"].append({
+            "stage": stage, "result": "PASS" if success else "FAIL",
+            "exit_code": rc, "private_log": str(path)})
+        report["inflight"] = None
+        checkpoint()
+        return success, path
+
+    def preserve(stage):
+        rc, log = run_command(ansible_command(
+            ansible, inv, varsfile, PREFLIGHT, common), env, timeout)
+        matches = re.findall(r"WSLPE21_PRESERVED=([A-F0-9]{64})", log)
+        marker = ("WSLPE21_PREFLIGHT=PASS" if matches == [baseline]
+                  else "INVALID_PRESERVATION")
+        return stage_event(stage+"-preservation", rc, log, marker)[0]
+
+    def stop(stage, why):
+        report["failure"] = {"number": 27, "stage": stage, "reason": why}
+        report["inflight"] = None
+        checkpoint()
+        print(f"[STOP] Registered #27 continuation halted at {stage}: {root / name}",flush=True)
+        return 2
+
+    checkpoint()
+    print(f"[RESUME] Linked original recovery and inspection retained; journal: {root / name}",flush=True)
+    if not preserve("before"):
+        return stop("original_preservation", "Protected shared state differs")
+    for prior in rows[:5]:
+        report["inflight"] = {"number": prior["number"], "stage": "existing_revalidation"}
+        checkpoint()
+        cmd, marker = stage_command(ansible, inv, varsfile, prior, expected_address,
+                                    "validate","vulnerable","vulnerable")
+        rc, log = run_command(cmd, env, timeout)
+        ok,_ = stage_event(f"existing-{prior['number']}", rc, log, marker)
+        if not ok:
+            return stop(f"existing-{prior['number']}", "Earlier scenario no longer validates")
+    if not preserve("after-existing"):
+        return stop("existing_preservation", "Protected state differs after earlier validation")
+
+    # Fresh read-only state must match reviewed bytes/ACLs/task/registry metadata,
+    # not just the presence of the fixture.
+    report["inflight"] = {"number": 27, "stage": "fresh_inspection"}
+    checkpoint()
+    rc, log = run_command(ansible_command(ansible,inv,varsfile,INSPECT27,common),env,timeout)
+    try:
+        lines=[]
+        for line in log.splitlines():
+            value=line.strip().rstrip(",")
+            if value.startswith('"WSLPE21_INSPECT27_JSON='):
+                lines.append(json.loads(json.loads(value).split("=",1)[1]))
+        matching=len(lines)==1 and stable_inspection(lines[0])==stable_inspection(saved)
+    except (ValueError,TypeError,IndexError):
+        matching=False
+    marker="WSLPE21_INSPECT27=PASS" if matching else "INVALID_REGISTERED_STATE"
+    ok,_=stage_event("fresh-inspection",rc,log,marker)
+    if not ok:
+        return stop("fresh_inspection", "Registered COM state differs from reviewed snapshot")
+    if not preserve("before-completion"):
+        return stop("completion_preservation", "Protected state changed")
+
+    report["inflight"] = {"number": 27, "stage": "in_place_completion", "started_at": now()}
+    checkpoint()
+    variables = dict(common, wslpe_registered27_expected_b64=base64.b64encode(
+        json.dumps(saved,separators=(",",":")).encode("utf-8")).decode("ascii"))
+    rc, log = run_command(ansible_command(
+        ansible, inv, varsfile, ROOT/"ansible/wslpe45/deploy21-complete27.yml",variables),
+        env,timeout)
+    ok,_=stage_event("in-place-completion",rc,log,"WSLPE21_REGISTERED27_COMPLETE=PASS")
+    if not ok:
+        return stop("in_place_completion", "COM configuration completion failed; inspect before any retry")
+    if not preserve("after-completion"):
+        return stop("post_completion_preservation","Protected shared state changed")
+    report["scenarios"][5]["installation"]="PASS_EXISTING"
+    report["scenarios"][5]["events"].append({
+        "stage":"in_place_completion","result":"PASS_EXISTING",
+        "note":"Registered COM class and SYSTEM task retained; source CodeBase check corrected"})
+    checkpoint()
+
+    def invoke(row, action, state, label):
+        if row["number"] in (21,22,23,24,26):
+            raise batch.BatchBlocked("Continuation cannot reinstall previous successes")
+        if row["number"]==27 and action=="apply":
+            raise batch.BatchBlocked("Registered #27 cannot be applied again")
+        if not preserve(f"step-{row['number']}-{label}-before"):
+            return False, {"exit_code":2, "failure_details":"Preservation failure"}
+        command, marker=stage_command(ansible,inv,varsfile,row,expected_address,
+                                      action,state,label)
+        rc,log=run_command(command,env,timeout)
+        ok=rc==0 and log.count(marker)==1
+        if ok and row["number"]==30:
+            jea_rc, proof=run_command(ansible_command(
+                ansible,inv,varsfile,JEA,common),env,timeout)
+            log+="\n"+proof
+            ok=jea_rc==0 and proof.count("WSLPE21_JEA_ACTIVE=PASS")==1
+        if ok:
+            ok=preserve(f"step-{row['number']}-{label}-after")
+        path=save_log(base,root,f"resume-registered27-{row['number']}-{label}",log)
+        return ok, {"exit_code":rc, "private_log":str(path),
+                    "failure_details":None if ok else "Windows validation or preservation failed"}
+
+    # Finish existing #27 via actual Windows vulnerable configuration validation.
+    report["inflight"]={"number":27,"stage":"vulnerable","started_at":now()}
+    checkpoint()
+    ok, details = invoke(rows[5], "validate", "vulnerable", "vulnerable")
+    row=report["scenarios"][5]
+    row["configuration_validation"]="PASS" if ok else "FAIL"
+    row["updated_at"]=now()
+    row["events"].append(dict(stage="vulnerable",result="PASS" if ok else "FAIL", **details))
+    report["inflight"]=None
+    checkpoint()
+    if not ok:
+        return stop("validate_27", "Existing #27 configuration did not validate")
+    print("[PASS] #27 COM registration completed and configuration validated",flush=True)
+    try:
+        result=deployment_loop(rows,report,checkpoint,invoke,start_at=6)
+    except BaseException as exc:
+        report["failure"]={"stage":"interrupted_or_exception","type":type(exc).__name__,
+                           "inflight":report["inflight"]}
+        checkpoint()
+        raise
+    if result:
+        print(f"[STOP] Later scenario failed; recovery state preserved: {root/name}",flush=True)
+        return result
+    if read_private_evidence(sentinel).decode().strip()!=Path(original).name:
+        return stop("sentinel_final","Original recovery pointer changed")
+    sentinel.unlink()
+    checkpoint()
+    print(f"[PASS] 21 selected scenario configurations validated; report: {root/name}",flush=True)
+    print("[PENDING] Learner exploitation is not proven by these installation checks.",flush=True)
+    return 0
+
+
 def recover27_and_resume(root, requested, prior_inspection, identity, head,
                          base, ansible, inv, varsfile, expected_address, env, timeout, rows):
     """Only the previously inspected, unchanged #27 pre-registration partial may be recovered.
@@ -580,11 +840,14 @@ def run(args):
     print("[EXCLUDED] 25,36,38,40; #30 retained, inspected and tested without re-registration", flush=True)
     inspection = getattr(args, "inspect_failure", None)
     recovery = getattr(args, "recover_failure", None)
+    registered = getattr(args, "complete_registered27", None)
     prior_inspection = getattr(args, "inspection_report", None)
-    if recovery and (not args.execute or not prior_inspection or inspection):
+    if registered and (not args.execute or not prior_inspection or inspection or recovery):
+        raise batch.BatchBlocked("Registered #27 completion requires --execute and reviewed --inspection-report")
+    if recovery and (not args.execute or not prior_inspection or inspection or registered):
         raise batch.BatchBlocked("Recovery requires --execute, --recover-failure and --inspection-report")
-    if prior_inspection and not recovery:
-        raise batch.BatchBlocked("Inspection report is only accepted for exact recovery")
+    if prior_inspection and not (recovery or registered):
+        raise batch.BatchBlocked("Inspection report requires an exact recovery or registered-state completion")
     if inspection and args.execute:
         raise batch.BatchBlocked("Read-only inspection cannot be combined with --execute")
     if not args.execute and not inspection and not recovery:
@@ -654,6 +917,13 @@ def run(args):
                         "snapshot": helper("wslpe40-stage.py").SNAPSHOT}
             return inspect_failure(root, inspection, identity, head, base, ansible, inv,
                                    varsfile, env, args.timeout_seconds)
+        if registered:
+            identity = {"target": "WSLPE-WS01", "address": expected, "workspace": str(workspace),
+                        "inventory": str(inv), "vmx": str(vmx),
+                        "snapshot": helper("wslpe40-stage.py").SNAPSHOT}
+            return complete_registered27_and_resume(root, registered, prior_inspection,
+                    identity, head, base, ansible, inv, varsfile, expected, env,
+                    args.timeout_seconds, rows)
         if recovery:
             identity = {"target": "WSLPE-WS01", "address": expected, "workspace": str(workspace),
                         "inventory": str(inv), "vmx": str(vmx),
@@ -752,6 +1022,8 @@ def main():
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--inspect-failure", metavar="JOURNAL",
                         help="Read-only #27 failure inspection; retains recovery sentinel")
+    parser.add_argument("--complete-registered27", metavar="RECOVERY_JOURNAL",
+                        help="Journal-backed in-place existing #27 completion and continuation")
     parser.add_argument("--recover-failure", metavar="JOURNAL",
                         help="Explicit inspected #27 cleanup and resume from #27, not from #21")
     parser.add_argument("--inspection-report", metavar="INSPECTION_JSON",
