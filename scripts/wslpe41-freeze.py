@@ -137,7 +137,7 @@ def run(argv=None) -> int:
     receipt["status"] = "PASS"
     receipt["completed_at"] = datetime.now(timezone.utc).isoformat()
     deployment.durable(root, receipt_name, receipt)
-    print("[PASS] Immutable reference snapshot now exists:", NAME)
+    print("[PASS] Dedicated reference snapshot now exists:", NAME)
     print("[RECEIPT]", root / receipt_name)
     print("[NEXT] Learner acceptance must use independently scoped scenario proofs, not redeployment")
     return 0
