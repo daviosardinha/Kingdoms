@@ -115,6 +115,28 @@ Paste its contents into ordinary PowerShell in the offline learner VM. Confirm
 Only after this precondition do we separately engineer an owned-canary learner
 proof, with explicit rollback in the clone and independent privileged evidence.
 
+### Learner #21 read-only gate correction (2026-10-19)
+
+The first actual `lpe.trainee` run on the disconnected clone produced
+`WSLPE41_21_LEARNER_BOUNDARY=PASS` followed by
+`FAILED_STAGE=OWNED_FIXTURE` and `UnauthorizedAccessException`.
+The original read-only pilot incorrectly tried to read
+`C:\ProgramData\KingdomsWSLPE45\fixtures\scheduled_task_definition_acl\.kingdoms-owned.json`
+and assert the binary's existence **as the non-admin learner**. The native
+`New-Wslpe45OwnedFixture` deliberately protects each fixture directory
+with Administrators/SYSTEM permissions, so that access denial is expected
+and is not a reason to change the fixture ACL.
+
+The revised learner pilot no longer opens the protected marker or probes
+the executable through that directory. It explicitly reports
+`WSLPE41_21_FIXTURE_OWNERSHIP=OPERATOR_CHECK_REQUIRED` rather than
+misleadingly claiming ownership PASS. Only the dedicated task's identity,
+SYSTEM action and learner task-object DACL are inspected under the
+learner's effective security context. The separate privileged owner-marker
+verification on the disposable clone is a later independent acceptance
+gate. **Do not grant learner read access to the protected root** or reapply
+#21 to make a flawed preflight pass. No privileged execution has been shown.
+
 ### First pilot, then automation for all 41
 
 The learner-acceptance planner is not an exploit runner. After clone
