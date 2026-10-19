@@ -338,7 +338,7 @@ class DeploymentTests(unittest.TestCase):
             identity, parent, original, sentinel = self.inspection_fixture(root)
             digest = hashlib.sha256(original.read_bytes()).hexdigest()
             snapshot = self.recovery_state()
-            log = root/"wslpe-inspect27-state-"+"a"*12+".log"
+            log = root/("wslpe-inspect27-state-"+"a"*12+".log")
             message = "WSLPE21_INSPECT27_JSON="+json.dumps(snapshot, separators=(",", ":"))
             log.write_text('"'+json.dumps(message)[1:-1]+'",\n')
             log.chmod(0o600)
