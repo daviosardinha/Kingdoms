@@ -41,6 +41,10 @@ Recorded source SHA: `6b612e9abf2547dc76e4d4a89f4df1be6137f6e6`
 
 The original `kingdoms/wslpe45_implementation_index.yml` continues to track source candidates, six-stage qualification and learner proof, not this 21-scenario install/validate checkpoint. Do **not** rewrite candidate entries to `implemented` merely because the deployment journal passed.
 
+## Freeze and acceptance automation — next phase
+
+The operator-only freeze controller, `scripts/wslpe41-freeze.py`, verifies the exact final private journal and native VMware instance before creating a unique snapshot with `--execute`. Without this explicit flag it is read-only and only plans the snapshot. The source-only `scripts/wslpe41-learner-acceptance.py` creates the precise 41-ID acceptance matrix; no learner proofs are executed or claimed yet. See [WSLPE41 learner acceptance plan](./WSLPE41_LEARNER_ACCEPTANCE_PLAN.md) for strict cloned-lab proof and evidence requirements. A **freeze PASS receipt must exist before live acceptance execution is authorized**.
+
 ## Freeze / transition
 
 1. **Stop the installation campaign.** No replay of `--execute`, `--recover-failure`, `--complete-registered27`, fixture cleanup or excluded-scenario deployment is part of this closeout.
