@@ -458,5 +458,118 @@ class DeploymentTests(unittest.TestCase):
                     deploy.run(args)
             provenance.assert_not_called()
 
+
+    def registered27_fixture(self):
+        snapshot=self.recovery_state()
+        base=r"C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack"
+        for name in (r"\consumer.ps1",r"\proof.txt"):
+            snapshot["files"].append({"path":base+name,"directory":False,
+                "sddl":"O:BAG:AI(A;;FA;;;SY)","sha256":"B"*64,"length":123})
+        clsid=r"SOFTWARE\Classes\CLSID\{7E86DE4C-10F9-414B-82B5-07CB20264527}"
+        progid=r"SOFTWARE\Classes\Kingdoms45.ComServer"
+        names=(clsid,clsid+r"\Implemented Categories",
+               clsid+r"\Implemented Categories\{62C8FE65-4EBB-45e7-B440-6E39B2CDBF29}",
+               clsid+r"\InprocServer32",clsid+r"\InprocServer32\0.0.0.0",
+               clsid+r"\ProgId",progid,progid+r"\CLSID")
+        uri="file:///C:/ProgramData/KingdomsWSLPE45/fixtures/com_clsid_registration_hijack/Kingdom45ComServer.DLL"
+        snapshot["registry"]=[]
+        for name in names:
+            values={}
+            if name.endswith("InprocServer32") or name.endswith("InprocServer32\\0.0.0.0"):
+                values={
+                    "CodeBase":{"kind":"String","value":uri},
+                    "Class":{"kind":"String","value":"Kingdoms45.Com.Server"},
+                    "Assembly":{"kind":"String","value":
+                        "Kingdom45ComServer, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null"}
+                }
+            if name.endswith(r"\ProgId"):
+                values={"":{"kind":"String","value":"Kingdoms45.ComServer"}}
+            if name.endswith(r"Kingdoms45.ComServer\CLSID"):
+                values={"":{"kind":"String","value":"{7E86DE4C-10F9-414B-82B5-07CB20264527}"}}
+            snapshot["registry"].append({"path":name,"values":values,
+                                         "sddl":"O:BAG:AI(A;;KR;;;BU)"})
+        xml=(r"<Task><UserId>S-1-5-18</UserId><Command>"
+             r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+             r"</Command><Arguments>-NoProfile -NonInteractive -File "
+             r'"C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack\consumer.ps1"'
+             r"</Arguments></Task>")
+        snapshot["tasks"]=[{"name":"Kingdom45ComClient","path":"\\",
+                            "state":"Ready","xml":xml}]
+        return snapshot
+
+    def test_reviewed_registered27_rejects_foreign_bytes_registry_and_task(self):
+        good=self.registered27_fixture()
+        deploy.validate_registered27(good,{"target":"WSLPE-WS01"})
+        variants=[]
+        value=copy.deepcopy(good)
+        value["registry"][4]["values"]["CodeBase"]["value"]="file:///C:/Windows/other.dll"
+        variants.append(value)
+        value=copy.deepcopy(good)
+        value["registry"][4]["sddl"]=good["learner_sid"]+" (A;;KA;;;SY)"
+        variants.append(value)
+        value=copy.deepcopy(good)
+        value["files"].append(value["files"][0])
+        variants.append(value)
+        value=copy.deepcopy(good)
+        value["tasks"][0]["xml"]="<Task><UserId>S-1-5-18</UserId></Task>"
+        variants.append(value)
+        value=copy.deepcopy(good)
+        value["regasm_processes"]=[{"ProcessId":1234}]
+        variants.append(value)
+        for changed in variants:
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.validate_registered27(changed,{"target":"WSLPE-WS01"})
+
+    def test_registered27_completion_playbook_is_not_regasm_or_reset(self):
+        plays=yaml.safe_load((batch.ROOT/
+            "ansible/wslpe45/deploy21-complete27.yml").read_text())
+        self.assertEqual([p["hosts"] for p in plays],["localhost","wslpe"])
+        stage=plays[1]["tasks"]
+        self.assertTrue(any("ansible.windows.win_copy" in task for task in stage))
+        self.assertIn("WSLPE21_REGISTERED27_SNAPSHOT=PASS",
+                      stage[0]["ansible.windows.win_powershell"]["script"])
+        completion=stage[-1]["ansible.windows.win_powershell"]["script"]
+        self.assertIn("Complete-Wslpe45OwnedComRegistration",completion)
+        self.assertNotIn("Invoke-Wslpe45ComRegistration -Action apply",completion)
+        self.assertNotIn("RegAsm",completion)
+        self.assertIn("WSLPE21_REGISTERED27_COMPLETE=PASS",
+                      str(plays[1]["post_tasks"]))
+
+    def test_registered27_following_candidates_start_at_28(self):
+        rows=deploy.selection()
+        report=self.report(rows)
+        for record in report["scenarios"][:6]:
+            record["installation"]="PASS_EXISTING"
+            record["configuration_validation"]="PASS"
+        previous=copy.deepcopy(report["scenarios"][:6])
+        called=[]
+        result=deploy.deployment_loop(rows,report,lambda:None,
+                lambda row,action,state,label:
+                    (called.append((row["number"],action)) or True,{"exit_code":0}),
+                start_at=6)
+        self.assertEqual(result,0)
+        self.assertEqual(called[0],(28,"apply"))
+        self.assertEqual(called[-1],(45,"validate"))
+        self.assertEqual(len(called),30)
+        self.assertEqual(report["scenarios"][:6],previous)
+
+    def test_registered27_cli_rejects_unsafe_or_ambiguous_requests(self):
+        attempts=[
+            SimpleNamespace(execute=False,inspect_failure=None,
+                recover_failure=None,complete_registered27="failed.json",
+                inspection_report="inspected.json"),
+            SimpleNamespace(execute=True,inspect_failure=None,
+                recover_failure="failed.json",complete_registered27="failed.json",
+                inspection_report="inspected.json"),
+            SimpleNamespace(execute=True,inspect_failure=None,
+                recover_failure=None,complete_registered27="failed.json",
+                inspection_report=None),
+        ]
+        with patch.object(deploy,"provenance") as provenance:
+            for args in attempts:
+                with self.assertRaises(batch.BatchBlocked):
+                    deploy.run(args)
+            provenance.assert_not_called()
+
 if __name__=="__main__":
     unittest.main()
