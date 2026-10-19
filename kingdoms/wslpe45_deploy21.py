@@ -206,10 +206,10 @@ def inspectable_failure_parent(root, requested, identity):
     The outstanding sentinel must still name the original deploy21 journal.
     """
     path = Path(requested).expanduser()
-    if re.fullmatch(r"wslpe45-deploy21-[a-f0-9]{16}\\.json", path.name):
+    if re.fullmatch(r"wslpe45-deploy21-[a-f0-9]{16}\.json", path.name):
         return inspection_parent(root, requested, identity)
     if path.parent != root or not re.fullmatch(
-            r"wslpe45-recovery27-[a-f0-9]{16}\\.json", path.name):
+            r"wslpe45-recovery27-[a-f0-9]{16}\.json", path.name):
         raise batch.BatchBlocked("Read-only inspection requires an exact known #27 recovery journal")
     raw = read_private_evidence(path)
     report = json.loads(raw)
@@ -257,9 +257,9 @@ def inspectable_failure_parent(root, requested, identity):
             raise batch.BatchBlocked("Reviewed #27 recovery stages are incomplete")
     if any(e.get("result") == "FAIL" for e in events):
         raise batch.BatchBlocked("Recovery evidence contains unreviewed earlier failure")
-    if not re.fullmatch(r"/home/[^/]+/\\.local/state/kingdoms-wslpe45-live/"
-                        r"wslpe-recover27-resume-27-apply-[a-f0-9]{12}\\.log",
-                        str(failure.get("private_log", ""))):
+    evidence_path = Path(str(failure.get("private_log", "")))
+    if (evidence_path.parent != root or not re.fullmatch(
+            r"wslpe-recover27-resume-27-apply-[a-f0-9]{12}\.log", evidence_path.name)):
         raise batch.BatchBlocked("Unexpected #27 failed stage evidence path")
     return report, hashlib.sha256(raw).hexdigest()
 
