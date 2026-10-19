@@ -109,15 +109,22 @@
                       if($key.GetAccessControl().Sddl -cne $record.sddl) {
                           throw 'Registered COM ACL differs from reviewed evidence'
                       }
+                      # Windows PS5.1 cannot deserialize JSON objects with
+                      # an empty property name. Registry default-value names
+                      # therefore arrive as data in a list, not as object keys.
                       $names=@($key.GetValueNames())
-                      $expectedNames=@($record.values.PSObject.Properties.Name)
-                      if(($names | Sort-Object) -join '|' -cne
+                      $expectedValues=@($record.values)
+                      $expectedNames=@($expectedValues | ForEach-Object { [string]$_.name })
+                      if($expectedNames.Count -ne @($expectedNames | Select-Object -Unique).Count -or
+                         ($names.Count -ne $expectedNames.Count) -or
+                         (($names | Sort-Object) -join '|') -cne
                          (($expectedNames | Sort-Object) -join '|')) {
                           throw 'Registered COM value names changed'
                       }
-                      foreach($n in $expectedNames) {
-                          if([string]$key.GetValue($n) -cne [string]$record.values.PSObject.Properties[$n].Value.value -or
-                             [string]$key.GetValueKind($n) -cne [string]$record.values.PSObject.Properties[$n].Value.kind) {
+                      foreach($entry in $expectedValues) {
+                          $n=[string]$entry.name
+                          if([string]$key.GetValue($n) -cne [string]$entry.value -or
+                             [string]$key.GetValueKind($n) -cne [string]$entry.kind) {
                               throw 'Registered COM value changed'
                           }
                       }
