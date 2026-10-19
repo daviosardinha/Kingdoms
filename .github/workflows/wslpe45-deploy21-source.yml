@@ -20,8 +20,8 @@ jobs:
       - run: ansible-galaxy collection install ansible.windows:==2.8.0
       - name: Python syntax and behavioral contracts
         run: |
-          python -m py_compile kingdoms/wslpe45_deploy21.py scripts/wslpe45-deploy21.py scripts/wslpe41-freeze.py scripts/wslpe41-learner-acceptance.py
-          python -m unittest -v tests.test_wslpe41_freeze tests.test_wslpe41_learner_acceptance tests.test_wslpe45_deploy21 tests.test_wslpe45_batch_operator tests.test_wslpe45_controller_dependencies tests.test_wslpe45_single_pilot tests.test_wslpe45_library_lockdown tests.test_wslpe45_service_consumers tests.test_wslpe45_boundary_services tests.test_wslpe45_candidate_traversal tests.test_wslpe45_jea_candidate tests.test_wslpe45_scm_create_acl tests.test_wslpe45_task_definition_acl tests.test_wslpe45_registry_trust tests.test_wslpe45_com_candidate tests.test_wslpe45_lsa_rights tests.test_wslpe45_wmi_consumer_candidate
+          python -m py_compile kingdoms/wslpe45_deploy21.py scripts/wslpe45-deploy21.py scripts/wslpe41-freeze.py scripts/wslpe41-learner-acceptance.py scripts/wslpe41-clone-audit.py
+          python -m unittest -v tests.test_wslpe41_freeze tests.test_wslpe41_learner_acceptance tests.test_wslpe41_clone_audit tests.test_wslpe45_deploy21 tests.test_wslpe45_batch_operator tests.test_wslpe45_controller_dependencies tests.test_wslpe45_single_pilot tests.test_wslpe45_library_lockdown tests.test_wslpe45_service_consumers tests.test_wslpe45_boundary_services tests.test_wslpe45_candidate_traversal tests.test_wslpe45_jea_candidate tests.test_wslpe45_scm_create_acl tests.test_wslpe45_task_definition_acl tests.test_wslpe45_registry_trust tests.test_wslpe45_com_candidate tests.test_wslpe45_lsa_rights tests.test_wslpe45_wmi_consumer_candidate
           python scripts/wslpe45-deploy21.py
       - name: Real Ansible syntax checks without guest access
         run: |
