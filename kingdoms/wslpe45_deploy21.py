@@ -5,6 +5,8 @@ No reset, recovery bypass, implicit resume, account creation or network changes.
 """
 from __future__ import annotations
 import argparse
+import base64
+import copy
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -114,9 +116,9 @@ def stage_command(ansible, inv, varsfile, row, expected, action, state, label):
     cmd[-1] = json.dumps(extra, separators=(",", ":"))
     return cmd, f"WSLPE21_STAGE={row['id']}:{label}:PASS"
 
-def deployment_loop(rows, report, checkpoint, invoke):
+def deployment_loop(rows, report, checkpoint, invoke, start_at=0):
     """Persist intent BEFORE each step; failure leaves prior successes intact."""
-    for row, record in zip(rows, report["scenarios"]):
+    for row, record in zip(rows[start_at:], report["scenarios"][start_at:]):
         for action, state, label in FLOW:
             report["inflight"] = {"number": row["number"], "stage": label, "started_at": now()}
             checkpoint()
@@ -196,6 +198,97 @@ def inspection_parent(root, requested, identity):
         raise batch.BatchBlocked("Original preservation evidence missing")
     return parent, hashlib.sha256(raw).hexdigest()
 
+
+def read_inspection_state(root, evidence_path):
+    path = Path(evidence_path)
+    if (path.parent != root or not re.fullmatch(
+            r"wslpe-inspect27-state-[a-f0-9]{12}\.log", path.name)):
+        raise batch.BatchBlocked("Not an exact private #27 inspection state log")
+    records = []
+    for line in read_private_evidence(path).decode("utf-8").splitlines():
+        item = line.strip().rstrip(",")
+        if not item.startswith('"WSLPE21_INSPECT27_JSON='):
+            continue
+        try:
+            decoded = json.loads(item)
+            records.append(json.loads(decoded.split("=", 1)[1]))
+        except (ValueError, IndexError, TypeError) as exc:
+            raise batch.BatchBlocked("Malformed original #27 state evidence") from exc
+    if len(records) != 1:
+        raise batch.BatchBlocked("Exactly one original #27 state snapshot required")
+    return records[0]
+
+
+def stable_inspection(snapshot):
+    return {key: snapshot.get(key) for key in (
+        "schema", "target", "learner_sid", "marker", "files",
+        "registry", "tasks", "regasm_processes", "assessment", "guest_mutations")}
+
+
+def validate_partial27(snapshot, identity):
+    marker = snapshot.get("marker") or {}
+    prefix = r"C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack"
+    expected_paths = {
+        prefix, prefix + r"\.kingdoms-owned.json",
+        prefix + r"\inbox", prefix + r"\Kingdom45ComServer.dll",
+        prefix + r"\inbox\Kingdom45ComServer.dll"}
+    files = snapshot.get("files") or []
+    names = [file.get("path") for file in files]
+    if (snapshot.get("schema") != "kingdoms.wslpe45.inspect27.v1"
+            or snapshot.get("target") != identity["target"]
+            or not re.fullmatch(r"S-1-5-21-(?:\d+-){3}\d+", str(snapshot.get("learner_sid", "")))
+            or marker.get("schema") != "kingdoms.wslpe.fixture-owner.v1"
+            or marker.get("machine") != identity["target"]
+            or marker.get("number") != 27
+            or marker.get("id") != "com_clsid_registration_hijack"
+            or marker.get("learner_sid") != snapshot.get("learner_sid")
+            or snapshot.get("assessment") != "RECOVERY_REVIEW_REQUIRED"
+            or snapshot.get("guest_mutations") is not False
+            or len(files) != 5 or set(names) != expected_paths
+            or len(set(names)) != 5
+            or snapshot.get("registry") != [] or snapshot.get("tasks") != []
+            or snapshot.get("regasm_processes") != []):
+        raise batch.BatchBlocked("Evidence differs from exact owned #27 pre-registration partial")
+    for record in files:
+        path = record["path"]
+        if record.get("directory") is not (path in {prefix, prefix + r"\inbox"}):
+            raise batch.BatchBlocked("Unexpected #27 file/directory identity")
+        if not isinstance(record.get("sddl"), str) or not record["sddl"]:
+            raise batch.BatchBlocked("Missing immutable ACL evidence")
+        if not record["directory"] and (not re.fullmatch(
+                r"[A-F0-9]{64}", str(record.get("sha256", "")))
+                or not isinstance(record.get("length"), int)
+                or record["length"] <= 0):
+            raise batch.BatchBlocked("Missing immutable file evidence")
+        if path.endswith(".dll") and not str(record.get("assembly_name", "")).startswith(
+                "Kingdom45ComServer, Version="):
+            raise batch.BatchBlocked("Unexpected owned COM assembly")
+
+
+def original_inspection(root, requested, digest, identity, inspection_path):
+    path = Path(inspection_path).expanduser()
+    if path.parent != root or not re.fullmatch(
+            r"wslpe45-inspect27-[a-f0-9]{16}\.json", path.name):
+        raise batch.BatchBlocked("Exact prior read-only inspection JSON required")
+    inspection = json.loads(read_private_evidence(path))
+    if (inspection.get("schema") != "kingdoms.wslpe45.inspect27-controller.v1"
+            or inspection.get("parent_journal") != str(requested)
+            or inspection.get("parent_sha256") != digest
+            or inspection.get("read_only") is not True
+            or inspection.get("completed") is not True
+            or inspection.get("inflight") is not None
+            or inspection.get("assessment") != "RECOVERY_REVIEW_REQUIRED"
+            or any(inspection.get(k) != v for k, v in identity.items())):
+        raise batch.BatchBlocked("Original inspection mismatches protected recovery parent")
+    events = inspection.get("events") or []
+    if ([(e.get("stage"), e.get("result"), e.get("exit_code")) for e in events]
+            != [("before", "PASS", 0), ("state", "PASS", 0), ("after", "PASS", 0)]):
+        raise batch.BatchBlocked("All original inspection gates must pass")
+    snapshot = read_inspection_state(root, events[1].get("private_log"))
+    validate_partial27(snapshot, identity)
+    return snapshot, path
+
+
 def inspect_failure(root, requested, identity, head, base, ansible, inv, varsfile, env, timeout):
     parent, digest = inspection_parent(root, requested, identity)
     name = "wslpe45-inspect27-" + token_hex(8) + ".json"
@@ -233,14 +326,181 @@ def inspect_failure(root, requested, identity, head, base, ansible, inv, varsfil
     print("[PENDING] Review partial #27 state before repair or continuation; no guest changes made.")
     return 0
 
+
+def recover27_and_resume(root, requested, prior_inspection, identity, head,
+                         base, ansible, inv, varsfile, expected_address, env, timeout, rows):
+    """Only the previously inspected, unchanged #27 pre-registration partial may be recovered.
+
+    The original journal and recovery sentinel remain untouched. A new linked
+    journal records every attempt; any interruption leaves the sentinel in place.
+    """
+    parent, digest = inspection_parent(root, requested, identity)
+    saved, inspection_path = original_inspection(
+        root, requested, digest, identity, prior_inspection)
+    sentinel = root / ".wslpe45-recovery-required"
+    if read_private_evidence(sentinel).decode("utf-8").strip() != Path(requested).name:
+        raise batch.BatchBlocked("Recovery pointer changed")
+    report = copy.deepcopy(parent)
+    report.update(schema="kingdoms.wslpe45.recovery27.v1", commit=head,
+                  parent_journal=str(requested), parent_sha256=digest,
+                  prior_inspection=str(inspection_path), created_at=now(),
+                  completed=False, failure=None, inflight=None,
+                  recovery_events=[], resume_index=5)
+    name = "wslpe45-recovery27-" + token_hex(8) + ".json"
+
+    def checkpoint():
+        report["runtime_configuration_pass_count"] = sum(
+            r["configuration_validation"] == "PASS" for r in report["scenarios"])
+        durable(root, name, report)
+
+    checkpoint()
+    print(f"[RECOVERY] Protected original journal retained; new journal: {root / name}", flush=True)
+    extra = {"wslpe_expected_address": expected_address,
+             "wslpe_pilot_shared_sha256": hashlib.sha256(
+                 (ROOT / "ansible/files/wslpe45/WslpeFixture.psm1").read_bytes()
+             ).hexdigest().upper()}
+    recovery_extra = dict(extra,
+        wslpe_recover27_expected_b64=base64.b64encode(
+            json.dumps(saved, separators=(",", ":")).encode("utf-8")
+        ).decode("ascii"))
+    baseline = parent["preserved_state_sha256"]
+
+    def guard(stage):
+        rc, log = run_command(ansible_command(ansible, inv, varsfile, PREFLIGHT, extra),
+                              env, timeout)
+        observed = re.findall(r"WSLPE21_PRESERVED=([A-F0-9]{64})", log)
+        ok = rc == 0 and log.count("WSLPE21_PREFLIGHT=PASS") == 1 and observed == [baseline]
+        evidence = save_log(base, root, "recover27-" + stage + "-preflight", log)
+        report["recovery_events"].append(
+            {"stage": stage + "-preflight", "result": "PASS" if ok else "FAIL",
+             "exit_code": rc, "private_log": str(evidence)})
+        checkpoint()
+        return ok
+
+    def stop(stage, detail):
+        report["failure"] = {"number": 27, "stage": stage, "reason": detail}
+        report["inflight"] = None
+        checkpoint()
+        print(f"[STOP] #27 recovery needs review at {stage}; report: {root / name}", flush=True)
+        return 2
+
+    if not guard("before"):
+        return stop("initial_preservation", "Preflight differs from original preserved digest")
+
+    report["inflight"] = {"number": 27, "stage": "fresh_inspection"}
+    checkpoint()
+    rc, log = run_command(ansible_command(ansible, inv, varsfile, INSPECT27, extra),
+                          env, timeout)
+    evidence = save_log(base, root, "recover27-fresh-inspection", log)
+    try:
+        # Fresh Ansible logs have the same exact controller-emitted evidence shape.
+        fresh_lines = []
+        for line in log.splitlines():
+            item = line.strip().rstrip(",")
+            if item.startswith('"WSLPE21_INSPECT27_JSON='):
+                fresh_lines.append(json.loads(json.loads(item).split("=", 1)[1]))
+        matching = len(fresh_lines) == 1 and stable_inspection(fresh_lines[0]) == stable_inspection(saved)
+    except (ValueError, TypeError, IndexError):
+        matching = False
+    ok = rc == 0 and log.count("WSLPE21_INSPECT27=PASS") == 1 and matching
+    report["recovery_events"].append(
+        {"stage": "fresh_inspection", "result": "PASS" if ok else "FAIL",
+         "exit_code": rc, "private_log": str(evidence)})
+    report["inflight"] = None
+    checkpoint()
+    if not ok:
+        return stop("fresh_inspection", "Guest fixture differs from reviewed read-only evidence")
+    if not guard("before_cleanup"):
+        return stop("pre_cleanup_preservation", "Protected shared state changed")
+
+    def recovery_action(mode):
+        report["inflight"] = {"number": 27, "stage": mode, "started_at": now()}
+        checkpoint()
+        vars_ = dict(recovery_extra, wslpe_recover27_operation=mode)
+        rc, log = run_command(ansible_command(
+            ansible, inv, varsfile, ROOT / "ansible/wslpe45/deploy21-recover27.yml", vars_),
+            env, timeout)
+        marker = "WSLPE21_RECOVER27=" + mode + ":PASS"
+        ok = rc == 0 and log.count(marker) == 1
+        evidence = save_log(base, root, "recover27-" + mode, log)
+        report["recovery_events"].append(
+            {"stage": mode, "result": "PASS" if ok else "FAIL",
+             "exit_code": rc, "private_log": str(evidence)})
+        report["inflight"] = None
+        checkpoint()
+        return ok
+
+    if not recovery_action("cleanup"):
+        return stop("cleanup", "Exact owned #27 cleanup did not complete")
+    if not guard("after_cleanup"):
+        return stop("post_cleanup_preservation", "Protected state changed during cleanup")
+    if not recovery_action("verify"):
+        return stop("verify_clean", "Owned #27 fixture not completely absent")
+    if not guard("before_resume"):
+        return stop("resume_preservation", "Protected state changed before installation")
+
+    # Previous successful scenarios are retained exactly as recorded.
+    prior_record = report["scenarios"][5]
+    prior_record["installation"] = "NOT_ATTEMPTED"
+    prior_record["events"].append({
+        "stage": "exact_owned_recovery", "result": "PASS",
+        "note": "Old failed apply preserved in events; only owned #27 partial files cleaned"})
+    checkpoint()
+
+    def invoke(row, action, state, label):
+        if row["number"] in (21, 22, 23, 24, 26):
+            raise batch.BatchBlocked("Recovery refuses replay of previous successful scenarios")
+        if not guard(f"step-{row['number']}-{label}-before"):
+            return False, {"exit_code": 2, "failure_details": "Preservation preflight changed"}
+        cmd, marker = stage_command(ansible, inv, varsfile, row, expected_address,
+                                    action, state, label)
+        rc, log = run_command(cmd, env, timeout)
+        ok = rc == 0 and log.count(marker) == 1
+        if ok and row["number"] == 30:
+            jea_rc, fresh = run_command(ansible_command(
+                ansible, inv, varsfile, JEA, extra), env, timeout)
+            log += "\n" + fresh
+            ok = jea_rc == 0 and fresh.count("WSLPE21_JEA_ACTIVE=PASS") == 1
+        if ok:
+            ok = guard(f"step-{row['number']}-{label}-after")
+        path = save_log(base, root, f"recover27-resume-{row['number']}-{label}", log)
+        return ok, {"exit_code": rc, "private_log": str(path),
+                    "failure_details": None if ok else "Windows result or preservation check failed"}
+
+    try:
+        result = deployment_loop(rows, report, checkpoint, invoke, start_at=5)
+    except BaseException as exc:
+        report["failure"] = {"stage": "interrupted_or_exception",
+                             "type": type(exc).__name__, "inflight": report["inflight"]}
+        checkpoint()
+        raise
+    if result:
+        print(f"[STOP] Resume blocked; original recovery sentinel retained. {root / name}", flush=True)
+        return result
+    if read_private_evidence(sentinel).decode("utf-8").strip() != Path(requested).name:
+        return stop("sentinel_final", "Original recovery pointer changed")
+    sentinel.unlink()
+    checkpoint()
+    print(f"[PASS] Remaining 16 selected scenarios validated, prior five retained. {root / name}",
+          flush=True)
+    print("[PENDING] Learner exploitation remains a separate acceptance gate.", flush=True)
+    return 0
+
+
 def run(args):
     rows = selection()
     print("[SCOPE] WSLPE-WS01 only; selected=" + ",".join(map(str, SELECTED)), flush=True)
     print("[EXCLUDED] 25,36,38,40; #30 retained, inspected and tested without re-registration", flush=True)
     inspection = getattr(args, "inspect_failure", None)
+    recovery = getattr(args, "recover_failure", None)
+    prior_inspection = getattr(args, "inspection_report", None)
+    if recovery and (not args.execute or not prior_inspection or inspection):
+        raise batch.BatchBlocked("Recovery requires --execute, --recover-failure and --inspection-report")
+    if prior_inspection and not recovery:
+        raise batch.BatchBlocked("Inspection report is only accepted for exact recovery")
     if inspection and args.execute:
         raise batch.BatchBlocked("Read-only inspection cannot be combined with --execute")
-    if not args.execute and not inspection:
+    if not args.execute and not inspection and not recovery:
         print("[PLAN] 21 ordered apply/validate pairs; #30 existing-state validation; no guest access")
         return 0
     if not 60 <= args.timeout_seconds <= 3600:
@@ -307,6 +567,13 @@ def run(args):
                         "snapshot": helper("wslpe40-stage.py").SNAPSHOT}
             return inspect_failure(root, inspection, identity, head, base, ansible, inv,
                                    varsfile, env, args.timeout_seconds)
+        if recovery:
+            identity = {"target": "WSLPE-WS01", "address": expected, "workspace": str(workspace),
+                        "inventory": str(inv), "vmx": str(vmx),
+                        "snapshot": helper("wslpe40-stage.py").SNAPSHOT}
+            return recover27_and_resume(root, recovery, prior_inspection, identity, head,
+                                        base, ansible, inv, varsfile, expected, env,
+                                        args.timeout_seconds, rows)
         sentinel = require_recovery_clear(root)
         report = {"schema": "kingdoms.wslpe45.deploy21.v1", "commit": head,
                   "target": "WSLPE-WS01", "address": expected, "workspace": str(workspace),
@@ -398,6 +665,10 @@ def main():
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--inspect-failure", metavar="JOURNAL",
                         help="Read-only #27 failure inspection; retains recovery sentinel")
+    parser.add_argument("--recover-failure", metavar="JOURNAL",
+                        help="Explicit inspected #27 cleanup and resume from #27, not from #21")
+    parser.add_argument("--inspection-report", metavar="INSPECTION_JSON",
+                        help="Original completed read-only #27 inspection report")
     parser.add_argument("--workspace")
     parser.add_argument("--timeout-seconds", type=int, default=900)
     args = parser.parse_args()
