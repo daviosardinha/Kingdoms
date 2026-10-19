@@ -27,8 +27,8 @@ jobs:
         run: |
           python - <<'PY'
           import os, subprocess
-          from kingdoms.wslpe45_deploy21 import selection, PREFLIGHT, JEA, INSPECT27
-          paths = [r['playbook'] for r in selection()] + [str(PREFLIGHT),str(JEA),str(INSPECT27)]
+          from kingdoms.wslpe45_deploy21 import selection, PREFLIGHT, JEA, INSPECT27, ROOT
+          paths = [r['playbook'] for r in selection()] + [str(PREFLIGHT),str(JEA),str(INSPECT27),str(ROOT/'ansible/wslpe45/deploy21-recover27.yml')]
           env = dict(os.environ)
           env.pop('ANSIBLE_CONFIG',None)
           for path in paths:
@@ -67,7 +67,7 @@ jobs:
           out.mkdir()
           index=yaml.safe_load(Path('kingdoms/wslpe45_implementation_index.yml').read_text())
           paths=[Path(r['playbook']) for r in index['techniques'] if r['number'] not in (25,36,38,40)]
-          paths += [Path('ansible/wslpe45')/name for name in ('deploy21-preflight.yml','deploy21-jea-status.yml','deploy21-inspect27.yml','lockdown-library.yml')]
+          paths += [Path('ansible/wslpe45')/name for name in ('deploy21-preflight.yml','deploy21-jea-status.yml','deploy21-inspect27.yml','deploy21-recover27.yml','lockdown-library.yml')]
           for path in paths:
               parsed=yaml.safe_load(path.read_text())
               tasks=parsed if path.name=='lockdown-library.yml' else [
