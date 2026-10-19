@@ -199,6 +199,71 @@ def inspection_parent(root, requested, identity):
     return parent, hashlib.sha256(raw).hexdigest()
 
 
+def inspectable_failure_parent(root, requested, identity):
+    """Accept only the original #27 apply failure or its exact failed recovery.
+
+    This extends read-only evidence collection, never mutation authorization.
+    The outstanding sentinel must still name the original deploy21 journal.
+    """
+    path = Path(requested).expanduser()
+    if re.fullmatch(r"wslpe45-deploy21-[a-f0-9]{16}\\.json", path.name):
+        return inspection_parent(root, requested, identity)
+    if path.parent != root or not re.fullmatch(
+            r"wslpe45-recovery27-[a-f0-9]{16}\\.json", path.name):
+        raise batch.BatchBlocked("Read-only inspection requires an exact known #27 recovery journal")
+    raw = read_private_evidence(path)
+    report = json.loads(raw)
+    original = report.get("parent_journal")
+    if not isinstance(original, str):
+        raise batch.BatchBlocked("Failed recovery has no original journal")
+    parent, digest = inspection_parent(root, original, identity)
+    failure = report.get("failure") or {}
+    if (report.get("schema") != "kingdoms.wslpe45.recovery27.v1"
+            or report.get("completed") is not False
+            or report.get("inflight") is not None
+            or report.get("parent_sha256") != digest
+            or any(report.get(k) != v for k, v in identity.items())
+            or report.get("exclusions") != parent.get("exclusions")
+            or report.get("preserved_state_sha256") != parent.get("preserved_state_sha256")
+            or report.get("runtime_configuration_pass_count") != 5
+            or report.get("resume_index") != 5
+            or (failure.get("number"), failure.get("stage"), failure.get("exit_code"))
+                != (27, "apply", 2)):
+        raise batch.BatchBlocked("Not the reviewed #27 registered-state recovery failure")
+    prior = report.get("scenarios") or []
+    reference = parent.get("scenarios") or []
+    if len(prior) != len(reference):
+        raise batch.BatchBlocked("Scenario inventory changed since original deployment")
+    for idx, (current, baseline) in enumerate(zip(prior, reference)):
+        if (current.get("number"), current.get("name")) != (
+                baseline.get("number"), baseline.get("name")):
+            raise batch.BatchBlocked("Scenario identity or order changed")
+        expected = ("PASS", "PASS") if idx < 5 else (
+            ("FAIL", "NOT_ATTEMPTED") if idx == 5 else
+            ("NOT_ATTEMPTED", "NOT_ATTEMPTED"))
+        if (current.get("installation"), current.get("configuration_validation")) != expected:
+            raise batch.BatchBlocked("Unreviewed deployment progress after #27 failure")
+    required = ["existing_revalidation", "fresh_inspection", "cleanup", "verify"]
+    events = report.get("recovery_events") or []
+    for stage in required:
+        if stage == "existing_revalidation":
+            matches = [e for e in events if e.get("stage") == stage
+                       and e.get("number") in (21, 22, 23, 24, 26)
+                       and e.get("result") == "PASS" and e.get("exit_code") == 0]
+            if len(matches) != 5:
+                raise batch.BatchBlocked("Five original configurations were not revalidated")
+        elif len([e for e in events if e.get("stage") == stage
+                  and e.get("result") == "PASS" and e.get("exit_code") == 0]) != 1:
+            raise batch.BatchBlocked("Reviewed #27 recovery stages are incomplete")
+    if any(e.get("result") == "FAIL" for e in events):
+        raise batch.BatchBlocked("Recovery evidence contains unreviewed earlier failure")
+    if not re.fullmatch(r"/home/[^/]+/\\.local/state/kingdoms-wslpe45-live/"
+                        r"wslpe-recover27-resume-27-apply-[a-f0-9]{12}\\.log",
+                        str(failure.get("private_log", ""))):
+        raise batch.BatchBlocked("Unexpected #27 failed stage evidence path")
+    return report, hashlib.sha256(raw).hexdigest()
+
+
 def read_inspection_state(root, evidence_path):
     path = Path(evidence_path)
     if (path.parent != root or not re.fullmatch(
@@ -290,7 +355,7 @@ def original_inspection(root, requested, digest, identity, inspection_path):
 
 
 def inspect_failure(root, requested, identity, head, base, ansible, inv, varsfile, env, timeout):
-    parent, digest = inspection_parent(root, requested, identity)
+    parent, digest = inspectable_failure_parent(root, requested, identity)
     name = "wslpe45-inspect27-" + token_hex(8) + ".json"
     report = {"schema": "kingdoms.wslpe45.inspect27-controller.v1", "commit": head,
               "parent_journal": str(requested), "parent_sha256": digest,
@@ -323,7 +388,7 @@ def inspect_failure(root, requested, identity, head, base, ansible, inv, varsfil
     report["completed_at"] = now()
     durable(root, name, report)
     print(f"[INSPECT] Evidence collected; original journal and sentinel retained. Report: {root / name}")
-    print("[PENDING] Review partial #27 state before repair or continuation; no guest changes made.")
+    print("[PENDING] Review inspected #27 registry/task state before any repair; no guest changes made.")
     return 0
 
 
