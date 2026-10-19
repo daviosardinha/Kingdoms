@@ -289,6 +289,48 @@ class DeploymentTests(unittest.TestCase):
             provenance.assert_not_called()
 
 
+
+    def test_second_failure_can_be_inspected_without_authorizing_recovery(self):
+        with TemporaryDirectory() as directory:
+            root = batch.make_private_dir(directory)
+            identity, original, old_path, sentinel = self.inspection_fixture(root)
+            import hashlib
+            parent_digest = hashlib.sha256(old_path.read_bytes()).hexdigest()
+            report = copy.deepcopy(original)
+            report.update(schema="kingdoms.wslpe45.recovery27.v1",
+                          parent_journal=str(old_path), parent_sha256=parent_digest,
+                          preserved_state_sha256="A"*64, resume_index=5,
+                          failure={"number":27, "stage":"apply", "exit_code":2,
+                                   "private_log":str(root/("wslpe-recover27-resume-27-apply-"+"f"*12+".log"))},
+                          recovery_events=[
+                              {"stage":"existing_revalidation","number":number,
+                               "result":"PASS","exit_code":0}
+                              for number in (21,22,23,24,26)
+                          ] + [
+                              {"stage":stage,"result":"PASS","exit_code":0}
+                              for stage in ("fresh_inspection","cleanup","verify")])
+            path = deploy.durable(root,"wslpe45-recovery27-"+"c"*16+".json",report)
+            inspected, digest = deploy.inspectable_failure_parent(root,str(path),identity)
+            self.assertEqual(inspected,report)
+            self.assertEqual(digest,hashlib.sha256(path.read_bytes()).hexdigest())
+            self.assertEqual(sentinel.read_text().strip(),old_path.name)
+            for bad in (
+                dict(report, parent_sha256="0"*64),
+                dict(report, resume_index=0),
+                dict(report, preserved_state_sha256="F"*64),
+                dict(report, failure=dict(report["failure"], stage="validate")),
+                dict(report, recovery_events=report["recovery_events"][:-1]),
+                dict(report, completed=True),
+            ):
+                deploy.durable(root,path.name,bad)
+                with self.assertRaises(batch.BatchBlocked):
+                    deploy.inspectable_failure_parent(root,str(path),identity)
+            deploy.durable(root,path.name,report)
+            self.assertEqual(deploy.inspectable_failure_parent(root,str(old_path),identity)[0],original)
+            sentinel.write_text("other-journal.json\n")
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.inspectable_failure_parent(root,str(path),identity)
+
     def recovery_state(self):
         prefix = r"C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack"
         paths = (prefix, prefix + r"\.kingdoms-owned.json",
