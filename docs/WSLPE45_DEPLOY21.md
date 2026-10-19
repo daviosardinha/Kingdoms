@@ -271,3 +271,39 @@ private log if anything stops.
 
 The expected successful end state is the operator-reported baseline20 plus
 21 configuration-validated selected scenarios, not proof of exploitability.
+
+
+## Second #27 apply failure — read-only CodeBase inspection (2026-10-19)
+
+Recovery journal `wslpe45-recovery27-a3361ea7201bf921.json` records a
+successful original-five revalidation, exact partial cleanup, clean-state
+verification, and new #27 application failure. The error is now
+`COM registered CodeBase does not match owned assembly`, not the earlier
+PowerShell 5.1 `RA0000` stderr handling defect. The COM registration and
+`Kingdom45ComClient` task may now exist because RegAsm and the task
+registration precede the failing CodeBase assertion.
+
+**Do not rerun** the previous `--recover-failure` command, bypass or remove
+the outstanding sentinel, invoke COM, delete registry keys, or reset the guest.
+Use the new journal-linked read-only inspection instead:
+
+```bash
+cd "$HOME/kingdoms-wslpe45-pilot" &&
+git pull --ff-only origin feature/wslpe45-single-candidate-pilot &&
+"$HOME/.goad/.venv/bin/python" scripts/wslpe45-deploy21.py \
+  --inspect-failure "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-recovery27-a3361ea7201bf921.json"
+```
+
+The run reuses the exact standalone identity, snapshot, pinned WinRM TLS,
+original journal/sentinel linkage, preservation fingerprint, and
+`deploy21-inspect27.yml` Windows read-only inventory. The resulting
+`wslpe-inspect27-state-*.log` records exact 64-bit CLSID/ProgID CodeBase
+registry values, file metadata, task XML, and outstanding RegAsm processes.
+The after-preflight must match the preserved baseline; no activation or
+installation occurs. Share the state log and new `wslpe45-inspect27-*.json`
+for review before implementing a guarded registered-state repair.
+
+Until those runtime values are reviewed, do not assert that URI formatting
+alone caused the CodeBase mismatch. Existing five additional configurations
+remain validated, the following 15 selected scenarios remain unattempted,
+and learner exploitation remains unproven.
