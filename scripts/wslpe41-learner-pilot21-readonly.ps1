@@ -8,6 +8,7 @@ $id = 'scheduled_task_definition_acl'
 $root = 'C:\ProgramData\KingdomsWSLPE45\fixtures\scheduled_task_definition_acl'
 $markerPath = Join-Path $root '.kingdoms-owned.json'
 $expectedApp = Join-Path $root 'Kingdom45Task21.exe'
+$stage = 'LEARNER_BOUNDARY'
 
 try {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -25,6 +26,7 @@ try {
     }
     Write-Output 'WSLPE41_21_LEARNER_BOUNDARY=PASS'
 
+    $stage = 'OWNED_FIXTURE'
     $owner = Get-Content -LiteralPath $markerPath -Raw -ErrorAction Stop |
         ConvertFrom-Json -ErrorAction Stop
     if ($owner.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or
@@ -37,6 +39,7 @@ try {
     }
     Write-Output 'WSLPE41_21_OWNED_FIXTURE=PASS'
 
+    $stage = 'SYSTEM_TASK'
     $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
     if ($task.TaskPath -cne '\' -or
         $task.Principal.UserId -notin @('SYSTEM','S-1-5-18') -or
@@ -47,6 +50,7 @@ try {
     }
     Write-Output 'WSLPE41_21_SYSTEM_TASK=PASS'
 
+    $stage = 'LEARNER_TASK_ACL'
     $scheduler = New-Object -ComObject 'Schedule.Service'
     $scheduler.Connect()
     $registered = $scheduler.GetFolder('\').GetTask($taskName)
@@ -72,7 +76,11 @@ try {
 }
 catch {
     Write-Output 'WSLPE41_21_READONLY_PREFLIGHT=BLOCKED'
-    # Do not print credential material, token values or task-descriptor contents.
+    Write-Output ('WSLPE41_21_FAILED_STAGE=' + $stage)
+    # Report the error category only; never emit credentials, task descriptors, or tokens.
     Write-Output ('WSLPE41_21_FAILURE_TYPE=' + $_.Exception.GetType().Name)
-    exit 2
+    Write-Output 'WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED'
+    # Throw instead of 'exit': an interactive learner console must stay open.
+    # Noninteractive callers still receive a failure outcome, not a false PASS.
+    throw ('WSLPE41_21_READONLY_PREFLIGHT=BLOCKED at ' + $stage)
 }
