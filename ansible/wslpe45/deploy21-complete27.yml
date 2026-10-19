@@ -1,0 +1,158 @@
+---
+# Journal-bound #27 in-place completion. No RegAsm, task creation or fixture reset.
+- name: Require exact isolated WSLPE target for registered COM completion
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Reject foreign guest and missing explicit reviewed-state evidence
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - (wslpe_registered27_expected_b64 | length) > 500
+
+- name: Complete only the inspected owned COM registration
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Validate exact read-only snapshot immediately before any guest writes
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed=$false
+          $expected=([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
+              '{{ wslpe_registered27_expected_b64 }}')) | ConvertFrom-Json -ErrorAction Stop)
+          $root='C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack'
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+             [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10' -or
+             -not $learner.Enabled -or $expected.learner_sid -cne $learner.SID.Value -or
+             $expected.marker.learner_sid -cne $learner.SID.Value -or
+             $expected.marker.id -cne 'com_clsid_registration_hijack' -or
+             [int]$expected.marker.number -ne 27) {
+              throw 'Registered COM completion target differs from inspected guest'
+          }
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          if(@(Get-LocalGroupMember -Group $admins.Name |
+               Where-Object {$_.SID.Value -eq $learner.SID.Value}).Count -ne 0) {
+              throw 'Learner is an administrator'
+          }
+          $files=@($expected.files)
+          if($files.Count -ne 7 -or @($expected.registry).Count -ne 8 -or
+             @($expected.tasks).Count -ne 1 -or
+             @($expected.regasm_processes).Count -ne 0) {
+              throw 'Unexpected reviewed registered COM inventory'
+          }
+          $expectedPaths=@($root,($root+'\.kingdoms-owned.json'),($root+'\consumer.ps1'),
+              ($root+'\inbox'),($root+'\inbox\Kingdom45ComServer.dll'),
+              ($root+'\Kingdom45ComServer.dll'),($root+'\proof.txt'))
+          if((@($files | ForEach-Object {$_.path} | Sort-Object) -join '|') -cne
+             (@($expectedPaths | Sort-Object) -join '|')) {
+              throw 'Unexpected inspected COM fixture entry'
+          }
+          foreach($ancestor in @('C:\ProgramData','C:\ProgramData\KingdomsWSLPE45',
+                                 'C:\ProgramData\KingdomsWSLPE45\fixtures')) {
+              $item=Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+              if(-not $item.PSIsContainer -or
+                 ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                  throw 'Foreign linked COM ancestor'
+              }
+          }
+          if((@((Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop).Name | Sort-Object) -join '|') -cne
+             (@('.kingdoms-owned.json','consumer.ps1','inbox','Kingdom45ComServer.dll','proof.txt' | Sort-Object) -join '|')) {
+              throw 'Unexpected current COM directory contents'
+          }
+          if((@(Get-ChildItem -LiteralPath ($root+'\inbox') -Force -ErrorAction Stop).Name -join '|') -cne
+             'Kingdom45ComServer.dll') {
+              throw 'Unexpected current COM inbox contents'
+          }
+          foreach($record in $files) {
+              $item=Get-Item -LiteralPath $record.path -Force -ErrorAction Stop
+              if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                 [bool]$item.PSIsContainer -ne [bool]$record.directory -or
+                 (Get-Acl -LiteralPath $record.path -ErrorAction Stop).Sddl -cne $record.sddl) {
+                  throw 'COM fixture type, link or ACL drift'
+              }
+              if(-not $item.PSIsContainer -and
+                 ($item.Length -ne [long]$record.length -or
+                 (Get-FileHash -LiteralPath $record.path -Algorithm SHA256 -ErrorAction Stop).Hash -cne
+                     $record.sha256)) {
+                  throw 'COM fixture bytes changed from inspected state'
+              }
+          }
+          $owned=Get-Content -LiteralPath ($root+'\.kingdoms-owned.json') -Raw -ErrorAction Stop |
+              ConvertFrom-Json -ErrorAction Stop
+          foreach($name in @('schema','machine','number','id','learner_sid','created_utc')) {
+              if($owned.$name -cne $expected.marker.$name) {
+                  throw 'COM ownership marker changed'
+              }
+          }
+          $registry=[Microsoft.Win32.RegistryKey]::OpenBaseKey(
+              [Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+          try {
+              $expectedTree=@($expected.registry)
+              foreach($record in $expectedTree) {
+                  if($record.path -notlike 'SOFTWARE\Classes\CLSID\{7E86DE4C-10F9-414B-82B5-07CB20264527}*' -and
+                     $record.path -notlike 'SOFTWARE\Classes\Kingdoms45.ComServer*') {
+                      throw 'Foreign registry subtree in reviewed evidence'
+                  }
+                  $key=$registry.OpenSubKey([string]$record.path,$false)
+                  if(-not $key) {throw 'Reviewed registry entry is missing'}
+                  try {
+                      if($key.GetAccessControl().Sddl -cne $record.sddl) {
+                          throw 'Registered COM ACL differs from reviewed evidence'
+                      }
+                      $names=@($key.GetValueNames())
+                      $expectedNames=@($record.values.PSObject.Properties.Name)
+                      if(($names | Sort-Object) -join '|' -cne
+                         (($expectedNames | Sort-Object) -join '|')) {
+                          throw 'Registered COM value names changed'
+                      }
+                      foreach($n in $expectedNames) {
+                          if([string]$key.GetValue($n) -cne [string]$record.values.$n.value -or
+                             [string]$key.GetValueKind($n) -cne [string]$record.values.$n.kind) {
+                              throw 'Registered COM value changed'
+                          }
+                      }
+                  } finally {$key.Close()}
+              }
+          } finally {$registry.Close()}
+          $tasks=@(Get-ScheduledTask -ErrorAction Stop |
+              Where-Object {$_.TaskName -ceq 'Kingdom45ComClient'})
+          if($tasks.Count -ne 1 -or $tasks[0].TaskPath -cne '\' -or
+             $tasks[0].State -notin @('Ready','Running') -or
+             $expected.tasks[0].name -cne 'Kingdom45ComClient' -or
+             (Export-ScheduledTask -TaskName 'Kingdom45ComClient' -TaskPath '\' -ErrorAction Stop) -cne
+                [string]$expected.tasks[0].xml) {
+              throw 'Owned SYSTEM task changed since inspection'
+          }
+          if(@(Get-CimInstance Win32_Process -Filter "Name='RegAsm.exe'" -ErrorAction Stop).Count -ne 0) {
+              throw 'COM registration process still running'
+          }
+          Write-Output 'WSLPE21_REGISTERED27_SNAPSHOT=PASS'
+      changed_when: false
+
+    - name: Stage reviewed COM validator and completion implementation
+      ansible.windows.win_copy:
+        src: ../files/wslpe45/WslpeComRegistration.psm1
+        dest: 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeComRegistration.psm1'
+
+    - name: Complete exact existing COM registration without re-registration
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          Import-Module 'C:\ProgramData\KingdomsWSLPE45\lib\WslpeComRegistration.psm1' -Force -ErrorAction Stop
+          $result=@(Complete-Wslpe45OwnedComRegistration)
+          if(@($result | Where-Object {$_ -ceq 'WSLPE45_COM27_OWNED_COMPLETION=PASS'}).Count -ne 1) {
+              throw 'Owned in-place COM completion did not emit exact evidence'
+          }
+          Write-Output $result
+          Write-Output 'WSLPE21_REGISTERED27_COMPLETE=PASS'
+      changed_when: true
