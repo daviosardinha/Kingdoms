@@ -41,6 +41,30 @@ function Invoke-Wslpe45RegAsmProcess {
     } finally { $process.Dispose() }
 }
 
+function Assert-Wslpe45OwnedComCodeBase {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)][string]$CodeBase,
+        [Parameter(Mandatory=$true)][string]$Assembly
+    )
+    # RegAsm writes a file URI, not a Windows path. It also canonicalizes
+    # the extension to .DLL on this Windows/.NET Framework guest. Compare
+    # *complete local paths* case-insensitively; never compare URI text to
+    # backslash paths or accept a matching suffix from another directory.
+    $uri=$null
+    if(-not [Uri]::TryCreate($CodeBase,[UriKind]::Absolute,[ref]$uri) -or
+       -not $uri.IsFile -or $uri.IsUnc -or
+       -not [string]::IsNullOrEmpty($uri.Query) -or
+       -not [string]::IsNullOrEmpty($uri.Fragment)) {
+        throw 'COM CodeBase must be a local absolute file URI'
+    }
+    $actual=[IO.Path]::GetFullPath($uri.LocalPath)
+    $expected=[IO.Path]::GetFullPath($Assembly)
+    if(-not [string]::Equals($actual,$expected,[StringComparison]::OrdinalIgnoreCase)) {
+        throw 'COM registered CodeBase does not match owned assembly'
+    }
+}
+
 function Invoke-Wslpe45ComRegistration {
     [CmdletBinding()]
     param(
@@ -118,10 +142,7 @@ $instance.Proof()
                 $version=$classInproc.OpenSubKey($versions[0], $true)
                 if(-not $version){throw 'COM version registration missing'}
                 try{
-                    if([string]$version.GetValue('CodeBase') -cne ('file:///'+$assembly.Replace('\','/')) -and
-                       -not ([string]$version.GetValue('CodeBase')).EndsWith($assembly,[StringComparison]::OrdinalIgnoreCase)){
-                        throw 'COM registered CodeBase does not match owned assembly'
-                    }
+                    Assert-Wslpe45OwnedComCodeBase -CodeBase ([string]$version.GetValue('CodeBase')) -Assembly $assembly
                     $security=$version.GetAccessControl()
                     $rule=[Security.AccessControl.RegistryAccessRule]::new(
                         $sid,[Security.AccessControl.RegistryRights]::SetValue,
@@ -172,6 +193,7 @@ $instance.Proof()
                 $v=$child.OpenSubKey($versions[0])
                 if(-not $v){throw 'Expected COM version missing'}
                 try{
+                    Assert-Wslpe45OwnedComCodeBase -CodeBase ([string]$v.GetValue('CodeBase')) -Assembly $assembly
                     $sids=$v.GetAccessControl().GetAccessRules($true,$false,[Security.Principal.SecurityIdentifier])
                     $found=$false
                     foreach($ace in $sids){
@@ -187,4 +209,4 @@ $instance.Proof()
     }
     finally {$registry.Close()}
 }
-Export-ModuleMember -Function Invoke-Wslpe45ComRegistration
+Export-ModuleMember -Function Invoke-Wslpe45ComRegistration, Assert-Wslpe45OwnedComCodeBase
