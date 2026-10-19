@@ -1,5 +1,7 @@
 # Standalone WSLPE: selected 21 deployment
 
+> **Deployment closed on 2026-10-19.** The final journal `wslpe45-resume-registered27-77c4f73d6782a328.json` reports `completed=true`, 21/21 configuration validations PASS, no failure/inflight stage and untouched four explicit exclusions. Active course scope is now **41 Windows LPE scenarios**, not 45. See [final 41-scenario deployment closeout](./WSLPE41_DEPLOYMENT_CLOSEOUT_2026-10-19.md). Recovery and execution commands below are historical; **do not rerun them** against the validated guest. Learner-side exploitation is not proven by these installation checks.
+
 This is an install-and-validate operation, not the six-stage qualification
 runner. It uses the existing implementation index, scenario playbooks,
 batch command builder, native inventory registration, VMware snapshot guard,
