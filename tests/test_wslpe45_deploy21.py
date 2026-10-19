@@ -288,5 +288,133 @@ class DeploymentTests(unittest.TestCase):
                 deploy.run(SimpleNamespace(execute=True, inspect_failure="journal.json"))
             provenance.assert_not_called()
 
+
+    def recovery_state(self):
+        prefix = r"C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack"
+        paths = (prefix, prefix + r"\.kingdoms-owned.json",
+                 prefix + r"\inbox", prefix + r"\Kingdom45ComServer.dll",
+                 prefix + r"\inbox\Kingdom45ComServer.dll")
+        sid = "S-1-5-21-123-456-789-1002"
+        marker = {"schema": "kingdoms.wslpe.fixture-owner.v1",
+                  "machine": "WSLPE-WS01", "number": 27,
+                  "id": "com_clsid_registration_hijack",
+                  "learner_sid": sid, "created_utc": "2026-10-19T08:39:23Z"}
+        files = []
+        for name in paths:
+            directory = name in (prefix, prefix + r"\inbox")
+            record = {"path": name, "directory": directory, "sddl": "O:BAG:PAI"}
+            if not directory:
+                record.update(sha256="A"*64, length=4096)
+            if name.endswith(".dll"):
+                record["assembly_name"] = "Kingdom45ComServer, Version=0.0.0.0"
+            files.append(record)
+        return {"schema": "kingdoms.wslpe45.inspect27.v1",
+                "target": "WSLPE-WS01", "learner_sid": sid,
+                "marker": marker, "files": files, "registry": [],
+                "tasks": [], "regasm_processes": [],
+                "assessment": "RECOVERY_REVIEW_REQUIRED", "guest_mutations": False,
+                "observed_utc": "2026-10-19T10:40:09Z"}
+
+    def test_reviewed_partial_requires_exact_five_owned_entries_and_no_activation(self):
+        identity = {"target": "WSLPE-WS01"}
+        snapshot = self.recovery_state()
+        deploy.validate_partial27(snapshot, identity)
+        for wrong in (
+            dict(snapshot, registry=[{"path": "unexpected"}]),
+            dict(snapshot, tasks=[{"name": "consumer"}]),
+            dict(snapshot, regasm_processes=[{"pid": 1}]),
+            dict(snapshot, files=snapshot["files"][:-1]),
+            dict(snapshot, guest_mutations=True),
+            dict(snapshot, learner_sid="S-1-5-21-0-0-0-1002"),
+        ):
+            with self.subTest(wrong=wrong.keys()):
+                with self.assertRaises(batch.BatchBlocked):
+                    deploy.validate_partial27(wrong, identity)
+
+    def test_recovery_inspection_requires_protected_journal_bound_logs(self):
+        import hashlib
+        with TemporaryDirectory() as directory:
+            root = batch.make_private_dir(directory)
+            identity, parent, original, sentinel = self.inspection_fixture(root)
+            digest = hashlib.sha256(original.read_bytes()).hexdigest()
+            snapshot = self.recovery_state()
+            log = root/"wslpe-inspect27-state-"+"a"*12+".log"
+            message = "WSLPE21_INSPECT27_JSON="+json.dumps(snapshot, separators=(",", ":"))
+            log.write_text('"'+json.dumps(message)[1:-1]+'",\n')
+            log.chmod(0o600)
+            events = [{"stage": stage, "result": "PASS", "exit_code": 0,
+                       "private_log": str(log)} for stage in ("before","state","after")]
+            doc = {"schema": "kingdoms.wslpe45.inspect27-controller.v1",
+                   "parent_journal": str(original), "parent_sha256": digest,
+                   "read_only": True, "completed": True, "inflight": None,
+                   "assessment": "RECOVERY_REVIEW_REQUIRED",
+                   "events": events, **identity}
+            report = deploy.durable(root,"wslpe45-inspect27-"+"c"*16+".json",doc)
+            observed, path = deploy.original_inspection(
+                root, str(original), digest, identity, str(report))
+            self.assertEqual(deploy.stable_inspection(observed),
+                             deploy.stable_inspection(snapshot))
+            self.assertEqual(path, report)
+            doc["parent_sha256"] = "0"*64
+            deploy.durable(root, report.name, doc)
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.original_inspection(root,str(original),digest,identity,str(report))
+            doc["parent_sha256"] = digest
+            deploy.durable(root, report.name, doc)
+            log.chmod(0o644)
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.original_inspection(root,str(original),digest,identity,str(report))
+
+    def test_recovery_resume_starts_at_27_without_replaying_prior_success(self):
+        rows = deploy.selection()
+        report = self.report(rows)
+        for record in report["scenarios"][:5]:
+            record["installation"] = "PASS"
+            record["configuration_validation"] = "PASS"
+        before = copy.deepcopy(report["scenarios"][:5])
+        called = []
+        result = deploy.deployment_loop(
+            rows, report, lambda: None,
+            lambda row, action, state, label:
+                (called.append((row["number"], action)) or True, {"exit_code": 0}),
+            start_at=5)
+        self.assertEqual(result, 0)
+        self.assertEqual(called[0], (27, "apply"))
+        self.assertEqual(called[-1], (45, "validate"))
+        self.assertEqual(len(called), 32)
+        self.assertEqual(report["scenarios"][:5], before)
+
+    def test_recovery_playbook_is_exact_and_never_recursive(self):
+        path = batch.ROOT/"ansible/wslpe45/deploy21-recover27.yml"
+        plays = yaml.safe_load(path.read_text())
+        self.assertEqual([play["hosts"] for play in plays], ["localhost", "wslpe"])
+        script = plays[1]["tasks"][0]["ansible.windows.win_powershell"]["script"]
+        for required in ("WSLPE21_RECOVER27=cleanup:PASS",
+                         "WSLPE21_RECOVER27=verify:PASS",
+                         "C:\\ProgramData\\KingdomsWSLPE45\\fixtures\\com_clsid_registration_hijack",
+                         "ReparsePoint", "Get-FileHash", "learner_sid",
+                         "Registry64", "Get-ScheduledTask", "RegAsm.exe",
+                         "Remove-Item -LiteralPath"):
+            self.assertIn(required, script)
+        for forbidden in ("-Recurse", "Stop-Process", "Unregister-ScheduledTask",
+                          "Remove-Wslpe45OwnedFixture", "Invoke-Wslpe45ComRegistration",
+                          "Register-ScheduledTask", "New-Object -ComObject"):
+            self.assertNotIn(forbidden, script)
+
+    def test_recovery_cli_requires_explicit_authority_and_inspection(self):
+        scenarios = [
+            SimpleNamespace(execute=False, inspect_failure=None, recover_failure="prior.json",
+                            inspection_report="inspection.json"),
+            SimpleNamespace(execute=True, inspect_failure=None, recover_failure="prior.json",
+                            inspection_report=None),
+            SimpleNamespace(execute=True, inspect_failure="prior.json", recover_failure="prior.json",
+                            inspection_report="inspection.json"),
+        ]
+        with patch.object(deploy, "provenance") as provenance:
+            for args in scenarios:
+                with self.assertRaises(batch.BatchBlocked):
+                    deploy.run(args)
+            provenance.assert_not_called()
+
 if __name__=="__main__":
     unittest.main()
