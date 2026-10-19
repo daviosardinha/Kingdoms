@@ -86,6 +86,35 @@ class FreezeContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 freeze.snapshot_names(vmx)
 
+    def test_live_protection_requires_exact_readonly_digest(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as work:
+            home=Path(work)
+            ansible=home/".goad/.venv/bin/ansible-playbook"
+            ansible.parent.mkdir(parents=True)
+            ansible.touch()
+            workspace=home/"workspace"
+            workspace.mkdir()
+            inventory=home/"inventory"
+            varsfile=home/"inventory-vars"
+            report={"inventory":str(inventory),"address":"172.28.231.31",
+                    "preserved_state_sha256":freeze.FINGERPRINT}
+            base=SimpleNamespace(exact_standalone=lambda _:(inventory,varsfile,"172.28.231.31"))
+            good="WSLPE21_PREFLIGHT=PASS\nWSLPE21_PRESERVED="+freeze.FINGERPRINT
+            with (patch.object(freeze.Path,"home",return_value=home),
+                  patch.object(freeze.batch,"trusted_safety",return_value=base),
+                  patch.object(freeze.deployment,"learner_password",return_value="test-only"),
+                  patch.object(freeze.deployment,"run_command",return_value=(0,good)) as runner):
+                freeze.verify_live_protection(report,workspace)
+                self.assertEqual(runner.call_count,1)
+            with (patch.object(freeze.Path,"home",return_value=home),
+                  patch.object(freeze.batch,"trusted_safety",return_value=base),
+                  patch.object(freeze.deployment,"learner_password",return_value="test-only"),
+                  patch.object(freeze.deployment,"run_command",return_value=(
+                      0,"WSLPE21_PREFLIGHT=PASS\nWSLPE21_PRESERVED="+"0"*64))):
+                with self.assertRaises(ValueError):
+                    freeze.verify_live_protection(report,workspace)
+
     def test_never_redeploys_or_resets(self):
         src=(ROOT/"scripts/wslpe41-freeze.py").read_text()
         self.assertNotIn('"revertToSnapshot"',src)
