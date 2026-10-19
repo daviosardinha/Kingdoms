@@ -528,7 +528,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(snapshot,original,"Original inspected evidence must remain unchanged")
         self.assertEqual(len(prepared["registry"]),8)
         path=next(row for row in prepared["registry"]
-                  if row["path"].endswith(r"Kingdoms45.ComServer\\CLSID"))
+                  if row["path"].endswith(r"Kingdoms45.ComServer\CLSID"))
         self.assertEqual(path["values"],[{
             "name":"","kind":"String",
             "value":"{7E86DE4C-10F9-414B-82B5-07CB20264527}"}])
