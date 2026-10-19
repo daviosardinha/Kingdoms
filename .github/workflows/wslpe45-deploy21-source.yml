@@ -94,6 +94,22 @@ jobs:
       - name: Test owned active RPC coexistence decisions without guest access
         shell: powershell
         run: ./tests/test_wslpe45_rpc_coexistence.ps1
+      - name: Test default registry value transport under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          if($PSVersionTable.PSVersion.Major -ne 5){throw 'Requires Windows PowerShell 5.1'}
+          $inputJson='{"registry":[{"values":[{"name":"","kind":"String","value":"default-data"},{"name":"CodeBase","kind":"String","value":"file:///C:/owned.DLL"}]}]}'
+          $decoded=$inputJson | ConvertFrom-Json -ErrorAction Stop
+          $entries=@($decoded.registry[0].values)
+          if($entries.Count -ne 2){throw 'Decoded registry entry count changed'}
+          if([string]$entries[0].name -cne '' -or
+             [string]$entries[0].kind -cne 'String' -or
+             [string]$entries[0].value -cne 'default-data' -or
+             [string]$entries[1].name -cne 'CodeBase'){
+              throw 'PS5.1 default value or named value lost'
+          }
+          Write-Output '[PASS] Native PS5.1 registry default name transported as data'
       - name: Test native stderr under Windows PowerShell 5.1
         shell: powershell
         run: ./tests/test_wslpe45_regasm_process.ps1
