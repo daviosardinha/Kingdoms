@@ -1,5 +1,8 @@
 # WSLPE-WS01 — 45-technique completion contract
 
+> **Historical 45-scenario engineering proposal — superseded for active course scope.**
+> On 2026-10-19 the operator froze the standalone Windows LPE course at **41 scenarios** (20 original + 21 added), permanently excluding #25, #36, #38 and #40 from this delivery target. The 21 selected additions passed install/validate runtime evidence; learner exploitation and release acceptance remain separate. See [41-scenario deployment closeout](./WSLPE41_DEPLOYMENT_CLOSEOUT_2026-10-19.md). The older 45-goal instructions below are retained as history, **not as open work to finish four more vulnerabilities**.
+
 **Owner:** Kingdoms standalone Windows LPE. **Target:** WSLPE-WS01 only.
 **NORTH:** permanently frozen at its already established 20 techniques.
 **Date:** 2026-10-18. **Status:** NOT RELEASE READY.
