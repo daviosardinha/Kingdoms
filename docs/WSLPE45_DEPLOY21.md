@@ -307,3 +307,52 @@ Until those runtime values are reviewed, do not assert that URI formatting
 alone caused the CodeBase mismatch. Existing five additional configurations
 remain validated, the following 15 selected scenarios remain unattempted,
 and learner exploitation remains unproven.
+
+
+## Registered #27 in-place completion and selected continuation
+
+The latest inspection `wslpe45-inspect27-0601462b868d27a5.json`, linked
+to `wslpe45-recovery27-a3361ea7201bf921.json`, recorded preservation
+PASS before and after its read-only state collection. The owned fixture
+has seven entries, including a SYSTEM-created `proof.txt`; the owned COM
+registration has eight recorded registry subkeys and the task
+`Kingdom45ComClient` is Ready, executed as SYSTEM. The registered
+`CodeBase` URI ends in `Kingdom45ComServer.DLL`, which is compatible
+with the expected local assembly path when normalized without weakening
+the full-path identity check. The targeted learner ACE on the versioned
+registry key was absent when inspected. The baseline SYSTEM proof does
+not establish exploitation by the learner.
+
+A separate `--complete-registered27` operation now checks all original
+failure/recovery/inspection journal links and the original recovery
+sentinel, revalidates the earlier five configurations, checks a fresh
+read-only #27 inspection against the recorded hashes/ACLs/registry/task
+snapshot, and uses the dedicated exact-target completion playbook. No
+RegAsm or scheduled-task re-registration is attempted. After updating
+only the intended existing COM registration ACL, the runner calls the
+actual Windows #27 vulnerable-configuration validation. Only on PASS
+does it continue selected #28 through #45 in order, excluding the four
+previously excluded scenarios and validating each candidate immediately.
+
+**Run only after current feature-branch CI is green.** On the original
+Kali operator machine, with the journal and inspection files still
+present, use:
+
+```bash
+cd "$HOME/kingdoms-wslpe45-pilot" &&
+git pull --ff-only origin feature/wslpe45-single-candidate-pilot &&
+"$HOME/.goad/.venv/bin/python" scripts/wslpe45-deploy21.py \
+  --execute \
+  --complete-registered27 "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-recovery27-a3361ea7201bf921.json" \
+  --inspection-report "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-inspect27-0601462b868d27a5.json"
+```
+
+A new `wslpe45-resume-registered27-*.json` journal provides per-stage
+evidence. The original journal, read-only inspection and sentinel are
+retained until every selected configuration is validated. On any error
+or mismatch, stop and preserve guest state; never rerun either earlier
+`--recover-failure` command, manually remove the sentinel or repeat
+`--complete-registered27` blindly. Share the new journal and failed
+private log for a further explicitly reviewed recovery. CI alone never
+proves guest installation or learner privilege escalation; original20
+remains operator-reported, and final target remains 41/45.
