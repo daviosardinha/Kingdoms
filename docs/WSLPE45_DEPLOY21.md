@@ -224,11 +224,11 @@ This paragraph records the reviewed evidence and intended recovery criteria;
 ## Exact journal-linked recovery and continuation (source-ready 2026-10-19)
 
 The uploaded original #27 apply log proves the PowerShell 5.1 RegAsm
-\`RA0000\` warning was promoted to \`NativeCommandError\`. The existing
+`RA0000` warning was promoted to `NativeCommandError`. The existing
 read-only inspection proves the distinct pre-registration partial state.
 The correction to capture stderr without changing global error handling was
 already committed. The new explicit recovery mode is intentionally separate
-from the normal \`--execute\` batch, which still refuses an outstanding
+from the normal `--execute` batch, which still refuses an outstanding
 sentinel.
 
 GitHub source CI validates the explicit recovery CLI, the exact private
@@ -239,14 +239,14 @@ Windows guest execution or learner exploitation qualification.
 On the **original Kali machine** with the original owner-only evidence files,
 after confirming branch CI passes, execute:
 
-\`\`\`bash
+```bash
 cd /home/stark/kingdoms-wslpe45-pilot &&
 git pull --ff-only origin feature/wslpe45-single-candidate-pilot &&
 "$HOME/.goad/.venv/bin/python" scripts/wslpe45-deploy21.py \
   --execute \
   --recover-failure "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-deploy21-8e5b1f7c2a08b2d5.json" \
   --inspection-report "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-inspect27-f0a42380da6f77f4.json"
-\`\`\`
+```
 
 This operation requires the original fail-closed recovery sentinel, original
 journal digest, matching completed inspection and exact standalone guest,
@@ -259,7 +259,7 @@ objects. It then verifies the clean #27 boundary and attempts #27–45 in the
 original selection order (excluding #36/#38/#40; #25 was previously excluded).
 Previously validated #21/#22/#23/#24/#26 are not installed again.
 
-A new private \`wslpe45-recovery27-*.json\` journal records recovery and each
+A new private `wslpe45-recovery27-*.json` journal records recovery and each
 later installation/configuration result; the original failed deployment
 journal and earlier read-only inspection remain unchanged. The recovery
 sentinel is not cleared until all remaining selected configurations validate.
