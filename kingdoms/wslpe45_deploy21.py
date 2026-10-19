@@ -387,6 +387,28 @@ def recover27_and_resume(root, requested, prior_inspection, identity, head,
     if not guard("before"):
         return stop("initial_preservation", "Preflight differs from original preserved digest")
 
+    # Previous successes are not re-applied. Validate their live configurations
+    # read-only before relying on the parent journal's five PASS assertions.
+    for previous in rows[:5]:
+        report["inflight"] = {"number": previous["number"], "stage": "existing_revalidation"}
+        checkpoint()
+        command, marker = stage_command(ansible, inv, varsfile, previous,
+                                        expected_address, "validate", "vulnerable", "vulnerable")
+        rc, log = run_command(command, env, timeout)
+        ok = rc == 0 and log.count(marker) == 1
+        evidence = save_log(base, root, f"recover27-existing-{previous['number']}", log)
+        report["recovery_events"].append(
+            {"number": previous["number"], "stage": "existing_revalidation",
+             "result": "PASS" if ok else "FAIL", "exit_code": rc,
+             "private_log": str(evidence)})
+        report["inflight"] = None
+        checkpoint()
+        if not ok:
+            return stop(f"existing_revalidation-{previous['number']}",
+                        "Previously validated configuration no longer passes")
+    if not guard("after_existing_revalidation"):
+        return stop("prior_configuration_preservation", "Protected state changed during read-only checks")
+
     report["inflight"] = {"number": 27, "stage": "fresh_inspection"}
     checkpoint()
     rc, log = run_command(ansible_command(ansible, inv, varsfile, INSPECT27, extra),
