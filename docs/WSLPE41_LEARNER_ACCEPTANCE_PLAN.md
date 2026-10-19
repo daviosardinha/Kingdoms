@@ -79,6 +79,42 @@ Windows guest and isolation controls are valid; the operator must confirm
 snapshot ancestry in VMware and then review any isolated-guest boot,
 networking and learner identity before running a proof.
 
+### First learner-console evidence — scenario #21
+
+The operator's isolated working clone has passed its offline VMX audit and,
+from a normal PowerShell session as `WSLPE-WS01\lpe.trainee`, produced:
+
+- `WSLPE41_LEARNER_IDENTITY=PASS`
+- `WSLPE41_LOCAL_NONADMIN=PASS`
+- `WSLPE41_NETWORK_DISCONNECTED=PASS`
+
+These are user-supplied console observations, **not** elevated evidence. Do
+not increment the 41-scenario learner acceptance count.
+
+The first candidate is **#21 — Scheduled Task Definition ACL**. GitHub source
+`scripts/wslpe41-learner-pilot21-readonly.ps1` is read-only and must run in
+that same learner console on the disconnected disposable clone. It verifies
+exact guest and learner identity, the owned #21 marker, its dedicated SYSTEM
+task action, and the learner's task object ACE. It never modifies a task,
+launches an elevated program, runs an exploit or returns learner exploitation
+PASS. Native Windows PowerShell 5.1 CI parses it; source-only tests reject
+known mutating task APIs.
+
+On Kali, inspect/copy the script:
+
+```bash
+cd "$HOME/kingdoms-wslpe45-pilot" &&
+git pull --ff-only origin feature/wslpe45-single-candidate-pilot &&
+cat scripts/wslpe41-learner-pilot21-readonly.ps1
+```
+
+Paste its contents into ordinary PowerShell in the offline learner VM. Confirm
+`WSLPE41_21_READONLY_PREFLIGHT=PASS` and
+`WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED` or capture its precise
+`BLOCKED` output. Do not boot or reconfigure the original master.
+Only after this precondition do we separately engineer an owned-canary learner
+proof, with explicit rollback in the clone and independent privileged evidence.
+
 ### First pilot, then automation for all 41
 
 The learner-acceptance planner is not an exploit runner. After clone
