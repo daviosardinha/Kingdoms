@@ -220,6 +220,16 @@ Validated results included:
 
 Milestone 2 is complete.
 
+### Separate standalone Windows LPE course — 41-scenario deployment checkpoint (2026-10-19)
+
+**Status: DEPLOYMENT COMPLETE / SCOPE FROZEN — COURSE RELEASE NOT YET ACCEPTED.**
+
+This is a separate `WSLPE-WS01` Windows 10 **workgroup** course environment, not the NORTH domain-joined WS01 of Milestone 2. The user approved closing the earlier 45-target work at **41 active scenarios**: 20 standalone baseline entries (operator-reported, not recounted by this final journal) plus 21 newer scenarios with installation and vulnerable-configuration validation PASS. Four numbered candidates, #25/#36/#38/#40, are out of scope for the current course and must not be treated as pending blockers. Existing numeric IDs and historical `45` engineering filenames remain unchanged for provenance.
+
+Guest evidence: private journal `wslpe45-resume-registered27-77c4f73d6782a328.json` reports `completed=true`, `failure=null`, `inflight=null` and `runtime_configuration_pass_count=21`, from committed source `6b612e9abf2547dc76e4d4a89f4df1be6137f6e6`. The final record preserves successful #27 in-place recovery and #30 existing-JEA validation. Learner exploitation for the 21 additions remains `NOT_TESTED`; six-stage qualification, student isolation/release checks and walkthroughs belong to subsequent phases. **Do not claim the course has been released.**
+
+See [standalone WSLPE41 deployment closeout](./WSLPE41_DEPLOYMENT_CLOSEOUT_2026-10-19.md). This feature-branch engineering checkpoint does not alter the already released NORTH Milestone 2.
+
 ---
 
 ## v1.1.1 — Lifecycle Reliability Maintenance
