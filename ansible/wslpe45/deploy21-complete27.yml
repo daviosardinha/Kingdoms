@@ -116,8 +116,8 @@
                           throw 'Registered COM value names changed'
                       }
                       foreach($n in $expectedNames) {
-                          if([string]$key.GetValue($n) -cne [string]$record.values.$n.value -or
-                             [string]$key.GetValueKind($n) -cne [string]$record.values.$n.kind) {
+                          if([string]$key.GetValue($n) -cne [string]$record.values.PSObject.Properties[$n].Value.value -or
+                             [string]$key.GetValueKind($n) -cne [string]$record.values.PSObject.Properties[$n].Value.kind) {
                               throw 'Registered COM value changed'
                           }
                       }
