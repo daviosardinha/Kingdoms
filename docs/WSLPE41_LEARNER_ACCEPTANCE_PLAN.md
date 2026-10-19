@@ -29,6 +29,67 @@ The controller requires the original protected 21/21 journal and SHA of the vali
 
 **Important:** A VMware snapshot is a recoverable checkpoint, not physically immutable or a substitute for a verified backup. Do not overwrite it; consider an independent encrypted copy of the VM/snapshot storage before distribution. No snapshot is claimed until the operator supplies a verified PASS receipt.
 
+
+## Current operator checkpoint — frozen master PASS (2026-10-19)
+
+The operator provided the private frozen-master receipt:
+`wslpe41-freeze-3c465ceba8b31352.json` — `schema=kingdoms.wslpe41.freeze.v1`,
+`status=PASS`, source `9efc85796aa9e1b60017cadd1d90f72a97d9823c`,
+deployed source `6b612e9abf2547dc76e4d4a89f4df1be6137f6e6`,
+snapshot `KINGDOMS-WSLPE41-CONFIG-VALIDATED`, completed
+`2026-10-19T19:22:24.329527+00:00`. The receipt was read from the user-provided
+local file; its source fingerprint matches the final deployment journal.
+This verifies that the freeze workflow reported a snapshot PASS and supplied a
+VMware inventory check; it does not independently demonstrate student proofs
+or clone readiness. Do **not** execute another freeze.
+
+Verify the receipt with the existing source-only acceptance planner:
+
+```bash
+cd "$HOME/kingdoms-wslpe45-pilot" &&
+git pull --ff-only origin feature/wslpe45-single-candidate-pilot &&
+"$HOME/.goad/.venv/bin/python" scripts/wslpe41-learner-acceptance.py   --freeze-receipt "$HOME/.local/state/kingdoms-wslpe45-live/wslpe41-freeze-3c465ceba8b31352.json"
+```
+
+Expected next evidence is `[FREEZE] RECEIPT_VERIFIED: KINGDOMS-WSLPE41-CONFIG-VALIDATED`.
+This is source-only and records **zero** new learner proof.
+
+### Disposable clone requirement (read-only audit)
+
+Create a **full working clone** in VMware Workstation from the named
+`KINGDOMS-WSLPE41-CONFIG-VALIDATED` snapshot. Do **not** use a linked
+clone. Keep the candidate powered off with **every NIC explicitly
+disconnected**. Keep the frozen master unchanged. Do not boot two VMs
+with the same computer name/IP/MAC on an attached student/lab network.
+Record the candidate VMX path from VMware rather than guessing it.
+
+Run the new **read-only** clone check on Kali, substituting the actual
+created clone VMX path:
+
+```bash
+cd "$HOME/kingdoms-wslpe45-pilot" &&
+"$HOME/.goad/.venv/bin/python" scripts/wslpe41-clone-audit.py   --freeze-receipt "$HOME/.local/state/kingdoms-wslpe45-live/wslpe41-freeze-3c465ceba8b31352.json"   --clone-vmx "/absolute/path/to/working-clone.vmx"
+```
+
+The audit rejects the original guest, a running candidate, connected NICs,
+external disk references, linked/differencing disk descriptors and a missing
+frozen-master snapshot. It performs **no VM mutation**. Even PASS cannot prove
+that the clone was actually made from the selected snapshot or that the
+Windows guest and isolation controls are valid; the operator must confirm
+snapshot ancestry in VMware and then review any isolated-guest boot,
+networking and learner identity before running a proof.
+
+### First pilot, then automation for all 41
+
+The learner-acceptance planner is not an exploit runner. After clone
+identity/isolation is independently verified, implement **one**
+learner-initiated test for a selected technique on that disposable clone.
+Keep precondition, trigger, elevated evidence, expected negative behavior,
+post-test contamination and restore checks separate. A manually observed
+configuration remains `LEARNER_PENDING` until a real learner-originated
+privileged effect is independently evidenced. Generalize only after the
+pilot passes; retain exact scenario IDs and explicit four exclusions.
+
 ## Phase B — learner acceptance automation: architecture
 
 Build a **local, operator-controlled test orchestrator**, not a scheduled job and not a GitHub-hosted remote exploitation workflow.
