@@ -1,0 +1,127 @@
+---
+- name: Require exact standalone inventory for read-only failed COM inspection
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Reject unrelated or ambiguous hosts
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('dc', []) | length) == 0
+          - (groups.get('domain', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+
+- name: Inspect only the owned partial COM fixture without activation or writes
+  hosts: wslpe
+  gather_facts: false
+  tasks:
+    - name: Collect owned files registration task and outstanding RegAsm evidence
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference='Stop'
+          $Ansible.Changed=$false
+          $machine=Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $machine.PartOfDomain -or
+             [int]$os.ProductType -ne 1 -or $os.Caption -notmatch 'Windows 10') {
+              throw 'Inspection requires exact standalone WSLPE-WS01'
+          }
+          $learner=Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          $admins=Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          if(-not $learner.Enabled -or $learner.SID.Value -in @(
+              Get-LocalGroupMember -Group $admins.Name | ForEach-Object {$_.SID.Value})) {
+              throw 'Original non-administrator learner required'
+          }
+          $root='C:\ProgramData\KingdomsWSLPE45\fixtures\com_clsid_registration_hijack'
+          foreach($path in @('C:\ProgramData','C:\ProgramData\KingdomsWSLPE45',
+                            'C:\ProgramData\KingdomsWSLPE45\fixtures',$root)) {
+              $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+              if(-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                  throw 'Linked or missing #27 inspection ancestor'
+              }
+          }
+          $paths=New-Object 'System.Collections.Generic.List[string]'
+          $paths.Add($root)
+          foreach($item in @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)) {
+              if($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked #27 fixture entry' }
+              if($item.Name -cnotin @('.kingdoms-owned.json','inbox','Kingdom45ComServer.dll','consumer.ps1','proof.txt')) {
+                  throw ('Unexpected #27 entry: '+$item.Name)
+              }
+              if($item.PSIsContainer -ne ($item.Name -ceq 'inbox')) { throw 'Unexpected #27 entry type' }
+              $paths.Add($item.FullName)
+              if($item.PSIsContainer) {
+                  foreach($child in @(Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop)) {
+                      if($child.PSIsContainer -or $child.Name -cne 'Kingdom45ComServer.dll' -or
+                         ($child.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                          throw 'Unexpected nested #27 fixture entry'
+                      }
+                      $paths.Add($child.FullName)
+                  }
+              }
+          }
+          $marker=Get-Content -LiteralPath (Join-Path $root '.kingdoms-owned.json') -Raw -ErrorAction Stop |
+              ConvertFrom-Json -ErrorAction Stop
+          if($marker.schema -cne 'kingdoms.wslpe.fixture-owner.v1' -or $marker.machine -cne 'WSLPE-WS01' -or
+             [int]$marker.number -ne 27 -or $marker.id -cne 'com_clsid_registration_hijack' -or
+             $marker.learner_sid -cne $learner.SID.Value) { throw 'Unexpected #27 ownership marker' }
+          $files=@(foreach($path in @($paths | Sort-Object)) {
+              $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+              $record=[ordered]@{path=$path;directory=[bool]$item.PSIsContainer;
+                  sddl=(Get-Acl -LiteralPath $path -ErrorAction Stop).Sddl}
+              if(-not $item.PSIsContainer) {
+                  $record.sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256 -ErrorAction Stop).Hash
+                  $record.length=$item.Length
+                  if($item.Extension -ceq '.dll') {
+                      $record.assembly_name=[Reflection.AssemblyName]::GetAssemblyName($path).FullName
+                  }
+              }
+              [pscustomobject]$record
+          })
+          function Read-Wslpe27RegistryTree {
+              param([Microsoft.Win32.RegistryKey]$Base,[string]$SubKey,[int]$Depth=0)
+              if($Depth -gt 4) { throw 'Unexpected depth in owned COM registration' }
+              $key=$Base.OpenSubKey($SubKey,$false)
+              if(-not $key) { return }
+              try {
+                  $values=[ordered]@{}
+                  foreach($name in $key.GetValueNames()) {
+                      $values[$name]=@{kind=[string]$key.GetValueKind($name);
+                          value=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)}
+                  }
+                  [pscustomobject]@{path=$SubKey;values=$values;sddl=$key.GetAccessControl().Sddl}
+                  $children=@($key.GetSubKeyNames())
+                  if($children.Count -gt 16) { throw 'Unexpected breadth in owned COM registration' }
+                  foreach($name in $children) {
+                      Read-Wslpe27RegistryTree -Base $Base -SubKey ($SubKey+'\'+$name) -Depth ($Depth+1)
+                  }
+              } finally { $key.Close() }
+          }
+          $registry=[Microsoft.Win32.RegistryKey]::OpenBaseKey(
+              [Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+          try {
+              $registrations=@(
+                  Read-Wslpe27RegistryTree -Base $registry -SubKey 'SOFTWARE\Classes\CLSID\{7E86DE4C-10F9-414B-82B5-07CB20264527}'
+                  Read-Wslpe27RegistryTree -Base $registry -SubKey 'SOFTWARE\Classes\Kingdoms45.ComServer'
+              )
+          } finally { $registry.Close() }
+          $tasks=@(Get-ScheduledTask -ErrorAction Stop | Where-Object {$_.TaskName -ceq 'Kingdom45ComClient'})
+          $taskEvidence=@(foreach($task in $tasks) {
+              [pscustomobject]@{path=$task.TaskPath;name=$task.TaskName;state=[string]$task.State;
+                  xml=(Export-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop)}
+          })
+          $processes=@(Get-CimInstance Win32_Process -Filter "Name='RegAsm.exe'" -ErrorAction Stop |
+              Select-Object ProcessId,ParentProcessId,ExecutablePath,CommandLine,CreationDate)
+          $evidence=[ordered]@{schema='kingdoms.wslpe45.inspect27.v1';target=$env:COMPUTERNAME;
+              observed_utc=[DateTime]::UtcNow.ToString('o');learner_sid=$learner.SID.Value;
+              marker=$marker;files=$files;registry=$registrations;tasks=$taskEvidence;regasm_processes=$processes;
+              assessment='RECOVERY_REVIEW_REQUIRED';guest_mutations=$false}
+          Write-Output ('WSLPE21_INSPECT27_JSON='+($evidence | ConvertTo-Json -Depth 12 -Compress))
+          Write-Output 'WSLPE21_INSPECT27=PASS'
+      register: inspect27
+      changed_when: false
+    - name: Emit read-only inspection evidence
+      ansible.builtin.debug:
+        msg: "{{ inspect27.output }}"

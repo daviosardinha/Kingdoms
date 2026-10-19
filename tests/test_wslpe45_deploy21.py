@@ -190,5 +190,103 @@ class DeploymentTests(unittest.TestCase):
                           "Kingdom40OwnedProof", "Kingdom40Status"):
             self.assertNotIn(forbidden, script)
 
+    def inspection_fixture(self, root):
+        identity = {"target": "WSLPE-WS01", "address": "172.28.231.31",
+                    "workspace": "/native/workspace", "inventory": "/native/inventory",
+                    "vmx": "/native/guest.vmx", "snapshot": "existing-snapshot"}
+        parent = {"schema": "kingdoms.wslpe45.deploy21.v1", "commit": "a"*40,
+                  "completed": False, "inflight": None,
+                  "exclusions": {str(k): v for k, v in deploy.EXCLUDED.items()},
+                  "failure": {"number": 27, "stage": "apply", "exit_code": 2},
+                  "runtime_configuration_pass_count": 5, "preserved_state_sha256": "A"*64,
+                  "scenarios": [], **identity}
+        for index, row in enumerate(deploy.selection()):
+            install, validate = ("PASS", "PASS") if index < 5 else (
+                ("FAIL", "NOT_ATTEMPTED") if index == 5 else ("NOT_ATTEMPTED", "NOT_ATTEMPTED"))
+            parent["scenarios"].append({"number": row["number"], "name": row["id"],
+                "installation": install, "configuration_validation": validate})
+        path = deploy.durable(root, "wslpe45-deploy21-"+"b"*16+".json", parent)
+        sentinel = root / ".wslpe45-recovery-required"
+        sentinel.write_text(path.name+"\n")
+        sentinel.chmod(0o600)
+        return identity, parent, path, sentinel
+
+    def test_inspection_requires_matching_private_journal_and_sentinel(self):
+        with TemporaryDirectory() as directory:
+            root = batch.make_private_dir(directory)
+            identity, parent, path, sentinel = self.inspection_fixture(root)
+            observed, digest = deploy.inspection_parent(root, str(path), identity)
+            self.assertEqual(observed, parent)
+            self.assertEqual(len(digest), 64)
+            sentinel.write_text("different.json\n")
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.inspection_parent(root, str(path), identity)
+            sentinel.write_text(path.name+"\n")
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.inspection_parent(root, str(path), dict(identity, address="10.4.10.31"))
+            path.chmod(0o644)
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.inspection_parent(root, str(path), identity)
+
+    def test_inspection_rejects_changed_failure_order_and_partial_intent(self):
+        with TemporaryDirectory() as directory:
+            root = batch.make_private_dir(directory)
+            identity, parent, path, sentinel = self.inspection_fixture(root)
+            changes = [
+                dict(parent, inflight={"number": 27, "stage": "apply"}),
+                dict(parent, failure={"number": 28, "stage": "apply", "exit_code": 2}),
+                dict(parent, scenarios=list(reversed(parent["scenarios"]))),
+                dict(parent, preserved_state_sha256=""),
+                dict(parent, exclusions={}),
+            ]
+            for changed in changes:
+                deploy.durable(root, path.name, changed)
+                with self.assertRaises(batch.BatchBlocked):
+                    deploy.inspection_parent(root, str(path), identity)
+
+    def test_read_only_inspection_retains_original_recovery_state_on_pass_and_failure(self):
+        for failed_step in (None, 0, 1, 2):
+            with TemporaryDirectory() as directory:
+                root = batch.make_private_dir(directory)
+                identity, parent, path, sentinel = self.inspection_fixture(root)
+                original = path.read_bytes(), sentinel.read_bytes()
+                calls = []
+                def command(cmd, env, timeout):
+                    index = len(calls)
+                    calls.append(cmd)
+                    if index == failed_step:
+                        return 2, "native inspection failure"
+                    if index == 1:
+                        return 0, "WSLPE21_INSPECT27=PASS"
+                    return 0, "WSLPE21_PREFLIGHT=PASS WSLPE21_PRESERVED="+"A"*64
+                with patch.object(deploy, "run_command", side_effect=command), patch.object(
+                        deploy, "save_log", return_value=root/"evidence.log"), patch.object(
+                        deploy, "stage_command") as stage:
+                    result = deploy.inspect_failure(root, str(path), identity, "c"*40,
+                        object(), Path("/ansible"), Path("/inventory"), Path("/vars"), {}, 900)
+                self.assertEqual(result, 0 if failed_step is None else 2)
+                self.assertEqual(len(calls), 3 if failed_step is None else failed_step+1)
+                stage.assert_not_called()
+                self.assertEqual((path.read_bytes(), sentinel.read_bytes()), original)
+
+    def test_inspection_script_never_stages_or_activates_fixture(self):
+        plays = yaml.safe_load(deploy.INSPECT27.read_text())
+        self.assertEqual([p["hosts"] for p in plays], ["localhost", "wslpe"])
+        script = plays[1]["tasks"][0]["ansible.windows.win_powershell"]["script"]
+        for forbidden in ("Set-Acl", "Set-Content", "Remove-Item", "Start-Process",
+                          "Import-Module", "Register-ScheduledTask", "New-Service",
+                          "Invoke-Wslpe45ComRegistration", "-ComObject", "LoadFrom"):
+            self.assertNotIn(forbidden, script)
+        for required in ("GetAssemblyName", "OpenSubKey($SubKey,$false)",
+                         "Export-ScheduledTask", "RECOVERY_REVIEW_REQUIRED",
+                         "WSLPE21_INSPECT27=PASS"):
+            self.assertIn(required, script)
+
+    def test_inspection_cannot_be_combined_with_execute(self):
+        with patch.object(deploy, "provenance") as provenance:
+            with self.assertRaises(batch.BatchBlocked):
+                deploy.run(SimpleNamespace(execute=True, inspect_failure="journal.json"))
+            provenance.assert_not_called()
+
 if __name__=="__main__":
     unittest.main()

@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import stat
 from secrets import token_hex
 import yaml
 from kingdoms import wslpe45_batch_operator as batch
@@ -29,6 +30,7 @@ FLOW = (("apply", None, "apply"), ("validate", "vulnerable", "vulnerable"))
 STATE = Path.home() / ".local/state/kingdoms-wslpe45-live"
 PREFLIGHT = ROOT / "ansible/wslpe45/deploy21-preflight.yml"
 JEA = ROOT / "ansible/wslpe45/deploy21-jea-status.yml"
+INSPECT27 = ROOT / "ansible/wslpe45/deploy21-inspect27.yml"
 
 def now():
     return datetime.now(timezone.utc).isoformat()
@@ -153,11 +155,92 @@ def require_recovery_clear(root):
         raise batch.BatchBlocked("Unresolved recovery journal; do not rerun or delete sentinel")
     return sentinel
 
+def read_private_evidence(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                or info.st_size > 2_000_000):
+            raise batch.BatchBlocked("Expected bounded owner-only regular evidence file")
+        return stream.read(2_000_001)
+
+def inspection_parent(root, requested, identity):
+    path = Path(requested).expanduser()
+    if path.parent != root or not re.fullmatch(r"wslpe45-deploy21-[a-f0-9]{16}\.json", path.name):
+        raise batch.BatchBlocked("Inspection requires original journal in fixed private state directory")
+    if read_private_evidence(root / ".wslpe45-recovery-required").decode().strip() != path.name:
+        raise batch.BatchBlocked("Recovery sentinel does not identify requested journal")
+    raw = read_private_evidence(path)
+    parent = json.loads(raw)
+    if (parent.get("schema") != "kingdoms.wslpe45.deploy21.v1"
+            or parent.get("completed") is not False or parent.get("inflight") is not None):
+        raise batch.BatchBlocked("Expected recorded incomplete deploy21 failure")
+    if any(parent.get(k) != v for k, v in identity.items()):
+        raise batch.BatchBlocked("Journal target/inventory/VM/snapshot identity changed")
+    if parent.get("exclusions") != {str(k): v for k, v in EXCLUDED.items()}:
+        raise batch.BatchBlocked("Journal exclusions differ")
+    failure = parent.get("failure") or {}
+    if (failure.get("number"), failure.get("stage"), failure.get("exit_code")) != (27, "apply", 2):
+        raise batch.BatchBlocked("Inspection is specific to the recorded #27 apply failure")
+    rows, records = selection(), parent.get("scenarios", [])
+    if [(r.get("number"), r.get("name")) for r in records] != [(r["number"], r["id"]) for r in rows]:
+        raise batch.BatchBlocked("Journal scenario identities/order changed")
+    for index, record in enumerate(records):
+        wanted = ("PASS", "PASS") if index < 5 else (
+            ("FAIL", "NOT_ATTEMPTED") if index == 5 else ("NOT_ATTEMPTED", "NOT_ATTEMPTED"))
+        if (record.get("installation"), record.get("configuration_validation")) != wanted:
+            raise batch.BatchBlocked("Journal results differ from reviewed failure sequence")
+    if parent.get("runtime_configuration_pass_count") != 5 or not re.fullmatch(
+            r"[A-F0-9]{64}", parent.get("preserved_state_sha256", "")):
+        raise batch.BatchBlocked("Original preservation evidence missing")
+    return parent, hashlib.sha256(raw).hexdigest()
+
+def inspect_failure(root, requested, identity, head, base, ansible, inv, varsfile, env, timeout):
+    parent, digest = inspection_parent(root, requested, identity)
+    name = "wslpe45-inspect27-" + token_hex(8) + ".json"
+    report = {"schema": "kingdoms.wslpe45.inspect27-controller.v1", "commit": head,
+              "parent_journal": str(requested), "parent_sha256": digest,
+              "created_at": now(), "read_only": True, "completed": False,
+              "assessment": "RECOVERY_REVIEW_REQUIRED", "events": [], **identity}
+    durable(root, name, report)
+    extra = {"wslpe_expected_address": identity["address"],
+             "wslpe_pilot_shared_sha256": hashlib.sha256(
+                 (ROOT / "ansible/files/wslpe45/WslpeFixture.psm1").read_bytes()).hexdigest().upper()}
+    for label, playbook in (("before", PREFLIGHT), ("state", INSPECT27), ("after", PREFLIGHT)):
+        report["inflight"] = label
+        durable(root, name, report)
+        rc, log = run_command(ansible_command(ansible, inv, varsfile, playbook, extra), env, timeout)
+        if playbook == PREFLIGHT:
+            evidence = re.findall(r"WSLPE21_PRESERVED=([A-F0-9]{64})", log)
+            ok = (rc == 0 and log.count("WSLPE21_PREFLIGHT=PASS") == 1
+                  and evidence == [parent["preserved_state_sha256"]])
+        else:
+            ok = rc == 0 and log.count("WSLPE21_INSPECT27=PASS") == 1
+        path = save_log(base, root, "inspect27-" + label, log)
+        report["events"].append({"stage": label, "result": "PASS" if ok else "FAIL",
+                                 "exit_code": rc, "private_log": str(path), "at": now()})
+        report["inflight"] = None
+        durable(root, name, report)
+        print(f"[INSPECT] {label}: {'PASS' if ok else 'FAIL'}; evidence: {path}", flush=True)
+        if not ok:
+            print(f"[STOP] Read-only inspection incomplete; report: {root / name}")
+            return 2
+    report["completed"] = True
+    report["completed_at"] = now()
+    durable(root, name, report)
+    print(f"[INSPECT] Evidence collected; original journal and sentinel retained. Report: {root / name}")
+    print("[PENDING] Review partial #27 state before repair or continuation; no guest changes made.")
+    return 0
+
 def run(args):
     rows = selection()
     print("[SCOPE] WSLPE-WS01 only; selected=" + ",".join(map(str, SELECTED)), flush=True)
     print("[EXCLUDED] 25,36,38,40; #30 retained, inspected and tested without re-registration", flush=True)
-    if not args.execute:
+    inspection = getattr(args, "inspect_failure", None)
+    if inspection and args.execute:
+        raise batch.BatchBlocked("Read-only inspection cannot be combined with --execute")
+    if not args.execute and not inspection:
         print("[PLAN] 21 ordered apply/validate pairs; #30 existing-state validation; no guest access")
         return 0
     if not 60 <= args.timeout_seconds <= 3600:
@@ -218,6 +301,12 @@ def run(args):
     fd = os.open(root / ".wslpe45-single-run.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if inspection:
+            identity = {"target": "WSLPE-WS01", "address": expected, "workspace": str(workspace),
+                        "inventory": str(inv), "vmx": str(vmx),
+                        "snapshot": helper("wslpe40-stage.py").SNAPSHOT}
+            return inspect_failure(root, inspection, identity, head, base, ansible, inv,
+                                   varsfile, env, args.timeout_seconds)
         sentinel = require_recovery_clear(root)
         report = {"schema": "kingdoms.wslpe45.deploy21.v1", "commit": head,
                   "target": "WSLPE-WS01", "address": expected, "workspace": str(workspace),
@@ -307,6 +396,8 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--inspect-failure", metavar="JOURNAL",
+                        help="Read-only #27 failure inspection; retains recovery sentinel")
     parser.add_argument("--workspace")
     parser.add_argument("--timeout-seconds", type=int, default=900)
     args = parser.parse_args()

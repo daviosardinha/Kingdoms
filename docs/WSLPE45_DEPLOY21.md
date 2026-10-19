@@ -133,3 +133,40 @@ recovery sentinel. If a sentinel from another attempt exists, it still blocks;
 do not delete it. Preflight failures now print a bounded reason as well as the
 private evidence path. This source correction supplies no guest installation,
 configuration-validation or learner-exploitation result.
+
+## Recorded #27 partial application, 2026-10-19
+
+Journal wslpe45-deploy21-8e5b1f7c2a08b2d5.json records a3cbd7d on
+WSLPE-WS01 (172.28.231.31). #21,22,23,24,26 passed installation and configuration
+validation. At 08:39:24 UTC, #27 apply failed on RegAsm warning RA0000 emitted
+to stderr through PS5.1's native pipeline. The log does not prove whether
+registration completed. The fixture and DLLs had already been created.
+The subsequent 15 selected scenarios were not attempted.
+
+The RegAsm wrapper now captures native stdout/stderr separately, checks the
+actual exit code, keeps warnings, and retains the post-registration checks.
+It does not change global error handling or automatically repair a partial
+registration. The remaining-source review also found and corrected #29's
+unsupported PipeStream.ReadTimeout setter. Native CI exercises denial and
+idle timeout against a CI-only pipe, without services or Proof operations.
+
+The next operator operation is read-only inspection through the existing
+runner, with the same provenance, inventory, snapshot, TLS and host gates:
+
+```bash
+cd /home/stark/kingdoms-wslpe45-pilot &&
+git pull --ff-only origin feature/wslpe45-single-candidate-pilot &&
+"$HOME/.goad/.venv/bin/python" scripts/wslpe45-deploy21.py --inspect-failure "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-deploy21-8e5b1f7c2a08b2d5.json"
+```
+
+This mode requires the matching owner-only journal and recovery sentinel,
+compares preserved state with the failed run before and after inspection,
+and records file hashes/ACLs, DLL metadata, exact CLSID/ProgID registrations,
+consumer task XML and any outstanding RegAsm processes in private logs.
+It neither updates guest source nor installs, resets, activates COM, kills
+processes or clears recovery state. Share the new inspect27-state log and
+inspection JSON to select the repair for the actual observed state.
+
+Count remains 20 operator-reported baseline + 5 runtime-validated additions.
+No learner exploitation is proven by this run. The target remains 41/45,
+not 45/45. Exclusions and all earlier successful installations are retained.
