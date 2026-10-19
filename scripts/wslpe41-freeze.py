@@ -70,6 +70,37 @@ def snapshot_names(vmx: Path) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines()[1:] if line.strip()]
 
 
+
+def verify_live_protection(report: dict, workspace: Path) -> None:
+    """Read-only guest preflight just before the post-deployment VMware snapshot."""
+    import re
+    base = batch.trusted_safety()
+    inventory, varsfile, address = base.exact_standalone(workspace)
+    if str(inventory) != report["inventory"] or address != report["address"]:
+        raise batch.BatchBlocked("Guest inventory or address differs from completed deployment")
+    ansible = Path.home() / ".goad/.venv/bin/ansible-playbook"
+    if not ansible.is_file():
+        raise batch.BatchBlocked("Trusted standalone Ansible unavailable")
+    env = os.environ.copy()
+    env.update(ANSIBLE_CONFIG=str(ROOT/"ansible/ansible.cfg"),
+               ANSIBLE_ROLES_PATH=str(ROOT/"ansible/roles"),
+               ANSIBLE_NOCOLOR="1",
+               ANSIBLE_STDOUT_CALLBACK="default",
+               ANSIBLE_DISPLAY_ARGS_TO_STDOUT="false")
+    env["KINGDOMS_WSLPE_LEARNER_PASSWORD"] = deployment.learner_password(
+        bootstrap=False,environ=env)
+    shared=hashlib.sha256((ROOT/"ansible/files/wslpe45/WslpeFixture.psm1").read_bytes()).hexdigest().upper()
+    vars_={"wslpe_expected_address":address,"wslpe_pilot_shared_sha256":shared}
+    rc,log=deployment.run_command(deployment.ansible_command(
+        ansible,inventory,varsfile,deployment.PREFLIGHT,vars_),env,300)
+    fingerprints=re.findall(r"WSLPE21_PRESERVED=([A-F0-9]{64})",log)
+    if (rc != 0 or log.count("WSLPE21_PREFLIGHT=PASS") != 1 or
+            fingerprints != [report["preserved_state_sha256"]]):
+        raise batch.BatchBlocked("Live guest protection differs from final deployment; freeze refused")
+    print("[PASS] Fresh read-only Windows preflight matches final protected fingerprint")
+
+
+
 def run(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true",
@@ -107,6 +138,8 @@ def run(argv=None) -> int:
     if not args.execute:
         print("[READY] Explicit --execute required to create the frozen master snapshot")
         return 0
+
+    verify_live_protection(report, workspace)
 
     receipt = {
         "schema": "kingdoms.wslpe41.freeze.v1", "created_at": datetime.now(timezone.utc).isoformat(),
