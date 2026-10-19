@@ -219,3 +219,55 @@ and real guest evidence exist.
 
 This paragraph records the reviewed evidence and intended recovery criteria;
 **no recovery code or guest mutation is claimed by this documentation change**.
+
+
+## Exact journal-linked recovery and continuation (source-ready 2026-10-19)
+
+The uploaded original #27 apply log proves the PowerShell 5.1 RegAsm
+\`RA0000\` warning was promoted to \`NativeCommandError\`. The existing
+read-only inspection proves the distinct pre-registration partial state.
+The correction to capture stderr without changing global error handling was
+already committed. The new explicit recovery mode is intentionally separate
+from the normal \`--execute\` batch, which still refuses an outstanding
+sentinel.
+
+GitHub source CI validates the explicit recovery CLI, the exact private
+inspection/journal binding, nonrecursive #27-only cleanup, no previously
+successful replay, native PowerShell 5.1 syntax and Ansible syntax. It is not
+Windows guest execution or learner exploitation qualification.
+
+On the **original Kali machine** with the original owner-only evidence files,
+after confirming branch CI passes, execute:
+
+\`\`\`bash
+cd /home/stark/kingdoms-wslpe45-pilot &&
+git pull --ff-only origin feature/wslpe45-single-candidate-pilot &&
+"$HOME/.goad/.venv/bin/python" scripts/wslpe45-deploy21.py \
+  --execute \
+  --recover-failure "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-deploy21-8e5b1f7c2a08b2d5.json" \
+  --inspection-report "$HOME/.local/state/kingdoms-wslpe45-live/wslpe45-inspect27-f0a42380da6f77f4.json"
+\`\`\`
+
+This operation requires the original fail-closed recovery sentinel, original
+journal digest, matching completed inspection and exact standalone guest,
+inventory, VMware snapshot, authenticated management certificate and learner
+identity. It re-inspects #27, compares all recorded ownership/file hashes,
+ACLs, registry, tasks and RegAsm state, and requires preservation checks
+before and after cleanup. It removes only enumerated owned #27 partial files
+and verified empty directories, never recursive fixture trees or excluded
+objects. It then verifies the clean #27 boundary and attempts #27–45 in the
+original selection order (excluding #36/#38/#40; #25 was previously excluded).
+Previously validated #21/#22/#23/#24/#26 are not installed again.
+
+A new private \`wslpe45-recovery27-*.json\` journal records recovery and each
+later installation/configuration result; the original failed deployment
+journal and earlier read-only inspection remain unchanged. The recovery
+sentinel is not cleared until all remaining selected configurations validate.
+Any mismatch, timeout, uncertain partial state or failed validation stops
+immediately and retains the sentinel and the recorded guest state. Do not
+manually remove it, restore snapshots, rerun the original full batch or claim
+learner exploitation. Report the new recovery journal and failed-stage
+private log if anything stops.
+
+The expected successful end state is the operator-reported baseline20 plus
+21 configuration-validated selected scenarios, not proof of exploitability.
