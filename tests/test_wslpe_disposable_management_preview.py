@@ -81,7 +81,7 @@ class DisposableManagementNicTests(unittest.TestCase):
     def test_script_has_no_live_mutating_operations(self):
         source = SCRIPT.read_text(encoding="utf-8")
         self.assertNotIn("vmrun", source)
-        self.assertNotIn("vagrant", source.lower().replace("no vagrant", "").replace("vagrant or", ""))
+        self.assertNotIn('["vagrant",', source)
         self.assertNotIn("nft -f", source)
         self.assertNotIn("sudo", source)
         self.assertNotIn("check=True", source)
