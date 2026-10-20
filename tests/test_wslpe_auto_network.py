@@ -66,6 +66,32 @@ class WslpeAutoNetworkTests(unittest.TestCase):
         with self.assertRaisesRegex(auto.NetworkSelectionError, "Unsafe VMware"):
             auto.choose_prefix(HOST + "answer VNET_3_NAT\n", [], [])
 
+    def test_offline_registered_wslpe_master_blocks_fresh_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vmx = root / "old.vmx"
+            vmx.write_text('displayName = "WSLPE-WS01"\n')
+            library = root / "inventory.vmls"
+            library.write_text(f'vmlist0.config = "{vmx}"\n')
+            index = root / "index"
+            index.write_text(json.dumps({"machines": {}}))
+            with self.assertRaisesRegex(auto.NetworkSelectionError, "master"):
+                auto.require_no_existing_wslpe_registration(library, index)
+            vmx.write_text('displayName = "unrelated"\n')
+            auto.require_no_existing_wslpe_registration(library, index)
+            index.write_text(json.dumps({"machines": {
+                "id1": {"name": "WSLPE-WS01", "vagrantfile_path": str(root)}
+            }}))
+            with self.assertRaisesRegex(auto.NetworkSelectionError, "Vagrant registration"):
+                auto.require_no_existing_wslpe_registration(library, index)
+
+    def test_unregistered_clean_host_can_choose_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            auto.require_no_existing_wslpe_registration(
+                root / "missing-vmware", root / "missing-vagrant"
+            )
+
     def test_live_proposal_and_unchanged_safety(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / "networking"
@@ -74,6 +100,7 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             with (
                 mock.patch.object(auto, "NETWORKING", config),
                 mock.patch.object(auto, "require_no_running_guests") as idle,
+                mock.patch.object(auto, "require_no_existing_wslpe_registration"),
                 mock.patch.object(auto, "_checker", return_value=checker),
                 mock.patch.object(checker, "run_ip", return_value=[]),
             ):
