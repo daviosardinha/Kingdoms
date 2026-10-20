@@ -205,10 +205,12 @@ class WslpeAutoNetworkTests(unittest.TestCase):
         operator.lab_manager.get_current_instance.return_value = None
         operator.lab_manager.lab_instances.instances = {}
         operator._set_course_selection.return_value = True
-        proposal = auto.choose_prefix(HOST + (
-            "answer VNET_2_HOSTONLY_SUBNET 172.28.231.0\\n"
-            "answer VNET_2_HOSTONLY_NETMASK 255.255.255.0\\n"
-        ).replace("\\\\n", chr(10)), [], [])
+        source = HOST + chr(10).join((
+            "answer VNET_2_HOSTONLY_SUBNET 172.28.231.0",
+            "answer VNET_2_HOSTONLY_NETMASK 255.255.255.0",
+            "",
+        ))
+        proposal = auto.choose_prefix(source, [], [])
         self.assertEqual(proposal["prefix"], "172.28.232")
         with (
             mock.patch("goad_nomad.choose_live", return_value=proposal) as selector,
