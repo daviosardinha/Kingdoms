@@ -245,7 +245,7 @@ KINGDOMS_FRESH_INSTALL_PREFLIGHT_READY=True
 ### Fresh installation
 
 ```bash
-./goad.sh -t install -l GOAD -p vmware
+./goad.sh -t install -l KINGDOMS -p vmware
 ```
 
 The CLI path is designed for unattended installation after the initial sudo authentication. It includes lifecycle timing, bounded VMware recovery and final exercise-mode isolation.
