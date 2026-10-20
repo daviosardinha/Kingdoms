@@ -193,7 +193,7 @@ def known_vmware_hostaddr_normalization(proposed: bytes, observed: bytes, layout
 
 
 def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
-                               layout: dict) -> tuple[str, ...]:
+                               layout: dict, peer_additions=None) -> tuple[str, ...]:
     """Accept only safe VMware/Vagrant runtime normalization of owned vmnets.
 
     The commit-time owner SHA remains immutable. Unlike the initial apply
@@ -259,9 +259,16 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
             + repr(sorted(removed.elements())[:4])
         )
     additions = active - recorded
-    if not additions:
-        return ("VMware network declarations are semantically unchanged",)
-
+    # The optional WSLPE peer contract is authenticated by the host-side
+    # root-owned owner record before it reaches this pure verifier. It only
+    # accounts for exact, individually approved declarations.
+    if peer_additions is not None:
+        expected_peer = Counter(peer_additions)
+        if any(expected_peer[declaration] != 1 for declaration in expected_peer):
+            raise NetworkPlanError("Duplicate peer authorization")
+        if expected_peer - additions:
+            raise NetworkPlanError("Missing approved WSLPE peer network declarations")
+        additions -= expected_peer
     # This subnet comes from the immutable original backup, not the live
     # config. Never accept new forwarding to NORTH's isolated 10.4 networks.
     settings = {}
@@ -303,6 +310,9 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
         if key in port_keys or active[declaration] != 1:
             raise NetworkPlanError("Duplicate VMware NAT forwarding host port")
         port_keys.add(key)
+
+    if not additions:
+        return ("VMware declarations and exact verified peer match",)
 
     for declaration in additions.elements():
         parts = declaration.split()
