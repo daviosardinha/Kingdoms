@@ -66,6 +66,16 @@ class WslpeAutoNetworkTests(unittest.TestCase):
         with self.assertRaisesRegex(auto.NetworkSelectionError, "Unsafe VMware"):
             auto.choose_prefix(HOST + "answer VNET_3_NAT\n", [], [])
 
+    def test_partial_vmnet_subnet_metadata_refuses_allocation(self):
+        for extra in (
+            "answer VNET_4_HOSTONLY_SUBNET 172.29.210.0",
+            "answer VNET_4_HOSTONLY_NETMASK 255.255.255.0",
+        ):
+            with self.subTest(extra=extra), self.assertRaisesRegex(
+                auto.NetworkSelectionError, "incomplete subnet metadata"
+            ):
+                auto.choose_prefix(HOST + extra + chr(10), [], [])
+
     def test_offline_registered_wslpe_master_blocks_fresh_install(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
