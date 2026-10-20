@@ -17,7 +17,7 @@ import re
 import stat
 import subprocess
 
-from goad.course1_vmnet_config import NetworkPlanError
+from goad.course1_vmnet_config import NetworkPlanError, _existing_network_metadata
 
 PEER_RECORD = Path("/etc/vmware/kingdoms-wslpe-peer-owner.json")
 SCHEMA = "kingdoms.north.wslpe-peer.v1"
@@ -60,7 +60,7 @@ def _host_interface(vmnet: str, subnet: ipaddress.IPv4Network, host: str):
 
 
 def verified_wslpe_peer_additions(record_path=PEER_RECORD, owner_uid=0,
-                                  inspect_host=True):
+                                  inspect_host=True, original_baseline=None):
     """Authenticate exact peer additions or return None when no peer is approved.
 
     Never auto-discover/approve peer VMs. A root-owned, 0600 reviewed record
@@ -94,6 +94,13 @@ def verified_wslpe_peer_additions(record_path=PEER_RECORD, owner_uid=0,
         subnet = ipaddress.IPv4Network(record["subnet"], strict=True)
         if subnet.prefixlen != 24 or subnet.overlaps(ipaddress.IPv4Network("10.4.0.0/16")):
             raise ValueError("invalid peer /24")
+        if not isinstance(original_baseline, bytes) or not original_baseline:
+            raise ValueError("no authenticated original VMware network baseline")
+        occupied, original_ranges = _existing_network_metadata(
+            original_baseline.decode("utf-8")
+        )
+        if netid in occupied or any(subnet.overlaps(existing) for existing in original_ranges):
+            raise ValueError("peer vmnet ID or subnet conflicts with original VMware networks")
         host = ipaddress.IPv4Address(record["host_address"])
         guest = ipaddress.IPv4Address(record["guest_address"])
         if host not in subnet.hosts() or guest not in subnet.hosts() or host == guest:
