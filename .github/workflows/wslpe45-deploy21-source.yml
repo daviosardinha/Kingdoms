@@ -86,6 +86,7 @@ jobs:
           $files=@(Get-ChildItem "$env:RUNNER_TEMP/wslpe21-ps" -File)
           $files+=@(Get-ChildItem 'ansible/files/wslpe45/*.psm1' -File)
           $files+=@(Get-Item 'scripts/wslpe41-learner-pilot21-readonly.ps1')
+          $files+=@(Get-Item 'scripts/wslpe41-operator-pilot21-readonly.ps1')
           foreach($file in $files) {
               $tokens=$null; $errors=$null
               [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)
