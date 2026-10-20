@@ -6,7 +6,7 @@ on:
       - feature/wslpe-disposable-management-nic
   pull_request:
     paths:
-      - ad/WSLPE/providers/vmware/Vagrantfile
+      - experiments/wslpe-disposable-management-nic/Vagrantfile
       - scripts/wslpe-disposable-management-preview.py
       - tests/test_wslpe_disposable_management_preview.py
       - .github/workflows/wslpe-disposable-nic.yml
