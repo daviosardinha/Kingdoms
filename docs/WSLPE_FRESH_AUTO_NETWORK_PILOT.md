@@ -48,15 +48,18 @@ Vagrant, instances, host interfaces, firewall or virtual machine is mutated.
 If the plan reports a candidate, it proves only that no overlap is visible to
 this checker. It does not create a VMware host-only network or prove a ready VM.
 
-## Step 2 — Disposable clean-host guest-only boot
+## Step 2 — Disposable separate-checkout guest-only boot
 
-This is intended for a compatible separate clean VMware host, **not the current
-operator host with registered NORTH and the validated WSLPE master**. Preserve
-the master VM and both snapshots. A VMware snapshot does not replace a separate
-backup; deleting the whole VM can also delete its snapshot chain.
+Use a separate clean repository checkout/workspace. A second compatible VMware
+host is safest, but the existing host can also be used **after the operator
+voluntarily stops all VMware guests**, including NORTH and the old WSLPE master.
+The old master may remain registered, powered off and snapshotted in its
+original checkout. Do **not** delete it for the test. A VMware snapshot does
+not replace a separate backup; deleting the whole VM can also delete its
+snapshot chain.
 
-On the clean host, with no running VMware guests and no registered WSLPE
-instances, clone the same pilot branch and use:
+With no running VMware guests and no existing WSLPE instance in the **new
+pilot checkout**, use:
 
 ```bash
 cd "$HOME/kingdoms-wslpe-fresh-pilot"
@@ -64,8 +67,9 @@ cd "$HOME/kingdoms-wslpe-fresh-pilot"
   --confirm-wslpe-fresh-pilot
 ```
 
-The guard verifies that the host has no running VMware guests/processes or
-identifiable WSLPE master in the standard Workstation/Vagrant inventories.
+The guard verifies that the host has no running VMware guests/processes and
+that the new pilot checkout has no existing WSLPE instance. It does not
+unregister, reboot or destroy the original powered-off golden master.
 The existing 13-stage preboot gate, native `LabManager`, `LabInstance` and
 VMware provider then create and boot exactly one `WSLPE-WS01`. A failed boot
 leaves evidence in its own checkout workspace; **do not auto-retry, reset or
