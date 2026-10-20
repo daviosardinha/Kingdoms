@@ -137,7 +137,7 @@ verification on the disposable clone is a later independent acceptance
 gate. **Do not grant learner read access to the protected root** or reapply
 #21 to make a flawed preflight pass. No privileged execution has been shown.
 
-### #21 learner preflight passed; privileged fixture audit pending
+### #21 preflight and protected fixture audit PASSED (2026-10-20)
 
 The isolated-clone learner console now reports:
 
@@ -160,10 +160,22 @@ altering anything. Its PASS is *fixture ownership proof*, **not learner LPE
 proof**. Avoid printing or committing credentials. Stop on failed ownership
 checks rather than relaxing protections.
 
-Only once both independent read-only gates pass should we implement a
-single-use learner-originated canary on the disposable clone. That proof
-must demonstrate the identity of the resulting privileged operation and
-validate cleanup or restore separately. Do not update `LEARNER_PASS` yet.
+The operator's elevated PowerShell screenshot from the isolated disposable
+clone confirms the separate privileged read-only audit completed with:
+`WSLPE41_21_OPERATOR_BOUNDARY=PASS`,
+`WSLPE41_21_OWNED_MARKER=PASS`,
+`WSLPE41_21_PROTECTED_NTFS=PASS` and
+`WSLPE41_21_PRIVILEGED_READONLY_AUDIT=PASS`.
+All expected #21 **preconditions** now pass independently in learner and
+operator contexts. The original frozen master and #21 task remain unchanged.
+
+**Next acceptance gate:** a single-use, learner-originated canary on the
+disposable clone. Require a negative control before triggering, independently
+attested privileged context and precise cleanup/restoration evidence. Never
+credit an administrator-originated proof as learner escalation. Until those
+checks finish, keep #21 `LEARNER_PENDING` / `exploitation=NOT_TESTED`;
+the active scenario count stays 41, and **zero additional learner LPE
+techniques have been proven by the acceptance campaign**.
 
 ### First pilot, then automation for all 41
 
