@@ -58,7 +58,7 @@ def render_candidate(exercise: str, management: str, vmnet: str,
     if source.count("{{ip_range}}") != 2:
         raise ValueError("Source recipe template changed; cannot independently render")
     ruby = source.replace("{{ip_range}}", exercise)
-    runner = 'load ARGV.fetch(0); puts JSON.generate(boxes)'
+    runner = 'eval(File.read(ARGV.fetch(0)) + "\\nputs JSON.generate(boxes)", binding, ARGV.fetch(0))'
     env = os.environ.copy()
     for key in (OPTIN, VNET, PREFIX):
         env.pop(key, None)
@@ -80,7 +80,8 @@ def render_candidate(exercise: str, management: str, vmnet: str,
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ValueError("Ruby recipe source-only evaluation unavailable") from exc
     if result.returncode:
-        raise ValueError("Opt-in WSLPE source candidate rejected by Ruby")
+        raise ValueError("Opt-in WSLPE source candidate rejected by Ruby: " +
+                         result.stderr.strip()[:350])
     try:
         boxes = json.loads(result.stdout)
     except (ValueError, TypeError) as exc:
