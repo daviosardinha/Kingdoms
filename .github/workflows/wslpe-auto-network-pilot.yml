@@ -1,0 +1,42 @@
+name: WSLPE fresh-install auto-network pilot
+
+on:
+  push:
+    branches:
+      - feature/wslpe-fresh-install-auto-network-pilot
+  pull_request:
+    paths:
+      - kingdoms/wslpe_auto_network.py
+      - kingdoms/wslpe_stage1.py
+      - goad_nomad.py
+      - tests/test_wslpe_auto_network.py
+      - .github/workflows/wslpe-auto-network-pilot.yml
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install same source dependencies as WSLPE41 workflow
+        run: python -m pip install --disable-pip-version-check pyyaml rich Jinja2 ansible-runner psutil 'ansible-core==2.17.14'
+      - name: Compile pilot and existing operator entrypoint
+        run: |
+          python -m py_compile kingdoms/wslpe_auto_network.py kingdoms/wslpe_stage1.py goad_nomad.py tests/test_wslpe_auto_network.py
+      - name: Automatic candidate network and stale-plan tests
+        run: python -m unittest tests.test_wslpe_auto_network -v
+      - name: Existing bootstrap and normal-install fail-closed regressions
+        run: |
+          python -m unittest tests.test_wslpe_native_boot tests.test_install_noninteractive tests.test_kingdoms_course_registry -v
+      - name: Entire WSLPE source regression
+        run: python -m unittest discover -s tests -p 'test_wslpe_*.py' -q
+      - name: State scope of proof
+        run: |
+          echo '[SOURCE ONLY] No VMware guest was started'
+          echo '[NOT PROVEN] Fresh Windows deployment, VMnet allocation, 41 scenarios, LPE learner proof'
