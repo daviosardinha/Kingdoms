@@ -1,0 +1,36 @@
+name: NORTH WSLPE peer network source gates
+
+on:
+  push:
+    branches:
+      - fix/north-wslpe-verified-peer-network
+  pull_request:
+    paths:
+      - goad/course1_peer_vmnet.py
+      - goad/course1_vmnet_config.py
+      - goad/course1_host_network_apply.py
+      - tests/test_course1_peer_vmnet.py
+      - tests/test_course1_vmnet_config.py
+      - tests/test_course1_host_network_apply.py
+      - .github/workflows/north-wslpe-peer-network.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile peer and existing NORTH verifier
+        run: |
+          python -m py_compile goad/course1_peer_vmnet.py goad/course1_vmnet_config.py goad/course1_host_network_apply.py tests/test_course1_peer_vmnet.py
+      - name: Verify strict source semantics without VMware
+        run: |
+          python -m unittest \
+            tests.test_course1_peer_vmnet \
+            tests.test_course1_vmnet_config \
+            tests.test_course1_host_network_apply -v
