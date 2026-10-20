@@ -7,7 +7,7 @@ import unittest
 
 from goad.vmware_coexistence import (
     CoexistenceError, network_inventory, owner_record, load_owner_records,
-    plan_instance, choose_course_network_base,
+    plan_instance, choose_course_network_base, north_source_install_plan,
 )
 
 VMWARE = (
@@ -90,6 +90,26 @@ class SharedVMwareTests(unittest.TestCase):
         self.assertEqual(next_plan["segments"]["north"]["cidr"], "10.5.10.0/24")
         self.assertNotEqual(next_plan["segments"]["north"]["vmnet"], "vmnet10")
         self.assertEqual(full["segments"]["north"]["cidr"], "10.4.10.0/24")
+
+    def test_real_north_renderer_uses_10_5_addresses_and_independent_vmnets(self):
+        full = self.plan("KINGDOMS", "/instances/full")
+        source = VMWARE + rendered(full)
+        result = north_source_install_plan("/instances/north", source,
+                                           owners=(committed(full),))
+        self.assertEqual(result["network_base"], "10.5.0.0/16")
+        self.assertFalse(result["install_enabled"])
+        topo = result["topology"]
+        self.assertEqual(topo["windows"]["GOAD-DC02"]["address"], "10.5.10.11")
+        self.assertEqual(topo["windows"]["GOAD-DC01"]["address"], "10.5.20.10")
+        self.assertEqual(topo["segments"]["management"]["host_address"], "10.5.99.254")
+        self.assertTrue(set(int(s["vmnet"][5:]) for s in topo["segments"].values())
+                        .isdisjoint({10, 20, 30, 99, 1, 8}))
+        assets = result["rendered_artifacts"]
+        self.assertIn('10.5.10.11', assets["providers/vmware/Vagrantfile"])
+        self.assertIn('10.5.20.10', assets["providers/vmware/inventory"])
+        self.assertIn('10.5.10.1', assets["providers/vmware/router/provision.sh"])
+        self.assertIn("ip saddr 10.5.10.11 ip daddr 10.5.20.10",
+                      assets["providers/vmware/router/nftables/exercise.nft"])
 
     def test_subnet_candidate_skips_external_routes_and_host_addresses(self):
         self.assertEqual(choose_course_network_base(
