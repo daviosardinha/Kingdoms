@@ -31,6 +31,14 @@ def parse_vagrant_ports(text: str) -> dict[int, int]:
             line,
         )
         if match is None:
+            # Vagrant's standard informational header precedes port rows.
+            # Never silently skip an unknown port or warning line.
+            if line.strip().startswith((
+                "The forwarded ports for the machine are listed below.",
+                "these values may differ from values configured in the Vagrantfile",
+                "provider supports automatic port collision detection and resolution.",
+            )):
+                continue
             raise ValueError("Unexpected or ambiguous native Vagrant forwarding")
         guest, host = (int(value) for value in match.groups())
         if guest not in GUEST_PORTS or guest in mapping:
