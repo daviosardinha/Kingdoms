@@ -111,42 +111,14 @@ def _network_config() -> str:
 
 VMWARE_LIBRARY = Path.home() / ".vmware/inventory.vmls"
 VAGRANT_INDEX = Path.home() / ".vagrant.d/data/machine-index/index"
-REGISTERED = re.compile(r'(?m)^vmlist\d+\.config\s*=\s*"([^"]+)"\s*    """Read live Linux+VMware state without modifying any network or VM."""
-    require_no_running_guests()
-    require_no_existing_wslpe_registration()
-    checker = _checker()
-    try:
-        addresses = checker.run_ip("address", "show")
-        routes = checker.run_ip("route", "show", "table", "all")
-        config = _network_config()
-        selected = choose_prefix(config, addresses, routes)
-    except (ValueError, OSError) as exc:
-        raise NetworkSelectionError(f"Live WSLPE network selection blocked: {exc}") from exc
-    require_no_running_guests()
-    return selected
-
-
-def assert_plan_still_valid(plan: dict) -> None:
-    """Refuse instance creation if evidence changed during preboot acceptance."""
-    if not isinstance(plan, dict) or plan.get("mode") != "READ_ONLY_FRESH_PILOT":
-        raise NetworkSelectionError("Missing fresh-pilot allocation provenance")
-    current = choose_live()
-    if (current["prefix"] != plan.get("prefix") or
-            current["cidr"] != plan.get("cidr") or
-            current["networking_sha256"] != plan.get("networking_sha256")):
-        raise NetworkSelectionError("Host network changed after WSLPE selection; restart planning")
-)
+REGISTERED = re.compile(r'(?m)^vmlist\d+\.config\s*=\s*"([^"]+)"\s*$')
 WSLPE_NAME = re.compile(r'(?i)(wslpe[-_]?ws01|kingdoms[-_]lpe[-_]ws01|[/\\]wslpe[/\\]|kingdoms-lpe-standalone)')
 
 
 def require_no_existing_wslpe_registration(
     library: Path = VMWARE_LIBRARY, vagrant_index: Path = VAGRANT_INDEX,
 ) -> None:
-    """Refuse accidentally creating another master alongside an offline one.
-
-    Registered VMware/Vagrant ownership is distinct from *running* VM state.
-    This conservative operator-host check never deletes an existing guest.
-    """
+    """Refuse a second master alongside an offline registered machine."""
     library = Path(library)
     vagrant_index = Path(vagrant_index)
     for path in (library, vagrant_index):
@@ -157,7 +129,6 @@ def require_no_existing_wslpe_registration(
             text = library.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             raise NetworkSelectionError("Unreadable VMware inventory") from exc
-        # Inventory may name the Vagrant master while it is powered off.
         for item in REGISTERED.findall(text):
             if WSLPE_NAME.search(item):
                 raise NetworkSelectionError("Existing registered WSLPE VMX; use a clean host")
@@ -183,13 +154,15 @@ def require_no_existing_wslpe_registration(
         for entry in machines.values():
             if not isinstance(entry, dict):
                 raise NetworkSelectionError("Malformed registered Vagrant machine")
-            if WSLPE_NAME.search(str(entry.get("name", ""))) or WSLPE_NAME.search(str(entry.get("vagrantfile_path", ""))):
+            if (WSLPE_NAME.search(str(entry.get("name", ""))) or
+                    WSLPE_NAME.search(str(entry.get("vagrantfile_path", "")))):
                 raise NetworkSelectionError("Existing WSLPE Vagrant registration; use a clean host")
 
 
 def choose_live() -> dict:
     """Read live Linux+VMware state without modifying any network or VM."""
     require_no_running_guests()
+    require_no_existing_wslpe_registration()
     checker = _checker()
     try:
         addresses = checker.run_ip("address", "show")
