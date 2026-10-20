@@ -74,6 +74,7 @@ class WslpePeerVmnetTests(unittest.TestCase):
     def approved(self):
         return verified_wslpe_peer_additions(
             self.peer_file, owner_uid=os.getuid(), inspect_host=False,
+            original_baseline=self.base,
         )
 
     def runtime(self, extra=""):
@@ -137,6 +138,12 @@ class WslpePeerVmnetTests(unittest.TestCase):
                 self.owned, altered, self.base, self.layout, peer_additions=self.approved()
             )
 
+    def test_peer_must_have_original_network_baseline(self):
+        with self.assertRaisesRegex(NetworkPlanError, "not authenticated"):
+            verified_wslpe_peer_additions(
+                self.peer_file, owner_uid=os.getuid(), inspect_host=False,
+            )
+
     def test_root_owner_permissions_and_symlinks(self):
         self.peer_file.chmod(0o644)
         with self.assertRaises(NetworkPlanError):
@@ -162,6 +169,7 @@ class WslpePeerVmnetTests(unittest.TestCase):
         with self.assertRaises(NetworkPlanError):
             verified_wslpe_peer_additions(
                 link, owner_uid=os.getuid(), inspect_host=False,
+                original_baseline=self.base,
             )
 
     def test_unsafe_peer_identity_and_forwarding_rejected(self):
@@ -169,6 +177,7 @@ class WslpePeerVmnetTests(unittest.TestCase):
             ("vmnet", "vmnet10"),
             ("vmnet", "vmnet8"),
             ("subnet", "10.4.10.0/24"),
+            ("subnet", "192.168.213.0/24"),
             ("guest_address", "172.28.231.0"),
             ("host_address", "172.28.231.31"),
             ("host_ports", {"5985": 2210, "5986": 2210, "22": 2212}),
@@ -192,6 +201,7 @@ class WslpePeerVmnetTests(unittest.TestCase):
             with self.assertRaisesRegex(NetworkPlanError, "wrong actual host address"):
                 verified_wslpe_peer_additions(
                     self.peer_file, owner_uid=os.getuid(), inspect_host=True,
+                    original_baseline=self.base,
                 )
 
     def test_record_is_never_created_implicitly(self):
