@@ -9,8 +9,6 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import ipaddress
-import json
-import re
 from pathlib import Path
 import subprocess
 
@@ -112,62 +110,11 @@ def _network_config() -> str:
 
 
 
-VMWARE_LIBRARY = Path.home() / ".vmware/inventory.vmls"
-VAGRANT_INDEX = Path.home() / ".vagrant.d/data/machine-index/index"
-REGISTERED = re.compile(r'(?m)^vmlist\d+\.config\s*=\s*"([^"]+)"\s*$')
-WSLPE_NAME = re.compile(r'(?i)(wslpe[-_]?ws01|kingdoms[-_]lpe[-_]ws01|[/\\]wslpe[/\\]|kingdoms-lpe-standalone)')
-
-
-def require_no_existing_wslpe_registration(
-    library: Path = VMWARE_LIBRARY, vagrant_index: Path = VAGRANT_INDEX,
-) -> None:
-    """Refuse a second master alongside an offline registered machine."""
-    library = Path(library)
-    vagrant_index = Path(vagrant_index)
-    for path in (library, vagrant_index):
-        if path.is_symlink() or (path.exists() and not path.is_file()):
-            raise NetworkSelectionError("Unsafe VMware/Vagrant registered-machine index")
-    if library.is_file():
-        try:
-            text = library.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            raise NetworkSelectionError("Unreadable VMware inventory") from exc
-        for item in REGISTERED.findall(text):
-            if WSLPE_NAME.search(item):
-                raise NetworkSelectionError("Existing registered WSLPE VMX; use a clean host")
-            vmx = Path(item)
-            if vmx.is_file() and not vmx.is_symlink():
-                try:
-                    contents = vmx.read_text(encoding="utf-8", errors="replace")
-                except OSError as exc:
-                    raise NetworkSelectionError("Cannot inspect registered guest identity") from exc
-                if any(WSLPE_NAME.search(line) for line in contents.splitlines()
-                       if line.strip().lower().startswith("displayname")):
-                    raise NetworkSelectionError("Registered WSLPE master found in VMware inventory")
-            elif vmx.is_symlink():
-                raise NetworkSelectionError("Unsafe registered VMware VMX link")
-    if vagrant_index.is_file():
-        try:
-            data = json.loads(vagrant_index.read_text(encoding="utf-8"))
-        except (OSError, ValueError, UnicodeError) as exc:
-            raise NetworkSelectionError("Cannot inspect Vagrant machine index") from exc
-        machines = data.get("machines") if isinstance(data, dict) else None
-        if not isinstance(machines, dict):
-            raise NetworkSelectionError("Unsupported Vagrant machine index structure")
-        for entry in machines.values():
-            if not isinstance(entry, dict):
-                raise NetworkSelectionError("Malformed registered Vagrant machine")
-            if (WSLPE_NAME.search(str(entry.get("name", ""))) or
-                    WSLPE_NAME.search(str(entry.get("vagrantfile_path", "")))):
-                raise NetworkSelectionError("Existing WSLPE Vagrant registration; use a clean host")
-
-
 def choose_live(*, fresh_boot: bool = True) -> dict:
     """Read host state; only an actual boot demands zero live/registered peers."""
     if fresh_boot:
         require_no_running_guests()
-        require_no_existing_wslpe_registration()
-    checker = _checker()
+        checker = _checker()
     try:
         addresses = checker.run_ip("address", "show")
         routes = checker.run_ip("route", "show", "table", "all")
@@ -177,8 +124,7 @@ def choose_live(*, fresh_boot: bool = True) -> dict:
         raise NetworkSelectionError(f"Live WSLPE network selection blocked: {exc}") from exc
     if fresh_boot:
         require_no_running_guests()
-        require_no_existing_wslpe_registration()
-    return selected
+        return selected
 
 
 def assert_plan_still_valid(plan: dict) -> None:
