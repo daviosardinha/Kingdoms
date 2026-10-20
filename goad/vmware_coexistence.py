@@ -227,9 +227,45 @@ def choose_course_network_base(profile, networking, *, owners=(), routes=(),
             return str(desired)
     raise CoexistenceError("No collision-free 10.X.0.0/16 is available")
 
+
+def north_source_install_plan(provider, networking, *, owners=(),
+                              routes=(), host_addresses=(), link_names=(),
+                              registered_vmx=()):
+    """Connect shared allocation to the existing Course 1 artifact generator.
+
+    Not an installer. In particular, NORTH's current host-level apply and
+    installed lifecycle attestation still require their own integration.
+    """
+    from goad.kingdoms_topology import load_course1_topology
+    from goad.course1_artifact_render import render_course1_artifacts
+
+    base = choose_course_network_base(
+        "NORTH", networking, owners=owners,
+        routes=routes, host_addresses=host_addresses,
+    )
+    original = load_course1_topology()
+    octet = ipaddress.IPv4Network(base).network_address.packed[1]
+    subnet_map = {
+        role: zone["cidr"].replace("10.4.", f"10.{octet}.", 1)
+        for role, zone in original["segments"].items()
+    }
+    proposed = plan_instance(
+        "NORTH", provider, subnet_map, networking, owners=owners,
+        routes=routes, host_addresses=host_addresses, link_names=link_names,
+        registered_vmx=registered_vmx,
+        avoid_vmnet_ids=DEFAULT_IDS["NORTH"] if octet != 4 else (),
+    )
+    vmnets = {
+        role: int(spec["vmnet"][5:]) for role, spec in proposed["segments"].items()
+    }
+    topology = load_course1_topology(base, vmnets)
+    artifacts = render_course1_artifacts(base, vmnets)
+    return {"allocation": proposed, "network_base": base, "topology": topology,
+            "rendered_artifacts": artifacts, "install_enabled": False}
+
 def plan_instance(profile, provider, segments, networking, *,
                   owners=(), link_names=(), routes=(), host_addresses=(),
-                  registered_vmx=()):
+                  registered_vmx=(), avoid_vmnet_ids=()):
     """Return an additive, deterministic plan; refuse unsupported IP overlap.
 
     Inputs must come from fresh VMware/OS/registered-VM discovery. For existing
@@ -273,7 +309,9 @@ def plan_instance(profile, provider, segments, networking, *,
     if pinned and set(pinned) != set(wants):
         raise CoexistenceError("Incomplete existing instance assignment")
     result = {}
-    occupied = set(nets) | linked | set(assignments) | set(RESERVED)
+    if any(type(n) is not int or not 0 <= n <= 254 for n in avoid_vmnet_ids):
+        raise CoexistenceError("Invalid prohibited VMware vmnet number")
+    occupied = set(nets) | linked | set(assignments) | set(RESERVED) | set(avoid_vmnet_ids)
     for i, role in enumerate(PROFILES[profile]):
         subnet = wants[role]
         own_number = int(pinned[role]["vmnet"][5:]) if pinned else None
