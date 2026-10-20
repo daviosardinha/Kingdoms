@@ -137,6 +137,34 @@ verification on the disposable clone is a later independent acceptance
 gate. **Do not grant learner read access to the protected root** or reapply
 #21 to make a flawed preflight pass. No privileged execution has been shown.
 
+### #21 learner preflight passed; privileged fixture audit pending
+
+The isolated-clone learner console now reports:
+
+- `WSLPE41_21_LEARNER_BOUNDARY=PASS`
+- `WSLPE41_21_FIXTURE_OWNERSHIP=OPERATOR_CHECK_REQUIRED`
+- `WSLPE41_21_SYSTEM_TASK=PASS`
+- `WSLPE41_21_LEARNER_TASK_ACL=PASS`
+- `WSLPE41_21_LEARNER_TASK_PREFLIGHT=PASS`
+- `WSLPE41_21_READONLY_PREFLIGHT=PASS`
+- `WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED`
+
+Source screenshot came from an interactive nonadministrator session inside
+`KINGDOMS-WSLPE41-LEARNER-TEST`, with both NICs disconnected.
+A separate privileged read-only audit now exists at
+`scripts/wslpe41-operator-pilot21-readonly.ps1`. Run it **only inside the
+disposable clone** in a distinct elevated operator console, never in the
+learner session or frozen master. It checks the protected marker's scenario
+identity and the directory's SYSTEM/Administrators-only NTFS DACL, without
+altering anything. Its PASS is *fixture ownership proof*, **not learner LPE
+proof**. Avoid printing or committing credentials. Stop on failed ownership
+checks rather than relaxing protections.
+
+Only once both independent read-only gates pass should we implement a
+single-use learner-originated canary on the disposable clone. That proof
+must demonstrate the identity of the resulting privileged operation and
+validate cleanup or restore separately. Do not update `LEARNER_PASS` yet.
+
 ### First pilot, then automation for all 41
 
 The learner-acceptance planner is not an exploit runner. After clone
