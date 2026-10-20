@@ -1,3 +1,4 @@
+from goad.lab_names import canonical_lab_name, public_lab_name
 from goad.log import Log
 from goad.utils import *
 from goad.dependencies import Dependencies
@@ -33,7 +34,7 @@ class Settings:
         self.extensions_name = instance.extensions
 
     def show(self):
-        Log.info(f'Current Lab         : {self.lab_name}')
+        Log.info(f'Current Lab         : {public_lab_name(self.lab_name)}')
         Log.info(f'Current Provider    : {self.provider_name}')
         Log.info(f'Current Provisioner : {self.provisioner_name}')
         if self.is_goad_nomad_segmented():
@@ -46,11 +47,11 @@ class Settings:
 
     def inline(self):
         if self.is_goad_nomad_segmented():
-            return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/10.4.0.0-16-segmented'
+            return f'{public_lab_name(self.lab_name)}/{self.provider_name}/{self.provisioner_name}/10.4.0.0-16-segmented'
         if self.provider_name == LUDUS:
-            return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}'
+            return f'{public_lab_name(self.lab_name)}/{self.provider_name}/{self.provisioner_name}'
         else:
-            return f'{self.lab_name}/{self.provider_name}/{self.provisioner_name}/{self.ip_range}.X'
+            return f'{public_lab_name(self.lab_name)}/{self.provider_name}/{self.provisioner_name}/{self.ip_range}.X'
 
     def set_lab_name(self, lab_name, refresh=True):
         """
@@ -59,6 +60,7 @@ class Settings:
         :param lab_name:
         :return: lab_name
         """
+        lab_name = canonical_lab_name(lab_name)
         if self.lab_manager.is_lab_exist(lab_name):
             # set lab
             self.lab_name = lab_name
