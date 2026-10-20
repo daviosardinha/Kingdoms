@@ -1,0 +1,27 @@
+name: KINGDOMS shared VMware coexistence source gates
+
+on:
+  push:
+    branches:
+      - engineering/shared-vmware-coexistence-source
+  pull_request:
+    paths:
+      - goad/vmware_coexistence.py
+      - tests/test_vmware_coexistence.py
+      - .github/workflows/kingdoms-vmware-coexistence.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile shared allocator and regression suite
+        run: python -m py_compile goad/vmware_coexistence.py tests/test_vmware_coexistence.py
+      - name: Exercise shared allocation, owner provenance and conflict handling
+        run: python -m unittest tests.test_vmware_coexistence -v
