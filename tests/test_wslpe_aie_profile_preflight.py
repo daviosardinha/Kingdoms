@@ -160,13 +160,15 @@ class WslpeAieProfilePreflightTests(unittest.TestCase):
 
             with patch.object(RUNNER.Path, "home", return_value=directory), \
                  patch.object(RUNNER, "exact_standalone", return_value=(
-                     Path("/private/WSLPE/inventory"),
-                     Path("/private/WSLPE/vars"), "172.28.231.31",
+                     Path("/private/WSLPE/a102ff-wslpe-vmware/inventory"),
+                     Path("/private/WSLPE/a102ff-wslpe-vmware/vars"), "172.28.231.31",
                  )), patch.object(RUNNER, "check_inventory"), \
                  patch.object(RUNNER, "learner_password", return_value="MockStrongPassword!123"), \
+                 patch.object(RUNNER, "fixture_vars_file", return_value=directory / "owned-fixture-overlay.json") as overlay, \
                  patch.object(RUNNER.subprocess, "run", side_effect=simulate), \
                  patch.object(RUNNER, "prepare_standalone_aie", side_effect=prepare):
                 self.assertEqual(RUNNER.run(args), 1)
+                overlay.assert_called_once_with("a102ff-wslpe-vmware", prepare=False)
             self.assertEqual(events[0][1], "status")
             self.assertTrue(all(x[1:] == ("validate", "vulnerable") for x in events[1:7]))
             self.assertEqual(events[7], ("always_install_elevated", "reset", None))
@@ -218,13 +220,15 @@ class WslpeAieProfilePreflightTests(unittest.TestCase):
 
             with patch.object(RUNNER.Path, "home", return_value=directory), \
                  patch.object(RUNNER, "exact_standalone", return_value=(
-                        Path("/private/WSLPE/inventory"), Path("/private/WSLPE/vars"),
+                        Path("/private/WSLPE/a102ff-wslpe-vmware/inventory"), Path("/private/WSLPE/a102ff-wslpe-vmware/vars"),
                         "172.28.231.31"
                     )), patch.object(RUNNER, "check_inventory"), \
                  patch.object(RUNNER, "learner_password", return_value="FakeSecret!NoLiveUse123"), \
+                 patch.object(RUNNER, "fixture_vars_file", return_value=directory / "owned-fixture-overlay.json") as overlay, \
                  patch.object(RUNNER.subprocess, "run", side_effect=simulate), \
                  patch.object(RUNNER, "prepare_standalone_aie", side_effect=prepare):
                 self.assertEqual(RUNNER.run(args), 1)
+                overlay.assert_called_once_with("a102ff-wslpe-vmware", prepare=False)
 
             self.assertEqual(events[0][1], "status")
             old_validations = [x for x in events if x[0] in catalog[:6]]
