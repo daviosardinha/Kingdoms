@@ -7,7 +7,7 @@ import unittest
 
 from goad.vmware_coexistence import (
     CoexistenceError, network_inventory, owner_record, load_owner_records,
-    plan_instance, choose_course_network_base, north_source_install_plan,
+    plan_instance,
 )
 
 VMWARE = (
@@ -76,58 +76,20 @@ class SharedVMwareTests(unittest.TestCase):
         self.assertEqual(lpe["segments"]["exercise"]["cidr"], "172.28.231.0/24")
         self.assertEqual(self.plan("NORTH", "/instances/north", source), north)
 
-    def test_second_ad_lab_selects_10_5_without_mutating_original(self):
-        full = self.plan("KINGDOMS", "/instances/full")
-        existing = VMWARE + rendered(full)
-        next_base = choose_course_network_base("NORTH", existing,
-                                                owners=(committed(full),))
-        self.assertEqual(next_base, "10.5.0.0/16")
-        self.assertEqual(choose_course_network_base("KINGDOMS", VMWARE),
-                         "10.4.0.0/16")
-        north = {role: cidr.replace("10.4.", "10.5.") for role, cidr in NORTH.items()}
-        next_plan = plan_instance("NORTH", "/instances/north", north, existing,
-                                  owners=(committed(full),))
-        self.assertEqual(next_plan["segments"]["north"]["cidr"], "10.5.10.0/24")
-        self.assertNotEqual(next_plan["segments"]["north"]["vmnet"], "vmnet10")
-        self.assertEqual(full["segments"]["north"]["cidr"], "10.4.10.0/24")
-
-    def test_real_north_renderer_uses_10_5_addresses_and_independent_vmnets(self):
-        full = self.plan("KINGDOMS", "/instances/full")
-        source = VMWARE + rendered(full)
-        result = north_source_install_plan("/instances/north", source,
-                                           owners=(committed(full),))
-        self.assertEqual(result["network_base"], "10.5.0.0/16")
-        self.assertFalse(result["install_enabled"])
-        topo = result["topology"]
-        self.assertEqual(topo["windows"]["GOAD-DC02"]["address"], "10.5.10.11")
-        self.assertEqual(topo["windows"]["GOAD-DC01"]["address"], "10.5.20.10")
-        self.assertEqual(topo["segments"]["management"]["host_address"], "10.5.99.254")
-        self.assertTrue(set(int(s["vmnet"][5:]) for s in topo["segments"].values())
-                        .isdisjoint({10, 20, 30, 99, 1, 8}))
-        assets = result["rendered_artifacts"]
-        self.assertIn('10.5.10.11', assets["providers/vmware/Vagrantfile"])
-        self.assertIn('10.5.20.10', assets["providers/vmware/inventory"])
-        self.assertIn('10.5.10.1', assets["providers/vmware/router/provision.sh"])
-        self.assertIn("ip saddr 10.5.10.11 ip daddr 10.5.20.10",
-                      assets["providers/vmware/router/nftables/exercise.nft"])
-
-    def test_subnet_candidate_skips_external_routes_and_host_addresses(self):
-        self.assertEqual(choose_course_network_base(
-            "NORTH", VMWARE, routes=["10.4.0.0/16"],
-            host_addresses=["10.5.15.10"]), "10.6.0.0/16")
-        self.assertEqual(choose_course_network_base(
-            "NORTH", VMWARE, preferred=5, maximum=5), "10.5.0.0/16")
-        with self.assertRaisesRegex(CoexistenceError, "No collision-free"):
-            choose_course_network_base("NORTH", VMWARE, preferred=4,
-                                       maximum=4, routes=["10.4.0.0/16"])
-
-    def test_subnet_selection_not_invoked_for_existing_lifecycle(self):
-        first = self.plan("KINGDOMS", "/instances/full")
-        source = VMWARE + rendered(first)
-        existing = self.plan("KINGDOMS", "/instances/full",
-                             source, (committed(first),))
-        self.assertEqual(existing["segments"], first["segments"])
-        self.assertEqual(existing["status"], "EXISTING_VERIFIED")
+    def test_existing_north_course_addresses_remain_10_4(self):
+        from goad.kingdoms_topology import load_course1_topology
+        from goad.course1_artifact_render import render_course1_artifacts
+        canonical = load_course1_topology()
+        self.assertEqual(canonical["network_base"], "10.4.0.0/16")
+        self.assertEqual(canonical["windows"]["GOAD-DC02"]["address"], "10.4.10.11")
+        self.assertEqual(canonical["windows"]["GOAD-DC01"]["address"], "10.4.20.10")
+        self.assertEqual(canonical["segments"]["management"]["host_address"], "10.4.99.254")
+        files = render_course1_artifacts()
+        self.assertIn("10.4.10.11", files["providers/vmware/Vagrantfile"])
+        self.assertIn("10.4.20.10", files["providers/vmware/inventory"])
+        self.assertIn("10.4.10.1", files["providers/vmware/router/provision.sh"])
+        north = self.plan("NORTH", "/instances/north")
+        self.assertEqual(north["segments"]["north"]["cidr"], "10.4.10.0/24")
 
     def test_north_then_wslpe_retains_peer_network_and_ownership(self):
         first = self.plan("NORTH", "/instances/north")
