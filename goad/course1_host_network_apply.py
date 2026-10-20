@@ -25,6 +25,7 @@ from goad.course1_hostaddrs import (
 )
 from goad.course1_hostaddr_install import install_owned_address_assets
 from goad.course1_network_preflight import inspect_live
+from goad.course1_peer_vmnet import verified_wslpe_peer_additions
 from goad.course1_vmnet_config import (render_vmnet_config, verify_vmnet_config, verify_owned_vmnet_runtime)
 from goad.course1_vmnet_journal import inspect_vmnet_journals
 from goad.course1_vmnet_transaction import (
@@ -316,7 +317,9 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
         # treating the mutable VMware configuration file as immutable.
         # NORTH additionally proves *all* observed changes are explicitly
         # permitted VMware/Vagrant runtime normalization, never silent edits.
-        verify_owned_vmnet_runtime(committed, installed, saved.read_bytes(), layout)
+        peer_lines = verified_wslpe_peer_additions()
+        verify_owned_vmnet_runtime(committed, installed, saved.read_bytes(), layout,
+                                   peer_additions=peer_lines)
 
     if inspect_host:
         inspect_live_hostaddrs(layout)
