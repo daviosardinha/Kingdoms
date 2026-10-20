@@ -11,7 +11,7 @@
 
 ## What the code implements
 
-Within the WSLPE-specific Ruby recipe ONLY, setting the explicit experimental mode to `preview` attaches one provider adapter request at VMware **slot 2** via the existing shared template `v.network_adapter` support. It does not mutate the shared template or change the default WSLPE two-NIC layout. It rejects existing native WSLPE VM registrations in the generated Vagrant provider folder.
+Within an isolated **experimental Ruby recipe copy** in `experiments/wslpe-disposable-management-nic/Vagrantfile`, setting the explicit experimental mode to `preview` attaches one provider adapter request at VMware **slot 2** via the existing shared template `v.network_adapter` support. It does not modify `ad/WSLPE/providers/vmware/Vagrantfile`, the shared template or the default two-NIC layout. It rejects existing native WSLPE VM registrations in the generated Vagrant provider folder.
 
 The CLI runs the WSLPE recipe in an ephemeral temporary directory and compares the Ruby result to expected metadata. It never runs Vagrant or creates a host vmnet. Default Vagrant/Windows/NAT behavior remains unchanged.
 
