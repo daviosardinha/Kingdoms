@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 
+from goad.lab_names import canonical_lab_name, public_lab_name
 from goad.log import Log
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
@@ -195,6 +196,14 @@ class GoadNomad(BaseGoad):
         if callable(check) and check():
             return provider
         return None
+
+    def complete_set_lab(self, text, line, begidx, endidx):
+        """Advertise KINGDOMS while continuing to accept the GOAD alias."""
+        names = self.lab_manager.get_labs_options()
+        options = [public_lab_name(name) for name in names]
+        if 'GOAD' in names:
+            options.append('GOAD')
+        return [name for name in options if name.startswith(text)]
 
     def do_create(self, arg=''):
         """Create a new instance, with an explicit non-interactive CLI path.
@@ -489,13 +498,14 @@ def parse_args():
         epilog='''
 Examples:
  - Launch GOAD_NOMAD interactive console: ./goad.sh
- - Install default segmented GOAD on VMware: ./goad.sh -t install -l GOAD -p vmware
+ - Install full Kingdoms on VMware: ./goad.sh -t install -l KINGDOMS -p vmware
+ - Legacy GOAD selection remains supported: ./goad.sh -t install -l GOAD -p vmware
  - Validate an installed instance: ./goad.sh -t validate -i <instance_id>
 ''',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument('-t', '--task', help=task_help, required=False)
-    parser.add_argument('-l', '--lab', help='lab to use (default: GOAD)', default='GOAD', required=False)
+    parser.add_argument('-l', '--lab', help='lab to use (default: KINGDOMS; GOAD is a legacy alias)', default='KINGDOMS', required=False)
     parser.add_argument('-p', '--provider', help='provider to use (default: vmware)', default='vmware', required=False)
     parser.add_argument('-ip', '--ip_range', help='legacy flat-network prefix; ignored by segmented GOAD/VMware', default='', required=False)
     parser.add_argument('-m', '--method', help='deploy method to use (default: local)', default='local', required=False)
@@ -504,7 +514,11 @@ Examples:
     parser.add_argument('-a', '--ansible_only', help='run only provisioning (ansible) on instance (-i) (for task install only)', required=False)
     parser.add_argument('-r', '--run_playbook', help='run only one ansible playbook on instance (-i) (for task install only)', required=False)
     parser.add_argument('-d', '--disable_dependencies', help='disable_dependencies', action='append', required=False)
-    return parser.parse_args()
+    args = parser.parse_args()
+    # Normalize before Config/LabManager/instance creation to preserve all
+    # existing GOAD provider, Vagrant, VMware and persisted-instance paths.
+    args.lab = canonical_lab_name(args.lab)
+    return args
 
 
 def _dispatch_task(goad, args):

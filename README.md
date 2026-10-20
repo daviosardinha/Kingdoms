@@ -245,8 +245,12 @@ KINGDOMS_FRESH_INSTALL_PREFLIGHT_READY=True
 ### Fresh installation
 
 ```bash
-./goad.sh -t install -l GOAD -p vmware
+./goad.sh -t install -l KINGDOMS -p vmware
 ```
+
+`KINGDOMS` is the public lab name. The original `GOAD` CLI name remains a
+supported alias for existing scripts and installations. Both resolve to the
+same original provider and stored VM topology, with no migration required.
 
 The CLI path is designed for unattended installation after the initial sudo authentication. It includes lifecycle timing, bounded VMware recovery and final exercise-mode isolation.
 
