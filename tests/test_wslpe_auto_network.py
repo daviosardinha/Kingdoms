@@ -112,6 +112,23 @@ class WslpeAutoNetworkTests(unittest.TestCase):
                 with self.assertRaisesRegex(auto.NetworkSelectionError, "changed after"):
                     auto.assert_plan_still_valid(plan)
 
+    def test_read_only_planning_does_not_require_powering_off_north(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "networking"
+            config.write_text(HOST, encoding="utf-8")
+            checker = auto._checker()
+            with (
+                mock.patch.object(auto, "NETWORKING", config),
+                mock.patch.object(auto, "require_no_running_guests") as idle,
+                mock.patch.object(auto, "require_no_existing_wslpe_registration") as master,
+                mock.patch.object(auto, "_checker", return_value=checker),
+                mock.patch.object(checker, "run_ip", return_value=[]),
+            ):
+                result = auto.choose_live(fresh_boot=False)
+                self.assertEqual(result["guest_ip"], "172.28.231.31")
+                idle.assert_not_called()
+                master.assert_not_called()
+
     def test_running_vmware_guests_fail_before_ip_inspection(self):
         busy = SimpleNamespace(returncode=0, stdout="Total running VMs: 5\n", stderr="")
         with mock.patch.object(auto.subprocess, "run", return_value=busy) as process:
@@ -198,7 +215,7 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             mock.patch("goad_nomad.bootstrap_native_wslpe") as bootstrap,
         ):
             self.assertEqual(_dispatch_task(operator, self.pilot_args(task="wslpe-network-plan")), 0)
-        chooser.assert_called_once()
+        chooser.assert_called_once_with(fresh_boot=False)
         bootstrap.assert_not_called()
         operator.lab_manager.create_instance.assert_not_called()
 
