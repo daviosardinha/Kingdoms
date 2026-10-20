@@ -76,32 +76,6 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             ):
                 auto.choose_prefix(HOST + extra + chr(10), [], [])
 
-    def test_offline_registered_wslpe_master_blocks_fresh_install(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            vmx = root / "old.vmx"
-            vmx.write_text('displayName = "WSLPE-WS01"\n')
-            library = root / "inventory.vmls"
-            library.write_text(f'vmlist0.config = "{vmx}"\n')
-            index = root / "index"
-            index.write_text(json.dumps({"machines": {}}))
-            with self.assertRaisesRegex(auto.NetworkSelectionError, "master"):
-                auto.require_no_existing_wslpe_registration(library, index)
-            vmx.write_text('displayName = "unrelated"\n')
-            auto.require_no_existing_wslpe_registration(library, index)
-            index.write_text(json.dumps({"machines": {
-                "id1": {"name": "WSLPE-WS01", "vagrantfile_path": str(root)}
-            }}))
-            with self.assertRaisesRegex(auto.NetworkSelectionError, "Vagrant registration"):
-                auto.require_no_existing_wslpe_registration(library, index)
-
-    def test_unregistered_clean_host_can_choose_network(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            auto.require_no_existing_wslpe_registration(
-                root / "missing-vmware", root / "missing-vagrant"
-            )
-
     def test_live_proposal_and_unchanged_safety(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / "networking"
@@ -110,7 +84,6 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             with (
                 mock.patch.object(auto, "NETWORKING", config),
                 mock.patch.object(auto, "require_no_running_guests") as idle,
-                mock.patch.object(auto, "require_no_existing_wslpe_registration"),
                 mock.patch.object(auto, "_checker", return_value=checker),
                 mock.patch.object(checker, "run_ip", return_value=[]),
             ):
@@ -130,14 +103,12 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             with (
                 mock.patch.object(auto, "NETWORKING", config),
                 mock.patch.object(auto, "require_no_running_guests") as idle,
-                mock.patch.object(auto, "require_no_existing_wslpe_registration") as master,
                 mock.patch.object(auto, "_checker", return_value=checker),
                 mock.patch.object(checker, "run_ip", return_value=[]),
             ):
                 result = auto.choose_live(fresh_boot=False)
                 self.assertEqual(result["guest_ip"], "172.28.231.31")
                 idle.assert_not_called()
-                master.assert_not_called()
 
     def test_running_vmware_guests_fail_before_ip_inspection(self):
         busy = SimpleNamespace(returncode=0, stdout="Total running VMs: 5\n", stderr="")
@@ -229,9 +200,38 @@ class WslpeAutoNetworkTests(unittest.TestCase):
         bootstrap.assert_not_called()
         operator.lab_manager.create_instance.assert_not_called()
 
+    def test_other_checkout_offline_master_does_not_block_new_pilot(self):
+        operator = mock.Mock()
+        operator.lab_manager.get_current_instance.return_value = None
+        operator.lab_manager.lab_instances.instances = {}
+        operator._set_course_selection.return_value = True
+        proposal = auto.choose_prefix(HOST + (
+            "answer VNET_2_HOSTONLY_SUBNET 172.28.231.0\\n"
+            "answer VNET_2_HOSTONLY_NETMASK 255.255.255.0\\n"
+        ).replace("\\\\n", chr(10)), [], [])
+        self.assertEqual(proposal["prefix"], "172.28.232")
+        with (
+            mock.patch("goad_nomad.choose_live", return_value=proposal) as selector,
+            mock.patch("goad_nomad.bootstrap_native_wslpe", return_value=True) as bootstrap,
+        ):
+            self.assertEqual(_dispatch_task(operator, self.pilot_args(confirm=True)), 0)
+        selector.assert_called_once_with(fresh_boot=True)
+        bootstrap.assert_called_once()
+
+    def test_same_checkout_registered_master_blocks_new_pilot(self):
+        operator = mock.Mock()
+        operator.lab_manager.get_current_instance.return_value = None
+        operator.lab_manager.lab_instances.instances = {
+            "existing": SimpleNamespace(lab_name="WSLPE")
+        }
+        with mock.patch("goad_nomad.choose_live") as selector:
+            self.assertEqual(_dispatch_task(operator, self.pilot_args(confirm=True)), 1)
+        selector.assert_not_called()
+
     def test_explicit_pilot_dispatch_uses_only_native_stage1_boot(self):
         operator = mock.Mock()
         operator.lab_manager.get_current_instance.return_value = None
+        operator.lab_manager.lab_instances.instances = {}
         operator._set_course_selection.return_value = True
         proposal = auto.choose_prefix(HOST, [], [])
         with (
