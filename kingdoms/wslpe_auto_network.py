@@ -159,10 +159,11 @@ def require_no_existing_wslpe_registration(
                 raise NetworkSelectionError("Existing WSLPE Vagrant registration; use a clean host")
 
 
-def choose_live() -> dict:
-    """Read live Linux+VMware state without modifying any network or VM."""
-    require_no_running_guests()
-    require_no_existing_wslpe_registration()
+def choose_live(*, fresh_boot: bool = True) -> dict:
+    """Read host state; only an actual boot demands zero live/registered peers."""
+    if fresh_boot:
+        require_no_running_guests()
+        require_no_existing_wslpe_registration()
     checker = _checker()
     try:
         addresses = checker.run_ip("address", "show")
@@ -171,7 +172,9 @@ def choose_live() -> dict:
         selected = choose_prefix(config, addresses, routes)
     except (ValueError, OSError) as exc:
         raise NetworkSelectionError(f"Live WSLPE network selection blocked: {exc}") from exc
-    require_no_running_guests()
+    if fresh_boot:
+        require_no_running_guests()
+        require_no_existing_wslpe_registration()
     return selected
 
 
