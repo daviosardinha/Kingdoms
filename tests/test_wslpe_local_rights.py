@@ -152,11 +152,13 @@ class WslpeLocalRightsTests(unittest.TestCase):
 
             with patch.object(FAST.Path, "home", return_value=directory), \
                  patch.object(FAST, "exact_standalone", return_value=(
-                     Path("/private/ws/inventory"), Path("/private/ws/vars"), "172.28.231.31"
+                     Path("/private/ws/d986ad-wslpe-vmware/inventory"), Path("/private/ws/d986ad-wslpe-vmware/vars"), "172.28.231.31"
                  )), patch.object(FAST, "check_inventory"), \
                  patch.object(FAST, "learner_password", return_value="DummyNoLiveUse123!"), \
+                 patch.object(FAST, "fixture_vars_file", return_value=directory / "owned-fixture-overlay.json") as overlay, \
                  patch.object(FAST.subprocess, "run", side_effect=simulate):
                 self.assertEqual(FAST.run(args), 1)
+                overlay.assert_called_once_with("d986ad-wslpe-vmware", prepare=False)
             self.assertEqual(events[0][1], "status")
             self.assertEqual(
                 events[1:17],
