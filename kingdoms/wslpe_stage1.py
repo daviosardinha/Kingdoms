@@ -117,7 +117,8 @@ def inspect_vmware_guest(provider) -> bool:
     return True
 
 
-def bootstrap_native_wslpe(manager, prefix: str, *, confirmed: bool) -> bool:
+def bootstrap_native_wslpe(manager, prefix: str, *, confirmed: bool,
+                           fresh_network_plan: dict | None = None) -> bool:
     """One-shot native Kingdoms instance creation, followed by provider-only boot.
 
     A failed/partial VMware boot remains in the WSLPE workspace for inspection.
@@ -147,8 +148,22 @@ def bootstrap_native_wslpe(manager, prefix: str, *, confirmed: bool) -> bool:
     if workspace.is_symlink() or workspace.parent.resolve() != root:
         Log.error("Kingdoms workspace is not local to this checkout")
         return False
+    if fresh_network_plan is not None and fresh_network_plan.get("prefix") != prefix:
+        Log.error("WSLPE fresh-install plan does not match requested network")
+        return False
     if not preboot_acceptance(prefix, root):
         return False
+    if fresh_network_plan is not None:
+        # The 13 offline checks take time; host networking could change meanwhile.
+        # Repeat live clearance before any workspace/VM creation.
+        from kingdoms.wslpe_auto_network import (
+            assert_plan_still_valid, NetworkSelectionError,
+        )
+        try:
+            assert_plan_still_valid(fresh_network_plan)
+        except NetworkSelectionError as exc:
+            Log.error(f"WSLPE fresh-install network allocation changed: {exc}")
+            return False
     try:
         workspace.mkdir(mode=0o755, exist_ok=True)
     except OSError as exc:
