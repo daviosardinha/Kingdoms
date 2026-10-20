@@ -32,6 +32,14 @@ class FreshScopeTests(unittest.TestCase):
             [30],
         )
 
+    def test_additions_match_existing_implementation_index(self):
+        from kingdoms.wslpe45_batch_operator import index_rows
+        by_number = {r["number"]: r for r in index_rows()}
+        for scenario in fresh.fresh_scenario_manifest()[20:]:
+            self.assertEqual(scenario.identifier, by_number[scenario.number]["id"])
+            if scenario.number != 30:
+                self.assertEqual(scenario.playbook, by_number[scenario.number]["playbook"])
+
     def test_tampered_excluded_identity_fails_closed(self):
         from kingdoms.wslpe_batch_catalog import catalog
         rows = catalog()
