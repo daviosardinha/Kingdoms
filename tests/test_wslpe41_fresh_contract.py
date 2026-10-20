@@ -1,5 +1,4 @@
 """Behavioral source tests for the future independent 41-scenario installer."""
-from dataclasses import replace
 import unittest
 from unittest import mock
 
@@ -46,9 +45,6 @@ class FreshScopeTests(unittest.TestCase):
         rows = fresh.fresh_scenario_manifest()
         target = next(r for r in rows if r.number == 29)
         source = fresh.ROOT / target.playbook
-        original = fresh.Path
-        class MissingPath(type(source)):
-            pass
         # Patch Path.is_file for this exact path without changing the checkout.
         with mock.patch.object(fresh.Path, "is_file", autospec=True,
                                side_effect=lambda p: False if p == source else True):
