@@ -10,6 +10,7 @@ from unittest import mock
 
 from kingdoms import wslpe_auto_network as auto
 from kingdoms import wslpe_stage1 as boot
+from goad_nomad import _dispatch_task
 
 
 HOST = (
@@ -140,6 +141,68 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             acceptance.assert_called_once()
             recheck.assert_called_once_with(plan)
             self.assertFalse(workspace.exists())
+
+    def pilot_args(self, task="wslpe-fresh-pilot", confirm=False):
+        return SimpleNamespace(
+            lab="WSLPE", provider="vmware", method="local",
+            instance=None, extensions=None, course=None,
+            run_playbook=None, ansible_only=None, task=task,
+            confirm_wslpe_fresh_pilot=confirm,
+        )
+
+    def test_legacy_wslpe_install_remains_locked(self):
+        operator = mock.Mock()
+        self.assertEqual(_dispatch_task(operator, self.pilot_args(task="install")), 1)
+        operator.do_install.assert_not_called()
+
+    def test_pilot_rejects_missing_confirmation_before_any_proposal(self):
+        operator = mock.Mock()
+        with mock.patch("goad_nomad.choose_live") as chooser:
+            self.assertEqual(_dispatch_task(operator, self.pilot_args()), 1)
+        chooser.assert_not_called()
+        operator.lab_manager.create_instance.assert_not_called()
+
+    def test_read_only_task_selects_network_without_boot(self):
+        operator = mock.Mock()
+        operator.lab_manager.get_current_instance.return_value = None
+        proposal = auto.choose_prefix(HOST, [], [])
+        with (
+            mock.patch("goad_nomad.choose_live", return_value=proposal) as chooser,
+            mock.patch("goad_nomad.bootstrap_native_wslpe") as bootstrap,
+        ):
+            self.assertEqual(_dispatch_task(operator, self.pilot_args(task="wslpe-network-plan")), 0)
+        chooser.assert_called_once()
+        bootstrap.assert_not_called()
+        operator.lab_manager.create_instance.assert_not_called()
+
+    def test_explicit_pilot_dispatch_uses_only_native_stage1_boot(self):
+        operator = mock.Mock()
+        operator.lab_manager.get_current_instance.return_value = None
+        operator._set_course_selection.return_value = True
+        proposal = auto.choose_prefix(HOST, [], [])
+        with (
+            mock.patch("goad_nomad.choose_live", return_value=proposal),
+            mock.patch("goad_nomad.bootstrap_native_wslpe", return_value=True) as bootstrap,
+        ):
+            self.assertEqual(_dispatch_task(operator, self.pilot_args(confirm=True)), 0)
+        bootstrap.assert_called_once_with(
+            operator.lab_manager, proposal["prefix"], confirmed=True,
+            fresh_network_plan=proposal,
+        )
+        operator.do_install.assert_not_called()
+
+    def test_pilot_denies_existing_instance_and_wrong_lab(self):
+        operator = mock.Mock()
+        operator.lab_manager.get_current_instance.return_value = object()
+        args = self.pilot_args(confirm=True)
+        with mock.patch("goad_nomad.choose_live") as chooser:
+            self.assertEqual(_dispatch_task(operator, args), 1)
+        chooser.assert_not_called()
+        operator.lab_manager.get_current_instance.return_value = None
+        args.lab = "GOAD"
+        with mock.patch("goad_nomad.choose_live") as chooser:
+            self.assertEqual(_dispatch_task(operator, args), 1)
+        chooser.assert_not_called()
 
     def test_north_range_remains_reserved_and_wslpe_guest_is_generated(self):
         self.assertNotIn("10.4.", auto.choose_prefix(HOST, [], [])["guest_ip"])
