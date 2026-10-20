@@ -255,8 +255,14 @@ def plan_instance(profile, provider, segments, networking, *,
             linked.add(int(name[5:]))
     for vmx in registered_vmx:
         linked.update(int(v[5:]) for v in VMX_NET.findall(vmx))
-    other_routes = [_subnet(str(ipaddress.ip_network(r, strict=False))) for r in routes
-                    if r != "default" and r != "0.0.0.0/0"]
+    other_routes = []
+    for route in routes:
+        if route in ("default", "0.0.0.0/0"):
+            continue
+        try:
+            other_routes.append(_subnet(str(ipaddress.ip_network(route, strict=False))))
+        except (ValueError, TypeError) as exc:
+            raise CoexistenceError("Invalid host routing evidence") from exc
     addresses = []
     for value in host_addresses:
         try:
