@@ -56,7 +56,7 @@ class DisposableManagementNicTests(unittest.TestCase):
                 env.pop(key, None)
             result = subprocess.run(
                 ["ruby", "-rjson", "-e",
-                 'load ARGV.fetch(0); puts JSON.generate(boxes)', str(path)],
+                 'eval(File.read(ARGV.fetch(0)) + "\\nputs JSON.generate(boxes)", binding, ARGV.fetch(0))', str(path)],
                 cwd=root, env=env, text=True, capture_output=True,
                 check=False, timeout=15,
             )
