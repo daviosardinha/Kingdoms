@@ -317,7 +317,7 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
         # treating the mutable VMware configuration file as immutable.
         # NORTH additionally proves *all* observed changes are explicitly
         # permitted VMware/Vagrant runtime normalization, never silent edits.
-        peer_lines = verified_wslpe_peer_additions()
+        peer_lines = verified_wslpe_peer_additions(original_baseline=saved.read_bytes())
         verify_owned_vmnet_runtime(committed, installed, saved.read_bytes(), layout,
                                    peer_additions=peer_lines)
 
