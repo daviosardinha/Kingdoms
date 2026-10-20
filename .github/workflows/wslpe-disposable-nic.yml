@@ -1,0 +1,34 @@
+name: WSLPE disposable third-NIC candidate
+
+on:
+  push:
+    branches:
+      - feature/wslpe-disposable-management-nic
+  pull_request:
+    paths:
+      - ad/WSLPE/providers/vmware/Vagrantfile
+      - scripts/wslpe-disposable-management-preview.py
+      - tests/test_wslpe_disposable_management_preview.py
+      - .github/workflows/wslpe-disposable-nic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile preview and source tests
+        run: python -m py_compile scripts/wslpe-disposable-management-preview.py tests/test_wslpe_disposable_management_preview.py
+      - name: Check available Ruby parser
+        run: ruby -v
+      - name: Verify exact opt-in plus no default source changes
+        run: |
+          python -m unittest             tests.test_wslpe_disposable_management_preview             tests.test_wslpe_portless_management             tests.test_wslpe_network_portability -v
+      - name: Render proposed disposable adapter source without touching VMware
+        run: |
+          python scripts/wslpe-disposable-management-preview.py             --exercise-prefix 172.28.231             --management-prefix 172.28.232             --management-vmnet vmnet3
