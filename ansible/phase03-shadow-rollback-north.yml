@@ -1,0 +1,102 @@
+---
+- name: NORTH Shadow Credentials exact single-value rollback, explicitly authorized
+  hosts: dc02
+  gather_facts: false
+  vars:
+    shadow_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_SHADOW_BASELINE') }}"
+    shadow_baseline: "{{ lookup('ansible.builtin.file', shadow_baseline_path) | from_json }}"
+    shadow_rollback_action: "{{ lookup('env','KINGDOMS_PHASE03_SHADOW_ROLLBACK_ACTION') }}"
+    shadow_expected_fingerprint: "{{ lookup('env','KINGDOMS_PHASE03_SHADOW_KCL_FINGERPRINT') }}"
+  tasks:
+    - name: Allow only an exact clean NORTH baseline and plan/apply operations
+      ansible.builtin.assert:
+        that:
+          - shadow_baseline.Version | int == 1
+          - shadow_baseline.Target == 'WS01$'
+          - shadow_baseline.TargetDN | lower | regex_search('dc=north,dc=sevenkingdoms,dc=local$')
+          - shadow_baseline.TargetSID is defined
+          - not (shadow_baseline.KCLPresent | bool)
+          - shadow_baseline.KCLCount | int == 0
+          - shadow_baseline.KCLValues | length == 0
+          - shadow_rollback_action in ['plan', 'apply']
+          - shadow_rollback_action != 'apply' or shadow_expected_fingerprint is match('^[0-9a-f]{64}$')
+        fail_msg: "Shadow rollback requires exact baseline and explicit action"
+      delegate_to: localhost
+
+    - name: Recheck exact WS01 identity and sole KeyCredential before optional AD mutation
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          Import-Module ActiveDirectory
+
+          $action = '{{ shadow_rollback_action }}'
+          $expected = '{{ shadow_expected_fingerprint }}'
+          $baseline = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String('{{ (shadow_baseline | to_json) | b64encode }}')
+          ) | ConvertFrom-Json
+          if ($baseline.Target -ne 'WS01$' -or $baseline.KCLCount -ne 0 -or
+              [bool]$baseline.KCLPresent) {
+              throw 'Non-neutral baseline is forbidden'
+          }
+          $target = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,ObjectSid,msDS-KeyCredentialLink
+          if (-not [string]::Equals($target.DistinguishedName, $baseline.TargetDN, [StringComparison]::OrdinalIgnoreCase) -or
+              $target.ObjectSid.Value -ne $baseline.TargetSID) {
+              throw 'Live WS01 DN or SID differs from pre-attack baseline'
+          }
+          $values = @()
+          if ($null -ne $target.'msDS-KeyCredentialLink') {
+              $values = @($target.'msDS-KeyCredentialLink')
+          }
+          if ($values.Count -gt 1) { throw 'Unexpected additional KeyCredentialLink entries; no change permitted' }
+          if ($values.Count -eq 0) {
+              if ($action -eq 'apply') { throw 'Already neutral: run independent verification instead' }
+              Write-Output 'PHASE03_SHADOW_ROLLBACK_PLAN=ALREADY_NEUTRAL'
+              Write-Output 'PHASE03_SHADOW_ROLLBACK_DIRECTORY_CHANGED=False'
+          } else {
+              $entry = [string]$values[0]
+              if ([string]::IsNullOrWhiteSpace($entry)) { throw 'Unexpected empty KeyCredentialLink entry' }
+              $sha = [Security.Cryptography.SHA256]::Create()
+              try {
+                  $bytes = [Text.Encoding]::UTF8.GetBytes($entry)
+                  $fingerprint = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant()
+              } finally {
+                  $sha.Dispose()
+              }
+              Write-Output 'PHASE03_SHADOW_ROLLBACK_PLAN=ONE_KCL_ENTRY'
+              Write-Output "PHASE03_SHADOW_ROLLBACK_KCL_SHA256=$fingerprint"
+              Write-Output 'PHASE03_SHADOW_ROLLBACK_TARGET_IDENTITY=PASS'
+              if ($action -eq 'plan') {
+                  Write-Output 'PHASE03_SHADOW_ROLLBACK_DIRECTORY_CHANGED=False'
+              } else {
+                  if ($fingerprint -cne $expected) {
+                      throw 'KCL fingerprint has changed since the reviewed plan; no writes permitted'
+                  }
+                  Set-ADComputer -Identity $target.DistinguishedName -Clear 'msDS-KeyCredentialLink'
+                  $Ansible.Changed = $true
+                  $after = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,ObjectSid,msDS-KeyCredentialLink
+                  # AD can return an empty ADPropertyValueCollection instead of $null
+                  # for a cleared, multi-valued LDAP attribute. Compare the actual
+                  # values, exactly as the independent neutral verifier does.
+                  $afterValues = @()
+                  if ($null -ne $after.'msDS-KeyCredentialLink') {
+                      $afterValues = @($after.'msDS-KeyCredentialLink')
+                  }
+                  $afterIdentityMatches = (
+                      [string]::Equals($after.DistinguishedName,$baseline.TargetDN,[StringComparison]::OrdinalIgnoreCase) -and
+                      $after.ObjectSid.Value -eq $baseline.TargetSID
+                  )
+                  Write-Output "PHASE03_SHADOW_ROLLBACK_READBACK_IDENTITY_MATCH=$afterIdentityMatches"
+                  Write-Output "PHASE03_SHADOW_ROLLBACK_READBACK_KCL_COUNT=$($afterValues.Count)"
+                  if (-not $afterIdentityMatches -or $afterValues.Count -ne 0) {
+                      throw 'KeyCredentialLink rollback failed internal readback; independent verifier required'
+                  }
+                  Write-Output 'PHASE03_SHADOW_ROLLBACK_APPLIED=True'
+              }
+          }
+      register: shadow_rollback
+
+    - name: Emit sanitized rollback results only
+      ansible.builtin.debug:
+        msg: "{{ shadow_rollback.output | default([]) }}"
+      changed_when: false

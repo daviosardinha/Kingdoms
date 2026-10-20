@@ -231,6 +231,43 @@ class GoadNomad(BaseGoad):
             return False
 
         return self.do_install_instance()
+    def do_prepare_north(self):
+        """Create the native NORTH instance files only; never start Vagrant.
+
+        The provider remains install-guarded until the separate host networking
+        and lifecycle acceptance gates are proven.
+        """
+        if (self.lab_manager.get_current_lab_name() != 'NORTH'
+                or self.lab_manager.get_current_provider_name() != 'vmware'):
+            Log.error('prepare-north requires the NORTH lab with VMware provider')
+            return False
+        if self.lab_manager.get_current_instance() is not None:
+            Log.error('A lab instance is already selected; refusing to create another')
+            return False
+        # Rerunning --prepare must never accumulate duplicate NORTH instances.
+        existing = [
+            instance_id
+            for instance_id, item in self.lab_manager.lab_instances.instances.items()
+            if item.lab_name == 'NORTH' and item.provider_name == 'vmware'
+        ]
+        if existing:
+            Log.error('NORTH is already registered; use its existing instance: '
+                      + ', '.join(sorted(existing)))
+            return False
+        if not self.lab_manager.create_instance():
+            Log.error('NORTH source-only instance preparation failed')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        if (instance is None or instance.lab_name != 'NORTH'
+                or instance.provider_name != 'vmware'):
+            Log.error('NORTH instance identity was not established')
+            return False
+        Log.success(
+            'NORTH instance files created; no VMware, Vagrant or host networking changed'
+        )
+        Log.info('NORTH provider directory: ' + str(instance.instance_provider_path))
+        return True
+
     def do_install(self, arg=''):
         """Run a full install and return success only for an installed instance."""
         result = self._run_with_install_timer(lambda: self.do_create(arg))
@@ -311,6 +348,53 @@ class GoadNomad(BaseGoad):
                 self.do_install_extension(extension_name)
         self.refresh_prompt()
         return provision_result
+
+    def do_resume_north(self, start_playbook):
+        """Resume the existing NORTH playbook sequence without Vagrant up.
+
+        This is deliberately separate from fresh install. The original
+        Ansible.run_from owns AD-aware management preparation and final
+        exercise isolation. Existing Kingdoms provider checks and the sudo
+        keepalive remain active; no stale instance status is trusted.
+        """
+        if (self.lab_manager.get_current_lab_name() != 'NORTH'
+                or self.lab_manager.get_current_provider_name() != 'vmware'):
+            Log.error('NORTH resume requires selected NORTH/VMware profile')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        provider = self.lab_manager.get_current_instance_provider()
+        provisioner = self.lab_manager.get_current_instance_provisioner()
+        if instance is None or provider is None or provisioner is None:
+            Log.error('NORTH resume requires an already-created instance')
+            return False
+        if not isinstance(start_playbook, str) or not start_playbook:
+            Log.error('NORTH resume requires a starting playbook')
+            return False
+        try:
+            manifest = provisioner.get_playbook_list('NORTH')
+        except (OSError, ValueError, KeyError) as exc:
+            Log.error(f'NORTH resume manifest is invalid: {exc}')
+            return False
+        if start_playbook not in manifest:
+            Log.error('NORTH resume starting playbook is not in the configured manifest')
+            return False
+        def resume():
+            # First prime sudo through the established installer keepalive;
+            # then inspect this exact instance's root-owned network journal.
+            if provider._course1_unwired():
+                Log.error('NORTH resume refused by host-network ownership check')
+                return False
+            self._install_phase = f'NORTH Ansible resume from {start_playbook}'
+            Log.info(f'NORTH: resuming existing instance from {start_playbook}; '
+                     'no Vagrant VM bring-up will be repeated')
+            if not provisioner.run_from(start_playbook):
+                Log.error('NORTH Ansible resume failed; instance remains incomplete')
+                return False
+            instance.set_status(READY)
+            self.refresh_prompt()
+            return True
+
+        return bool(self._run_with_install_timer(resume))
 
     def do_provision_lab(self, arg=''):
         """Provision through the GOAD_NOMAD lifecycle and set READY only on success.
@@ -491,7 +575,7 @@ class GoadNomad(BaseGoad):
 
 
 def parse_args():
-    task_help = 'tasks available: install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
+    task_help = 'tasks available: prepare-north/install/resume-north/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='goad_nomad.py',
         description='GOAD_NOMAD lab management console.',
@@ -500,6 +584,7 @@ Examples:
  - Launch GOAD_NOMAD interactive console: ./goad.sh
  - Install full Kingdoms on VMware: ./goad.sh -t install -l KINGDOMS -p vmware
  - Legacy GOAD selection remains supported: ./goad.sh -t install -l GOAD -p vmware
+ - Install Fall of the North: ./goad.sh -t install -l NORTH -p vmware
  - Validate an installed instance: ./goad.sh -t validate -i <instance_id>
 ''',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -512,17 +597,23 @@ Examples:
     parser.add_argument('-i', '--instance', help='use a specific instance (use default if not selected)', required=False)
     parser.add_argument('-e', '--extensions', help='extensions to use', action='append', required=False)
     parser.add_argument('-a', '--ansible_only', help='run only provisioning (ansible) on instance (-i) (for task install only)', required=False)
-    parser.add_argument('-r', '--run_playbook', help='run only one ansible playbook on instance (-i) (for task install only)', required=False)
+    parser.add_argument('-r', '--run_playbook', help='run one playbook with install, or resume NORTH from this playbook with resume-north (requires -i)', required=False)
     parser.add_argument('-d', '--disable_dependencies', help='disable_dependencies', action='append', required=False)
     args = parser.parse_args()
-    # Normalize before Config/LabManager/instance creation to preserve all
-    # existing GOAD provider, Vagrant, VMware and persisted-instance paths.
+    # Normalize at CLI boundary, before instance/provider creation.
+    # NORTH remains a distinct lab; only public KINGDOMS resolves to GOAD.
     args.lab = canonical_lab_name(args.lab)
     return args
 
 
 def _dispatch_task(goad, args):
     """Preserve the stock goad.py non-interactive task behaviour."""
+    # Fail before loading any existing instance for the source-only path.
+    if args.task == 'prepare-north' and (
+            args.instance is not None or args.run_playbook is not None
+            or args.ansible_only is not None):
+        Log.error('prepare-north accepts no instance or provisioning override')
+        return 1
     if args.instance is not None:
         goad.do_load(args.instance)
 
@@ -531,6 +622,14 @@ def _dispatch_task(goad, args):
             Log.error('Instance must be selected (-i) to use --run_playbook (-r) or --ansible_only (-a)')
             return 1
 
+    if args.task == 'resume-north':
+        if (args.instance is None or args.run_playbook is None
+                or args.ansible_only is not None):
+            Log.error('resume-north requires -i <existing-instance> -r <starting-playbook>; no -a')
+            return 1
+        return 0 if goad.do_resume_north(args.run_playbook) else 1
+    if args.task == 'prepare-north':
+        return 0 if goad.do_prepare_north() else 1
     if args.task == 'install':
         if args.instance is not None:
             if args.run_playbook is not None:

@@ -108,6 +108,41 @@ GOAD:
   - ws01-lpe-install.yml
   - kingdoms-health-final.yml
 
+# Course 1 inherits the exact validated Kingdoms provisioning order, minus the
+# retired Essos external trust. Parent/child AD trust is established by
+# ad-child_domain.yml; no external-forest trust play is required.
+NORTH:
+  - build.yml
+  - ad-servers.yml
+  - ad-parent_domain.yml
+  # Wait after the child domain creation before adding servers
+  - ad-child_domain.yml
+  # Waiting 5 minutes for the child domain to be ready
+  - wait5m.yml
+  - ad-members.yml
+  - kingdoms-time-backoff.yml
+  - ad-data.yml
+  # Rickon exists after ad-data; now establish the validated WS01 foothold
+  # baseline (evaluation grace, domain state and intended local rights).
+  - ws01.yml
+  - ad-gmsa.yml
+  - laps.yml
+  - ad-relations.yml
+  - adcs.yml
+  - ad-acl.yml
+  - servers.yml
+  - security.yml
+  # Prove every Windows machine is AD-healthy before domain-context
+  # vulnerability tasks. Only members/workstations may self-repair trust/time.
+  - kingdoms-health.yml
+  - vulnerabilities.yml
+  # Phase 01 follows ACLs and existing IIS content/security provisioning.
+  - phase01.yml
+  # Seed all 20 promoted Windows LPE techniques, then fail closed if AD health
+  # drifted during vulnerability/LPE provisioning.
+  - ws01-lpe-install.yml
+  - kingdoms-health-final.yml
+
 default:
   - build.yml
   - ad-servers.yml

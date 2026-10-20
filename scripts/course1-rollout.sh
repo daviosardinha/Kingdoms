@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Kingdoms Course 1 — one-command release engineering gate.
+#
+# This is an orchestrator, not an alternate installer. NEVER bypass the
+# existing Kingdoms VMware provider or its NORTH fail-closed guard.
+#
+# All validation is read-only; --prepare writes only local NORTH instance files:
+#  --all       full source+clean-host validation and all-five readiness report
+#  --source    same report, without live host inspection
+#  --installed validate code + read-only attestation of an already owned NORTH instance
+#  --plan      immediate source-only readiness report, no test execution
+#  --prepare   validate then create only native NORTH instance metadata (no VMs)
+#  --deploy    fail closed until integration and live acceptance are implemented
+#
+# Adding a live action later requires a reviewed adapter to the existing
+# transactional VMware setup, owned hostaddr unit install, native NORTH
+# provider lifecycle, and a real post-install acceptance suite.
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+MODE="${1:---all}"
+if [[ "$MODE" == --installed ]]; then
+  [[ $# -eq 2 && "$2" == /* ]] || {
+    echo '[ERROR] --installed requires the absolute existing NORTH provider path' >&2
+    exit 2
+  }
+  INSTALLED_PROVIDER="$2"
+else
+  [[ $# -le 1 ]] || { echo '[ERROR] Only one mode is accepted' >&2; exit 2; }
+fi
+
+case "$MODE" in
+  --help|-h)
+    cat <<'USAGE'
+Kingdoms Course 1 — single-entrypoint development and release gate
+
+Usage:
+  bash scripts/course1-rollout.sh --all       # all existing tests + host gate + five-point readiness
+  bash scripts/course1-rollout.sh --source    # same, no live clean-host inspection
+  bash scripts/course1-rollout.sh --installed /absolute/NORTH/provider  # source tests + read-only live ownership
+  bash scripts/course1-rollout.sh --prepare   # validate and generate only NORTH instance files
+  bash scripts/course1-rollout.sh --plan      # fast, read-only engineering status
+  bash scripts/course1-rollout.sh --deploy    # BLOCKED until the missing runtime integrations are reviewed
+
+A green source/host validator is not permission to install NORTH.
+This command NEVER creates VMs, edits VMware networking, writes systemd
+assets, provisions AD, or changes the firewall.
+USAGE
+    exit 0
+    ;;
+  --all|--source|--plan|--prepare|--installed|--deploy) ;;
+  *) echo "[ERROR] Unknown mode: $MODE" >&2; exit 2 ;;
+esac
+
+# The deployment entrypoint is deliberately unavailable while the native
+# shared provider still treats NORTH as an unwired source-only profile.
+# No child process, privilege prompt, VM/network action may precede this refusal.
+if [[ "$MODE" == --deploy ]]; then
+  echo '[BLOCKED] NORTH deployment remains disabled in the shared provider.' >&2
+  echo '[NEXT] Finish and test the five runtime contracts before exposing deployment.' >&2
+  exit 3
+fi
+
+if [[ "$MODE" == --installed ]]; then
+  # The clean-host preflight intentionally rejects vmnets already owned by
+  # NORTH. Instead use full source tests and root-readable committed-owner
+  # verification. Both paths are READ-ONLY; no install/VM/network writes.
+  bash scripts/validate-course1.sh --skip-host
+  sudo -n bash scripts/setup-vmware-networks.sh --north verify \
+    --provider-dir "$INSTALLED_PROVIDER"
+  printf '[PASS] NORTH source and installed VMnet ownership verified (read-only)\n'
+  exit 0
+fi
+
+if [[ "$MODE" == --all || "$MODE" == --prepare ]]; then
+  bash scripts/validate-course1.sh
+elif [[ "$MODE" == --source ]]; then
+  bash scripts/validate-course1.sh --skip-host
+fi
+
+if [[ "$MODE" == --prepare ]]; then
+  # The native Kingdoms CLI creates workspace files only. The provider's
+  # install/start/reset guard remains intact; no VMware host apply here.
+  bash ./goad.sh -t prepare-north -l NORTH -p vmware
+fi
+
+# Review source, not a mutable host flag. Any missing/ambiguous contract
+# refuses release. This stage does not import or execute provider code.
+python3 - "$ROOT" "$MODE" <<'PY'
+import ast
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+def source(name):
+    path = root / name
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError("Missing/unsafe project source: " + name)
+    return path.read_text(encoding="utf-8")
+
+try:
+    transaction = source("goad/course1_vmnet_transaction.py")
+    hostaddr = source("goad/course1_hostaddrs.py")
+    kingdoms = source("goad/provider/vagrant/vmware_kingdoms.py")
+    nomad = source("goad/provider/vagrant/vmware_nomad.py")
+    validator = source("scripts/validate-course1.sh")
+    vmware_apply = source("goad/course1_host_network_apply.py")
+    asset_install = source("goad/course1_hostaddr_install.py")
+    ast.parse(transaction)
+    ast.parse(hostaddr)
+    ast.parse(vmware_apply)
+    ast.parse(asset_install)
+    ast.parse(kingdoms)
+    ast.parse(nomad)
+except (RuntimeError, SyntaxError, OSError) as exc:
+    print("[BLOCKED] Readiness audit cannot establish source identity:", exc, file=sys.stderr)
+    sys.exit(2)
+
+print("\n============================================================")
+print("COURSE 1 — ALL FIVE ENGINEERING AND ACCEPTANCE GATES")
+print("============================================================")
+transaction_source = ("execute_testable_network_transaction" in transaction
+                      and "execute_testable_network_transaction(" in vmware_apply)
+hostaddr_source = ("render_hostaddr_assets" in hostaddr
+                   and "install_owned_address_assets" in asset_install
+                   and "install_owned_address_assets(" in vmware_apply)
+unwired = "def _course1_unwired(self):" in kingdoms
+native_profile = "return self.lab_name in ('GOAD', 'NORTH')" in nomad
+complete_validation = "unittest discover -s tests -p 'test_*.py'" in validator
+items = (
+    ("[01] VMware transaction + restart/rollback",
+     "SOURCE READY / LIVE APPLY BLOCKED" if transaction_source else "SOURCE MISSING",
+     "Shared NORTH apply adapter wired; disposable-host VMware/netmap rollback acceptance pending"),
+    ("[02] Managed .254 systemd persistence",
+     "ASSET RENDERER READY / INSTALL BLOCKED" if hostaddr_source else "SOURCE MISSING",
+     "Owned helper/service/timer transaction wired; live persistence acceptance pending"),
+    ("[03] Existing NORTH provider and installer",
+     "NATIVE DISPATCH WIRED / INSTALL GUARDED" if native_profile and unwired else "REVIEW REQUIRED",
+     "NORTH uses Kingdoms methods; pending host-network ownership and live lifecycle acceptance"),
+    ("[04] Full source and clean-host validation",
+     "AUTOMATED" if complete_validation else "CONTRACT MISSING",
+     "Run --all to execute; source/host checks do not prove deployed AD"),
+    ("[05] First deployment + AD/SQL/Phase 03 acceptance",
+     "NOT EXECUTED",
+     "Requires wired provider, actual VMs and non-destructive runtime proof"),
+)
+for label, status, details in items:
+    print(f"{label}: {status}")
+    print(f"     {details}")
+print("\n[SAFETY] No VMware, Vagrant, Ansible, IP or systemd modifications performed.")
+print("[RELEASE BLOCKED] NORTH install remains guarded pending full runtime acceptance.")
+if sys.argv[2] in ("--all", "--source", "--prepare"):
+    print("[PASS] The requested source/host validation completed successfully.")
+    sys.exit(0)
+sys.exit(3)
+PY

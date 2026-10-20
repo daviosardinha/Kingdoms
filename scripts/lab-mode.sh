@@ -3,42 +3,55 @@ set -euo pipefail
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly ROUTES="${ROOT}/scripts/provisioning-routes.sh"
-readonly POLICY_DIR="${ROOT}/ad/GOAD/providers/vmware/router/nftables"
+# GOAD keeps the exact original six-guest behavior. NORTH reuses this same
+# controller with the reduced profile selected explicitly by the provider.
+readonly GOAD_LAB_PROFILE="${GOAD_LAB_PROFILE:-GOAD}"
+case "${GOAD_LAB_PROFILE}" in
+    GOAD|NORTH) ;;
+    *) echo "[BLOCKED] Unknown Kingdoms profile: ${GOAD_LAB_PROFILE}" >&2; exit 2 ;;
+esac
+readonly POLICY_DIR="${ROOT}/ad/${GOAD_LAB_PROFILE}/providers/vmware/router/nftables"
 
 readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
 readonly AD_REPAIR_TIMEOUT_SECONDS=90
 
+# An explicit profile selection controls only the two Essos Windows guests.
+# Ordering is identical to the proven six-guest GOAD lifecycle.
+if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then
+    EXTRA_DOMAIN_CONTROLLERS=()
+    EXTRA_DOMAIN_MEMBERS=()
+else
+    EXTRA_DOMAIN_CONTROLLERS=(GOAD-DC03)
+    EXTRA_DOMAIN_MEMBERS=(GOAD-SRV03)
+fi
+
 readonly DOMAIN_CONTROLLERS=(
     GOAD-DC01
     GOAD-DC02
-    GOAD-DC03
+    "${EXTRA_DOMAIN_CONTROLLERS[@]}"
 )
 
-# When entering exercise mode, restart the child DC before its parent so
-# WINTERFELL can initialize while KINGSLANDING is still fully online.
+# Exercise restarts child DCs before the root PDC to preserve the time chain.
 readonly EXERCISE_DOMAIN_CONTROLLERS=(
     GOAD-DC02
-    GOAD-DC03
+    "${EXTRA_DOMAIN_CONTROLLERS[@]}"
     GOAD-DC01
 )
 
 readonly DOMAIN_MEMBERS=(
     GOAD-SRV02
-    GOAD-SRV03
+    "${EXTRA_DOMAIN_MEMBERS[@]}"
     GOAD-WS01
 )
 
-# Keep the canonical six-machine list explicit. Several source/runtime
-# validators consume this as a compatibility contract, while the grouped arrays
-# above control AD-aware transition ordering.
 readonly WINDOWS_VMS=(
     GOAD-DC01
     GOAD-DC02
-    GOAD-DC03
+    "${EXTRA_DOMAIN_CONTROLLERS[@]}"
     GOAD-SRV02
-    GOAD-SRV03
+    "${EXTRA_DOMAIN_MEMBERS[@]}"
     GOAD-WS01
 )
 
@@ -1157,7 +1170,11 @@ show_status() {
 
     echo
     echo "=== HOST PROVISIONING ROUTES ==="
-    bash "${ROUTES}" status
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then
+        bash "${ROUTES}" --north status --provider-dir "${PROVIDER}"
+    else
+        bash "${ROUTES}" status
+    fi
 
     echo
     echo "=== ROUTER FORWARD POLICY ==="
@@ -1220,7 +1237,11 @@ enter_exercise_mode() {
     apply_router_policy exercise
 
     echo
-    sudo bash "${ROUTES}" disable
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then
+        sudo bash "${ROUTES}" --north disable --provider-dir "${PROVIDER}"
+    else
+        sudo bash "${ROUTES}" disable
+    fi
 
     echo
     echo "[*] Persisting and disconnecting Windows NAT adapters"
@@ -1262,7 +1283,11 @@ enter_provisioning_mode() {
     apply_router_policy provisioning
 
     echo
-    sudo bash "${ROUTES}" enable
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then
+        sudo bash "${ROUTES}" --north enable --provider-dir "${PROVIDER}"
+    else
+        sudo bash "${ROUTES}" enable
+    fi
 
     set_state provisioning
 

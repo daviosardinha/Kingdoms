@@ -4,8 +4,8 @@ set -euo pipefail
 
 ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
 PLAYBOOK="$ROOT/ansible/phase03-adidns-verify.yml"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+DATA_INVENTORY="${KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 DC_IP="${DC_IP:-10.4.10.11}"
 FQDN="${FQDN:-phase03-adidns.north.sevenkingdoms.local}"
 EXPECTED_IP="${EXPECTED_IP:-10.4.10.254}"

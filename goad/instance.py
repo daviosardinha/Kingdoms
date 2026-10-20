@@ -7,6 +7,8 @@ from goad.log import Log
 from goad.exceptions import ProviderPathNotFound, JumpBoxInitFailed
 from goad.provisioner.provisioner_factory import ProvisionerFactory
 from goad.utils import *
+from goad.course1_artifact_render import render_course1_artifacts
+from goad.course1_source_preflight import validate_course1_source
 
 
 class LabInstance:
@@ -21,7 +23,13 @@ class LabInstance:
         self.config = config
         self.provider_name = provider_name
         self.provisioner_name = provisioner_name
-        self.ip_range = ip_range
+        # The legacy global setting describes a flat 192.168.56.x lab.
+        # Course 1 instead defaults to Kingdoms' 10.4.0.0/16 segmentation.
+        # Normalize only the new NORTH instance metadata, never other labs.
+        self.ip_range = (
+            '10.4.0' if lab_name == 'NORTH' and ip_range in
+            (None, '', '192.168.56') else ip_range
+        )
         self.status = status
         if extensions is None:
             extensions = []
@@ -36,6 +44,7 @@ class LabInstance:
         self.lab = None
         self.provider = None
         self.provisioner = None
+        self._course1_artifacts = None
 
     def load(self, labs, creation=False):
         instance_path = GoadPath.get_instance_path(self.instance_id)
@@ -114,6 +123,43 @@ class LabInstance:
         with open(self.instance_path + sep + "instance.json", "w") as outfile:
             outfile.write(json_object)
 
+    def _course1_source_artifacts(self):
+        """Validate and render NORTH into existing Kingdoms instance templates.
+
+        Legacy ip_range is a flat /24 value. Do NOT reinterpret a 10.5.0
+        selection as an installed /16 until per-instance vmnet ownership and
+        persistent layout configuration are supported.
+        """
+        if self.lab_name != 'NORTH':
+            return None
+        if self.provider_name != VMWARE:
+            raise ValueError('Kingdoms Course 1 currently requires VMware Workstation')
+        if self.ip_range not in (None, '', '192.168.56', '10.4.0'):
+            raise ValueError(
+                'NORTH alternate /16 is not install-enabled; '
+                '10.5 preview alone does not provision independent vmnets'
+            )
+        if self._course1_artifacts is None:
+            validate_course1_source()
+            self._course1_artifacts = render_course1_artifacts()
+        return self._course1_artifacts
+
+    def _write_course1_router_artifacts(self):
+        """Materialize router bootstrap/policy within this instance only."""
+        artifacts = self._course1_source_artifacts()
+        if artifacts is None:
+            return
+        router = os.path.join(self.instance_provider_path, 'router')
+        nftables = os.path.join(router, 'nftables')
+        os.makedirs(nftables, mode=0o750, exist_ok=True)
+        resources = (
+            ('providers/vmware/router/provision.sh', os.path.join(router, 'provision.sh')),
+            ('providers/vmware/router/nftables/exercise.nft', os.path.join(nftables, 'exercise.nft')),
+        )
+        for key, target in resources:
+            with open(target, 'w', encoding='utf-8') as output:
+                output.write(artifacts[key])
+
     def _create_vagrantfile(self):
         # load lab vagrantfile
         lab_environment = Environment(loader=FileSystemLoader(GoadPath.get_lab_provider_path(self.lab_name, self.provider_name)))
@@ -122,6 +168,15 @@ class LabInstance:
             lab_name=self.lab_name,
             ip_range=self.ip_range
         )
+        artifacts = self._course1_source_artifacts()
+        if artifacts is not None:
+            lab_vagrantfile_content = artifacts['providers/vmware/Vagrantfile']
+            old_script = '../../../ad/NORTH/providers/vmware/router/provision.sh'
+            if lab_vagrantfile_content.count(old_script) != 1:
+                raise ValueError('NORTH Vagrant router source path is ambiguous')
+            lab_vagrantfile_content = lab_vagrantfile_content.replace(
+                old_script, 'router/provision.sh'
+            )
 
         # load lab extensions
         lab_extensions_content = ''
@@ -284,6 +339,8 @@ class LabInstance:
             os.mkdir(ssh_folder, 0o750)
         Log.info('Create instance providing files')
         if self.is_vagrant():
+            if self.lab_name == 'NORTH':
+                self._write_course1_router_artifacts()
             self._create_vagrantfile()
         if self.provider_name == VMWARE_ESXI:
             self._create_esxi_env()
@@ -304,6 +361,9 @@ class LabInstance:
             ip_range=self.ip_range,
             provider_name=self.provider_name
         )
+        artifacts = self._course1_source_artifacts()
+        if artifacts is not None and inventory_file == 'inventory_disable_vagrant':
+            instance_inventory_content = artifacts['data/inventory_disable_vagrant']
         # create instance inventory file
         instance_inventory_file = self.instance_path + sep + inventory_file
         with open(instance_inventory_file, mode="w", encoding="utf-8") as instance_inventory_file_open:
@@ -322,6 +382,9 @@ class LabInstance:
             ip_range=self.ip_range,
             provider_name=self.provider_name
         )
+        artifacts = self._course1_source_artifacts()
+        if artifacts is not None:
+            instance_inventory_content = artifacts['providers/vmware/inventory']
         # create instance inventory file
         instance_inventory_file = self.instance_path + sep + 'inventory'
         with open(instance_inventory_file, mode="w", encoding="utf-8") as inventory_file:
@@ -351,6 +414,14 @@ class LabInstance:
         self.create_instance_folder(True)
 
     def create_instance_folder(self, force=False):
+        # Mandatory source gate BEFORE even the first directory is created.
+        # A rejected Course 1 layout must leave no workspace side effects.
+        if self.lab_name == 'NORTH':
+            try:
+                self._course1_source_artifacts()
+            except (ValueError, OSError, KeyError) as exc:
+                Log.error(f'Kingdoms Course 1 source rejected: {exc}')
+                return False
         instance_exist = False
         if os.path.isdir(self.instance_path):
             instance_exist = True

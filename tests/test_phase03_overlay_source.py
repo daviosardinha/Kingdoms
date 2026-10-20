@@ -38,6 +38,192 @@ class Phase03OverlaySourceTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(f"hosts: {forbidden}", text)
 
+    def test_webdav_preflight_handles_absent_interactive_session_without_masking_errors(self):
+        preflight = (ROOT / "ansible/phase03-webdav-shortcut-preflight.yml").read_text()
+        self.assertIn("& cmd.exe /d /c 'quser.exe 2>&1'", preflight)
+        self.assertIn("No User exists for", preflight)
+        self.assertIn("PHASE03_WEBDAV_QUSER_STATUS=NO_ACTIVE_SESSIONS", preflight)
+        self.assertIn("PHASE03_WEBDAV_QUSER_STATUS=SESSIONS_PRESENT", preflight)
+        self.assertIn('throw "quser.exe unexpectedly failed', preflight)
+        self.assertIn("PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True", preflight)
+        self.assertNotIn("$sessions = & quser.exe 2>&1", preflight)
+        self.assertIn("$Ansible.Changed = $false", preflight)
+
+    def test_webdav_batch_requires_fixture_evidence_and_warns_on_absent_victim_session(self):
+        script = (ROOT / "scripts/course1-phase03-preflight.sh").read_text()
+        for marker in (
+            "PHASE03_WEBDAV_WEBCLIENT_EXISTS=True",
+            "PHASE03_WEBDAV_RICKON_PROFILE_EXISTS=True",
+            "PHASE03_WEBDAV_RICKON_DESKTOP_EXISTS=True",
+            "PHASE03_WEBDAV_CANDIDATE_LNK_EXISTS=False",
+            "PHASE03_WEBDAV_CANDIDATE_URL_EXISTS=False",
+            "PHASE03_WEBDAV_QUSER_STATUS=",
+            "PHASE03_WEBDAV_RICKON_EXPLORER=False",
+            "WARN | 05-webdav-session",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, script)
+        self.assertIn("WARN=$((WARN+1))", script)
+
+    def test_course1_phase03_active_acceptance_shell_and_explicit_optin(self):
+        path = ROOT / "scripts/course1-phase03-acceptance.sh"
+        script = path.read_text()
+        check = subprocess.run(["bash", "-n", str(path)],
+                               capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertIn("--plan", script)
+        self.assertIn("--run-http-ldaps --confirm", script)
+        self.assertIn("PHASE03_FULL_ATTACK_ACCEPTANCE=NOT_TESTED", script)
+        self.assertIn('[[ -f "$MODE"', script)
+        self.assertIn('flock -n 9', script)
+        self.assertIn('scripts/course1-phase03-preflight.sh', script)
+        self.assertIn('START_ATTEMPTED=1', script)
+        self.assertIn('trap finalize EXIT', script)
+        self.assertIn('export WORK="$EVIDENCE/http-ldaps-runtime"', script)
+        self.assertIn("PHASE03_HTTP_LDAPS_ACTIVE_ACCEPTANCE=PASS", script)
+        for forbidden in (
+            "rollback-rbcd.sh", "rollback-shadow.sh",
+            "start-rbcd-stage1-add-computer.sh", "start-shadow-relay.sh",
+            "apply-adidns-proof.sh", "apply-webdav-shortcut-proof.sh",
+            "diagnostics/start-mitm6-ws01.sh",
+            "scripts/lab-mode.sh provisioning", "vagrant snapshot",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, script)
+
+    def test_course1_http_ldaps_stage_has_proof_and_scoped_cleanup_guards(self):
+        script = (ROOT / "scripts/course1-phase03-acceptance.sh").read_text()
+        required = (
+            "PHASE03_READONLY_ACCEPTANCE=PASS",
+            "PHASE03_HTTP_LDAPS_CALLBACK_CLEAN=True",
+            "PHASE03_HTTP_LDAPS_PREFLIGHT_COMPLETE=True",
+            "PHASE03_HTTP_LDAPS_RUNTIME_READY=True",
+            "PHASE03_HTTP_LDAPS_TRIGGER_COMPLETE=True",
+            "PHASE03_HTTP_LDAPS_PROVEN=True",
+            "PHASE03_HTTP_LDAPS_RUNTIME_STOPPED=True",
+        )
+        for marker in required:
+            with self.subTest(marker=marker):
+                self.assertIn(marker, script)
+        self.assertLess(script.index("run_step 01-callback-before"),
+                        script.index("START_ATTEMPTED=1"))
+        self.assertLess(script.index("run_step 05-proof"),
+                        script.index("PROOF=PASS"))
+        self.assertIn("cleanup_failure=1", script)
+        self.assertIn("Do not run further attack scenarios", script)
+
+    def test_course1_mutation_proof_and_rollback_wrappers_select_exact_north_inventory(self):
+        # These are source-only adaptations; active attack stages remain gated.
+        wrappers = (
+            "capture-rbcd-baseline.sh",
+            "verify-rbcd-stage1.sh",
+            "verify-rbcd-stage2.sh",
+            "rollback-rbcd.sh",
+            "capture-shadow-baseline.sh",
+            "verify-shadow-mutation.sh",
+            "rollback-shadow.sh",
+            "capture-adidns-baseline.sh",
+            "verify-adidns-proof.sh",
+            "rollback-adidns.sh",
+            "capture-webdav-dns-baseline.sh",
+            "capture-webdav-shortcut-baseline.sh",
+            "verify-webdav-shortcut-proof.sh",
+            "rollback-webdav-shortcut.sh",
+            "rollback-webdav-dns-support.sh",
+            "verify-wpad-reset.sh",
+        )
+        for name in wrappers:
+            with self.subTest(name=name):
+                path = ROOT / "scripts/phase03" / name
+                source = path.read_text()
+                self.assertIn(
+                    "KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory",
+                    source,
+                )
+                self.assertIn(
+                    "KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory",
+                    source,
+                )
+                self.assertIn('-i "$DATA_INVENTORY"', source)
+                self.assertIn('-i "$PROVIDER_INVENTORY"', source)
+                result = subprocess.run(
+                    ["bash", "-n", str(path)], capture_output=True, text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_course1_http_callback_and_cleanup_use_exact_north_inventories(self):
+        for path in (
+            "scripts/phase03/trigger-http-ldaps-readonly-relay.sh",
+            "scripts/phase03/verify-http-ldaps-callback-clean.sh",
+        ):
+            with self.subTest(path=path):
+                script = (ROOT / path).read_text()
+                self.assertIn("KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory", script)
+                self.assertIn("KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory", script)
+                self.assertIn('[[ -f "$DATA_INVENTORY" && -f "$PROVIDER_INVENTORY" ]]', script)
+                self.assertIn('-i "$DATA_INVENTORY"', script)
+                self.assertIn('-i "$PROVIDER_INVENTORY"', script)
+
+    def test_course1_phase03_batch_preflight_is_one_command_and_readonly(self):
+        script_path = ROOT / "scripts/course1-phase03-preflight.sh"
+        script = script_path.read_text()
+        syntax = subprocess.run(
+            ["bash", "-n", str(script_path)],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
+        self.assertIn("phase03-batch-", script)
+        self.assertIn('PHASE03_LAB_INVENTORY', (
+            ROOT / "scripts/validate-phase03-readiness.sh"
+        ).read_text())
+        self.assertIn('LAB_INVENTORY="$ROOT/ad/NORTH/data/inventory"', script)
+        self.assertIn('INSTANCE_INVENTORY="$ROOT/workspace/$INSTANCE/inventory"', script)
+        self.assertIn('PHASE03_ATTACK_CHAIN_ACCEPTANCE=NOT_TESTED', script)
+        self.assertIn('PHASE03_READONLY_ACCEPTANCE=PASS', script)
+        self.assertIn('PHASE03_READONLY_ACCEPTANCE=FAIL', script)
+        for fixture in (
+            "phase03-rbcd-preflight.yml",
+            "phase03-shadow-preflight.yml",
+            "phase03-adidns-preflight.yml",
+            "phase03-webdav-shortcut-preflight.yml",
+            "phase03-read-ws01-rdp-cert.yml",
+        ):
+            with self.subTest(fixture=fixture):
+                self.assertIn(fixture, script)
+        for capability in (
+            "validate-phase03-readiness.sh",
+            "check-wpad-runtime-capabilities.sh",
+            "check-ldap-readonly-relay.sh",
+            "check-http-ldaps-readonly-relay.sh",
+            "check-rickon-prereqs.sh",
+        ):
+            with self.subTest(capability=capability):
+                self.assertIn(capability, script)
+        for forbidden in (
+            "apply-phase03.sh", "reset-phase03.sh",
+            "phase03-webdav-service-probe.yml",
+            "phase03-wpad-baseline.yml",
+            "phase03-webdav-dns-baseline.yml",
+            "phase03-rbcd-rollback.yml",
+            "phase03-shadow-rollback.yml",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, script)
+
+    def test_readonly_phase03_readiness_selects_north_inventory_explicitly(self):
+        script = (ROOT / "scripts/validate-phase03-readiness.sh").read_text()
+        self.assertIn("KINGDOMS_PHASE03_PROFILE:-GOAD", script)
+        self.assertIn('PHASE03_LAB_INVENTORY="$ROOT/ad/NORTH/data/inventory"', script)
+        self.assertIn('PHASE03_INSTANCE_INVENTORY="$(dirname "$PROVIDER")/inventory"', script)
+        self.assertIn('-i "$PHASE03_LAB_INVENTORY"', script)
+        self.assertIn('-i "$PHASE03_INSTANCE_INVENTORY"', script)
+        self.assertIn("ad/NORTH/data/config.json", script)
+        self.assertIn("No poisoning, relay, coercion, directory modification", script)
+
+    def test_readonly_phase03_readiness_preserves_original_goad_defaults(self):
+        script = (ROOT / "scripts/validate-phase03-readiness.sh").read_text()
+        self.assertIn('PHASE03_LAB_INVENTORY="$ROOT/ad/GOAD/data/inventory"', script)
+        self.assertIn('PHASE03_INSTANCE_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"', script)
     def test_apply_fails_closed_and_runs_readiness_first(self):
         text = APPLY.read_text()
         self.assertIn("--confirm", text)

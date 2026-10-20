@@ -1,0 +1,216 @@
+# NORTH Phase 03 — RBCD exact-object rollback contract
+
+**Status: source implementation pending live acceptance.** Does not enable
+`--run-rbcd`, start listeners, modify AD, or change the existing snapshot.
+The legacy `scripts/phase03/rollback-rbcd.sh` remains unchanged for GOAD
+compatibility. Do not call it for NORTH: it can remove a candidate by name
+alone and uses generic GOAD inventory defaults.
+
+## Safety boundaries and evidence
+
+1. Obtain a **fresh clean** NORTH WS01$ baseline after any VM snapshot
+   restoration. The baseline is a private `rbcd-baseline.json` with
+   `CapturedAtUtc`, original target DN, exact RBCD descriptor presence and
+   `CandidateExisted=False`. `rbcd-baseline.sha256` accompanies it.
+2. After the controlled Stage 1 relay creates `PHASE03RBCD$`, but **before**
+   any delegation change, run the separate Stage 1 ownership registrar.
+   It reads live AD on WINTERFELL through the NORTH inventories. It checks
+   that the account was created *after* the baseline, its DN is in NORTH,
+   WS01 still has no RBCD entry, and the target DN matches the baseline.
+   It writes `rbcd-ownership.json` containing candidate **SID, GUID, DN,
+   created time**, target DN, and baseline SHA-256. This is evidence tied
+   to the exact run. It is not cryptographic proof of who created the AD
+   object; the active Stage 1 acceptance must separately prove creation
+   through the expected relay.
+3. The NORTH rollback accepts only the selected baseline and matching
+   ownership receipt. Before ANY AD mutation, it validates the candidate's
+   live SID, GUID, DN and creation time; ensures the target is WS01 in NORTH,
+   the original state was clean, and the current RBCD descriptor is either
+   absent or contains exactly one ACE identifying the recorded candidate
+   SID. Unexpected delegation entries, replaced computer objects, or an
+   invalid receipt block rollback without deleting anything.
+4. Only after those checks does it clear the WS01 RBCD attribute (if set)
+   and delete the *exact* matching candidate (if present). The action is
+   safely re-runnable after a partial failure where either change completed,
+   as long as the remaining state still matches the ownership evidence.
+   No generic name-based deletion, snapshot revert, broad process kill,
+   or password change is allowed.
+5. The rollback must be followed by the existing **independent** read-only
+   `phase03-rbcd-verify-neutral.yml`. PASS means WS01's RBCD descriptor
+   and PHASE03RBCD$ candidate state match the recorded original baseline.
+   The mutation playbook's own "complete" marker is insufficient.
+
+The Bash wrapper holds the existing Phase 03 lock, requires explicit
+`--apply --confirm`, checks owner-only 0700/0600 evidence and both hashes,
+checks that no NTLM relay/mitm6 session remains, and validates the installed
+GitHub source and live VMnet owner before modifying AD. It writes all
+rollback and independent verification output to a new private evidence
+directory. The baseline and ownership receipt remain intact for audit.
+
+A failed rollback is a **stop condition**: no automatic reset or destructive
+retry, and no new RBCD/Shadow Credentials scenario until reviewed. If the
+Stage 1 registration is interrupted before writing the SID/GUID receipt,
+the automated NORTH rollback **must refuse deletion**. Investigate and
+establish object provenance first; do not bypass the guard.
+
+## Special recovery: Attack 14 already complete, Stage 1 receipt was never captured
+
+The operator's 2026-10-13 read-only RBCD preflight on
+`ac9fda-north-vmware` confirmed
+`PHASE03_RBCD_EXISTING=True`,
+`PHASE03_RBCD_CANDIDATE_EXISTS=True`,
+and `PHASE03_RBCD_SELF_CAN_WRITE=True`.
+Two pre-attack baseline files exist, but neither directory contains a
+Stage 1 `rbcd-ownership.json` or associated checksum. The original
+Stage 1 registrar cannot be run now because Stage 2 already modified
+WS01's RBCD descriptor. DO NOT fabricate a retroactive Stage 1 receipt.
+
+A separate **strictly read-only** post-attack forensic inspector is
+prepared in source:
+`ansible/phase03-rbcd-postattack-inspect-north.yml`
+and `scripts/course1-phase03-rbcd-postattack-inspect.sh`.
+It binds itself to an owner-only pre-attack baseline and its SHA-256,
+validates exact NORTH source/host identity, reads current WS01 and
+candidate state from WINTERFELL and records candidate SID, GUID, DN,
+creation time, optional machine creator SID, and all RBCD ACE identities.
+It checks whether the ONLY RBCD ACE is an allow entry for the candidate
+SID, and whether the account was created after the baseline. It reports
+`PHASE03_RBCD_RECOVERY_INSPECTION=PASS` only for a consistent post-attack
+picture, then emits `PHASE03_RBCD_RECOVERY_APPROVAL=REQUIRED`.
+This remains **corroborative evidence**, not contemporaneous ownership
+proof and not authorization to delete the object.
+
+Source-only + live **read-only inspection** (no AD writes):
+```bash
+cd "$HOME/kingdoms-rebuild" && git pull --ff-only
+python3 -m unittest tests.test_course1_rbcd_postattack_inspect
+"$HOME/.goad/.venv/bin/python" -c "import yaml; yaml.safe_load(open('ansible/phase03-rbcd-postattack-inspect-north.yml'))"
+sudo -v
+bash scripts/course1-phase03-rbcd-postattack-inspect.sh \
+  ac9fda-north-vmware \
+  "$HOME/Kingdoms-evidence/phase03-rbcd-baseline-20261012-211731-UhWpSMIs/rbcd-baseline.json" \
+  --inspect
+```
+
+The older baseline `phase03-rbcd-baseline-20261012-171041-P1Gm2EcN`
+predates the snapshot restore and must not be selected.
+
+**No targeted post-attack cleanup is implemented or approved at this
+checkpoint.** After the operator reviews the live evidence, develop a
+separate one-time guarded recovery plan that identifies *exactly* which
+RBCD ACE and AD object may be removed, requires explicit operator
+authorization, verifies all identity/provenance invariants before
+writes, and independently validates neutral state. If any identity is
+ambiguous, choose the previously validated coordinated snapshot
+recovery after reviewing the data-loss impact instead. Do not weaken
+the existing Stage 1 rollback contract or silently run its apply path.
+
+## Operator validation — before any attack
+
+```bash
+cd "$HOME/kingdoms-rebuild" && git pull --ff-only
+python3 -m unittest tests.test_course1_rbcd_rollback_contract \
+  tests.test_course1_rbcd_baseline_paths \
+  tests.test_course1_rbcd_neutral tests.test_phase03_overlay_source
+sudo -v
+bash scripts/course1-phase03-acceptance.sh \
+  ac9fda-north-vmware --prepare-rbcd --confirm
+```
+
+The last command is **read-only against AD** and prints the new baseline
+path. Keep that exact path; do not select the old pre-restore baseline.
+
+After Stage 1 creation is proven in the active acceptance and BEFORE Stage 2
+writes any delegation, register exact ownership:
+
+```bash
+bash scripts/course1-phase03-rbcd-register.sh \
+  ac9fda-north-vmware "$BASELINE" --register --confirm
+```
+
+After Stage 2, S4U, and access proof, stop the relay listener(s).
+Preview rollback:
+
+```bash
+bash scripts/course1-phase03-rbcd-rollback.sh \
+  ac9fda-north-vmware "$BASELINE" --plan
+```
+
+Explicit instructor-controlled directory cleanup:
+
+```bash
+bash scripts/course1-phase03-rbcd-rollback.sh \
+  ac9fda-north-vmware "$BASELINE" --apply --confirm
+```
+
+**Do not execute the cleanup commands until Stage 1 ownership registration
+and controlled Stage 2 proof are operationally validated.** Success criteria:
+
+```text
+PHASE03_RBCD_STAGE1_OWNERSHIP_CAPTURE=PASS
+PHASE03_RBCD_ROLLBACK_ACCEPTANCE=PASS
+PHASE03_RBCD_NEUTRAL_ACCEPTANCE=PASS
+PHASE03_RBCD_ACTIVE_ACCEPTANCE=NOT_TESTED
+```
+
+Active RBCD can only be marked PASS after the separate execution runner
+proves the Stage 1 computer account, Stage 2 descriptor, S4U ticket,
+authorized CIFS consequence, and clean rollback.
+
+Removing a delegation relationship prevents *new* delegation requests
+through it; it does **not** retroactively revoke already-issued service
+tickets. Clear the specific local S4U/Kerberos cache and account for ticket
+lifetimes before declaring credentials invalid. The rollback does not
+blindly remove arbitrary local ticket directories or instructor files.
+
+## Notion alignment
+
+Attack 14's Notion write-up now distinguishes demonstrated RBCD
+exploitation from pending cleanup, and specifically warns that the
+missing Stage 1 provenance receipt blocks automated object deletion.
+Once the instructor-side recovery is independently accepted, update only
+the actual demonstrated cleanup evidence; never imply students possess
+the AD administrative privileges needed for instructor recovery.
+
+## 2026-10-13 — Post-attack read-only inspection completed
+
+**Evidence:** `/home/stark/Kingdoms-evidence/phase03-rbcd-postattack-S9qKLfLj/inspection.log`
+**Original clean baseline:** `/home/stark/Kingdoms-evidence/phase03-rbcd-baseline-20261012-211731-UhWpSMIs/rbcd-baseline.json`
+
+The operator ran the new read-only inspector on `ac9fda-north-vmware`. Four source
+tests passed, and live inspection emitted
+`PHASE03_RBCD_RECOVERY_INSPECTION=PASS`,
+`PHASE03_RBCD_POST_ATTACK_CONSISTENT=True`,
+`PHASE03_RBCD_POST_ATTACK_READ_ONLY=True`, and
+`PHASE03_RBCD_RECOVERY_APPROVAL=REQUIRED`.
+
+Observed exact object evidence:
+- WS01 computer SID ends in `-1106`; candidate creator SID **matches** it.
+- PHASE03RBCD$ object SID ends in `-1602`, GUID
+  `c3cca34d-a871-414c-9e3c-4e08db14ef7e`.
+- Candidate DN is `CN=PHASE03RBCD,CN=Computers,DC=north,DC=sevenkingdoms,DC=local`.
+- The object was created 2026-10-12 at **21:38:55 UTC**, after the clean
+  pre-attack baseline.
+- WS01 RBCD attribute contains **exactly one** `AccessAllowed` ACE,
+  mask `983551`, referencing the candidate SID and no other recorded trustee.
+
+**Interpretation:** Strong, corroborating post-attack evidence supports a
+narrowly scoped recovery. This is not the missing contemporaneous Stage 1
+ownership receipt, so the normal `course1-phase03-rbcd-rollback.sh` contract
+must remain unchanged and fail closed. Attack 14's exploitation is proven;
+rollback is **NOT_TESTED**.
+
+**Recovery decision boundary:** Before any guest mutation, independently
+recheck the exact live target DN/SID, candidate SID/GUID/DN/creator and
+creation time, and the unique RBCD ACE against the captured baseline and
+this dated evidence. A mismatch or additional ACE is a STOP condition.
+On explicit operator authorization, a separate tightly scoped recovery
+should restore the original WS01 RBCD state, remove only the identity-matched
+exercise computer, and run `ansible/phase03-rbcd-verify-neutral.yml`.
+Do not claim success until the independent checker proves both the
+attribute and candidate state match the original baseline. Already-issued
+Kerberos tickets can survive attribute restoration until their expiration.
+A clean coordinated snapshot restore is the fallback only after reviewing
+the impact on all intervening guest changes.
+
+No mutation was executed or authorized by this read-only checkpoint.

@@ -1,0 +1,58 @@
+---
+- name: Independently verify NORTH WS01 Shadow Credentials neutral state
+  hosts: dc02
+  gather_facts: false
+  vars:
+    shadow_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_SHADOW_BASELINE') }}"
+    shadow_baseline: "{{ lookup('ansible.builtin.file', shadow_baseline_path) | from_json }}"
+  tasks:
+    - name: Require exact captured clean NORTH baseline
+      ansible.builtin.assert:
+        that:
+          - shadow_baseline.Version | int == 1
+          - shadow_baseline.Target == 'WS01$'
+          - shadow_baseline.TargetDN | lower | regex_search('dc=north,dc=sevenkingdoms,dc=local$')
+          - not (shadow_baseline.KCLPresent | bool)
+          - shadow_baseline.KCLCount | int == 0
+          - shadow_baseline.KCLValues | length == 0
+          - shadow_baseline.TargetSID is defined
+        fail_msg: "Invalid or non-neutral NORTH Shadow baseline"
+      delegate_to: localhost
+
+    - name: Read back the live WS01 object and KeyCredentialLink without AD writes
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          Import-Module ActiveDirectory
+
+          $baseline = [Text.Encoding]::UTF8.GetString(
+              [Convert]::FromBase64String('{{ (shadow_baseline | to_json) | b64encode }}')
+          ) | ConvertFrom-Json
+          if ($baseline.Target -ne 'WS01$' -or $baseline.KCLCount -ne 0 -or
+              $baseline.KCLPresent -or @($baseline.KCLValues).Count -ne 0) {
+              throw 'Selected baseline must be an empty WS01 KeyCredentialLink'
+          }
+          $target = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,ObjectSid,msDS-KeyCredentialLink
+          $identityMatch = (
+              [string]::Equals($target.DistinguishedName,$baseline.TargetDN,[StringComparison]::OrdinalIgnoreCase) -and
+              $target.ObjectSid.Value -eq $baseline.TargetSID
+          )
+          $values = @()
+          if ($null -ne $target.'msDS-KeyCredentialLink') {
+              $values = @($target.'msDS-KeyCredentialLink')
+          }
+          $neutral = ($values.Count -eq 0)
+          Write-Output "PHASE03_SHADOW_NEUTRAL_TARGET_MATCH=$identityMatch"
+          Write-Output "PHASE03_SHADOW_NEUTRAL_KCL_COUNT=$($values.Count)"
+          Write-Output "PHASE03_SHADOW_NEUTRAL_KCL_EMPTY=$neutral"
+          if (-not $identityMatch -or -not $neutral) {
+              throw 'WS01 KeyCredentialLink does not match exact clean NORTH baseline'
+          }
+          Write-Output 'PHASE03_SHADOW_NEUTRAL_VERIFIED=True'
+      register: shadow_neutral
+
+    - name: Emit independent neutral verification
+      ansible.builtin.debug:
+        msg: "{{ shadow_neutral.output | default([]) }}"
+      changed_when: false

@@ -3,7 +3,7 @@
   hosts: dc02
   gather_facts: false
   vars:
-    phase03_rbcd_baseline_path: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-rbcd-baseline.json"
+    phase03_rbcd_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_BASELINE') | default(lookup('env','HOME') ~ '/.config/kingdoms/phase03-rbcd-baseline.json', true) }}"
     phase03_rbcd_baseline: "{{ lookup('ansible.builtin.file', phase03_rbcd_baseline_path) | from_json }}"
   tasks:
     - name: Restore WS01 RBCD attribute and PHASE03RBCD candidate state

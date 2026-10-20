@@ -6,6 +6,7 @@ import time
 import winrm
 
 from goad.goadpath import GoadPath
+from goad.kingdoms_topology import load_course1_topology
 from goad.log import Log
 from goad.provider.vagrant.vmware import VmwareProvider
 
@@ -34,8 +35,29 @@ class GoadNomadVmwareProvider(VmwareProvider):
         'GOAD-WS01': '10.4.10.31',
     }
 
+    def __init__(self, lab_name):
+        # Keep the original, validated Kingdoms GOAD class defaults untouched.
+        # The reduced Course 1 uses the same provider, changing *only* its
+        # per-instance topology inputs; no alternative provider or installer.
+        super().__init__(lab_name)
+        if lab_name == 'NORTH':
+            topology = load_course1_topology()
+            self.goad_nomad_windows = list(topology['windows'])
+            self.management_hosts = {
+                name: spec['address']
+                for name, spec in topology['windows'].items()
+            }
+            self.network_scope = topology['network_base'] + ' (segmented)'
+            self.network_zones = tuple(
+                (zone.upper(), segment['vmnet'], segment['cidr'])
+                for zone, segment in topology['segments'].items()
+            )
+
     def is_goad_nomad_segmented(self):
-        return self.lab_name == 'GOAD'
+        # NORTH is a reduced instance of the same segmented Kingdoms engine.
+        # The independent NORTH install guard remains active until its host
+        # networking and AD lifecycle are fully integrated and validated.
+        return self.lab_name in ('GOAD', 'NORTH')
 
     @staticmethod
     def _project_root_from_script(script):
@@ -51,6 +73,7 @@ class GoadNomadVmwareProvider(VmwareProvider):
     def _provider_env(self):
         env = os.environ.copy()
         env['GOAD_PROVIDER_DIR'] = str(self.path)
+        env['GOAD_LAB_PROFILE'] = self.lab_name
         return env
 
     def _run_vagrant_bounded(self, args, timeout):
@@ -113,7 +136,7 @@ class GoadNomadVmwareProvider(VmwareProvider):
 
     def _router_policy_path(self, mode):
         return os.path.join(
-            GoadPath.get_lab_provider_path('GOAD', 'vmware'),
+            GoadPath.get_lab_provider_path(self.lab_name, 'vmware'),
             'router',
             'nftables',
             f'{mode}.nft',
@@ -172,6 +195,25 @@ class GoadNomadVmwareProvider(VmwareProvider):
         route_script = self._script('provisioning-routes.sh')
         if route_script is None:
             return False
+
+        if self.lab_name == 'NORTH':
+            # Use the same Kingdoms script, explicitly selecting its reduced
+            # one-route mode and binding ownership to THIS instance directory.
+            # The install/lifecycle guard still blocks NORTH until all runtime
+            # dependencies (vmnets, router policy and AD lifecycle) are ready.
+            if self.path is None:
+                Log.error('Course 1 route owner cannot be identified')
+                return False
+            result = subprocess.run(
+                ['sudo', '-n', 'bash', route_script, '--north', 'enable',
+                 '--provider-dir', os.path.realpath(str(self.path))],
+                check=False,
+            )
+            if result.returncode != 0:
+                Log.error('Course 1: protected parent-zone route was not enabled')
+                return False
+            Log.success('Course 1: instance-owned parent-zone route ready')
+            return True
 
         result = subprocess.run(
             ['sudo', 'bash', route_script, 'enable'],
@@ -277,6 +319,18 @@ class GoadNomadVmwareProvider(VmwareProvider):
         setup_script = self._script('setup-vmware-networks.sh')
         if check_script is None or setup_script is None:
             return False
+
+        if self.lab_name == 'NORTH':
+            # Never run the four-segment GOAD setup for a reduced Course 1
+            # instance. NORTH needs separately owned vmnets and host-address
+            # persistence; those are verified read-only here, not installed.
+            for arguments in (['bash', check_script, '--north'],
+                              ['bash', check_script, '--north', '--live']):
+                if subprocess.run(arguments, check=False).returncode != 0:
+                    Log.error('Course 1: native VMware networks/host addresses not ready')
+                    return False
+            Log.success('Course 1: three-segment network checks passed')
+            return True
 
         Log.info('GOAD_NOMAD: checking segmented VMware networks')
         check = subprocess.run(['bash', check_script], check=False)

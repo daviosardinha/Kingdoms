@@ -1,6 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Course 1 reuses this original Kingdoms setup entrypoint.
+# --north plan/check/hostaddr-plan remain read-only; --north apply requires
+# explicit privilege, a reviewed hash and instance identity. No NORTH VM
+# lifecycle is unlocked here. Full-Kingdoms setup below remains unchanged.
+if [[ "${1:-}" == "--north" ]]; then
+  readonly KINGDOMS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  shift
+  if [[ "${1:-}" == "diagnose" ]]; then
+    shift
+    # Root-owned journal and networking are read, never rewritten. A nonzero
+    # status is expected when VMware has altered the committed file.
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_host_network_apply diagnose "$@"
+  fi
+  if [[ "${1:-}" == "verify" ]]; then
+    shift
+    # Installed-owner attestation is read-only and must inspect root-owned
+    # mode-0600 transaction evidence. No VMware restart or network writes.
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_host_network_apply verify "$@"
+  fi
+  if [[ "${1:-}" == "apply" ]]; then
+    shift
+    # Explicit, reviewed host mutation. Nothing invokes this from the normal
+    # source validator or while the NORTH provider install guard remains active.
+    [[ ${EUID} -eq 0 ]] || { echo "[BLOCKED] sudo required for NORTH host apply" >&2; exit 1; }
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_host_network_apply "$@"
+  fi
+  exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    python3 -m goad.course1_vmnet_config "$@"
+fi
+
 # GOAD_NOMAD VMware Workstation host network bootstrap.
 #
 # Creates only the project-owned networks and preserves all existing VMware

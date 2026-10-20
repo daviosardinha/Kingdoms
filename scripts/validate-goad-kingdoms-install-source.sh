@@ -22,6 +22,7 @@ readonly REQUIRED=(
     goad/provider/vagrant/vmware.py
     goad/provider/vagrant/vmware_kingdoms.py
     playbooks.yml
+    ansible/kingdoms-time-backoff.yml
     ansible/ws01.yml
     ansible/phase01.yml
     ansible/ws01-lpe-install.yml
@@ -94,6 +95,7 @@ expected = [
     'ad-child_domain.yml',
     'wait5m.yml',
     'ad-members.yml',
+    'kingdoms-time-backoff.yml',
     'ad-trusts.yml',
     'ad-data.yml',
     'ws01.yml',
