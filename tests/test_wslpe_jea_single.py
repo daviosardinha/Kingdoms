@@ -70,7 +70,7 @@ class JeaLocalLifecycleTests(unittest.TestCase):
             for t in tasks),1)
         self.assertEqual(
             yaml.safe_load(LOCKDOWN.read_text())[0]["when"],
-            "wslpe_45_action == 'apply'")
+            "wslpe_45_action == 'apply' and not (wslpe_pilot_preserve_shared | default(false) | bool)")
         imports=[t for t in tasks if t.get("ansible.builtin.import_tasks")=="lockdown-library.yml"]
         self.assertEqual(imports[0]["vars"]["wslpe_45_action"],"apply")
         text=STAGE.read_text()
