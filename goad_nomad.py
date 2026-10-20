@@ -20,6 +20,7 @@ from goad.utils import PROVIDED, READY
 from kingdoms.course_registry import COURSES, get_course, catalog_lines
 from kingdoms.windows_lpe_vmware import WindowsLpeVmwareAdapter
 from kingdoms.wslpe_stage1 import bootstrap_native_wslpe, valid_prefix
+from kingdoms.wslpe_auto_network import choose_live, NetworkSelectionError
 from kingdoms.wslpe_resume import resume_existing_wslpe
 
 
@@ -834,6 +835,8 @@ Kingdoms course name. Course installation controls are never given to learners.
     parser.add_argument('-c', '--course', help='Kingdoms operator course slug (optional)', default=None)
     parser.add_argument('--confirm-vm-create', action='store_true',
                         help='explicitly authorize guest-only Windows LPE VM creation')
+    parser.add_argument('--confirm-wslpe-fresh-pilot', action='store_true',
+                        help='authorize new WSLPE instance guest-only boot on a cleared disposable VMware host')
     parser.add_argument('-p', '--provider', help='provider to use (default: vmware)', default='vmware', required=False)
     parser.add_argument('-ip', '--ip_range', help='legacy flat-network prefix; ignored by segmented GOAD/VMware', default='', required=False)
     parser.add_argument('-m', '--method', help='deploy method to use (default: local)', default='local', required=False)
@@ -845,10 +848,55 @@ Kingdoms course name. Course installation controls are never given to learners.
     return parser.parse_args()
 
 
+def _wslpe_fresh_pilot(goad, args):
+    """Explicit one-guest pilot; never activates the normal WSLPE install path."""
+    if (getattr(args, 'lab', None) != 'WSLPE'
+            or getattr(args, 'provider', None) != 'vmware'
+            or getattr(args, 'method', None) != 'local'
+            or getattr(args, 'instance', None) is not None
+            or getattr(args, 'extensions', None)
+            or getattr(args, 'course', None) not in (None, 'windows-lpe')
+            or getattr(args, 'run_playbook', None) is not None
+            or getattr(args, 'ansible_only', None) is not None):
+        Log.error('WSLPE fresh pilot requires -l WSLPE -p vmware -m local, no instance/extensions')
+        return 1
+    task = args.task
+    if task == 'wslpe-fresh-pilot' and not getattr(args, 'confirm_wslpe_fresh_pilot', False):
+        Log.error('Explicit --confirm-wslpe-fresh-pilot is required before VM creation')
+        return 1
+    if task == 'wslpe-network-plan' and getattr(args, 'confirm_wslpe_fresh_pilot', False):
+        Log.error('Read-only network plan does not accept creation authorization')
+        return 1
+    if goad.lab_manager.get_current_instance() is not None:
+        Log.error('Loaded instance present; refusing to affect any registered guest')
+        return 1
+    try:
+        proposal = choose_live()
+    except NetworkSelectionError as exc:
+        Log.error(f'WSLPE automatic network selection blocked: {exc}')
+        return 1
+    Log.info(f'WSLPE candidate subnet: {proposal["cidr"]}')
+    Log.info(f'WSLPE target Windows address: {proposal["guest_ip"]}')
+    Log.info('WSLPE provider: existing Kingdoms native VMware/Vagrant, NOT a new lab')
+    if task == 'wslpe-network-plan':
+        Log.success('READ-ONLY WSLPE candidate selected; no VM or host settings modified')
+        return 0
+    # Keep the normal -t install and interactive install release gates unchanged.
+    if not goad._set_course_selection('windows-lpe'):
+        return 1
+    Log.warning('Pilot creates/boots ONE guest only; does not install LPE scenarios or mark READY')
+    return 0 if bootstrap_native_wslpe(
+        goad.lab_manager, proposal["prefix"], confirmed=True,
+        fresh_network_plan=proposal,
+    ) else 1
+
+
 def _dispatch_task(goad, args):
     """Preserve legacy task behavior while rejecting unavailable course actions."""
     # The operator may still type -l WSLPE without -c windows-lpe.
     # Do not bypass the course registry's unready state in that case.
+    if args.task in ('wslpe-network-plan', 'wslpe-fresh-pilot'):
+        return _wslpe_fresh_pilot(goad, args)
     if getattr(args, 'lab', None) == 'WSLPE':
         if args.task not in ('courses', 'status'):
             Log.error(
