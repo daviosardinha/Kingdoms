@@ -870,6 +870,17 @@ def _wslpe_fresh_pilot(goad, args):
     if goad.lab_manager.get_current_instance() is not None:
         Log.error('Loaded instance present; refusing to affect any registered guest')
         return 1
+    if task == 'wslpe-fresh-pilot':
+        # Check this checkout's persisted instance registry, not merely the
+        # currently loaded default. Another checkout's powered-off golden
+        # master is safe to preserve and must not be deleted for this pilot.
+        instances = getattr(getattr(goad.lab_manager, 'lab_instances', None), 'instances', None)
+        if not isinstance(instances, dict):
+            Log.error('Cannot inspect fresh workspace instance registry')
+            return 1
+        if any(getattr(i, 'lab_name', None) == 'WSLPE' for i in instances.values()):
+            Log.error('WSLPE already registered in this checkout; use a separate clean checkout')
+            return 1
     try:
         proposal = choose_live(fresh_boot=(task == 'wslpe-fresh-pilot'))
     except NetworkSelectionError as exc:
