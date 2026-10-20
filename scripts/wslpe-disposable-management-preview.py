@@ -17,7 +17,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-RECIPE = ROOT / "ad/WSLPE/providers/vmware/Vagrantfile"
+RECIPE = ROOT / "experiments/wslpe-disposable-management-nic/Vagrantfile"
 OPTIN = "KINGDOMS_WSLPE_DISPOSABLE_MGMT_NIC"
 VNET = "KINGDOMS_WSLPE_DISPOSABLE_MGMT_VMNET"
 PREFIX = "KINGDOMS_WSLPE_DISPOSABLE_MGMT_PREFIX"
