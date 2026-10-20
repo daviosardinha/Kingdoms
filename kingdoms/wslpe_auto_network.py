@@ -111,10 +111,10 @@ def _network_config() -> str:
 
 
 def choose_live(*, fresh_boot: bool = True) -> dict:
-    """Read host state; only an actual boot demands zero live/registered peers."""
+    """Read host state; actual boot requires zero live peer VMware guests."""
     if fresh_boot:
         require_no_running_guests()
-        checker = _checker()
+    checker = _checker()
     try:
         addresses = checker.run_ip("address", "show")
         routes = checker.run_ip("route", "show", "table", "all")
@@ -124,7 +124,7 @@ def choose_live(*, fresh_boot: bool = True) -> dict:
         raise NetworkSelectionError(f"Live WSLPE network selection blocked: {exc}") from exc
     if fresh_boot:
         require_no_running_guests()
-        return selected
+    return selected
 
 
 def assert_plan_still_valid(plan: dict) -> None:
