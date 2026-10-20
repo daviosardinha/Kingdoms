@@ -98,6 +98,49 @@ class WslpePeerVmnetTests(unittest.TestCase):
         self.assertTrue(any("peer" in x for x in notices))
         self.assertEqual(self.owned, original)
 
+    def test_real_operator_vmnet2_and_vmnet8_forwarding_shape(self):
+        """Regress the observed NORTH drift with verified WSLPE peer ownership.
+
+        The 2026-10-20 host diagnosis showed VMware-reordered NORTH vmnets,
+        foreign vmnet1/vmnet8 hash rotation, a new vmnet2 exercise subnet,
+        WSLPE 2210/2211/2212 and independent vmnet8 Vagrant forwards.
+        No foreign forward is authorized by the WSLPE peer record.
+        """
+        foreign = (
+            "add_nat_portfwd 8 tcp 2200 192.168.213.245 5985\\n"
+            "add_nat_portfwd 8 tcp 2201 192.168.213.245 5986\\n"
+            "add_nat_portfwd 8 tcp 2202 192.168.213.245 22\\n"
+            "add_nat_portfwd 8 tcp 2203 192.168.213.246 5985\\n"
+            "add_nat_portfwd 8 tcp 2204 192.168.213.246 5986\\n"
+            "add_nat_portfwd 8 tcp 2205 192.168.213.246 22\\n"
+            "add_nat_portfwd 8 tcp 2206 192.168.213.247 5985\\n"
+            "add_nat_portfwd 8 tcp 2207 192.168.213.247 5986\\n"
+            "add_nat_portfwd 8 tcp 2208 192.168.213.247 22\\n"
+            "add_nat_portfwd 8 tcp 2209 192.168.213.244 22\\n"
+            "add_nat_portfwd 8 tcp 2222 192.168.213.244 22\\n"
+            "add_nat_portfwd 8 tcp 55985 192.168.213.244 5985\\n"
+            "add_nat_portfwd 8 tcp 55986 192.168.213.244 5986\\n"
+        ).replace("\\\\n", "\\n")
+        current = self.runtime(foreign)
+        self.assertIn(b"answer VNET_2_HOSTONLY_SUBNET 172.28.231.0", current)
+        self.assertIn(b"add_nat_portfwd 8 tcp 2210 172.28.231.31 5985", current)
+        with self.assertRaisesRegex(NetworkPlanError, "Unexpected new VMware networking directive"):
+            verify_owned_vmnet_runtime(self.owned, current, self.base, self.layout)
+        result = verify_owned_vmnet_runtime(
+            self.owned, current, self.base, self.layout,
+            peer_additions=self.approved(),
+        )
+        self.assertTrue(result)
+        for bad in (
+            "answer VNET_2_NAT yes\\n",
+            "add_nat_portfwd 8 tcp 2213 172.28.231.31 3389\\n",
+        ):
+            with self.subTest(bad=bad), self.assertRaises(NetworkPlanError):
+                verify_owned_vmnet_runtime(
+                    self.owned, current + bad.replace("\\\\n", "\\n").encode(),
+                    self.base, self.layout, peer_additions=self.approved(),
+                )
+
     def test_extra_directive_fails_even_with_peer(self):
         for unexpected in (
             "answer VNET_2_NAT yes\n",
