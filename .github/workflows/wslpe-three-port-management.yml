@@ -1,0 +1,28 @@
+name: WSLPE three management port guard
+
+on:
+  push:
+    branches:
+      - fix/wslpe-all-management-port-guard
+  pull_request:
+    paths:
+      - kingdoms/wslpe_management_guard.py
+      - scripts/wslpe-management-firewall.py
+      - tests/test_wslpe_management_guard.py
+      - .github/workflows/wslpe-three-port-management.yml
+
+permissions:
+  contents: read
+
+jobs:
+  offline-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax and compiled source
+        run: python -m py_compile kingdoms/wslpe_management_guard.py scripts/wslpe-management-firewall.py tests/test_wslpe_management_guard.py
+      - name: Exact management port guards and existing WinRM compatibility
+        run: python -m unittest tests.test_wslpe_management_guard tests.test_wslpe_winrm_guard -v
