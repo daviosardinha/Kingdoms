@@ -15,6 +15,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER = ROOT / "scripts/wslpe-check-host-network.py"
 NETWORKING = Path("/etc/vmware/networking")
+NORTH_OWNER = Path("/etc/vmware/kingdoms-course1-owner.json")
 
 # Deliberately deterministic and narrow. The old operator's 172.28.231/24
 # is NOT reserved globally; it is selected only when live inspection says free.
@@ -73,6 +74,22 @@ def choose_prefix(config: str, addresses: list, routes: list, *,
     raise NetworkSelectionError("No collision-free private WSLPE /24 in approved candidate pool")
 
 
+def require_no_installed_north_owner(owner: Path | None = None) -> None:
+    """Fail closed before Vagrant can add another vmnet to a NORTH-owned host.
+
+    A collision-free IP range alone does not prove that NORTH's immutable
+    VMware ownership contract will accept the newly allocated vmnet. This
+    pilot has no cross-instance attestation/rollback transaction yet.
+    """
+    path = NORTH_OWNER if owner is None else Path(owner)
+    if path.exists() or path.is_symlink():
+        raise NetworkSelectionError(
+            "Installed NORTH VMware owner detected; fresh WSLPE boot on this "
+            "host is deferred until verified multi-instance vmnet ownership "
+            "is integrated. The read-only plan remains available."
+        )
+
+
 def require_no_running_guests():
     """Never initiate new VMware network allocation while peer guests run."""
     try:
@@ -113,6 +130,7 @@ def _network_config() -> str:
 def choose_live(*, fresh_boot: bool = True) -> dict:
     """Read host state; actual boot requires zero live peer VMware guests."""
     if fresh_boot:
+        require_no_installed_north_owner()
         require_no_running_guests()
     checker = _checker()
     try:
@@ -123,6 +141,7 @@ def choose_live(*, fresh_boot: bool = True) -> dict:
     except (ValueError, OSError) as exc:
         raise NetworkSelectionError(f"Live WSLPE network selection blocked: {exc}") from exc
     if fresh_boot:
+        require_no_installed_north_owner()
         require_no_running_guests()
     return selected
 
