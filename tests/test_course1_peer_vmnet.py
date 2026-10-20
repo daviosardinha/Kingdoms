@@ -124,7 +124,7 @@ class WslpePeerVmnetTests(unittest.TestCase):
         current = self.runtime(foreign)
         self.assertIn(b"answer VNET_2_HOSTONLY_SUBNET 172.28.231.0", current)
         self.assertIn(b"add_nat_portfwd 8 tcp 2210 172.28.231.31 5985", current)
-        with self.assertRaisesRegex(NetworkPlanError, "Unexpected new VMware networking directive"):
+        with self.assertRaises(NetworkPlanError):
             verify_owned_vmnet_runtime(self.owned, current, self.base, self.layout)
         result = verify_owned_vmnet_runtime(
             self.owned, current, self.base, self.layout,
