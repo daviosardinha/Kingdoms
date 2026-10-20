@@ -7,7 +7,7 @@ import unittest
 
 from goad.vmware_coexistence import (
     CoexistenceError, network_inventory, owner_record, load_owner_records,
-    plan_instance,
+    plan_instance, choose_course_network_base,
 )
 
 VMWARE = (
@@ -20,7 +20,8 @@ VMWARE = (
 )
 NORTH = {"north": "10.4.10.0/24", "sevenkingdoms": "10.4.20.0/24",
          "management": "10.4.99.0/24"}
-KINGDOMS = {**NORTH, "essos": "10.4.30.0/24"}
+KINGDOMS = {"north": "10.4.10.0/24", "sevenkingdoms": "10.4.20.0/24",
+            "essos": "10.4.30.0/24", "management": "10.4.99.0/24"}
 WSLPE = {"exercise": "172.28.231.0/24", "management": "172.28.232.0/24"}
 
 
@@ -74,6 +75,39 @@ class SharedVMwareTests(unittest.TestCase):
         self.assertEqual(north["segments"]["north"]["cidr"], "10.4.10.0/24")
         self.assertEqual(lpe["segments"]["exercise"]["cidr"], "172.28.231.0/24")
         self.assertEqual(self.plan("NORTH", "/instances/north", source), north)
+
+    def test_second_ad_lab_selects_10_5_without_mutating_original(self):
+        full = self.plan("KINGDOMS", "/instances/full")
+        existing = VMWARE + rendered(full)
+        next_base = choose_course_network_base("NORTH", existing,
+                                                owners=(committed(full),))
+        self.assertEqual(next_base, "10.5.0.0/16")
+        self.assertEqual(choose_course_network_base("KINGDOMS", VMWARE),
+                         "10.4.0.0/16")
+        north = {role: cidr.replace("10.4.", "10.5.") for role, cidr in NORTH.items()}
+        next_plan = plan_instance("NORTH", "/instances/north", north, existing,
+                                  owners=(committed(full),))
+        self.assertEqual(next_plan["segments"]["north"]["cidr"], "10.5.10.0/24")
+        self.assertNotEqual(next_plan["segments"]["north"]["vmnet"], "vmnet10")
+        self.assertEqual(full["segments"]["north"]["cidr"], "10.4.10.0/24")
+
+    def test_subnet_candidate_skips_external_routes_and_host_addresses(self):
+        self.assertEqual(choose_course_network_base(
+            "NORTH", VMWARE, routes=["10.4.0.0/16"],
+            host_addresses=["10.5.15.10"]), "10.6.0.0/16")
+        self.assertEqual(choose_course_network_base(
+            "NORTH", VMWARE, preferred=5, maximum=5), "10.5.0.0/16")
+        with self.assertRaisesRegex(CoexistenceError, "No collision-free"):
+            choose_course_network_base("NORTH", VMWARE, preferred=4,
+                                       maximum=4, routes=["10.4.0.0/16"])
+
+    def test_subnet_selection_not_invoked_for_existing_lifecycle(self):
+        first = self.plan("KINGDOMS", "/instances/full")
+        source = VMWARE + rendered(first)
+        existing = self.plan("KINGDOMS", "/instances/full",
+                             source, (committed(first),))
+        self.assertEqual(existing["segments"], first["segments"])
+        self.assertEqual(existing["status"], "EXISTING_VERIFIED")
 
     def test_north_then_wslpe_retains_peer_network_and_ownership(self):
         first = self.plan("NORTH", "/instances/north")
