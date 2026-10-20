@@ -106,21 +106,21 @@ class WslpePeerVmnetTests(unittest.TestCase):
         WSLPE 2210/2211/2212 and independent vmnet8 Vagrant forwards.
         No foreign forward is authorized by the WSLPE peer record.
         """
-        foreign = (
-            "add_nat_portfwd 8 tcp 2200 192.168.213.245 5985\\n"
-            "add_nat_portfwd 8 tcp 2201 192.168.213.245 5986\\n"
-            "add_nat_portfwd 8 tcp 2202 192.168.213.245 22\\n"
-            "add_nat_portfwd 8 tcp 2203 192.168.213.246 5985\\n"
-            "add_nat_portfwd 8 tcp 2204 192.168.213.246 5986\\n"
-            "add_nat_portfwd 8 tcp 2205 192.168.213.246 22\\n"
-            "add_nat_portfwd 8 tcp 2206 192.168.213.247 5985\\n"
-            "add_nat_portfwd 8 tcp 2207 192.168.213.247 5986\\n"
-            "add_nat_portfwd 8 tcp 2208 192.168.213.247 22\\n"
-            "add_nat_portfwd 8 tcp 2209 192.168.213.244 22\\n"
-            "add_nat_portfwd 8 tcp 2222 192.168.213.244 22\\n"
-            "add_nat_portfwd 8 tcp 55985 192.168.213.244 5985\\n"
-            "add_nat_portfwd 8 tcp 55986 192.168.213.244 5986\\n"
-        ).replace("\\\\n", "\\n")
+        foreign = chr(10).join((
+            "add_nat_portfwd 8 tcp 2200 192.168.213.245 5985",
+            "add_nat_portfwd 8 tcp 2201 192.168.213.245 5986",
+            "add_nat_portfwd 8 tcp 2202 192.168.213.245 22",
+            "add_nat_portfwd 8 tcp 2203 192.168.213.246 5985",
+            "add_nat_portfwd 8 tcp 2204 192.168.213.246 5986",
+            "add_nat_portfwd 8 tcp 2205 192.168.213.246 22",
+            "add_nat_portfwd 8 tcp 2206 192.168.213.247 5985",
+            "add_nat_portfwd 8 tcp 2207 192.168.213.247 5986",
+            "add_nat_portfwd 8 tcp 2208 192.168.213.247 22",
+            "add_nat_portfwd 8 tcp 2209 192.168.213.244 22",
+            "add_nat_portfwd 8 tcp 2222 192.168.213.244 22",
+            "add_nat_portfwd 8 tcp 55985 192.168.213.244 5985",
+            "add_nat_portfwd 8 tcp 55986 192.168.213.244 5986",
+        )) + chr(10)
         current = self.runtime(foreign)
         self.assertIn(b"answer VNET_2_HOSTONLY_SUBNET 172.28.231.0", current)
         self.assertIn(b"add_nat_portfwd 8 tcp 2210 172.28.231.31 5985", current)
@@ -132,12 +132,12 @@ class WslpePeerVmnetTests(unittest.TestCase):
         )
         self.assertTrue(result)
         for bad in (
-            "answer VNET_2_NAT yes\\n",
-            "add_nat_portfwd 8 tcp 2213 172.28.231.31 3389\\n",
+            "answer VNET_2_NAT yes",
+            "add_nat_portfwd 8 tcp 2213 172.28.231.31 3389",
         ):
             with self.subTest(bad=bad), self.assertRaises(NetworkPlanError):
                 verify_owned_vmnet_runtime(
-                    self.owned, current + bad.replace("\\\\n", "\\n").encode(),
+                    self.owned, current + (bad + chr(10)).encode(),
                     self.base, self.layout, peer_additions=self.approved(),
                 )
 
