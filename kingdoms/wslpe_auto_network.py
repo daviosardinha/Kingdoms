@@ -48,7 +48,10 @@ def choose_prefix(config: str, addresses: list, routes: list, *,
     # Unlike the earlier lightweight read-only checker, this gate first
     # rejects duplicate and malformed VNET declarations before making a plan.
     try:
-        inventory(config)
+        vmnets = inventory(config)
+        for identifier, settings in vmnets.items():
+            if ("HOSTONLY_SUBNET" in settings) != ("HOSTONLY_NETMASK" in settings):
+                raise ValueError(f"vmnet{identifier} has incomplete subnet metadata")
     except (ValueError, TypeError) as exc:
         raise NetworkSelectionError(f"Unsafe VMware network metadata: {exc}") from exc
     checker = _checker()
