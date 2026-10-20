@@ -50,13 +50,18 @@ this checker. It does not create a VMware host-only network or prove a ready VM.
 
 ## Step 2 — Disposable separate-checkout guest-only boot
 
-Use a separate clean repository checkout/workspace. A second compatible VMware
-host is safest, but the existing host can also be used **after the operator
-voluntarily stops all VMware guests**, including NORTH and the old WSLPE master.
-The old master may remain registered, powered off and snapshotted in its
-original checkout. Do **not** delete it for the test. A VMware snapshot does
-not replace a separate backup; deleting the whole VM can also delete its
-snapshot chain.
+Use a separate clean repository checkout/workspace on a **separate disposable
+VMware host without an installed NORTH owner**. The 2026-10-20 NORTH diagnostic
+proved the current operator host has immutable NORTH network ownership that
+rejects unrecognized vmnet2. A new Vagrant allocation for 172.28.232/24 would
+likely introduce another foreign vmnet and worsen NORTH restart drift. Merely
+stopping NORTH guests does **not** make such an allocation ownership-safe.
+The fresh-boot path now explicitly refuses a host containing
+`/etc/vmware/kingdoms-course1-owner.json`, even if all guests are off.
+
+The original WSLPE master and its two snapshots should remain intact. Do
+**not** delete it for this test. A snapshot is not an independent backup;
+deleting the VM can delete its snapshot chain.
 
 With no running VMware guests and no existing WSLPE instance in the **new
 pilot checkout**, use:
@@ -67,8 +72,10 @@ cd "$HOME/kingdoms-wslpe-fresh-pilot"
   --confirm-wslpe-fresh-pilot
 ```
 
-The guard verifies that the host has no running VMware guests/processes and
-that the new pilot checkout has no existing WSLPE instance. It does not
+The guard verifies that no NORTH owner is installed, the host has no running
+VMware guests/processes, and the new pilot checkout has no existing WSLPE
+instance. The read-only `wslpe-network-plan` remains available on the
+existing NORTH host. It does not
 unregister, reboot or destroy the original powered-off golden master.
 The existing 13-stage preboot gate, native `LabManager`, `LabInstance` and
 VMware provider then create and boot exactly one `WSLPE-WS01`. A failed boot
