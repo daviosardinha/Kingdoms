@@ -89,6 +89,28 @@ class Wslpe41AcceptancePlanTests(unittest.TestCase):
                           "Remove-Item","-Execute ", "New-Service"):
             self.assertNotIn(forbidden,script)
 
+    def test_operator_pilot21_audit_is_privileged_readonly_and_separate(self):
+        script=(ROOT/"scripts/wslpe41-operator-pilot21-readonly.ps1").read_text()
+        for required in ("WSLPE41_21_OPERATOR_BOUNDARY=PASS",
+                         "WSLPE41_21_OWNED_MARKER=PASS",
+                         "WSLPE41_21_PROTECTED_NTFS=PASS",
+                         "WSLPE41_21_PRIVILEGED_READONLY_AUDIT=PASS",
+                         "WSLPE41_21_LEARNER_EXPLOITATION=NOT_TESTED",
+                         "Get-Content -LiteralPath $marker",
+                         "Get-Acl -LiteralPath $root",
+                         "WSLPE-WS01","Get-NetAdapter",
+                         "scheduled_task_definition_acl",
+                         "AreAccessRulesProtected"):
+            self.assertIn(required,script)
+        for forbidden in ("Set-Acl", "SetSecurityDescriptor(",
+                          "Set-ScheduledTask","Register-ScheduledTask",
+                          "Start-ScheduledTask","Remove-Item",
+                          "Invoke-Command","exit 2"):
+            self.assertNotIn(forbidden,script)
+        learner=(ROOT/"scripts/wslpe41-learner-pilot21-readonly.ps1").read_text()
+        self.assertNotIn("Get-Content -LiteralPath $marker",learner)
+        self.assertIn("WSLPE41_21_FIXTURE_OWNERSHIP=OPERATOR_CHECK_REQUIRED",learner)
+
     def test_no_exploit_execution_in_plan(self):
         source=(ROOT/"scripts/wslpe41-learner-acceptance.py").read_text()
         for banned in ("ansible-playbook", "Invoke-Command", "wmic ", "vmrun",
