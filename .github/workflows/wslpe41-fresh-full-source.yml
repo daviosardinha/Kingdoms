@@ -1,0 +1,37 @@
+name: WSLPE41 independent fresh installer source gate
+
+on:
+  push:
+    branches:
+      - feature/wslpe41-fresh-full-installer
+  pull_request:
+    paths:
+      - 'kingdoms/wslpe41_fresh_contract.py'
+      - 'tests/test_wslpe41_fresh_contract.py'
+      - '.github/workflows/wslpe41-fresh-full-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install WSLPE source dependencies
+        run: python -m pip install --disable-pip-version-check pyyaml rich Jinja2 ansible-runner psutil 'ansible-core==2.17.14'
+      - name: Compile source contract and run its behavioral regressions
+        run: |
+          python -m py_compile kingdoms/wslpe41_fresh_contract.py tests/test_wslpe41_fresh_contract.py
+          python -m unittest discover -s tests -p 'test_wslpe41_fresh_contract.py' -v
+      - name: Run existing WSLPE source regression suite
+        run: python -m unittest discover -s tests -p 'test_wslpe_*.py' -v
+      - name: Explicitly prohibit source-only success being called a full installation
+        run: |
+          echo '[SOURCE ONLY] Fresh 41-ID scope and JEA out-of-band requirement validated'
+          echo '[NOT COMPLETE] Native 41-stage installation, fresh guest configuration, and second clean build'
