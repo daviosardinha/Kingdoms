@@ -141,11 +141,14 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             recheck.assert_called_once_with(plan)
             self.assertFalse(workspace.exists())
 
-    def test_installed_north_addressing_is_unmodified(self):
-        from goad.kingdoms_topology import load_course1_topology
-        top = load_course1_topology()
-        self.assertEqual(top["network_base"], "10.4.0.0/16")
-        self.assertEqual(top["windows"]["GOAD-DC02"]["address"], "10.4.10.11")
+    def test_north_range_remains_reserved_and_wslpe_guest_is_generated(self):
+        self.assertNotIn("10.4.", auto.choose_prefix(HOST, [], [])["guest_ip"])
+        with self.assertRaises(auto.NetworkSelectionError):
+            auto.choose_prefix(HOST, [], [], candidates=("10.4.10",))
+        source = (Path(__file__).resolve().parents[1] /
+                  "ad/WSLPE/providers/vmware/Vagrantfile").read_text()
+        self.assertIn(':ip => "{{ip_range}}.31"', source)
+        self.assertNotIn("vmnet10", source)
 
 
 if __name__ == "__main__":
