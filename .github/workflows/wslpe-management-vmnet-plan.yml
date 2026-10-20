@@ -1,0 +1,33 @@
+name: WSLPE management vmnet allocation source gate
+
+on:
+  push:
+    branches:
+      - feature/wslpe-management-vmnet-allocation
+  pull_request:
+    paths:
+      - kingdoms/wslpe_management_vmnet_plan.py
+      - scripts/wslpe-management-vmnet-plan.py
+      - tests/test_wslpe_management_vmnet_plan.py
+      - .github/workflows/wslpe-management-vmnet-plan.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile exact source
+        run: python -m py_compile kingdoms/wslpe_management_vmnet_plan.py scripts/wslpe-management-vmnet-plan.py tests/test_wslpe_management_vmnet_plan.py
+      - name: Verify nonmutating preflight and WSLPE prior isolation contracts
+        run: |
+          python -m unittest -v \
+            tests.test_wslpe_management_vmnet_plan \
+            tests.test_wslpe_host_network \
+            tests.test_wslpe_disposable_management_preview \
+            tests.test_wslpe_portless_management
