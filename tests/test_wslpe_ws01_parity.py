@@ -64,7 +64,15 @@ class WslpeWs01ParityTests(unittest.TestCase):
         self.assertIn("name: settings/eval_rearm", self.foundation)
         self.assertIn("Create standard local WSLPE learner", self.foundation)
         self.assertIn("groups:\n          - Users", self.foundation)
-        self.assertNotIn("Remote Desktop Users", source_lines(self.foundation))
+        # Standalone learner RDP access is intentionally allowed through the
+        # local built-in group, without granting administrative membership.
+        self.assertIn("Grant standard local learner membership in Remote Desktop Users",
+                      source_lines(self.foundation))
+        self.assertIn("S-1-5-32-555", self.foundation)
+        self.assertIn("S-1-5-32-544", self.foundation)
+        self.assertIn("groups_action: replace", self.foundation)
+        self.assertIn("WSLPE_LOCAL_LEARNER_RDP_GROUP=PASS", self.foundation)
+        self.assertIn("WSLPE_LOCAL_ADMIN_MEMBERSHIP=DENIED", self.foundation)
         self.assertIn("windows_lpe_profile: none", self.lpe)
         self.assertIn("windows_lpe_allow_candidate: false", self.lpe)
 
