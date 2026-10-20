@@ -20,6 +20,12 @@ class WslpeNetworkPortabilityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.recipe = RECIPE.read_text(encoding="utf-8")
+        # Default source before the guarded opt-in must remain unchanged.
+        # The optional third NIC is validated separately in the disposable
+        # source tests, never silently accepted as the default two-NIC layout.
+        cls.default_recipe = cls.recipe.split(
+            "\n# Opt-in ONLY for a new disposable VMware source candidate.", 1
+        )[0]
         cls.template = SHARED_VMWARE.read_text(encoding="utf-8")
         cls.contract = NETWORK_CONTRACT.read_text(encoding="utf-8")
         cls.preview = NATIVE_PREVIEW.read_text(encoding="utf-8")
@@ -32,14 +38,14 @@ class WslpeNetworkPortabilityTests(unittest.TestCase):
             "172.28.231", "192.168.213", "192.168.76",
             "10.4.10", "10.4.99",
         ):
-            self.assertNotIn(forbidden, self.recipe)
+            self.assertNotIn(forbidden, self.default_recipe)
         self.assertIn(':ip => "{{ip_range}}.31"', self.recipe)
 
     def test_wslpe_uses_native_kingdoms_private_network_not_north_adapters(self):
         self.assertIn("target.vm.network :private_network, ip: box[:ip]", self.template)
         self.assertIn("unless box[:skip_private_network]", self.template)
         self.assertNotIn("skip_private_network", self.recipe)
-        self.assertNotIn("vmware_network_adapters", self.recipe)
+        self.assertNotIn("vmware_network_adapters", self.default_recipe)
         self.assertNotIn(":vmware_vmx", self.recipe)
 
     def test_preview_uses_operator_chosen_private_prefix(self):
