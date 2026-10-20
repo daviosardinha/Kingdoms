@@ -1,0 +1,28 @@
+name: WSLPE portless management architecture gates
+
+on:
+  push:
+    branches:
+      - feature/wslpe-portless-management-cutover
+  pull_request:
+    paths:
+      - kingdoms/wslpe_portless_management.py
+      - scripts/wslpe-portless-preview.py
+      - tests/test_wslpe_portless_management.py
+      - .github/workflows/wslpe-portless-management.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile source only
+        run: python -m py_compile kingdoms/wslpe_portless_management.py scripts/wslpe-portless-preview.py tests/test_wslpe_portless_management.py
+      - name: Verify isolated management and fail-closed lifecycle
+        run: python -m unittest tests.test_wslpe_portless_management tests.test_wslpe_nic_contract tests.test_wslpe_management_guard -v
