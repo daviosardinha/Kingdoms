@@ -871,7 +871,7 @@ def _wslpe_fresh_pilot(goad, args):
         Log.error('Loaded instance present; refusing to affect any registered guest')
         return 1
     try:
-        proposal = choose_live()
+        proposal = choose_live(fresh_boot=(task == 'wslpe-fresh-pilot'))
     except NetworkSelectionError as exc:
         Log.error(f'WSLPE automatic network selection blocked: {exc}')
         return 1
