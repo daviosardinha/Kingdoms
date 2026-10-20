@@ -269,9 +269,6 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
         if expected_peer - additions:
             raise NetworkPlanError("Missing approved WSLPE peer network declarations")
         additions -= expected_peer
-    if not additions:
-        return ("VMware declarations and exact verified peer match",)
-
     # This subnet comes from the immutable original backup, not the live
     # config. Never accept new forwarding to NORTH's isolated 10.4 networks.
     settings = {}
@@ -313,6 +310,9 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
         if key in port_keys or active[declaration] != 1:
             raise NetworkPlanError("Duplicate VMware NAT forwarding host port")
         port_keys.add(key)
+
+    if not additions:
+        return ("VMware declarations and exact verified peer match",)
 
     for declaration in additions.elements():
         parts = declaration.split()
