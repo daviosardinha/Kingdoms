@@ -46,7 +46,7 @@ class DisposableManagementNicTests(unittest.TestCase):
                                        existing_registration=True)
 
     def test_default_wslpe_recipe_remains_two_nic_source(self):
-        source = candidate.RECIPE.read_text(encoding="utf-8")
+        source = (ROOT / "ad/WSLPE/providers/vmware/Vagrantfile").read_text(encoding="utf-8")
         source = source.replace("{{ip_range}}", "172.28.231")
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "Vagrantfile"
@@ -68,6 +68,8 @@ class DisposableManagementNicTests(unittest.TestCase):
 
     def test_optin_source_does_not_change_shared_vmware_template(self):
         recipe = candidate.RECIPE.read_text(encoding="utf-8")
+        production_recipe = (ROOT / "ad/WSLPE/providers/vmware/Vagrantfile").read_text(encoding="utf-8")
+        self.assertNotIn("KINGDOMS_WSLPE_DISPOSABLE_MGMT_NIC", production_recipe)
         template = (ROOT / "template/provider/vmware/Vagrantfile").read_text()
         self.assertIn('ENV["KINGDOMS_WSLPE_DISPOSABLE_MGMT_NIC"] == "preview"', recipe)
         self.assertIn('boxes[0][:vmware_network_adapters]', recipe)
