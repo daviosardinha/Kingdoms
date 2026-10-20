@@ -76,6 +76,27 @@ class WslpeAutoNetworkTests(unittest.TestCase):
             ):
                 auto.choose_prefix(HOST + extra + chr(10), [], [])
 
+    def test_installed_north_owner_blocks_boot_but_not_read_only_planning(self):
+        with tempfile.TemporaryDirectory() as temp:
+            owner = Path(temp) / "kingdoms-course1-owner.json"
+            owner.write_text('{"profile":"NORTH"}', encoding="utf-8")
+            with self.assertRaisesRegex(auto.NetworkSelectionError, "Installed NORTH"):
+                auto.require_no_installed_north_owner(owner)
+            with (
+                mock.patch.object(auto, "NORTH_OWNER", owner),
+                mock.patch.object(auto, "require_no_running_guests") as running,
+                mock.patch.object(auto, "_checker") as checker,
+            ):
+                with self.assertRaisesRegex(auto.NetworkSelectionError, "Installed NORTH"):
+                    auto.choose_live(fresh_boot=True)
+                running.assert_not_called()
+                checker.assert_not_called()
+            owner.unlink()
+            auto.require_no_installed_north_owner(owner)
+            owner.symlink_to(Path(temp) / "missing-target")
+            with self.assertRaisesRegex(auto.NetworkSelectionError, "Installed NORTH"):
+                auto.require_no_installed_north_owner(owner)
+
     def test_live_proposal_and_unchanged_safety(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / "networking"
