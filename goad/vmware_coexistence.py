@@ -189,6 +189,44 @@ def _validate_owners(owners, nets, configured):
     return assigned
 
 
+
+def choose_course_network_base(profile, networking, *, owners=(), routes=(),
+                               host_addresses=(), preferred=4, maximum=254):
+    """Choose a free 10.X.0.0/16 without altering an installed lab.
+
+    This is an installation *proposal*. Only NORTH and full KINGDOMS have
+    segmented 10.X labs. Existing assignments must be read from their owner
+    records instead of calling this function again during lifecycle actions.
+    Caller must independently inspect registered VMX guests and interfaces.
+    """
+    if profile not in ("NORTH", "KINGDOMS"):
+        raise CoexistenceError("Only segmented AD courses use 10.X.0.0/16")
+    if type(preferred) is not int or type(maximum) is not int or not 1 <= preferred <= maximum <= 254:
+        raise CoexistenceError("Invalid candidate 10.X allocation range")
+    nets, configured = network_inventory(networking)
+    _validate_owners(owners, nets, configured)
+    used = list(configured.values())
+    for owner in owners:
+        for segment in owner["segments"].values():
+            used.append(_subnet(segment["cidr"]))
+    for route in routes:
+        if route in ("default", "0.0.0.0/0"):
+            continue
+        try:
+            used.append(_subnet(str(ipaddress.ip_network(route, strict=False))))
+        except (ValueError, TypeError) as exc:
+            raise CoexistenceError("Invalid host routing evidence") from exc
+    for host in host_addresses:
+        try:
+            used.append(ipaddress.IPv4Network(str(ipaddress.IPv4Address(host)) + "/32"))
+        except ValueError as exc:
+            raise CoexistenceError("Invalid host address evidence") from exc
+    for second in range(preferred, maximum + 1):
+        desired = ipaddress.IPv4Network(f"10.{second}.0.0/16")
+        if all(not desired.overlaps(existing) for existing in used):
+            return str(desired)
+    raise CoexistenceError("No collision-free 10.X.0.0/16 is available")
+
 def plan_instance(profile, provider, segments, networking, *,
                   owners=(), link_names=(), routes=(), host_addresses=(),
                   registered_vmx=()):
