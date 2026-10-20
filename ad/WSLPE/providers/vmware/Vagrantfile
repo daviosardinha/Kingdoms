@@ -29,9 +29,21 @@ if ENV["KINGDOMS_WSLPE_DISPOSABLE_MGMT_NIC"] == "preview"
       "vmnet30", "vmnet99"].include?(vmnet)
     raise "WSLPE disposable management vmnet is missing or reserved"
   end
+  require "ipaddr"
   unless prefix.match?(/\A(?:\d{1,3}\.){2}\d{1,3}\z/) &&
          prefix != "{{ip_range}}"
     raise "WSLPE disposable management prefix is missing or matches the exercise subnet"
+  end
+  begin
+    mgmt_net = IPAddr.new("#{prefix}.0/24")
+    if !mgmt_net.ipv4? ||
+       ![IPAddr.new("10.0.0.0/8"), IPAddr.new("172.16.0.0/12"),
+         IPAddr.new("192.168.0.0/16")].any? { |range| range.include?(mgmt_net.to_range.first) } ||
+       IPAddr.new("10.4.0.0/16").include?(mgmt_net.to_range.first)
+      raise "WSLPE management prefix is not independent private IPv4"
+    end
+  rescue IPAddr::InvalidAddressError
+    raise "WSLPE management prefix is malformed"
   end
   if File.exist?(File.join(__dir__, ".vagrant", "machines", "WSLPE-WS01",
                             "vmware_desktop", "id"))
