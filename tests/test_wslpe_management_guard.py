@@ -98,7 +98,7 @@ class WslpeManagementGuardTests(unittest.TestCase):
                 elif mutation == "accept":
                     doc["nftables"][3]["rule"]["expr"][2] = {"accept": None}
                 elif mutation == "duplicate":
-                    doc["nftables"][4] = _rule(2210)
+                    doc["nftables"][4] = _rule(2212)
                 elif mutation == "missing":
                     doc["nftables"].pop()
                 elif mutation == "comment":
