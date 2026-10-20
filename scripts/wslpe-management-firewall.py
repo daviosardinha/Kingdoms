@@ -27,10 +27,11 @@ INSPECTOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(INSPECTOR)
 
 
-def run(command: list[str], *, data: str | None = None) -> subprocess.CompletedProcess:
+def run(command: list[str], *, data: str | None = None,
+        cwd: Path | None = None) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(command, input=data, text=True, capture_output=True,
-                              check=False, timeout=35)
+                              check=False, timeout=35, cwd=cwd)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError("Cannot inspect or operate " + command[0]) from exc
 
@@ -55,7 +56,7 @@ def native_ports(workspace: Path) -> dict[int, int]:
             or adapters[1]["type"] != "custom" or adapters[1]["vnet"] != "vmnet2"):
         raise ValueError("WSLPE native VMX network identity changed")
     port_cmd = INSPECTOR.vagrant_port_command(instance)
-    port_output = run(port_cmd)
+    port_output = run(port_cmd, cwd=provider)
     if port_output.returncode:
         raise ValueError("Existing native WSLPE Vagrant port inspection failed")
     return guard.parse_vagrant_ports(port_output.stdout)
@@ -87,8 +88,8 @@ def confirmation(ports: dict[int, int]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", default=str(
-        Path.home() / "kingdoms-lpe-standalone/workspace"))
+    parser.add_argument("--workspace", required=True,
+                        help="Original native WSLPE workspace, not a Git checkout")
     parser.add_argument("--apply", action="store_true",
                         help="Atomic scoped nftables addition; NOT reboot-persistent")
     parser.add_argument("--confirm-ports", help="Exact current guest=host port mapping")
