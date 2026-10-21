@@ -45,8 +45,9 @@
   a VGAuth logfile sharing violation `0x80070020`.
 - The existing provider now selects a WSLPE-only Tools installation script
   that temporarily stops/restores `VGAuthService` while preserving the native
-  mount/WinRM/reboot handling. This is a *candidate remediation pending live
-  Windows confirmation*, not a proved MSI resolution.
+  mount/WinRM/reboot handling. **Live WSLPE recovery later passed** for the
+  same partial guest. This does not yet establish a repeatable clean-VM MSI
+  install or rule out a different Tools failure on a second guest.
 - The existing KINGDOMS operator console now supports exact-local-instance
   `load` and explicitly confirmed `repair_stage1`. Recovery reuses the
   existing Tools provider and `vagrant up WSLPE-WS01 --provision` containing
@@ -54,9 +55,22 @@
   NAT MAC, Tools and expected exercise IP proof. Fails closed without a silent
   second retry. No alternate instance, vmnet manager, NORTH route, learner
   or attack fixture.
-- This is **Stage 1 remediation only**, **not** a deployment of 41 scenarios.
-  The full WSLPE41 `--execute` and JEA #30 recovery remain release-blocked.
-  See [native Stage 1 recovery](WSLPE41_NATIVE_STAGE1_RECOVERY.md).
+- **Live Stage 1 recovery completed on 2026-10-21** for the existing
+  `bf5369-wslpe-vmware` guest. Operator evidence shows the provider's VMware
+  Tools bootstrap completed, native `vagrant up WSLPE-WS01 --provision`
+  successfully ran the WinRM and existing `fix_ip.ps1` provisioners, and the
+  instance-bound recovery accepted VMware Tools, NAT and the exercise IP
+  `172.28.232.31/24`. A separate read-only
+  `scripts/wslpe41-install.py --native-status` returned
+  `[NATIVE PROVIDED] bf5369-wslpe-vmware` with subnet
+  `172.28.232.0/24` and guest address `172.28.232.31`.
+  This closes the **existing guest's Stage 1 operational recovery** but is
+  **not** an independent zero-state clean build or a complete 41/41 run.
+- The `--execute` production installer, private management/TLS,
+  out-of-band JEA #30 recovery and two clean-build reproduction gates remain
+  blocked. The learner/operator foundation and 41 vulnerabilities were not
+  deployed by this Stage 1 repair. See
+  [native Stage 1 recovery](WSLPE41_NATIVE_STAGE1_RECOVERY.md).
 
 ## October 21 native creation and orchestrator source checkpoint
 
