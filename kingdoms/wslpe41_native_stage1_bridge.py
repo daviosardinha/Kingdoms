@@ -145,7 +145,7 @@ def create_guarded_native_guest(
         ).strip()
         tracked_changes = read_only_command(
             "git", "-C", str(source_root), "status", "--porcelain",
-            "--untracked-files=no"
+            "--untracked-files=normal"
         )
     except HostEvidenceBlocked as exc:
         raise InstallBlocked("Cannot verify native KINGDOMS source revision") from exc
