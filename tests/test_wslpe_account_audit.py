@@ -36,6 +36,37 @@ class AccountAuditTests(unittest.TestCase):
             with self.subTest(change=change),self.assertRaises(ValueError):
                 MOD.parse_result(evidence(**{"lpe.trainee":change}))
 
+    def test_pre_foundation_accepts_absent_learner_and_operator_without_creation(self):
+        absent = {"exists": False, "enabled": False, "admin": False}
+        snapshot = MOD.parse_result(
+            evidence(**{"lpe.trainee": absent, "kingdom.operator": absent}),
+            require_learner=False,
+        )
+        self.assertFalse(snapshot["lpe.trainee"]["exists"])
+        self.assertFalse(snapshot["kingdom.operator"]["exists"])
+        with self.assertRaises(ValueError):
+            MOD.parse_result(evidence(**{"lpe.trainee": absent}))
+        with self.assertRaises(ValueError):
+            MOD.parse_result(evidence(**{"kingdom.operator": absent}))
+
+    def test_pre_foundation_rejects_privileged_learner_or_malformed_inventory(self):
+        with self.assertRaises(ValueError):
+            MOD.parse_result(
+                evidence(**{"lpe.trainee": {"admin": True}}),
+                require_learner=False,
+            )
+        with self.assertRaises(ValueError):
+            MOD.parse_result(evidence() + evidence(), require_learner=False)
+
+    def test_existing_release_mode_still_rejects_disabled_learner(self):
+        with self.assertRaises(ValueError):
+            MOD.parse_result(evidence(**{"lpe.trainee": {"enabled": False}}))
+        snapshot = MOD.parse_result(
+            evidence(**{"lpe.trainee": {"enabled": False}}),
+            require_learner=False,
+        )
+        self.assertFalse(snapshot["lpe.trainee"]["enabled"])
+
     def test_fails_closed_on_missing_duplicate_and_out_of_scope_identity(self):
         s=json.loads(evidence().decode().partition("=")[2])
         for mode in ("missing", "duplicate", "north", "extra"):
