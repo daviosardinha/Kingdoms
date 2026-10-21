@@ -22,6 +22,19 @@ from kingdoms.wslpe_vmrun_recovery import rehearse_vmrun_systemd, rehearse_offli
 STAGE2 = ROOT / "scripts/wslpe-stage2-inspect.py"
 NAT_PREVIEW = ROOT / "scripts/wslpe-p1c-north-cutover-preview.py"
 
+# Never print arbitrary exception text from tools, subprocesses, or file paths.
+# These codes map ONLY to our own fixed, source-reviewed ValueError strings.
+OWNER_TIMER_REASONS = {
+    "Temporary WSLPE owner proof directory unsafe": "OWNER_TEMP_DIR_UNSAFE",
+    "Independent owner-context systemd timer unavailable": "SYSTEMD_RUN_FAILED",
+    "Owner-context timer not confirmed active": "SYSTEMD_TIMER_NOT_ACTIVE",
+    "Owner-context recovery timer did not execute": "SYSTEMD_MARKER_NOT_FIRED",
+    "Timed WSLPE owner proof has wrong identity": "OWNER_MARKER_IDENTITY_INVALID",
+    "Owner recovery proof directory changed unexpectedly": "OWNER_TEMP_DIR_CHANGED",
+    "Owner recovery proof directory ownership changed": "OWNER_TEMP_OWNER_CHANGED",
+    "Owner recovery sentinel changed unexpectedly": "OWNER_MARKER_CHANGED",
+}
+
 
 def mod(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -54,8 +67,10 @@ def main() -> int:
     args = parser.parse_args()
     print("KINGDOMS WSLPE | OWNER-SCOPED HOST RECOVERY REHEARSAL")
     print("[NO VM WRITES] No NAT cutover, VMware restart, VMX edits or NORTH operations")
+    stage = "registered_guest"
     try:
         vmx, uid, user = exact_vmware_owner()
+        stage = "north_source_preview"
         preview = mod(NAT_PREVIEW, "wslpe_owner_nat_preview")
         preview.north_source_contract()
         preview.running_exact(vmx)
@@ -64,15 +79,18 @@ def main() -> int:
             raise ValueError("VMX registered identity changed during recovery preflight")
         print("[PASS] Exact WSLPE VMware owner and running VMX validated")
         if args.rehearse:
+            stage = "owner_systemd_timer"
             unit = rehearse_owner_timer(uid, user)
             print(f"[PASS] WSLPE_OWNER_HOST_TIMER_FIRED=TRUE ({unit})")
             print("[PASS] Systemd host timer runs under exact WSLPE VMX owner")
         if args.vmrun_readonly:
+            stage = "vmrun_owner_timer"
             if not args.rehearse:
                 raise ValueError("VMware list proof requires prior owner timer rehearsal")
             data = rehearse_vmrun_systemd(vmx, uid, user)
             print("[PASS] WSLPE_SYSTEMD_VMRUN_LIST=TRUE")
             print(f"[INFO] VMware owner sees {data['running_vm_count']} running VM(s)")
+            stage = "scratch_vmx_restore"
             before, after = rehearse_offline_copy(vmx.read_bytes(), candidate["vmnet"], uid)
             print("[PASS] WSLPE_SCRATCH_VMX_RESTORE_BYTE_EXACT=TRUE")
             print(f"[INFO] Scratch original SHA256={before}")
@@ -81,7 +99,15 @@ def main() -> int:
             print("[PREVIEW] Host owner rollback timer has NOT been exercised")
     except (OSError, ValueError, KeyError, TypeError,
             subprocess.TimeoutExpired) as exc:
-        print(f"[BLOCKED] {type(exc).__name__}; no VMware/NORTH changes")
+        reason = (
+            OWNER_TIMER_REASONS.get(str(exc), type(exc).__name__)
+            if stage == "owner_systemd_timer" else type(exc).__name__
+        )
+        print(f"[BLOCKED] WSLPE_RECOVERY_STAGE={stage} REASON={reason}; no VMware/NORTH changes")
+        if stage == "owner_systemd_timer" and reason == "SYSTEMD_RUN_FAILED":
+            print("[NEXT] Read-only host check: sudo -n -l; verify systemd-run authorization")
+        elif stage == "owner_systemd_timer" and reason == "SYSTEMD_TIMER_NOT_ACTIVE":
+            print("[NEXT] Inspect systemd system timer availability; do not bypass owner recovery")
         return 1
     print("[NOT VERIFIED] Actual vmrun stop/start, real VMX restore and independent failure rollback")
     print("[NOT VERIFIED] Host reboot/firewall persistence and ARP/L2 isolation")
