@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import ipaddress
 from pathlib import Path
+import re
+
+from kingdoms.wslpe_nic_contract import parse_vmx_networks
 
 from goad.goadpath import GoadPath
 from goad.log import Log
@@ -65,6 +68,31 @@ def _native_repair_target(manager):
 def _guest_proof(provider, prefix: str, *, complete: bool) -> bool:
     """Proof over the registered provider's forwarded WinRM management path."""
     expected = str(ipaddress.IPv4Network(prefix + ".0/24").network_address + 31)
+    # A forwarded host port and the hostname WSLPE-WS01 are not enough:
+    # two WSLPE instances intentionally share the same Windows hostname.
+    # Bind authenticated WinRM to the NAT MAC of THIS Vagrant-registered VMX.
+    vmx_name = provider._vmx_path(GUEST)
+    if not vmx_name:
+        Log.error("Native WSLPE VMX is not registered")
+        return False
+    vmx = Path(vmx_name)
+    if vmx.is_symlink() or not vmx.is_file():
+        Log.error("WSLPE VMX is missing or symlinked")
+        return False
+    try:
+        nics = parse_vmx_networks(vmx.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        Log.error("Cannot inspect native WSLPE VMX NAT identity")
+        return False
+    nat = nics.get(0, {})
+    if nat.get("connectiontype", "").lower() != "nat":
+        Log.error("WSLPE registered VMware Ethernet0 must be provisioning NAT")
+        return False
+    nat_mac = nat.get("generatedaddress") or nat.get("address") or ""
+    if not re.fullmatch(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", nat_mac):
+        Log.error("Native WSLPE Ethernet0 MAC is not proven")
+        return False
+    expected_mac = nat_mac.replace(":", "").upper()
     port = provider._winrm_forwarded_port(GUEST)
     if not port or not provider._wait_winrm_ready(port, 40):
         Log.error("Registered WSLPE forwarded WinRM is not authenticated")
@@ -83,6 +111,12 @@ $nat = @($ipv4 | Where-Object {
     $routes.InterfaceIndex -contains $_.InterfaceIndex
 })
 if ($nat.Count -ne 1) { throw 'WSLPE_STAGE1_NAT_NOT_READY' }
+$adapter = @(Get-NetAdapter -ErrorAction Stop |
+    Where-Object { $_.ifIndex -eq $nat[0].InterfaceIndex })
+if ($adapter.Count -ne 1 -or
+    (($adapter[0].MacAddress -replace '[:-]', '').ToUpperInvariant()) -cne '""" + expected_mac + r"""') {
+    throw 'WSLPE_STAGE1_WRONG_NATIVE_NAT_ADAPTER'
+}
 Write-Output 'WSLPE_STAGE1_WINDOWS_NAT=PASS'
 """
     if complete:
