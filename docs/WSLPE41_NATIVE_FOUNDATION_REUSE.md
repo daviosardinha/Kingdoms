@@ -72,6 +72,52 @@ It cannot safely target the old WSLPE checkout or a cross-workspace guest.
    in a report, Git commit, screenshot or forum post. Do not rotate or
    disable `vagrant` during this audit.
 
+## 2026-10-21: expired Windows evaluation blocks learner foundation
+
+On the new `bf5369-wslpe-vmware`, Windows System Event 1074 identified
+`C:\\Windows\\system32\\wlms\\wlms.exe` acting as SYSTEM and powering
+down the guest at 06:30, 07:41 and 09:43. The event comment was:
+"The license period for this installation of Windows has expired. The operating
+system is shutting down." This is an **OS-license-controlled shutdown**,
+not Vagrant, VMware Tools, NORTH or a KINGDOMS start/stop lifecycle race.
+Stage 1 infrastructure readiness passed, but Windows long-lived licensing
+was not attested.
+
+**Existing code is already present:** `ansible/wslpe-foundation.yml` imports
+the shared `settings/eval_rearm` role before it creates the learner and then
+requires at least 1,440 minutes of remaining evaluation grace or a genuinely
+licensed non-evaluation Windows installation. The role only invokes the
+documented Windows `slmgr.vbs /rearm` mechanism for a detected expired
+`TIMEBASED_EVAL` installation, performs a controlled reboot, and checks
+the grace period again. It does **not** renew an exhausted evaluation
+indefinitely or constitute a commercial Windows licensing solution. This
+existing role should be invoked through the verified fresh foundation flow,
+**not** reimplemented as another licensing script.
+
+**Read-only guest console checks before deciding the next step** (on this
+guest only, in elevated Windows PowerShell):
+
+```powershell
+Get-CimInstance SoftwareLicensingProduct |
+  Where-Object { $_.Name -like 'Windows*' -and $_.PartialProductKey } |
+  Select-Object Name, Description, LicenseStatus, GracePeriodRemaining
+cscript.exe //NoLogo "$env:SystemRoot\\System32\\slmgr.vbs" /dlv
+```
+
+Check evaluation channel, actual grace/rearm state and Windows image
+licensing before any rearm or account mutation. Do not execute license
+service tampering, time rollback, registry bypass or repeated blind rearm.
+If Windows reports no eligible remaining evaluation grace, supply a
+properly licensed and compatible source image instead. Preserve the new
+guest and original WSLPE reference until the operator approves its
+replacement or repair. A source acceptance PASS is not a live license PASS.
+
+**Installer acceptance correction:** the final one-command WSLPE41
+installation must treat `WSLPE_LICENSE_READY=PASS` and enough remaining
+licensed operating time as a mandatory **pre-learner and pre-scenario**
+readiness gate. Its 41/41 completion must never be reported while the
+guest can be terminated by WLMS due to evaluation expiry.
+
 ## Before actually running either existing foundation playbook
 
 The Stage 1 provisioner currently uses `vagrant` over HTTP/5985. Its
