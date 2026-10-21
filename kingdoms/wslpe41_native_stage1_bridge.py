@@ -11,6 +11,7 @@ import re
 
 from kingdoms.wslpe41_install_flow import FreshGuestIdentity, InstallBlocked
 from kingdoms.wslpe41_native_identity import inspect_native_registration
+from kingdoms.wslpe41_native_vmnet import verify_native_vmnet
 from kingdoms.wslpe41_host_preflight import (
     HostEvidenceBlocked, host_plan, read_only_command, running_vm_count,
 )
@@ -67,6 +68,7 @@ class NativeCreationEvidence:
     previously_running: tuple[str, ...]
     previous_instance_ids: tuple[str, ...]
     newly_running_vmx: str
+    exercise_vmnet: str = ""
     source: str = "native provider newly registered VMX (NOT guest freshness/TLS proof)"
 
 
@@ -187,9 +189,11 @@ def create_guarded_native_guest(
             or after_running - before_running != {identity.vmx}
             or before_running - after_running):
         raise InstallBlocked("Fresh native creation provenance or co-tenant isolation unproven")
+    exercise_vmnet = verify_native_vmnet(identity)
     return NativeCreationEvidence(
         identity=identity,
         previously_running=tuple(sorted(before_running)),
         previous_instance_ids=tuple(sorted(before_ids)),
         newly_running_vmx=identity.vmx,
+        exercise_vmnet=exercise_vmnet,
     )
