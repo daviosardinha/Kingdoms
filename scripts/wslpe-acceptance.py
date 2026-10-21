@@ -9,6 +9,7 @@ run an unvalidated installer.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -106,7 +107,60 @@ def commands(python: str, ansible: str, prefix: str) -> list[tuple[str, list[str
     ]
 
 
-def verify_output(name: str, stdout: str) -> str | None:
+def verify_peer_wslpe_inventory(vmrun_output: str, candidate_prefix: str | None) -> str | None:
+    """Permit ONLY separately registered native WSLPE VMs on other networks.
+
+    A legitimate existing WSLPE course instance can coexist with a new fresh
+    build. Unknown prototypes, stale Vagrant registration, same-subnet peers,
+    and any guest registered inside the checkout being installed must block.
+    The guest's Windows state and vmnet L2 isolation are not inferred here.
+    """
+    from kingdoms.wslpe41_host_preflight import HostEvidenceBlocked, running_vm_count
+    from kingdoms.wslpe41_native_identity import inspect_native_registration
+
+    try:
+        count = running_vm_count(vmrun_output)
+        paths = [line.strip() for line in vmrun_output.splitlines() if line.strip()][1:]
+        if len(paths) != count:
+            return "VMware running inventory is incomplete"
+        if candidate_prefix is None:
+            # Source-only callers have not supplied host/network evidence.
+            if any(EXISTING_LPE_REPLICA.search(line) for line in paths):
+                return "Existing WSLPE detected without explicit candidate subnet"
+            return None
+        candidate = ipaddress.IPv4Network(candidate_prefix + ".0/24", strict=True)
+        if not candidate.is_private or candidate.prefixlen != 24:
+            return "Invalid WSLPE coexistence candidate subnet"
+        for raw in paths:
+            vmx = Path(raw)
+            if not vmx.is_absolute() or vmx.is_symlink():
+                return "VMware running inventory contains an unsafe VMX path"
+            if not EXISTING_LPE_REPLICA.search(raw):
+                continue
+            # Real native KINGDOMS provider layout, not a guessed VM name:
+            # instance/provider/.vagrant/machines/WSLPE-WS01/vmware_desktop/ID/guest.vmx
+            parents = vmx.parents
+            if (len(parents) < 7
+                    or parents[1].name != "vmware_desktop"
+                    or parents[2].name != "WSLPE-WS01"
+                    or parents[3].name != "machines"
+                    or parents[4].name != ".vagrant"
+                    or parents[5].name != "provider"):
+                return "Unregistered WSLPE/prototype VM is running"
+            instance = parents[6]
+            if instance.parent.resolve() == (ROOT / "workspace").resolve():
+                return "Existing WSLPE guest belongs to this installation workspace"
+            registration = inspect_native_registration(instance, vmrun_output)
+            if registration.vmx != str(vmx.resolve(strict=True)):
+                return "Existing WSLPE registration does not match running VMX"
+            if candidate.overlaps(ipaddress.IPv4Network(registration.subnet)):
+                return "Existing WSLPE guest overlaps selected fresh subnet"
+    except (HostEvidenceBlocked, OSError, ValueError, IndexError) as exc:
+        return "Existing WSLPE VM registration or network cannot be verified"
+    return None
+
+
+def verify_output(name: str, stdout: str, *, candidate_prefix: str | None = None) -> str | None:
     """Fail closed when tools exit zero but don't prove the expected fact."""
     if name == "VMware Vagrant provider/plugin availability":
         if EXPECTED_VMWARE_PLUGIN not in stdout:
@@ -120,10 +174,7 @@ def verify_output(name: str, stdout: str) -> str | None:
         ):
             return "Pinned mayfly/windows10 VMware box version is unavailable"
     elif name == "Existing VMware VM inventory (read-only)":
-        if "Total running VMs:" not in stdout:
-            return "Unexpected vmrun inventory output; cannot verify existing guests"
-        if EXISTING_LPE_REPLICA.search(stdout):
-            return "Possible WSLPE/prototype VM already running; reconcile state before boot"
+        return verify_peer_wslpe_inventory(stdout, candidate_prefix)
     elif name == "Native WSLPE Vagrantfile and inventory render + Ruby syntax":
         for phrase in (
             "KINGDOMS WSLPE NATIVE INSTANCE RENDER: SOURCE PREVIEW PASS",
@@ -142,6 +193,7 @@ def run_check(
     *,
     cwd: Path = ROOT,
     environment: dict[str, str] | None = None,
+    candidate_prefix: str | None = None,
 ) -> tuple[bool, str]:
     """Capture output; never rerun failed steps or launch provider mutations."""
     try:
@@ -154,7 +206,7 @@ def run_check(
     output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
     if result.returncode != 0:
         return False, f"Exit code {result.returncode}\n{output}"
-    problem = verify_output(name, output)
+    problem = verify_output(name, output, candidate_prefix=candidate_prefix)
     return (False, problem + "\n" + output) if problem else (True, output)
 
 
@@ -193,7 +245,10 @@ def main() -> int:
     passed, failed = 0, 0
     for name, command, timeout in commands(python, ansible, args.ip_range):
         print(f"[CHECK] {name}", flush=True)
-        good, detail = run_check(name, command, timeout, environment=environment)
+        good, detail = run_check(
+            name, command, timeout, environment=environment,
+            candidate_prefix=args.ip_range,
+        )
         print(("  [PASS] " if good else "  [FAIL] ") + name, flush=True)
         if good:
             passed += 1
