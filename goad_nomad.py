@@ -492,7 +492,7 @@ class GoadNomad(BaseGoad):
             )
             try:
                 prefix = input(
-                    'WSLPE private /24 prefix (3 octets, e.g. 172.28.231): '
+                    'WSLPE unused /24 prefix (use the latest --host-plan candidate): '
                 ).strip()
                 if not valid_prefix(prefix):
                     Log.error('Invalid private /24 prefix or reserved NORTH address')
