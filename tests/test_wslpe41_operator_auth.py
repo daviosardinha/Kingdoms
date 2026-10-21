@@ -32,7 +32,7 @@ class OperatorAuthTests(unittest.TestCase):
             path = Path(argv[argv.index("-e") + 1][1:])
             import json
             data = json.loads(path.read_text())
-            self.assertEqual(data["ansible_user"], r".\\kingdom.operator")
+            self.assertEqual(data["ansible_user"], r".\kingdom.operator")
             self.assertEqual(data["ansible_winrm_scheme"], "https")
             self.assertEqual(data["ansible_winrm_server_cert_validation"], "validate")
             self.assertEqual(data["ansible_port"], 5986)
