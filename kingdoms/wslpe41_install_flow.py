@@ -69,7 +69,7 @@ def verify_attestation(identity: FreshGuestIdentity, proof: FreshGuestAttestatio
             or not identity.workspace.startswith("/")
             or not identity.vmx.startswith("/")
             or not identity.vmx.endswith(".vmx")
-            or not re.fullmatch(r"(?:[0-9]{1,3}\\.){3}0/24", identity.subnet)):
+            or not re.fullmatch(r"(?:[0-9]{1,3}\.){3}0/24", identity.subnet)):
         raise InstallBlocked("Invalid fresh native instance identity")
     if (proof.instance_id != identity.instance_id
             or proof.vmx != identity.vmx
