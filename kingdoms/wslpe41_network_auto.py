@@ -15,10 +15,12 @@ class NetworkSelectionBlocked(ValueError):
 
 NORTH = ipaddress.IPv4Network("10.4.0.0/16")
 SUBNET = re.compile(r"^answer\s+VNET_(\d+)_(HOSTONLY_SUBNET|HOSTONLY_NETMASK)\s+(\S+)\s*$")
-CANDIDATES = tuple(
-    f"172.{second}.{third}"
-    for second in (28, 29, 30)
-    for third in range(220, 255)
+# Preserve the reviewed WSLPE pilot pool/order. The first choice may
+# be occupied by an existing vmnet, in which case select the next free /24.
+CANDIDATES = (
+    tuple(f"172.28.{third}" for third in range(231, 255))
+    + tuple(f"172.29.{third}" for third in range(200, 255))
+    + tuple(f"172.30.{third}" for third in range(200, 255))
 )
 
 
