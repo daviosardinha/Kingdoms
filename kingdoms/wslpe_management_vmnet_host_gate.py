@@ -109,10 +109,11 @@ def scoped_candidate_free(networking_text: str, roots: tuple[Path, ...],
     if number in {0, 1, 8, 10, 20, 30, 99}:
         raise HostVmnetGateBlocked("Candidate belongs to VMware/NORTH reserved range")
     try:
-        if number in inventory(networking_text):
-            raise HostVmnetGateBlocked("Candidate exists in VMware networking metadata")
+        vmnets = inventory(networking_text)
         conflicts = vmx_conflicts(list(roots), candidate_vmnet)
     except (ValueError, OSError) as exc:
         raise HostVmnetGateBlocked("Candidate workspace inventory incomplete") from exc
+    if number in vmnets:
+        raise HostVmnetGateBlocked("Candidate exists in VMware networking metadata")
     if conflicts:
         raise HostVmnetGateBlocked("Candidate referenced by an existing workspace VMX")
