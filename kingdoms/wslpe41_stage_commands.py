@@ -67,10 +67,16 @@ def build_stage_invocation(
         extra = {
             "wslpe_action": stage,
             "wslpe_techniques": [scenario.identifier],
+            "wslpe41_fresh_run": True,
+            "wslpe41_expected_address": str(address),
+            "wslpe41_stage_label": "apply" if stage == "apply" else "vulnerable",
+            # Runtime environment must independently bind this to the
+            # private fixture vars and the freshly provisioned instance.
+            "wslpe41_instance_id": "",
         }
         playbook = scenario.playbook
-        marker = None
-        proof_kind = "scenario_specific_windows_role_validation_required"
+        marker = f"WSLPE41_STAGE={scenario.identifier}:{extra['wslpe41_stage_label']}:PASS"
+        proof_kind = "windows_post_role_and_exact_role_validation"
     elif scenario.number == 30:
         extra = {"wslpe_expected_address": str(address)}
         if stage == "stage":
