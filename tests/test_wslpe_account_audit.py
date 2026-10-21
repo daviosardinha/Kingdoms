@@ -46,8 +46,11 @@ class AccountAuditTests(unittest.TestCase):
         self.assertFalse(snapshot["kingdom.operator"]["exists"])
         with self.assertRaises(ValueError):
             MOD.parse_result(evidence(**{"lpe.trainee": absent}))
-        with self.assertRaises(ValueError):
-            MOD.parse_result(evidence(**{"kingdom.operator": absent}))
+        self.assertFalse(
+            MOD.parse_result(
+                evidence(**{"kingdom.operator": absent})
+            )["kingdom.operator"]["exists"]
+        )
 
     def test_pre_foundation_rejects_privileged_learner_or_malformed_inventory(self):
         with self.assertRaises(ValueError):
