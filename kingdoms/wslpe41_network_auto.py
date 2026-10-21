@@ -14,7 +14,7 @@ class NetworkSelectionBlocked(ValueError):
 
 
 NORTH = ipaddress.IPv4Network("10.4.0.0/16")
-SUBNET = re.compile(r"^answer\\s+VNET_(\\d+)_(HOSTONLY_SUBNET|HOSTONLY_NETMASK)\\s+(\\S+)\\s*$")
+SUBNET = re.compile(r"^answer\s+VNET_(\d+)_(HOSTONLY_SUBNET|HOSTONLY_NETMASK)\s+(\S+)\s*$")
 CANDIDATES = tuple(
     f"172.{second}.{third}"
     for second in (28, 29, 30)
@@ -25,7 +25,7 @@ CANDIDATES = tuple(
 def _prefix_network(value: str) -> ipaddress.IPv4Network:
     if not isinstance(value, str):
         raise NetworkSelectionBlocked("Invalid native instance network")
-    if re.fullmatch(r"(?:[0-9]{1,3}\\.){2}[0-9]{1,3}", value):
+    if re.fullmatch(r"(?:[0-9]{1,3}\.){2}[0-9]{1,3}", value):
         value += ".0/24"
     try:
         network = ipaddress.IPv4Network(value, strict=True)
@@ -75,7 +75,7 @@ def occupied_networks(
         if match:
             number, key, value = match.groups()
             vmnets.setdefault(number, {})[key] = value
-        elif re.match(r"^answer\\s+VNET_\\d+_(?:HOSTONLY_SUBNET|HOSTONLY_NETMASK)\\b", line.strip()):
+        elif re.match(r"^answer\s+VNET_\d+_(?:HOSTONLY_SUBNET|HOSTONLY_NETMASK)\b", line.strip()):
             raise NetworkSelectionBlocked("Malformed VMware subnet metadata")
     if not vmnets:
         raise NetworkSelectionBlocked("No VMware subnet definitions were inspected")
