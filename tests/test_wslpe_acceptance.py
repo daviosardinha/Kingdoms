@@ -6,8 +6,10 @@ or connect to a Windows guest.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -75,6 +77,69 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
         self.assertIsNotNone(ACCEPTANCE.verify_output(
             name, "Total running VMs: 1\n/home/host/kingdoms-lpe-ws01.vmx"
         ))
+
+    def _registered_peer(self, root: Path, prefix: str = "172.28.231"):
+        instance = root / "peer" / "workspace" / "d986ad-wslpe-vmware"
+        machine = (instance / "provider" / ".vagrant" / "machines" /
+                   "WSLPE-WS01" / "vmware_desktop")
+        vmx = machine / "native-uuid" / "windows_10.vmx"
+        vmx.parent.mkdir(parents=True)
+        vmx.write_text('config.version = "8"\\n')
+        (machine / "id").write_text(str(vmx))
+        (instance / "instance.json").write_text(json.dumps({
+            "id": instance.name, "lab": "WSLPE", "provider": "vmware",
+            "provisioner": "local", "status": "ready for provisioning",
+            "extensions": [], "ip_range": prefix,
+        }))
+        return vmx, instance
+
+    def test_existing_registered_peer_wslpe_can_coexist_on_separate_subnet(self):
+        name = "Existing VMware VM inventory (read-only)"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vmx, instance = self._registered_peer(root)
+            output = "Total running VMs: 2\\n" + str(vmx) + "\\n/north/GOAD-DC01.vmx\\n"
+            with patch.object(ACCEPTANCE, "ROOT", root / "fresh"):
+                self.assertIsNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.231"))
+                self.assertIsNotNone(ACCEPTANCE.verify_output(name, output))
+                # Existing guest is accepted only through its exact Vagrant ID.
+                (instance / "provider" / ".vagrant" / "machines" /
+                 "WSLPE-WS01" / "vmware_desktop" / "id").write_text("/wrong.vmx")
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
+
+    def test_unregistered_prototype_or_same_checkout_vm_is_blocked(self):
+        name = "Existing VMware VM inventory (read-only)"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vmx, instance = self._registered_peer(root)
+            output = "Total running VMs: 1\\n" + str(vmx) + "\\n"
+            with patch.object(ACCEPTANCE, "ROOT", instance.parent.parent):
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
+            for raw in (
+                "/home/user/vmware/KINGDOMS-WSLPE41-LEARNER-TEST/test.vmx",
+                "/home/user/WSLPE-WS01.vmx",
+            ):
+                with self.subTest(raw=raw):
+                    suspicious = "Total running VMs: 1\\n" + raw + "\\n"
+                    with patch.object(ACCEPTANCE, "ROOT", root / "fresh"):
+                        self.assertIsNotNone(ACCEPTANCE.verify_output(
+                            name, suspicious, candidate_prefix="172.28.232"))
+
+    def test_vmware_inventory_must_be_complete_not_just_contain_header(self):
+        name = "Existing VMware VM inventory (read-only)"
+        for output in (
+            "Total running VMs: 2\\n/one.vmx\\n",
+            "Total running VMs: 2\\n/one.vmx\\n/one.vmx\\n",
+            "Total running VMs: 0\\n/a.vmx\\n",
+        ):
+            with self.subTest(output=output):
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
 
     def test_preview_and_network_require_explicit_success_evidence(self):
         name = "Native WSLPE Vagrantfile and inventory render + Ruby syntax"
