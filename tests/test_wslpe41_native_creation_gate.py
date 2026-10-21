@@ -64,6 +64,8 @@ class GuardedNativeCreationTests(unittest.TestCase):
             gate, "read_only_command", side_effect=probe))
         bootstrap = stack.enter_context(patch.object(
             gate, "create_native_guest_identity", side_effect=self._create))
+        stack.enter_context(patch.object(
+            gate, "verify_native_vmnet", return_value="vmnet3"))
         return stack, plan, probes, bootstrap
 
     def _go(self, **kwargs):
@@ -78,6 +80,7 @@ class GuardedNativeCreationTests(unittest.TestCase):
             evidence = self._go()
         self.assertEqual(evidence.identity, self.identity)
         self.assertEqual(evidence.newly_running_vmx, self.identity.vmx)
+        self.assertEqual(evidence.exercise_vmnet, "vmnet3")
         self.assertEqual(evidence.previously_running, (OLD,))
         self.assertEqual(evidence.previous_instance_ids, ())
         self.assertIn("NOT guest freshness", evidence.source)
@@ -118,6 +121,16 @@ class GuardedNativeCreationTests(unittest.TestCase):
         ])
         with stack, self.assertRaisesRegex(InstallBlocked, "provenance"):
             self._go()
+        bootstrap.assert_called_once()
+
+    def test_invalid_post_boot_vmnet_mapping_rejects_creation_provenance(self):
+        stack, _, _, bootstrap = self._contexts()
+        with stack, patch.object(
+            gate, "verify_native_vmnet",
+            side_effect=InstallBlocked("guest attached to NORTH vmnet"),
+        ):
+            with self.assertRaisesRegex(InstallBlocked, "NORTH vmnet"):
+                self._go()
         bootstrap.assert_called_once()
 
     def test_prior_instance_is_not_reused(self):
