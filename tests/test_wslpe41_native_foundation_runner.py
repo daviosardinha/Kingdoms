@@ -1,4 +1,5 @@
 """Source-only WSLPE41 native foundation and unified runner tests."""
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -10,7 +11,7 @@ from unittest.mock import Mock, patch
 from kingdoms.wslpe41_foundation_executor import MARKERS, run_foundation_stage
 from kingdoms.wslpe41_fresh_contract import fresh_scenario_manifest
 from kingdoms.wslpe41_install_flow import (
-    FreshGuestAttestation, FreshGuestIdentity, InstallBlocked, StageProof,
+    FreshGuestAttestation, FreshGuestIdentity, InstallBlocked, StageProof, install_41,
 )
 from kingdoms.wslpe41_native_stage_runner import NativeStageRunner
 from kingdoms.wslpe41_runtime_proof import ObservedStageResult
@@ -172,6 +173,45 @@ class NativeFoundationRunnerTests(unittest.TestCase):
                 runner.activate_jea_console = lambda identity, c=candidate: c
                 with self.assertRaisesRegex(InstallBlocked, "console/recovery proof"):
                     runner.run_stage(self.jea, "activate")
+
+
+    def test_entire_41_scenario_journal_uses_one_native_runner(self):
+        """83 stages, one transaction, no separate 20/21 orchestration."""
+        calls = []
+        def ansible_stage(context, scenario, stage):
+            calls.append((scenario.number, stage))
+            return StageProof(
+                scenario.number, stage, "ansible",
+                f"wslpe41.{scenario.number:02d}.{stage}.testproof", True,
+            )
+        def jea_console(identity):
+            calls.append((30, "activate"))
+            return ObservedStageResult(
+                instance_id=identity.instance_id, vmx=identity.vmx,
+                transport="guest_console", returncode=0,
+                stdout=("WSLPE45_JEA_LOCAL_APPLY=PASS\\n"
+                        "WSLPE45_JEA_WINRM_LOCAL_RECOVERY=PASS\\n"),
+                stderr="",
+            )
+        runner = NativeStageRunner(
+            self.context, lambda identity: self.attestation, jea_console,
+        )
+        with (patch("kingdoms.wslpe41_native_stage_runner._guest"),
+              patch("kingdoms.wslpe41_native_stage_runner._environment", return_value={}),
+              patch("kingdoms.wslpe41_native_stage_runner._inventory"),
+              patch("kingdoms.wslpe41_native_stage_runner.run_ansible_stage",
+                    side_effect=ansible_stage)):
+            journal = install_41(
+                self.identity, runner, Path(self.tmp.name) / "private-state",
+            )
+        report = json.loads(journal.read_text())
+        self.assertEqual(report["configuration_validated"], 41)
+        self.assertEqual(report["status"], "CONFIGURATION_VALIDATED")
+        self.assertEqual(len(calls), 83)
+        self.assertEqual(calls.count((30, "activate")), 1)
+        self.assertEqual(len({n for n, _ in calls}), 41)
+        self.assertFalse((journal.parent / ".incomplete").exists())
+        self.assertEqual(report["learner_exploitation"], "NOT_PROVEN")
 
 
 if __name__ == "__main__":
