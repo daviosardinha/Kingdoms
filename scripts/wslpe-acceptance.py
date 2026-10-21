@@ -23,7 +23,7 @@ EXPECTED_VMWARE_PLUGIN = "vagrant-vmware-desktop"
 EXPECTED_WINDOWS_BOX = "mayfly/windows10"
 EXPECTED_WINDOWS_VERSION = "2024.01.06"
 EXISTING_LPE_REPLICA = re.compile(
-    r"(?i)(WSLPE[-_]WS01|kingdoms-lpe-ws01|[/\\]WSLPE[/\\])"
+    r"(?i)(WSLPE[-_]WS01|WSLPE41|kingdoms-lpe-ws01|[/\\]WSLPE[/\\])"
 )
 
 
