@@ -1,8 +1,8 @@
 # WSLPE41 v1.0 — Fresh-install and release gates
 
 **Status:** PLANNED, NOT RELEASED  
-**Branch:** `feature/wslpe45-single-candidate-pilot`  
-**Scope:** 41 standalone Windows LPE scenarios (20 foundation + 21 additional); original numeric identifiers retained. Excluded: #25, #36, #38 and #40.  
+**Fresh-install integration branch:** `feature/wslpe41-fresh-full-installer` (draft PR #44; existing golden-master evidence remains on `feature/wslpe45-single-candidate-pilot`)  
+**Scope:** One standalone Windows LPE installation containing **41 scenarios**. Existing historical source roles are reused internally, never deployed as separate 20/21 campaigns. Original numeric identifiers retained. Excluded: #25, #36, #38 and #40.  
 **Proposed course release tag:** `windows-lpe-v1.0.0` (Kingdoms platform already has `v1.0.0`, `v1.1.0` and `v1.1.1`).  
 **Owner:** Kingdoms operator.
 
@@ -18,12 +18,15 @@
 
 - [ ] Create a fresh, independent Kingdoms WSLPE instance via the existing course selector/VMware provider, choosing an unused private subnet and a new workspace. No cloning or importing the existing golden master; do not contact or modify NORTH.
 - [ ] Provision `WSLPE-WS01` as a workgroup guest with local non-admin `lpe.trainee`, intact UAC, Defender and Windows Firewall, fresh operator-only credentials, independent TLS trust/pins and management isolation.
-- [ ] Install and independently validate all 20 shared foundation scenarios without affecting the NORTH shared-role contract.
-- [ ] Install and independently validate exactly these 21 additions: 21,22,23,24,26,27,28,29,30,31,32,33,34,35,37,39,41,42,43,44,45. Never deploy excluded 25,36,38,40.
+- [x] Integrate the complete **41-ID manifest into one ordered installer transaction**, with a single journal, per-scenario apply/validate evidence, first-failure stop and no silent replay. This is source-tested integration only.
+- [ ] From one fresh native guest, run the **single 41-scenario installation** in one operator action. Each scenario must be installed and configuration-validated in that same transaction; no separate baseline/additions commands, no old pilot journal, and no inherited master fixture. Preserve NORTH's shared-role source and exclude 25,36,38,40.
 - [ ] Provide a safe fresh-instance setup for #30 JEA with independent out-of-band WinRM recovery; never assume existing registration on the old guest.
-- [ ] Create a unified, fail-closed installer/controller using exact inventory, VMX and native guest identity; keep private per-stage evidence and stop on partial, ambiguous or drifted state. No inherited development snapshot, private journal, sentinel or pinned source TLS certificate may be used to bypass a failed stage.
+- [x] Implement the unified **source-tested 41/41 transaction engine** with a new-instance attestation interface, owner-only per-instance journal, exact stage proofs, JEA guest-console channel and recovery sentinel. Production guest execution is still disabled.
+- [ ] Wire and host-validate the engine's fresh-native adapter: automatic collision-free network selection, exact native inventory/VMX identity, independent guest creation, foundation and operator management, per-stage execution and out-of-band JEA activation. Never inherit a development snapshot, private journal, sentinel or pinned source TLS certificate.
 - [ ] Verify `41/41` configuration acceptance on the genuinely fresh guest. No unresolved install or preservation failures.
 - [ ] Repeat the same clean install independently on **another new instance** to prove reproducibility. A single successful reused developer VM is insufficient.
+
+**Current source checkpoint:** `scripts/wslpe41-install.py --plan` displays all 41 scenarios as one installation; `--execute` intentionally fails closed until the new VMware/Windows runtime adapter is proven. Passing CI does not mean a new Windows guest was installed.
 
 ## Gate B — Merge into `main` (engineering acceptance)
 
