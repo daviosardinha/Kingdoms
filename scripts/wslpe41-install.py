@@ -22,11 +22,17 @@ def main(argv=None) -> int:
     mode.add_argument("--execute", action="store_true", help="not yet enabled: requires proven fresh-native runner")
     mode.add_argument("--host-plan", action="store_true",
                       help="read-only VMware/host/VPN/native instance subnet discovery")
+    mode.add_argument("--native-status", action="store_true",
+                      help="read-only proof of an existing native WSLPE VMX registration")
     parser.add_argument("--workspace", action="append", default=None,
                         help="additional native Kingdoms workspace to inspect (repeatable; host-plan only)")
+    parser.add_argument("--instance-dir", default=None,
+                        help="exact native WSLPE instance directory (native-status only)")
     args = parser.parse_args(argv)
     if args.workspace and not args.host_plan:
         parser.error("--workspace is only meaningful with --host-plan")
+    if bool(args.instance_dir) != bool(args.native_status):
+        parser.error("--instance-dir is required only with --native-status")
     scenarios = fresh_scenario_manifest()
     print("KINGDOMS | WSLPE41 | ONE FRESH INSTALLATION")
     print("[SCOPE] Exactly 41 scenarios, one ordered installer, one journal, one guest")
@@ -37,6 +43,22 @@ def main(argv=None) -> int:
         print("          out-of-band JEA #30 activation and second clean-build proof remain required.")
         print("[SAFETY] No VMware, Windows, Ansible or network changes were made.")
         return 2
+    if args.native_status:
+        from kingdoms.wslpe41_host_preflight import HostEvidenceBlocked, read_only_command
+        from kingdoms.wslpe41_native_identity import inspect_native_registration
+        try:
+            output = read_only_command("vmrun", "-T", "ws", "list")
+            instance = Path(args.instance_dir).expanduser().absolute()
+            registration = inspect_native_registration(instance, output)
+        except (HostEvidenceBlocked, OSError) as exc:
+            print(f"[BLOCKED] Native WSLPE registration: {exc}")
+            return 2
+        print(f"[NATIVE PROVIDED] {registration.instance_id}")
+        print(f"[SUBNET] {registration.subnet}")
+        print(f"[GUEST ADDRESS] {registration.guest_address}")
+        print("[NOT PROVEN] This is NOT fresh-guest, operator-management or 41/41 validation.")
+        print("[SAFETY] Read-only; no VMware or guest changes.")
+        return 0
     if args.host_plan:
         from kingdoms.wslpe41_host_preflight import HostEvidenceBlocked, host_plan
         repo = Path(__file__).resolve().parents[1]
