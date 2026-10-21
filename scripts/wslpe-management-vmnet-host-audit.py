@@ -16,7 +16,9 @@ sys.path.insert(0, str(ROOT))
 from kingdoms.wslpe_management_vmnet_host_gate import (
     HostVmnetGateBlocked, probe_running_vmware, scoped_candidate_free,
 )
-from kingdoms.wslpe_management_vmnet_transaction import _read_regular, MAX_NETWORKING_BYTES
+from kingdoms.wslpe_management_vmnet_transaction import (
+    NetworkTransactionBlocked, _read_regular, MAX_NETWORKING_BYTES,
+)
 
 
 def main(argv=None) -> int:
@@ -48,7 +50,7 @@ def main(argv=None) -> int:
             return 2
         print("[AUDIT CLEAR] No running VMware guests; NOT an authorization to apply vmnet")
         return 0
-    except (OSError, ValueError, UnicodeError, HostVmnetGateBlocked) as exc:
+    except (OSError, ValueError, UnicodeError, NetworkTransactionBlocked) as exc:
         print(f"[BLOCKED] Unable to establish safe management network inventory: {exc}")
         return 2
 
