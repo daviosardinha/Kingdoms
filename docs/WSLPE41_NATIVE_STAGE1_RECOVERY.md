@@ -24,7 +24,10 @@ guest test.
   forwarded WinRM health, Tools installation/reboot and process readiness.
   Only the WSLPE setup script now stops and restores the pre-existing
   `VGAuthService` around MSI setup to address the observed file lock.
-  GOAD/NORTH's installer script is unchanged.
+  The shared KINGDOMS provider additionally treats authenticated WSLPE WinRM
+  with a running VMTools core as more authoritative than VMware host-IP
+  telemetry, following its existing GOAD design. GOAD/NORTH's installer
+  setup script and segmented lifecycle are unchanged.
 - `kingdoms/wslpe_stage1_repair.py`: checks an existing **CREATED**
   local VMware/WSLPE instance, its **running** registered VMX, canonical source
   Vagrantfile, exact workgroup Windows name, enabled NAT default-route adapter
