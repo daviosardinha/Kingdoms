@@ -118,6 +118,71 @@ licensed operating time as a mandatory **pre-learner and pre-scenario**
 readiness gate. Its 41/41 completion must never be reported while the
 guest can be terminated by WLMS due to evaluation expiry.
 
+## 2026-10-21: isolated developer learner bootstrap integrated (source-only)
+
+The new native operator command `foundation_learner` has been connected to the
+**existing** `ansible/wslpe-foundation.yml`. This is a one-shot, scoped
+developer integration stage for `bf5369-wslpe-vmware`; it does **not**
+constitute final protected operator management or 41-scenario release.
+
+It performs the following under explicit operator confirmation:
+
+1. Require the loaded **PROVIDED** native WSLPE VMware instance and its exact
+   workspace/provider registration, running VMX, NAT MAC and exercise IP.
+2. Reuse the already-approved native WSLPE inventory and fresh Windows
+   `WSLPE_LICENSE_READY=PASS` evidence.
+3. Obtain the WinRM HTTPS listener thumbprint from the **authenticated native
+   bootstrap Windows session**, then verify the same certificate through the
+   existing TLS pin/SAN/hostname audit on the exact guest. This avoids
+   manually copying the thumbprint for each new installation. A certificate
+   learned solely from an unauthenticated network handshake is not trusted.
+4. Use the original certificate-verified `wslpe-account-audit.py` routines.
+   Refuse a preexisting learner, operator or vulnerability fixture: do not
+   silently overwrite earlier or partially applied accounts.
+5. Generate a unique password using the existing
+   `kingdoms/wslpe_learner_credentials.py` code, saved privately as 0600
+   under `~/.local/state/kingdoms-wslpe41-foundation/<instance-id>/`.
+   The original WSLPE development credential is **not** reused.
+6. Execute **once** the original `ansible/wslpe-foundation.yml`, with a
+   one-VM, exact local Vagrant/NTLM forwarded management override and private
+   password in the child Ansible environment. This bootstrap channel is
+   temporary and **not** the final isolated operator channel.
+7. Re-prove Windows/VMX/MAC registration, original TLS certificate binding,
+   pinned HTTPS account state, and learner nonadmin + Remote Desktop Users
+   group membership; verify the operator has not yet been created.
+8. Fail without automatic retries or secret rotation. A partially created
+   local user or credential requires explicit operator review.
+
+### Execute the existing foundation on the fresh development guest
+
+Only after source CI passes and the operator has confirmed this VM is the
+intended local testing guest (not NORTH or the original WSLPE VM):
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" -m unittest -v tests.test_wslpe41_learner_bootstrap
+./goad.sh -c windows-lpe
+```
+
+Inside the KINGDOMS console:
+
+```text
+load bf5369-wslpe-vmware
+foundation_learner
+```
+
+When prompted for this **specific existing guest**, authorize using the exact
+phrase `INSTALL WSLPE LEARNER`. A clean PASS marker is
+`WSLPE_LEARNER_FOUNDATION=PASS`. Never rerun after a partially completed
+attempt; inspect the guest and private local credential state first. The
+new command does not log the learner password.
+
+**Not yet proven by this stage:** actual user RDP/NLA sign-in, independent
+VMware-console rollback, isolated operator network, `kingdom.operator`
+authenticated over pinned TLS, Vagrant retirement, fixture deployment or
+any 41/41 learner exploitation. These remain separate gates.
+
 ## Before actually running either existing foundation playbook
 
 The Stage 1 provisioner currently uses `vagrant` over HTTP/5985. Its
