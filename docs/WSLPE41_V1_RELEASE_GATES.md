@@ -35,6 +35,29 @@
 - `kingdoms/wslpe41_native_stage_runner.py` implements the existing `FreshGuestRunner` interface for the 41-scenario journal. The 82 Ansible stages use the exact stage executor; JEA #30 activation can only use an independently implemented guest-console callback with the local WinRM recovery marker. Fresh-guest attestation is an injected **required** provider capability; the module does not invent it from a registration, callback stub or old VM.
 - Both adapters have mocked negative-path regressions. **Neither module is a new CLI entry point.** `--execute` remains fail-closed. Native creation provenance, management NIC isolation, fresh TLS trust, operator authenticated handoff, real JEA console activation and two full clean builds must be completed before enabling it.
 
+## October 21 partial VMware Stage 1 recovery integration
+
+- The KINGDOMS fresh Windows guest `bf5369-wslpe-vmware` was successfully
+  created and authenticated over NAT-side WinRM, but the initial Vagrant
+  guest-communication/network step failed. Windows had no working `VMTools`
+  core service, the exercise NIC was APIPA instead of `172.28.232.31`, and
+  the VMware Tools MSI failed at `VM_SecureVGAuthDirs` with error 1603 after
+  a VGAuth logfile sharing violation `0x80070020`.
+- The existing provider now selects a WSLPE-only Tools installation script
+  that temporarily stops/restores `VGAuthService` while preserving the native
+  mount/WinRM/reboot handling. This is a *candidate remediation pending live
+  Windows confirmation*, not a proved MSI resolution.
+- The existing KINGDOMS operator console now supports exact-local-instance
+  `load` and explicitly confirmed `repair_stage1`. Recovery reuses the
+  existing Tools provider and `vagrant up WSLPE-WS01 --provision` containing
+  `vagrant/fix_ip.ps1`, with independent running VMX, authenticated Windows,
+  NAT MAC, Tools and expected exercise IP proof. Fails closed without a silent
+  second retry. No alternate instance, vmnet manager, NORTH route, learner
+  or attack fixture.
+- This is **Stage 1 remediation only**, **not** a deployment of 41 scenarios.
+  The full WSLPE41 `--execute` and JEA #30 recovery remain release-blocked.
+  See [native Stage 1 recovery](WSLPE41_NATIVE_STAGE1_RECOVERY.md).
+
 ## October 21 native creation and orchestrator source checkpoint
 
 - `kingdoms/wslpe41_native_stage1_bridge.py` now also exposes a **private
