@@ -52,12 +52,16 @@ class GuardedNativeCreationTests(unittest.TestCase):
         plan = stack.enter_context(patch.object(
             gate, "host_plan",
             return_value=SimpleNamespace(prefix=prefix, running_vm_count=1)))
+        inventory = iter(outputs or [
+            self._vmware(OLD), self._vmware(OLD),
+            self._vmware(OLD, self.identity.vmx),
+        ])
+        def probe(*args):
+            if args[0] == "git":
+                return COMMIT + "\\n" if "rev-parse" in args else ""
+            return next(inventory)
         probes = stack.enter_context(patch.object(
-            gate, "read_only_command",
-            side_effect=outputs or [
-                self._vmware(OLD), self._vmware(OLD),
-                self._vmware(OLD, self.identity.vmx),
-            ]))
+            gate, "read_only_command", side_effect=probe))
         bootstrap = stack.enter_context(patch.object(
             gate, "create_native_guest_identity", side_effect=self._create))
         return stack, plan, probes, bootstrap
@@ -80,7 +84,7 @@ class GuardedNativeCreationTests(unittest.TestCase):
         host.assert_called_once_with(workspaces=(self.workspace, self.peer))
         bootstrap.assert_called_once_with(
             self.manager, PREFIX, COMMIT, confirmed=True)
-        self.assertEqual(vmware.call_count, 3)
+        self.assertEqual(vmware.call_count, 5)
 
     def test_unconfirmed_creation_does_not_touch_host_or_vm(self):
         stack, host, vmware, bootstrap = self._contexts()
@@ -136,6 +140,35 @@ class GuardedNativeCreationTests(unittest.TestCase):
         host.assert_not_called()
         vmware.assert_not_called()
         bootstrap.assert_not_called()
+
+    def test_dirty_or_wrong_source_revision_prevents_vm_creation(self):
+        stack, host, vmware, bootstrap = self._contexts()
+        with stack, patch.object(gate, "read_only_command",
+                                 side_effect=[COMMIT + "\\n", " M tracked.py"]):
+            with self.assertRaisesRegex(InstallBlocked, "not clean"):
+                self._go()
+        host.assert_not_called()
+        bootstrap.assert_not_called()
+        stack, host, vmware, bootstrap = self._contexts()
+        with stack, patch.object(gate, "read_only_command",
+                                 side_effect=["b" * 40 + "\\n", ""]):
+            with self.assertRaisesRegex(InstallBlocked, "revision differs"):
+                self._go()
+        host.assert_not_called()
+        bootstrap.assert_not_called()
+
+    def test_identity_from_another_native_workspace_is_rejected(self):
+        stack, _, _, bootstrap = self._contexts()
+        foreign = FreshGuestIdentity(
+            instance_id=self.identity.instance_id, workspace=str(self.peer),
+            vmx=self.identity.vmx, subnet=self.identity.subnet, source_commit=COMMIT,
+        )
+        def create_foreign(*_args, **_kwargs):
+            (self.workspace / self.identity.instance_id).mkdir(parents=True)
+            return foreign
+        with stack, patch.object(gate, "create_native_guest_identity", side_effect=create_foreign):
+            with self.assertRaisesRegex(InstallBlocked, "does not belong"):
+                self._go()
 
     def test_non_absolute_and_duplicate_vmware_inventory_block_before_mutation(self):
         stack, _, _, bootstrap = self._contexts(outputs=[
