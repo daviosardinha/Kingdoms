@@ -42,6 +42,17 @@ class WslpeNetworkPortabilityTests(unittest.TestCase):
         self.assertNotIn("vmware_network_adapters", self.recipe)
         self.assertNotIn(":vmware_vmx", self.recipe)
 
+    def test_multi_nic_wslpe_winrm_uses_nat_dhcp_not_hostonly_vmrun_ip(self):
+        # VMware Tools may report the exercise NIC, but vmnet8 NAT forwards
+        # must resolve the separate NAT-side lease. Preserve GOAD's fix.
+        self.assertIn(
+            "{% if lab_name == 'GOAD' or lab_name == 'WSLPE' %}",
+            self.template,
+        )
+        self.assertIn("v.enable_vmrun_ip_lookup = false", self.template)
+        self.assertIn('v.vmx["ethernet0.startConnected"] = "TRUE"', self.template)
+        self.assertNotIn("enable_vmrun_ip_lookup", self.recipe)
+
     def test_preview_uses_operator_chosen_private_prefix(self):
         self.assertIn('parser.add_argument(\n        "--ip-range"', self.preview)
         self.assertIn('instance._create_vagrantfile()', self.preview)
