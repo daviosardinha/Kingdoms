@@ -38,3 +38,37 @@ If a separate third-party VMware workspace or manually registered/offline VM exi
 - Only then validate the new disposable guest NIC, Windows management firewall restrictions, direct authenticated WinRM, Vagrant lifecycle and exact removal of that guest's host forwards.
 
 **NORTH integration and WSLPE release to main remain blocked pending runtime acceptance.**
+
+## 2026-10-21: native fresh WSLPE41 auto-candidate (source only)
+
+The historical planner assumed the original WSLPE exercise vmnet2 and
+172.28.231.0/24. That must **not** be applied to the new
+`bf5369-wslpe-vmware` guest at `172.28.232.31`. The existing planner now
+accepts `--native-workspace` to derive the exercise VMnet and subnet from the
+**registered, running exact WSLPE VMX** and authoritative VMware metadata.
+It then uses the existing host route/address/VMware network collision selector
+to choose an **unused** private /24 and checks all operator-supplied workspace
+VMX files before selecting an unclaimed operator vmnet. The explicit legacy
+`--vmnet` and `--management-prefix` flags remain supported in the old
+mode, preserving the previous WSLPE source tests.
+
+Read-only command (include all actual relevant existing workspace roots):
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" -m unittest -v tests.test_wslpe_management_vmnet_plan
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-management-vmnet-plan.py \\
+  --native-workspace "$HOME/kingdoms-wslpe41-fresh/workspace" \\
+  --workspace-root "$HOME/kingdoms-lpe-standalone/workspace" \\
+  --workspace-root "$HOME/kingdoms-rebuild/workspace"
+```
+
+If some specified workspace does not exist on this Kali host, do not replace
+its path with an arbitrary directory; include the real location or inspect
+and justify its absence. The tool fails closed for missing roots, subnets,
+conflicting VMX references and running VMware guests. **`[DEFERRED]` is
+expected with the new WSLPE and original master running.** Do not use the
+proposal as permission to edit /etc/vmware/networking or reboot VMware
+network services while guests are running. No actual management NIC is yet
+attached and operator authentication/isolation remains blocked.

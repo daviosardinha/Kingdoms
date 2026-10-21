@@ -173,3 +173,26 @@ After two clean builds, approved release image and validated backup, delete disp
 - [JEA lifecycle recovery risk](WSLPE_JEA_ACTIVATION_RECOVERY_GATE.md)
 
 **Release status as of 2026-10-21:** independent fresh installation NOT PROVEN; official v1.0 NOT RELEASED.
+
+
+## 2026-10-21: live learner and host recovery checkpoint
+
+- Operator live evidence: `repair_license` returned
+  `WSLPE_LICENSE_READY=PASS` on native `bf5369-wslpe-vmware` without manual
+  Windows scripting. Pinned HTTPS/5986 account audit succeeded and observed
+  the absent learner/operator accounts before foundation.
+- Operator live evidence: `foundation_learner` completed with
+  `WSLPE_LEARNER_FOUNDATION=PASS`; nonadmin membership and Remote Desktop
+  Users were proven on that exact native VM. Actual learner RDP logon has
+  **not** been proven.
+- Dedicated per-instance `kingdom.operator` secret was prepared locally,
+  **not applied**. The host recovery rehearsal subsequently passed owner
+  systemd timer, VMware VMX inventory and byte-exact scratch VMX restoration.
+  It did **not** test true WinRM-independent console recovery, actual
+  stop/start, network cutover or rollback.
+- The existing management vmnet planner now recognizes new native WSLPE41
+  instance networks instead of assuming old WSLPE vmnet2/172.28.231. The
+  planned management subnet and VMnet remain **not allocated**, and current
+  running VMs prohibit modifying shared VMware networking. New operator
+  account creation/authenticated handoff, isolation, 41/41 installation and
+  two clean builds are still release-blocking.
