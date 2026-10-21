@@ -10,6 +10,7 @@ from __future__ import annotations
 import ipaddress
 from pathlib import Path
 import re
+import subprocess
 
 from kingdoms.wslpe_nic_contract import parse_vmx_networks
 
@@ -59,10 +60,119 @@ def _native_repair_target(manager):
     except OSError:
         Log.error("Could not read native WSLPE Vagrantfile")
         return None
-    if not inspect_vmware_guest(provider):
-        Log.error("Existing native WSLPE guest is not running under its registered VMX")
-        return None
     return instance, provider
+
+
+def _registered_guest_vmx(provider) -> Path | None:
+    """Resolve only this instance's existing Vagrant registration, never a new VM."""
+    provider_dir = Path(str(provider.path)).resolve()
+    registration = (
+        provider_dir / ".vagrant" / "machines" / GUEST / "vmware_desktop" / "id"
+    )
+    if not registration.is_file() or registration.is_symlink():
+        Log.error("WSLPE partial instance has no safe Vagrant VM registration")
+        return None
+    try:
+        raw = registration.read_text(encoding="utf-8").strip()
+        original = Path(raw)
+        if not original.is_absolute() or original.is_symlink():
+            raise ValueError("invalid registered VMX")
+        vmx = original.resolve(strict=True)
+        machine_dir = registration.parent.resolve(strict=True)
+        # Do not accept an unrelated GOAD, NORTH, or old standalone WSLPE VMX.
+        vmx.relative_to(machine_dir)
+        if (not vmx.is_file() or vmx.suffix.lower() != ".vmx"
+                or any("GOAD-" in part.upper() or "NORTH" in part.upper()
+                       for part in vmx.parts)):
+            raise ValueError("VMX is not this native machine")
+        if provider._vmx_path(GUEST) != raw:
+            raise ValueError("native provider and registration disagree")
+        return vmx
+    except (OSError, ValueError, UnicodeError):
+        Log.error("Native WSLPE VMX registration is missing or outside this instance")
+        return None
+
+
+def _vmware_running_inventory() -> set[Path] | None:
+    """Validate VMware's full running list before touching a powered-off guest."""
+    try:
+        result = subprocess.run(
+            ["vmrun", "-T", "ws", "list"],
+            capture_output=True, text=True, check=False, timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        Log.error("Cannot inspect current VMware running guests")
+        return None
+    if result.returncode != 0:
+        Log.error("VMware running-VM query failed; no power action")
+        return None
+    lines = result.stdout.splitlines()
+    if not lines or not re.fullmatch(r"Total running VMs:\s*\d+", lines[0]):
+        Log.error("VMware running inventory format is unexpected")
+        return None
+    expected = int(lines[0].split(":", 1)[1].strip())
+    guests = [Path(line.strip()).resolve() for line in lines[1:] if line.strip()]
+    if len(guests) != expected or len(set(guests)) != expected:
+        Log.error("VMware running inventory count or guest identity is inconsistent")
+        return None
+    return set(guests)
+
+
+def _ensure_registered_guest_running(provider) -> bool:
+    """Start the single existing powered-off VM once, after exact Vagrant proof."""
+    vmx = _registered_guest_vmx(provider)
+    if vmx is None:
+        return False
+    inventory = _vmware_running_inventory()
+    if inventory is None:
+        return False
+    if vmx in inventory:
+        Log.info("KINGDOMS WSLPE registered guest is already powered on")
+        return inspect_vmware_guest(provider)
+
+    # Vagrant must agree the exact already-created VM is powered off. Neither
+    # 'not created', 'aborted', 'saved' nor an unknown state authorizes vmrun.
+    try:
+        status = subprocess.run(
+            ["vagrant", "status", GUEST],
+            cwd=str(provider.path), capture_output=True, text=True,
+            check=False, timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        Log.error("Cannot confirm powered-off WSLPE state with Vagrant")
+        return False
+    if (status.returncode != 0
+            or not re.search(
+                rf"(?m)^\s*{re.escape(GUEST)}\s+not running\s+\(vmware_desktop\)\s*$",
+                status.stdout,
+            )):
+        Log.error("Vagrant did not confirm this registered WSLPE VM is powered off")
+        return False
+
+    # Recheck after Vagrant's status query: someone could have started the VM
+    # in the meantime. Never power a guest if host state has changed.
+    latest = _vmware_running_inventory()
+    if latest is None or latest != inventory:
+        Log.error("VMware running inventory changed during preflight; no startup")
+        return False
+
+    Log.warning(f"Powering on existing, registered KINGDOMS WSLPE guest once: {vmx}")
+    try:
+        started = subprocess.run(
+            ["vmrun", "-T", "ws", "start", str(vmx), "nogui"],
+            capture_output=True, text=True, check=False, timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        Log.error("Native WSLPE startup interrupted; inspect before any retry")
+        return False
+    if started.returncode != 0:
+        Log.error("Existing WSLPE VM power-on failed; inspect before retry")
+        return False
+    # Do not equate vmrun command success with actual VMware guest state.
+    if not inspect_vmware_guest(provider):
+        Log.error("Existing WSLPE VMX was not independently confirmed running")
+        return False
+    return True
 
 
 def _guest_proof(provider, prefix: str, *, complete: bool) -> bool:
@@ -160,6 +270,13 @@ def repair_native_wslpe_stage1(manager, *, confirmed: bool) -> bool:
     if target is None:
         return False
     instance, provider = target
+
+    # The first failed Vagrant install can leave this guest powered off.
+    # Recovery confirmation authorizes ONE exact registered-VM start, never
+    # a new instance or an automatic repeated power attempt.
+    if not _ensure_registered_guest_running(provider):
+        Log.error("Existing WSLPE guest startup preflight/recovery failed")
+        return False
 
     if not _guest_proof(provider, instance.ip_range, complete=False):
         Log.error("Refusing Tools repair on an unverified Windows management guest")
