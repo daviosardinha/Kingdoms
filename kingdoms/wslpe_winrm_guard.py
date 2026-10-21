@@ -107,6 +107,35 @@ def verify_firewall_json(raw: str, port: int) -> bool:
     return True
 
 
+
+def migrated_firewall_batch(snapshot: str, old_port: int, new_port: int) -> str:
+    """Replace only the uniquely verified WSLPE guard rule, by nft handle.
+
+    nft applies a single replace-rule statement atomically: it never deletes
+    the table or temporarily removes its input hook. The CLI independently
+    validates native port ownership, requires both explicit port values, and
+    checks the result before reporting success.
+    """
+    if (type(old_port) is not int or type(new_port) is not int
+            or not 1 <= old_port <= 65535 or not 1 <= new_port <= 65535
+            or old_port == new_port):
+        raise ValueError("Two distinct valid WSLPE ports are required")
+    if not verify_firewall_json(snapshot, old_port):
+        raise ValueError("Existing WSLPE guard differs from exact old-port contract")
+    document = json.loads(snapshot)
+    rules = [item["rule"] for item in document["nftables"]
+             if isinstance(item, dict) and isinstance(item.get("rule"), dict)]
+    if len(rules) != 1:
+        raise ValueError("Expected exactly one WSLPE input rule")
+    handle = rules[0].get("handle")
+    if type(handle) is not int or handle <= 0:
+        raise ValueError("WSLPE rule handle is missing or invalid")
+    return (
+        f'replace rule inet {TABLE} {CHAIN} handle {handle} '
+        f'meta iifname != "lo" tcp dport {new_port} '
+        f'drop comment "{COMMENT}"\n'
+    )
+
 def listeners_for_port(ss_output: str, port: int) -> list[dict[str, str]]:
     """Extract locally bound addresses and process labels, no remote peers."""
     result = []
