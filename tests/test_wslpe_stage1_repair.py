@@ -33,15 +33,21 @@ class NativeStage1RepairTests(unittest.TestCase):
         self.instance.set_status = Mock(side_effect=lambda status: setattr(
             self.instance, "status", status,
         ))
-        vmx = self.provider_dir / "guest.vmx"
-        vmx.write_text(
+        machine = (
+            self.provider_dir / ".vagrant" / "machines" / "WSLPE-WS01"
+            / "vmware_desktop"
+        )
+        self.vmx = machine / "native-uuid" / "windows_10.vmx"
+        self.vmx.parent.mkdir(parents=True)
+        self.vmx.write_text(
             'ethernet0.connectionType = "nat"\n'
             'ethernet0.generatedAddress = "00:0C:29:2F:D7:5B"\n',
             encoding="utf-8",
         )
+        (machine / "id").write_text(str(self.vmx), encoding="utf-8")
         self.provider = SimpleNamespace(
             lab_name="WSLPE", path=str(self.provider_dir),
-            _vmx_path=Mock(return_value=str(vmx)),
+            _vmx_path=Mock(return_value=str(self.vmx)),
             _winrm_forwarded_port=Mock(return_value=2200),
             _wait_winrm_ready=Mock(return_value=True),
             _ensure_vmware_tools=Mock(return_value=True),
@@ -72,6 +78,8 @@ class NativeStage1RepairTests(unittest.TestCase):
             repair.GoadPath, "get_workspace_path", return_value=str(self.workspace)))
         stack.enter_context(patch.object(
             repair, "inspect_vmware_guest", return_value=True))
+        stack.enter_context(patch.object(
+            repair, "_ensure_registered_guest_running", return_value=True))
         return stack
 
     def test_one_confirmed_native_repair_uses_original_vagrant_provisioners(self):
@@ -115,11 +123,103 @@ class NativeStage1RepairTests(unittest.TestCase):
 
     def test_missing_vmware_registration_blocks_without_provisioning(self):
         with self.patches(), patch.object(
-            repair, "inspect_vmware_guest", return_value=False,
+            repair, "_ensure_registered_guest_running", return_value=False,
         ):
             self.assertFalse(repair.repair_native_wslpe_stage1(
                 self.manager, confirmed=True))
         self.provider._run_vagrant_bounded.assert_not_called()
+
+    def test_powered_off_existing_guest_starts_once_from_exact_registration(self):
+        self.assertEqual(repair._registered_guest_vmx(self.provider), self.vmx)
+        calls = []
+        def command(argv, **kwargs):
+            calls.append(argv)
+            if argv == ["vmrun", "-T", "ws", "list"]:
+                return SimpleNamespace(returncode=0, stdout="Total running VMs: 0\n")
+            if argv == ["vagrant", "status", "WSLPE-WS01"]:
+                return SimpleNamespace(
+                    returncode=0, stdout="WSLPE-WS01   not running (vmware_desktop)\n")
+            if argv == ["vmrun", "-T", "ws", "start", str(self.vmx), "nogui"]:
+                return SimpleNamespace(returncode=0, stdout="")
+            raise AssertionError("unexpected mutation/read: " + str(argv))
+
+        with patch.object(repair.subprocess, "run", side_effect=command), patch.object(
+            repair, "inspect_vmware_guest", return_value=True
+        ) as inspect:
+            self.assertTrue(repair._ensure_registered_guest_running(self.provider))
+        self.assertEqual(calls, [
+            ["vmrun", "-T", "ws", "list"],
+            ["vagrant", "status", "WSLPE-WS01"],
+            ["vmrun", "-T", "ws", "list"],
+            ["vmrun", "-T", "ws", "start", str(self.vmx), "nogui"],
+        ])
+        inspect.assert_called_once_with(self.provider)
+
+    def test_running_registered_guest_does_not_start_again(self):
+        self.assertEqual(repair._registered_guest_vmx(self.provider), self.vmx)
+        with patch.object(repair.subprocess, "run", return_value=SimpleNamespace(
+            returncode=0, stdout=f"Total running VMs: 1\n{self.vmx}\n",
+        )) as runner, patch.object(repair, "inspect_vmware_guest", return_value=True):
+            self.assertTrue(repair._ensure_registered_guest_running(self.provider))
+        runner.assert_called_once_with(
+            ["vmrun", "-T", "ws", "list"], capture_output=True,
+            text=True, check=False, timeout=30,
+        )
+
+    def test_vagrant_uncertain_or_not_created_refuses_start(self):
+        for state in ("not created", "saved", "aborted", "running"):
+            with self.subTest(state=state):
+                def command(argv, **kwargs):
+                    if argv == ["vmrun", "-T", "ws", "list"]:
+                        return SimpleNamespace(
+                            returncode=0, stdout="Total running VMs: 0\n")
+                    if argv == ["vagrant", "status", "WSLPE-WS01"]:
+                        return SimpleNamespace(
+                            returncode=0, stdout=f"WSLPE-WS01 {state} (vmware_desktop)\n")
+                    raise AssertionError("must not start an unknown guest")
+                with patch.object(repair.subprocess, "run", side_effect=command):
+                    self.assertFalse(repair._ensure_registered_guest_running(self.provider))
+
+    def test_vagrant_failure_and_changed_inventory_refuse_start(self):
+        responses = [
+            SimpleNamespace(returncode=0, stdout="Total running VMs: 0\n"),
+            SimpleNamespace(
+                returncode=0, stdout="WSLPE-WS01 not running (vmware_desktop)\n"),
+            SimpleNamespace(returncode=0, stdout="Total running VMs: 1\n/tmp/other.vmx\n"),
+        ]
+        with patch.object(repair.subprocess, "run", side_effect=responses) as runner:
+            self.assertFalse(repair._ensure_registered_guest_running(self.provider))
+        self.assertEqual(runner.call_count, 3)
+
+    def test_foreign_or_symlinked_registration_never_starts_guest(self):
+        registration = (
+            self.provider_dir / ".vagrant" / "machines" / "WSLPE-WS01"
+            / "vmware_desktop" / "id"
+        )
+        original = registration.read_text()
+        registration.write_text(str(self.provider_dir / "foreign.vmx"))
+        with patch.object(repair.subprocess, "run", side_effect=AssertionError(
+            "vmrun must not be called on a foreign VMX"
+        )):
+            self.assertIsNone(repair._registered_guest_vmx(self.provider))
+        registration.write_text(original)
+        registration.unlink()
+        registration.symlink_to(self.vmx)
+        self.assertIsNone(repair._registered_guest_vmx(self.provider))
+
+    def test_failed_vmrun_start_is_never_retried(self):
+        def command(argv, **kwargs):
+            if argv == ["vmrun", "-T", "ws", "list"]:
+                return SimpleNamespace(returncode=0, stdout="Total running VMs: 0\n")
+            if argv == ["vagrant", "status", "WSLPE-WS01"]:
+                return SimpleNamespace(
+                    returncode=0, stdout="WSLPE-WS01 not running (vmware_desktop)\n")
+            if argv[:4] == ["vmrun", "-T", "ws", "start"]:
+                return SimpleNamespace(returncode=1, stdout="", stderr="powered off")
+            raise AssertionError("unexpected operation")
+        with patch.object(repair.subprocess, "run", side_effect=command) as run:
+            self.assertFalse(repair._ensure_registered_guest_running(self.provider))
+        self.assertEqual(sum(argv[0][3] == "start" for argv in run.call_args_list), 1)
 
     def test_tools_failure_blocks_vagrant_replay_and_status(self):
         self.provider._ensure_vmware_tools.return_value = False
