@@ -13,6 +13,9 @@ ADAPTERS = (
     "kingdoms/wslpe41_stage_executor.py",
     "kingdoms/wslpe41_native_stage_runner.py",
     "kingdoms/wslpe41_runtime_proof.py",
+    "kingdoms/wslpe41_network_auto.py",
+    "kingdoms/wslpe41_host_preflight.py",
+    "kingdoms/wslpe41_native_identity.py",
 )
 FORBIDDEN_IMPORTS = (
     "vagrant", "vmware", "pyvmomi", "libvirt", "paramiko",
@@ -46,6 +49,21 @@ class FrameworkBoundaryTests(unittest.TestCase):
                 for command in FORBIDDEN_COMMANDS:
                     self.assertNotIn(command.casefold(), source.casefold(),
                                      f"{relative} introduced provider mutation: {command}")
+
+    def test_native_provisioning_uses_existing_manager_and_provider(self):
+        source = (ROOT / "kingdoms/wslpe_stage1.py").read_text(encoding="utf-8")
+        manager = (ROOT / "goad/lab_manager.py").read_text(encoding="utf-8")
+        self.assertIn("manager.create_instance()", source)
+        self.assertIn("provider.install()", source)
+        self.assertIn("def create_instance(self):", manager)
+        self.assertIn("self.lab_instances.add_instance(instance)", manager)
+
+    def test_wslpe41_does_not_expose_an_independent_provisioner(self):
+        entrypoint = (ROOT / "scripts/wslpe41-install.py").read_text(encoding="utf-8")
+        self.assertNotIn("vagrant up", entrypoint.casefold())
+        self.assertNotIn("vmrun start", entrypoint.casefold())
+        self.assertIn("if args.execute:", entrypoint)
+        self.assertIn("return 2", entrypoint)
 
     def test_existing_foundation_playbooks_remain_the_source(self):
         source = (ROOT / "kingdoms/wslpe41_foundation_executor.py").read_text()
