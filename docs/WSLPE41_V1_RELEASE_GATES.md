@@ -43,7 +43,11 @@
   operator-approved prefix, and compares instance/VMware VMX inventories before
   and after calling the existing Stage 1 provider exactly once. No alternate
   Vagrant project, VMnet creator, Windows bootstrap or second lab manager.
-  The result is **VMX creation provenance, not guest freshness**.
+  It also inspects the registered VMX and VMware networking metadata after
+  bootstrap to prove exactly two active adapters and one non-NORTH, non-shared
+  vmnet owning the selected exercise /24. Failures leave the guest for
+  operator investigation without automatic retry. The result is **VMX and
+  vmnet creation provenance, not guest freshness**.
 - `kingdoms/wslpe41_native_orchestrator.py` now composes guarded creation,
   the existing learner/operator handoff, and the existing `install_41` journal
   and 83-stage runner, all for the same native instance. Its runtime
