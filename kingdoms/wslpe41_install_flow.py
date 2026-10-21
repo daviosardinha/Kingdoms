@@ -89,8 +89,11 @@ def verify_stage(scenario: FreshScenario, stage: str, proof: StageProof) -> None
         "guest_console" if scenario.execution_channel == "out_of_band_jea_activation"
         and stage == "activate" else "ansible"
     )
-    expected_stage = "activate" if scenario.execution_channel == "out_of_band_jea_activation" else "apply"
-    if stage not in (expected_stage, "validate"):
+    if scenario.execution_channel == "out_of_band_jea_activation":
+        allowed = ("stage", "activate", "validate")
+    else:
+        allowed = ("apply", "validate")
+    if stage not in allowed:
         raise InstallBlocked("Unexpected installation stage")
     if (type(proof.passed) is not bool or proof.passed is not True
             or proof.scenario_number != scenario.number
@@ -182,14 +185,17 @@ def install_41(identity: FreshGuestIdentity, runner: FreshGuestRunner, state_roo
             "failure": None,
             "scenarios": [
                 {"number": s.number, "id": s.identifier,
+                 "staging": "PENDING" if s.execution_channel == "out_of_band_jea_activation" else "NOT_REQUIRED",
                  "install": "PENDING", "validation": "PENDING", "proofs": []}
                 for s in scenarios
             ],
         }
         checkpoint(journal, report)
         for scenario, record in zip(scenarios, report["scenarios"]):
-            first = "activate" if scenario.execution_channel == "out_of_band_jea_activation" else "apply"
-            for stage in (first, "validate"):
+            stages = (("stage", "activate", "validate")
+                      if scenario.execution_channel == "out_of_band_jea_activation"
+                      else ("apply", "validate"))
+            for stage in stages:
                 report["inflight"] = {"number": scenario.number, "stage": stage}
                 checkpoint(journal, report)  # durable intent BEFORE guest mutation
                 try:
@@ -204,7 +210,9 @@ def install_41(identity: FreshGuestIdentity, runner: FreshGuestRunner, state_roo
                     }
                     checkpoint(journal, report)
                     raise
-                record["install" if stage != "validate" else "validation"] = "PASS"
+                field = {"stage": "staging", "activate": "install",
+                         "apply": "install", "validate": "validation"}[stage]
+                record[field] = "PASS"
                 record["proofs"].append({
                     "stage": stage, "transport": stage_proof.transport,
                     "evidence_id": stage_proof.evidence_id,
