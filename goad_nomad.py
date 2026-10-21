@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 
+from goad.goadpath import GoadPath
 from goad.log import Log
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
