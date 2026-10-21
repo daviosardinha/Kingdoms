@@ -80,6 +80,10 @@ class WslpeNativeBootTests(unittest.TestCase):
                                          return_value=True))
         stack.enter_context(patch.object(boot, "inspect_vmware_guest",
                                          return_value=True))
+        stack.enter_context(patch(
+            "kingdoms.wslpe_license_maintenance.maintain_native_wslpe_license",
+            return_value=True,
+        ))
         return stack
 
     def run_boot(self, prefix="172.28.231", confirmed=True):
@@ -94,6 +98,19 @@ class WslpeNativeBootTests(unittest.TestCase):
             ("provider_install",), ("set_status", PROVIDED),
         ])
         self.assertEqual(self.state["instance"].status, PROVIDED)
+
+    def test_fresh_boot_license_failure_refuses_provided_without_recreating_vm(self):
+        with self.patches(), patch(
+            "kingdoms.wslpe_license_maintenance.maintain_native_wslpe_license",
+            return_value=False,
+        ) as license_gate:
+            self.assertFalse(boot.bootstrap_native_wslpe(
+                self.manager, "172.28.231", confirmed=True,
+            ))
+        license_gate.assert_called_once_with(self.manager, confirmed=True)
+        self.assertEqual(self.state["instance"].status, CREATED)
+        self.assertEqual(self.events.count(("create_instance",)), 1)
+        self.assertNotIn(("set_status", PROVIDED), self.events)
 
     def test_unconfirmed_install_never_mutates_workspace(self):
         self.assertFalse(self.run_boot(confirmed=False))
