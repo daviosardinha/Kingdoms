@@ -35,6 +35,31 @@
 - `kingdoms/wslpe41_native_stage_runner.py` implements the existing `FreshGuestRunner` interface for the 41-scenario journal. The 82 Ansible stages use the exact stage executor; JEA #30 activation can only use an independently implemented guest-console callback with the local WinRM recovery marker. Fresh-guest attestation is an injected **required** provider capability; the module does not invent it from a registration, callback stub or old VM.
 - Both adapters have mocked negative-path regressions. **Neither module is a new CLI entry point.** `--execute` remains fail-closed. Native creation provenance, management NIC isolation, fresh TLS trust, operator authenticated handoff, real JEA console activation and two full clean builds must be completed before enabling it.
 
+## October 21 native creation and orchestrator source checkpoint
+
+- `kingdoms/wslpe41_native_stage1_bridge.py` now also exposes a **private
+  guarded native-creation entry point**. It checks the exact source HEAD and
+  clean tracked checkout, reruns the live host subnet audit, rejects a stale
+  operator-approved prefix, and compares instance/VMware VMX inventories before
+  and after calling the existing Stage 1 provider exactly once. No alternate
+  Vagrant project, VMnet creator, Windows bootstrap or second lab manager.
+  The result is **VMX creation provenance, not guest freshness**.
+- `kingdoms/wslpe41_native_orchestrator.py` now composes guarded creation,
+  the existing learner/operator handoff, and the existing `install_41` journal
+  and 83-stage runner, all for the same native instance. Its runtime
+  capabilities must be provided by independently reviewed management/TLS,
+  guest-console recovery, fresh attestation and JEA activation implementations.
+  **Those live capability implementations are still missing.** The module is
+  private and is **not wired to `scripts/wslpe41-install.py --execute`**.
+- New mock-only regressions reject stale prefix, changed co-tenant inventory,
+  mismatched source or workspace, missing runtime capability, nonmatching
+  management context and failed console handoff before 41-stage execution.
+  Source CI passing is not live Windows or console recovery evidence.
+- The earlier WSLPE pilot's authenticated Vagrant bootstrap over the corrected
+  NAT address and the owner-scoped VMware recovery *rehearsal* are useful
+  engineering evidence, but are **not** a separate fresh Windows 10 install or
+  independent WinRM-free guest console proof.
+
 ## Current operator commands (read-only)
 
 Use a **separate checkout** for this development branch. These checks do not stop NORTH, alter VMware networks, or create a guest:
