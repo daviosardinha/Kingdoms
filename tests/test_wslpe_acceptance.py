@@ -84,7 +84,7 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
                    "WSLPE-WS01" / "vmware_desktop")
         vmx = machine / "native-uuid" / "windows_10.vmx"
         vmx.parent.mkdir(parents=True)
-        vmx.write_text('config.version = "8"\\n')
+        vmx.write_text('config.version = "8"\n')
         (machine / "id").write_text(str(vmx))
         (instance / "instance.json").write_text(json.dumps({
             "id": instance.name, "lab": "WSLPE", "provider": "vmware",
@@ -98,7 +98,7 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             vmx, instance = self._registered_peer(root)
-            output = "Total running VMs: 2\\n" + str(vmx) + "\\n/north/GOAD-DC01.vmx\\n"
+            output = "Total running VMs: 2\n" + str(vmx) + "\n/north/GOAD-DC01.vmx\n"
             with patch.object(ACCEPTANCE, "ROOT", root / "fresh"):
                 self.assertIsNone(ACCEPTANCE.verify_output(
                     name, output, candidate_prefix="172.28.232"))
@@ -116,7 +116,7 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             vmx, instance = self._registered_peer(root)
-            output = "Total running VMs: 1\\n" + str(vmx) + "\\n"
+            output = "Total running VMs: 1\n" + str(vmx) + "\n"
             with patch.object(ACCEPTANCE, "ROOT", instance.parent.parent):
                 self.assertIsNotNone(ACCEPTANCE.verify_output(
                     name, output, candidate_prefix="172.28.232"))
@@ -125,7 +125,7 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
                 "/home/user/WSLPE-WS01.vmx",
             ):
                 with self.subTest(raw=raw):
-                    suspicious = "Total running VMs: 1\\n" + raw + "\\n"
+                    suspicious = "Total running VMs: 1\n" + raw + "\n"
                     with patch.object(ACCEPTANCE, "ROOT", root / "fresh"):
                         self.assertIsNotNone(ACCEPTANCE.verify_output(
                             name, suspicious, candidate_prefix="172.28.232"))
@@ -133,9 +133,9 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
     def test_vmware_inventory_must_be_complete_not_just_contain_header(self):
         name = "Existing VMware VM inventory (read-only)"
         for output in (
-            "Total running VMs: 2\\n/one.vmx\\n",
-            "Total running VMs: 2\\n/one.vmx\\n/one.vmx\\n",
-            "Total running VMs: 0\\n/a.vmx\\n",
+            "Total running VMs: 2\n/one.vmx\n",
+            "Total running VMs: 2\n/one.vmx\n/one.vmx\n",
+            "Total running VMs: 0\n/a.vmx\n",
         ):
             with self.subTest(output=output):
                 self.assertIsNotNone(ACCEPTANCE.verify_output(
