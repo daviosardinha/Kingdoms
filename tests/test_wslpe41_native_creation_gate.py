@@ -58,7 +58,7 @@ class GuardedNativeCreationTests(unittest.TestCase):
         ])
         def probe(*args):
             if args[0] == "git":
-                return COMMIT + "\\n" if "rev-parse" in args else ""
+                return COMMIT + "\n" if "rev-parse" in args else ""
             return next(inventory)
         probes = stack.enter_context(patch.object(
             gate, "read_only_command", side_effect=probe))
@@ -144,14 +144,14 @@ class GuardedNativeCreationTests(unittest.TestCase):
     def test_dirty_or_wrong_source_revision_prevents_vm_creation(self):
         stack, host, vmware, bootstrap = self._contexts()
         with stack, patch.object(gate, "read_only_command",
-                                 side_effect=[COMMIT + "\\n", " M tracked.py"]):
+                                 side_effect=[COMMIT + "\n", " M tracked.py"]):
             with self.assertRaisesRegex(InstallBlocked, "not clean"):
                 self._go()
         host.assert_not_called()
         bootstrap.assert_not_called()
         stack, host, vmware, bootstrap = self._contexts()
         with stack, patch.object(gate, "read_only_command",
-                                 side_effect=["b" * 40 + "\\n", ""]):
+                                 side_effect=["b" * 40 + "\n", ""]):
             with self.assertRaisesRegex(InstallBlocked, "revision differs"):
                 self._go()
         host.assert_not_called()
