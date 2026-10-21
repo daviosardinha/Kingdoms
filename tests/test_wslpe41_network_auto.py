@@ -35,6 +35,11 @@ class NetworkAutoTests(unittest.TestCase):
             network.select_available_prefix([], [],
                 "answer VNET_2_HOSTONLY_SUBNET 172.28.231.0", [])
 
+    def test_duplicate_vmware_subnet_metadata_fails_closed(self):
+        with self.assertRaisesRegex(network.NetworkSelectionBlocked, "Duplicate"):
+            network.select_available_prefix([], [], VMWARE +
+                "answer VNET_2_HOSTONLY_SUBNET 172.28.230.0\n", [])
+
     def test_refuse_no_available_subnet(self):
         with self.assertRaisesRegex(network.NetworkSelectionBlocked, "No free"):
             network.select_available_prefix([], [], VMWARE,
