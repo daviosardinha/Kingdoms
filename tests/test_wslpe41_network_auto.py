@@ -13,15 +13,15 @@ answer VNET_99_HOSTONLY_NETMASK 255.255.255.0
 
 class NetworkAutoTests(unittest.TestCase):
     def test_first_available_prefix_is_deterministic(self):
-        self.assertEqual(network.select_available_prefix([], [], VMWARE, []), "172.28.220")
+        self.assertEqual(network.select_available_prefix([], [], VMWARE, []), "172.28.232")
 
     def test_live_vpn_and_stopped_native_instance_are_reserved(self):
         interfaces = [{"ifname": "tun0", "addr_info": [
-            {"family": "inet", "local": "172.28.220.254", "prefixlen": 24}]}]
-        routes = [{"dst": "172.28.221.0/24", "dev": "tun0"}]
+            {"family": "inet", "local": "172.28.232.254", "prefixlen": 24}]}]
+        routes = [{"dst": "172.28.233.0/24", "dev": "tun0"}]
         selected = network.select_available_prefix(
-            interfaces, routes, VMWARE, ["172.28.222"])
-        self.assertEqual(selected, "172.28.223")
+            interfaces, routes, VMWARE, ["172.28.234"])
+        self.assertEqual(selected, "172.28.235")
 
     def test_existing_vmware_subnet_is_not_reused(self):
         chosen = network.select_available_prefix(
