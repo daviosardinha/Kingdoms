@@ -13,19 +13,20 @@ ANSIBLE = Path("/opt/kingdoms-venv/bin/ansible-playbook")
 INVENTORY = Path("/tmp/new-instance/ansible/inventory")
 VARS = Path("/tmp/new-instance/ansible/private-vars.yml")
 IP = "172.28.232.31"
+INSTANCE = "wslpe41-fresh-0001"
 
 
 class StageCommandTests(unittest.TestCase):
     def make(self, scenario, stage):
         return build_stage_invocation(
             scenario, stage, ansible=ANSIBLE, inventory=INVENTORY,
-            varsfile=VARS, expected_address=IP,
+            varsfile=VARS, expected_address=IP, instance_id=INSTANCE,
         )
 
     def test_one_41_scenario_order_not_20_plus_21_runs(self):
         steps = one_install_invocations(
             ansible=ANSIBLE, inventory=INVENTORY,
-            varsfile=VARS, expected_address=IP,
+            varsfile=VARS, expected_address=IP, instance_id=INSTANCE,
         )
         self.assertEqual(len(steps), 83)
         manifest = fresh_scenario_manifest()
@@ -39,16 +40,21 @@ class StageCommandTests(unittest.TestCase):
         first = fresh_scenario_manifest()[0]
         invocation = self.make(first, "apply")
         self.assertEqual(invocation.transport, "ansible")
-        self.assertEqual(invocation.evidence_kind, "scenario_specific_windows_role_validation_required")
-        self.assertIsNone(invocation.evidence_marker)
+        self.assertEqual(invocation.evidence_kind, "windows_post_role_and_exact_role_validation")
+        self.assertEqual(invocation.evidence_marker,
+                         f"WSLPE41_STAGE={first.identifier}:apply:PASS")
         self.assertEqual(invocation.argv[0], str(ANSIBLE))
         self.assertEqual(invocation.argv[1:7],
                          ("-i", str(INVENTORY), "-i", str(VARS), "--limit", "ws01,localhost"))
         self.assertTrue(invocation.argv[-3].endswith("ansible/wslpe-lpe-test.yml"))
         self.assertEqual(json.loads(invocation.argv[-1]),
-                         {"wslpe_action": "apply", "wslpe_techniques": [first.identifier]})
+                         {"wslpe_action": "apply", "wslpe_techniques": [first.identifier],
+                          "wslpe41_fresh_run": True, "wslpe41_expected_address": IP,
+                          "wslpe41_stage_label": "apply", "wslpe41_instance_id": INSTANCE})
         validation = self.make(first, "validate")
         self.assertEqual(json.loads(validation.argv[-1])["wslpe_action"], "validate")
+        self.assertEqual(validation.evidence_marker,
+                         f"WSLPE41_STAGE={first.identifier}:vulnerable:PASS")
 
     def test_standalone_additions_use_real_index_and_fresh_shared_library(self):
         scenario = next(r for r in fresh_scenario_manifest() if r.number == 27)
@@ -83,14 +89,21 @@ class StageCommandTests(unittest.TestCase):
         with self.assertRaisesRegex(StagePlanBlocked, "Forbidden"):
             build_stage_invocation(scenario, "apply", ansible=ANSIBLE,
                                    inventory=INVENTORY, varsfile=VARS,
-                                   expected_address="10.4.10.31")
+                                   expected_address="10.4.10.31", instance_id=INSTANCE)
 
     def test_rejects_invalid_or_symlinked_runtime_paths(self):
         scenario = fresh_scenario_manifest()[0]
         with self.assertRaisesRegex(StagePlanBlocked, "absolute"):
             build_stage_invocation(scenario, "apply", ansible=Path("ansible-playbook"),
                                    inventory=INVENTORY, varsfile=VARS,
-                                   expected_address=IP)
+                                   expected_address=IP, instance_id=INSTANCE)
+
+    def test_rejects_unbound_instance_identity(self):
+        scenario = fresh_scenario_manifest()[0]
+        with self.assertRaisesRegex(StagePlanBlocked, "instance ID"):
+            build_stage_invocation(scenario, "apply", ansible=ANSIBLE,
+                                   inventory=INVENTORY, varsfile=VARS,
+                                   expected_address=IP, instance_id="")
 
     def test_rejects_unexpected_stages(self):
         scenario = next(r for r in fresh_scenario_manifest() if r.number == 30)
