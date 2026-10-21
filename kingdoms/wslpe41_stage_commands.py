@@ -34,8 +34,11 @@ class StageInvocation:
 def build_stage_invocation(
     scenario: FreshScenario, stage: str, *,
     ansible: Path, inventory: Path, varsfile: Path, expected_address: str,
+    instance_id: str,
 ) -> StageInvocation:
     """Construct one exact stage; never reuse golden-master runtime state."""
+    if not isinstance(instance_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{4,100}", instance_id):
+        raise StagePlanBlocked("Fresh native instance ID missing or invalid")
     allowed = {s.number: s for s in fresh_scenario_manifest()}
     if allowed.get(scenario.number) != scenario:
         raise StagePlanBlocked("Unrecognized or modified WSLPE41 scenario")
@@ -72,7 +75,7 @@ def build_stage_invocation(
             "wslpe41_stage_label": "apply" if stage == "apply" else "vulnerable",
             # Runtime environment must independently bind this to the
             # private fixture vars and the freshly provisioned instance.
-            "wslpe41_instance_id": "",
+            "wslpe41_instance_id": instance_id,
         }
         playbook = scenario.playbook
         marker = f"WSLPE41_STAGE={scenario.identifier}:{extra['wslpe41_stage_label']}:PASS"
@@ -132,6 +135,7 @@ def build_stage_invocation(
 
 def one_install_invocations(
     *, ansible: Path, inventory: Path, varsfile: Path, expected_address: str,
+    instance_id: str,
 ) -> tuple[StageInvocation, ...]:
     """One ordered 41-scenario apply/validate transaction, 83 runtime stages."""
     result: list[StageInvocation] = []
@@ -141,6 +145,7 @@ def one_install_invocations(
             result.append(build_stage_invocation(
                 scenario, stage, ansible=ansible, inventory=inventory,
                 varsfile=varsfile, expected_address=expected_address,
+                instance_id=instance_id,
             ))
     if len(result) != 83 or len({r.number for r in result}) != 41:
         raise StagePlanBlocked("Single WSLPE41 installation stage count drift")
