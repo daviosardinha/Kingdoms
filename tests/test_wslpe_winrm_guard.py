@@ -77,7 +77,7 @@ class WslpeWinrmGuardTests(unittest.TestCase):
             batch,
             'replace rule inet kingdoms_wslpe_winrm local_winrm_only handle 3 '
             'meta iifname != "lo" tcp dport 55985 drop '
-            'comment "KINGDOMS_WSLPE_WINRM"\\n',
+            'comment "KINGDOMS_WSLPE_WINRM"\n',
         )
         self.assertNotIn("delete table", batch)
         self.assertNotIn("flush", batch)
