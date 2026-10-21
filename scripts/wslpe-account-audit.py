@@ -54,7 +54,7 @@ def load_auth():
     spec.loader.exec_module(mod)
     return mod
 
-def parse_result(output: bytes) -> dict:
+def parse_result(output: bytes, *, require_learner: bool = True) -> dict:
     if not isinstance(output, bytes):
         raise ValueError("Invalid account audit output")
     values = [
@@ -80,13 +80,19 @@ def parse_result(output: bytes) -> dict:
         seen[row["name"]] = row
     if set(seen) != set(ACCOUNTS):
         raise ValueError("Incomplete local account evidence")
-    if (not seen["lpe.trainee"]["exists"]
-            or not seen["lpe.trainee"]["enabled"]
-            or seen["lpe.trainee"]["admin"]):
-        raise ValueError("Learner is missing, disabled or privileged")
+    # A foundation preflight must observe an untouched guest without
+    # confusing a not-yet-created learner with a broken release candidate.
+    # Never accept a privileged learner, even during preflight.
+    if seen["lpe.trainee"]["admin"]:
+        raise ValueError("Learner is unexpectedly privileged")
+    if require_learner and (
+        not seen["lpe.trainee"]["exists"] or not seen["lpe.trainee"]["enabled"]
+    ):
+        raise ValueError("Learner is missing or disabled")
     return seen
 
-def query(auth, address: str, certificate: bytes, username: str, password: str) -> dict:
+def query(auth, address: str, certificate: bytes, username: str, password: str,
+          *, require_learner: bool = True) -> dict:
     import winrm
     with tempfile.TemporaryDirectory(prefix="wslpe-account-audit-") as tmp:
         anchor = Path(tmp) / "leaf.pem"
@@ -111,11 +117,13 @@ def query(auth, address: str, certificate: bytes, username: str, password: str) 
             transport.close_session()
     if result.status_code != 0:
         raise ValueError("Windows rejected the read-only account audit")
-    return parse_result(result.std_out)
+    return parse_result(result.std_out, require_learner=require_learner)
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--expected-thumbprint", required=True)
+    p.add_argument("--pre-foundation", action="store_true",
+                   help="read-only inventory before learner/operator creation; never accepts a privileged learner")
     args = p.parse_args()
     print("KINGDOMS WSLPE | LOCAL ACCOUNT RELEASE AUDIT (READ ONLY)")
     print("[NO CHANGES] No user, credential, WinRM, VMware or NORTH modifications")
@@ -124,13 +132,31 @@ def main() -> int:
         address, cert = auth.checked_certificate(auth.tls_audit_module(),
                                                   args.expected_thumbprint)
         user, secret = auth.operator_credentials(address)
-        rows = query(auth, address, cert, user, secret)
+        rows = query(auth, address, cert, user, secret,
+                     require_learner=not args.pre_foundation)
     except Exception as exc:
         print(f"[BLOCKED] {type(exc).__name__} during WSLPE account inventory")
         return 1
     for name in ACCOUNTS:
         row = rows[name]
         print(f"[ACCOUNT] {name}: exists={row['exists']} enabled={row['enabled']} admin={row['admin']}")
+    if args.pre_foundation:
+        learner = rows["lpe.trainee"]
+        operator = rows["kingdom.operator"]
+        if learner["exists"] and learner["enabled"] and not learner["admin"]:
+            print("[PASS] WSLPE_LOCAL_LEARNER_STANDARD=TRUE")
+        elif learner["exists"]:
+            print("[BLOCKED] Existing learner is disabled or improperly configured; do not create/overwrite")
+            return 1
+        else:
+            print("[FOUNDATION PENDING] Local nonadmin learner not yet installed")
+        if operator["exists"]:
+            print("[FOUNDATION PENDING] Existing operator requires independent credentials/handoff audit; do not recreate")
+        else:
+            print("[FOUNDATION PENDING] Dedicated operator not yet installed")
+        print("[NOT PROVEN] Independent VM console recovery, per-instance TLS provenance, management isolation")
+        print("[NO CHANGES] Neither learner nor operator was created")
+        return 0
     print("[PASS] WSLPE_LOCAL_LEARNER_STANDARD=TRUE")
     if rows["vagrant"]["exists"] and rows["vagrant"]["enabled"]:
         print("[RELEASE BLOCKED] Default bootstrap administrator vagrant remains enabled")
