@@ -16,7 +16,7 @@
 
 ## Gate A — From-scratch build on a new native WSLPE instance
 
-- [ ] Create a fresh, independent Kingdoms WSLPE instance via the existing course selector/VMware provider, choosing an unused private subnet and a new workspace. No cloning or importing the existing golden master; do not contact or modify NORTH.
+- [ ] Create a fresh, independent Kingdoms WSLPE instance via the existing course selector/VMware provider, automatically selecting a collision-free private subnet after checking host routes, VMware networks and registered instances, and creating a new workspace. No cloning or importing the existing golden master; do not contact or modify NORTH.
 - [ ] Provision `WSLPE-WS01` as a workgroup guest with local non-admin `lpe.trainee`, intact UAC, Defender and Windows Firewall, fresh operator-only credentials, independent TLS trust/pins and management isolation.
 - [x] Integrate the complete **41-ID manifest into one ordered installer transaction**, with a single journal, per-scenario apply/validate evidence, first-failure stop and no silent replay. This is source-tested integration only.
 - [ ] From one fresh native guest, run the **single 41-scenario installation** in one operator action. Each scenario must be installed and configuration-validated in that same transaction; no separate baseline/additions commands, no old pilot journal, and no inherited master fixture. Preserve NORTH's shared-role source and exclude 25,36,38,40.
