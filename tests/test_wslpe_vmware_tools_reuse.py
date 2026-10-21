@@ -1,15 +1,29 @@
 """Source-only tests. Never run VMware/Vagrant, guest MSI or PowerShell."""
+import ast
+from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
-from goad.provider.vagrant.vmware import VmwareProvider
 from kingdoms.wslpe_vmware_tools import WSLPE_VMTOOLS_SETUP
+
+
+# WSLPE source CI intentionally has no pywinrm package. Compile only this
+# pure Python selector from the existing provider; never load/execute VMware.
+SOURCE = Path(__file__).resolve().parents[1] / "goad/provider/vagrant/vmware.py"
+TREE = ast.parse(SOURCE.read_text(encoding="utf-8"))
+PROVIDER = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == "VmwareProvider")
+SELECTOR = next(n for n in PROVIDER.body if isinstance(n, ast.FunctionDef) and n.name == "_vmware_tools_setup_script")
+SCOPE = {"WSLPE_VMTOOLS_SETUP": WSLPE_VMTOOLS_SETUP}
+exec(compile(ast.fix_missing_locations(ast.Module(body=[SELECTOR], type_ignores=[])),
+             str(SOURCE), "exec"), SCOPE)
+
 
 
 class WslpeToolsReuseTests(unittest.TestCase):
     def test_wslpe_uses_existing_provider_install_reboot_flow_with_vgauth_guard(self):
-        provider = object.__new__(VmwareProvider)
+        provider = SimpleNamespace()
         provider.lab_name = "WSLPE"
-        script = provider._vmware_tools_setup_script()
+        script = SCOPE['_vmware_tools_setup_script'](provider)
         self.assertEqual(script, WSLPE_VMTOOLS_SETUP)
         for marker in (
             "WSLPE_VMTOOLS_WRONG_GUEST",
@@ -33,9 +47,9 @@ class WslpeToolsReuseTests(unittest.TestCase):
 
     def test_goad_and_other_labs_retain_original_installer_source(self):
         for lab in ("GOAD", "NORTH", "KINGDOMS"):
-            provider = object.__new__(VmwareProvider)
+            provider = SimpleNamespace()
             provider.lab_name = lab
-            script = provider._vmware_tools_setup_script()
+            script = SCOPE['_vmware_tools_setup_script'](provider)
             self.assertIn("GOAD_VMTOOLS_INSTALL_EXIT", script)
             self.assertIn("Start-Process -FilePath $setup", script)
             self.assertNotIn("Stop-Service -Name VGAuthService", script)
