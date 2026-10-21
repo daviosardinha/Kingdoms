@@ -72,3 +72,58 @@ expected with the new WSLPE and original master running.** Do not use the
 proposal as permission to edit /etc/vmware/networking or reboot VMware
 network services while guests are running. No actual management NIC is yet
 attached and operator authentication/isolation remains blocked.
+
+
+## 2026-10-21: journaled management network allocation core (NOT activated)
+
+The fresh native WSLPE guest binds its exercise NIC to **vmnet3 /
+172.28.232.0/24**. The read-only planner selected **vmnet4 /
+172.28.233.0/24** for an independent operator-only interface. The latest
+operator output reports **two running VMware guests**, so any actual
+shared VMware network restart remains **DEFERRED**.
+
+\`kingdoms/wslpe_management_vmnet_transaction.py\` now provides an **internal,
+unwired** allocation/recovery component. It has no CLI, is not called by
+\`goad.sh\` or \`wslpe41-install.py\`, and has made **no** VMware/Windows/host
+changes. It is not authorization to edit \`/etc/vmware/networking\`.
+
+Source contract:
+- Require explicit maintenance authorization, root-owned VMware metadata,
+  a pinned source SHA256, and an exclusive operation lock.
+- Recompute an additive vmnet proposal using the existing planner; preserve
+  all original metadata, NAT forwards and other vmnet directives.
+- Require an independently supplied live workspace/VMX registration and host
+  collision preflight and prove zero VMware guests before and after stopping
+  the shared network service.
+- Persist the original **exact bytes**, owner/mode and both hashes in a
+  root-only 0600 journal *before* the first network mutation. Use fsync and
+  same-filesystem atomic rename for the proposed config and journal.
+- Invoke VMware stop/start through an intentionally unimplemented integration
+  callback. The interface verifier is also deliberately unimplemented; it
+  must prove the real host adapter/IP, host-only isolation, retained NORTH
+  network metadata and non-leakage to the WSLPE learner network.
+- On an ordinary simulated failure, roll back the exact original bytes
+  if and only if guest activity is still zero and the metadata still matches
+  one of the two known hashes. On a crash, explicit \`recover()\` uses the
+  durable journal. Any unexpected external config drift blocks rollback for
+  manual intervention. A committed allocation is never silently rolled back.
+
+Unit-test command (read-only simulated VMware callbacks):
+
+\`\`\`bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" -m unittest -v \
+  tests.test_wslpe_management_vmnet_plan \
+  tests.test_wslpe_management_vmnet_transaction
+\`\`\`
+
+**Remaining blockers before wiring an executable transaction:** independently
+validate a complete VMware registration inventory (including offline/
+third-party workspaces), authenticated cross-checks for both \`vmrun\` and the
+OS guest processes, root-owned private persistent journal/lock directories,
+a maintenance window with **all** VMware guests stopped by their owners,
+and real VMware Workstation 26 restart/adapter/isolation/rollback tests.
+Do not power off the two active VMs automatically, or expose \`--apply\`
+while these gates are outstanding. The \`kingdom.operator\` WinRM/TLS handoff
+and 41/41 installation remain subsequent separate acceptance gates.
