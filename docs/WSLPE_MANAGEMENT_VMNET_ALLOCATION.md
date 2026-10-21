@@ -82,10 +82,10 @@ The fresh native WSLPE guest binds its exercise NIC to **vmnet3 /
 operator output reports **two running VMware guests**, so any actual
 shared VMware network restart remains **DEFERRED**.
 
-\`kingdoms/wslpe_management_vmnet_transaction.py\` now provides an **internal,
+`kingdoms/wslpe_management_vmnet_transaction.py` now provides an **internal,
 unwired** allocation/recovery component. It has no CLI, is not called by
-\`goad.sh\` or \`wslpe41-install.py\`, and has made **no** VMware/Windows/host
-changes. It is not authorization to edit \`/etc/vmware/networking\`.
+`goad.sh` or `wslpe41-install.py`, and has made **no** VMware/Windows/host
+changes. It is not authorization to edit `/etc/vmware/networking`.
 
 Source contract:
 - Require explicit maintenance authorization, root-owned VMware metadata,
@@ -104,26 +104,72 @@ Source contract:
   network metadata and non-leakage to the WSLPE learner network.
 - On an ordinary simulated failure, roll back the exact original bytes
   if and only if guest activity is still zero and the metadata still matches
-  one of the two known hashes. On a crash, explicit \`recover()\` uses the
+  one of the two known hashes. On a crash, explicit `recover()` uses the
   durable journal. Any unexpected external config drift blocks rollback for
   manual intervention. A committed allocation is never silently rolled back.
 
 Unit-test command (read-only simulated VMware callbacks):
 
-\`\`\`bash
+```bash
 cd "$HOME/kingdoms-wslpe41-fresh"
 git pull --ff-only
 "$HOME/.goad/.venv/bin/python" -m unittest -v \
   tests.test_wslpe_management_vmnet_plan \
   tests.test_wslpe_management_vmnet_transaction
-\`\`\`
+```
 
 **Remaining blockers before wiring an executable transaction:** independently
 validate a complete VMware registration inventory (including offline/
-third-party workspaces), authenticated cross-checks for both \`vmrun\` and the
+third-party workspaces), authenticated cross-checks for both `vmrun` and the
 OS guest processes, root-owned private persistent journal/lock directories,
 a maintenance window with **all** VMware guests stopped by their owners,
 and real VMware Workstation 26 restart/adapter/isolation/rollback tests.
-Do not power off the two active VMs automatically, or expose \`--apply\`
-while these gates are outstanding. The \`kingdom.operator\` WinRM/TLS handoff
+Do not power off the two active VMs automatically, or expose `--apply`
+while these gates are outstanding. The `kingdom.operator` WinRM/TLS handoff
 and 41/41 installation remain subsequent separate acceptance gates.
+
+
+## 2026-10-21: real-host guest inventory audit (read only)
+
+Before any VMware Workstation network restart, independently cross-check
+`vmrun -T ws list` against the Linux `vmware-vmx` process count, and verify
+that each running VMX is actually located under an explicitly supplied
+existing workspace. Reject mismatched counts, foreign running guests,
+duplicates, symlinked VMXs, missing workspace coverage, or a VMnet already
+claimed in host metadata / provided workspaces. This is **not** an inventory
+of all offline Workstation registrations.
+
+Read-only operator command on Kali (do not use sudo):
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" -m unittest -v \
+  tests.test_wslpe_management_vmnet_plan \
+  tests.test_wslpe_management_vmnet_transaction \
+  tests.test_wslpe_management_vmnet_host_gate
+
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-management-vmnet-host-audit.py \
+  --candidate-vmnet vmnet4 \
+  --workspace-root "$PWD/workspace" \
+  --workspace-root "$HOME/kingdoms-lpe-standalone/workspace" \
+  --workspace-root "$HOME/kingdoms-rebuild/workspace"
+```
+
+If a workspace path is missing or a VMX is outside the supplied roots, do
+not substitute an arbitrary directory: identify the real registration owner
+and repeat the audit. Existing reported two running guests should produce
+`[INVENTORY] vmrun=2 vmware-vmx=2` and `[DEFERRED]`, provided both running
+VMXs belong to the supplied workspace set. An inconsistent inventory should
+produce `[BLOCKED]`, not permission to power off or reconfigure guests.
+
+Source-only gate: `kingdoms/wslpe_management_vmnet_host_gate.py`;
+CLI: `scripts/wslpe-management-vmnet-host-audit.py`.
+The dedicated CI checks these read-only functions using simulated
+VMware outputs. Passing does not prove offline-VM ownership, stable host
+network allocation, vmnet4 isolation, WinRM/TLS, or Windows operator access.
+
+**Still not approved:** applying vmnet4, creating the new guest NIC,
+removing NAT forwards, modifying Vagrant, or running the 41-stage install.
+A reviewed maintenance window and independently implemented VMware
+network restart/rollback/host adapter acceptance are still required.
