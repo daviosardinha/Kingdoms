@@ -76,7 +76,7 @@ class NativeStage1RepairTests(unittest.TestCase):
             ["up", "WSLPE-WS01", "--provision"], timeout=600)
         self.provider._guest_tools_healthy.assert_called_once_with(2200)
         self.instance.set_status.assert_called_once_with(PROVIDED)
-        self.assertEqual(len(self.scripts), 3 - 1)
+        self.assertEqual(len(self.scripts), 3)
         self.assertIn("172.28.232.31", self.scripts[-1])
         self.assertIn("WSLPE_STAGE1_WRONG_WINDOWS_GUEST", self.scripts[0])
         self.assertEqual(self.instance.status, PROVIDED)
