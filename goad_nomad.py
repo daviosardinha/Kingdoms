@@ -21,6 +21,7 @@ from kingdoms.course_registry import COURSES, get_course, catalog_lines
 from kingdoms.windows_lpe_vmware import WindowsLpeVmwareAdapter
 from kingdoms.wslpe_stage1 import bootstrap_native_wslpe, valid_prefix
 from kingdoms.wslpe_resume import resume_existing_wslpe
+from kingdoms.wslpe_stage1_repair import repair_native_wslpe_stage1
 
 
 _upstream = runpy.run_path(
@@ -467,6 +468,44 @@ class GoadNomad(BaseGoad):
         if not success:
             Log.warning(
                 'WSLPE resume did not complete. Do not retry until state is inspected.'
+            )
+        return False
+
+    def do_repair_stage1(self, arg=''):
+        """Explicitly repair one existing CREATED WSLPE guest; never create a VM."""
+        selected = self._course_selection()
+        if (selected is None or selected.slug != 'windows-lpe'
+                or self.lab_manager.get_current_lab_name() != 'WSLPE'
+                or (arg or '').strip()):
+            Log.error('Usage: select windows-lpe, load existing instance, then repair_stage1')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        if instance is None or instance.lab_name != 'WSLPE':
+            Log.error('Load the existing native WSLPE instance before repair')
+            return False
+        Log.warning(
+            'One-attempt partial Stage-1 recovery on the loaded WSLPE guest only. '
+            'This can temporarily stop its VGAuth service, install/reboot VMware '
+            'Tools and run the original Vagrant provisioners (including fix_ip.ps1). '
+            'No other VMware instances or LPE scenarios are targeted.'
+        )
+        try:
+            confirmation = input(
+                'Type REPAIR WSLPE STAGE1 to authorize this exact partial VM: '
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            Log.warning('WSLPE Stage 1 recovery cancelled')
+            return False
+        if confirmation != 'REPAIR WSLPE STAGE1':
+            Log.warning('WSLPE Stage 1 recovery cancelled; no changes made')
+            return False
+        success = repair_native_wslpe_stage1(self.lab_manager, confirmed=True)
+        self.refresh_prompt()
+        if not success:
+            Log.warning(
+                'WSLPE recovery incomplete. Do not rerun until current guest '
+                'and provider evidence has been inspected.'
             )
         return False
 
