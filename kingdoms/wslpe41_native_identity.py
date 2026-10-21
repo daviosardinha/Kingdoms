@@ -69,11 +69,14 @@ def inspect_native_registration(instance: Path, vmrun_output: str) -> NativeGues
         raise HostEvidenceBlocked("Native Vagrant registration missing or unsafe")
     try:
         raw = vmid.read_text(encoding="utf-8").strip()
-        vmx = Path(raw)
-        if not vmx.is_absolute() or vmx.is_symlink():
-            raise HostEvidenceBlocked("VMware VMX path must be absolute and nonlinked")
+    except (OSError, UnicodeError) as exc:
+        raise HostEvidenceBlocked("Native VMware registration unreadable") from exc
+    vmx = Path(raw)
+    if not vmx.is_absolute() or vmx.is_symlink():
+        raise HostEvidenceBlocked("VMware VMX path must be absolute and nonlinked")
+    try:
         vmx = vmx.resolve(strict=True)
-    except (OSError, UnicodeError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         raise HostEvidenceBlocked("Native VMware registration unreadable") from exc
     if not vmx.is_file() or vmx.suffix.lower() != ".vmx":
         raise HostEvidenceBlocked("Native VMware registration is not a VMX")
