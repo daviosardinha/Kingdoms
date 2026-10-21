@@ -6,7 +6,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from test_wslpe_winrm_guard import nft_fixture
+from tests.test_wslpe_winrm_guard import nft_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 FILE = ROOT / "scripts/wslpe-winrm-firewall.py"
