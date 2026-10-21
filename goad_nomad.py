@@ -519,8 +519,10 @@ class GoadNomad(BaseGoad):
             return False
         Log.warning(
             'One-attempt partial Stage-1 recovery on the loaded WSLPE guest only. '
-            'This can temporarily stop its VGAuth service, install/reboot VMware '
-            'Tools and run the original Vagrant provisioners (including fix_ip.ps1). '
+            'If the registered VM is powered off, this will first power on that '
+            'exact existing guest (never create a replacement). It can then '
+            'temporarily stop VGAuth, install/reboot VMware Tools, and run the '
+            'original Vagrant provisioners (including fix_ip.ps1). '
             'No other VMware instances or LPE scenarios are targeted.'
         )
         try:
