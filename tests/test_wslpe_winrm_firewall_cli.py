@@ -52,6 +52,82 @@ class WslpeFirewallCliTests(unittest.TestCase):
         self.assertIn('tcp dport 2210 drop', apply.kwargs["data"])
         self.assertNotIn("vmnet8", apply.kwargs["data"])
 
+    def test_migrate_exact_stale_rule_atomically_and_verify_new_port(self):
+        old = nft_fixture(port=2210)
+        new = nft_fixture(port=55985)
+        with patch.object(CLI, "native_port", return_value=(55985, "wslpe-1")), \
+             patch.object(CLI.os, "geteuid", return_value=0), \
+             patch.object(CLI, "run", side_effect=[
+                 result(stdout=LISTEN.replace("2210", "55985")),
+                 result(stdout=old),
+                 result(),
+                 result(stdout=old),
+                 result(),
+                 result(stdout=new),
+             ]) as runner, \
+             patch.object(sys, "argv", [
+                 "script", "--migrate-from-port", "2210",
+                 "--confirm-port", "55985",
+             ]):
+            self.assertEqual(CLI.main(), 0)
+        self.assertEqual(runner.call_count, 6)
+        check = runner.call_args_list[2]
+        apply = runner.call_args_list[4]
+        self.assertEqual(check.args[0], ["nft", "-c", "-f", "-"])
+        self.assertEqual(apply.args[0], ["nft", "-f", "-"])
+        self.assertEqual(check.kwargs["data"], apply.kwargs["data"])
+        self.assertIn("replace rule inet kingdoms_wslpe_winrm", apply.kwargs["data"])
+        self.assertIn("handle 3", apply.kwargs["data"])
+        self.assertIn("tcp dport 55985 drop", apply.kwargs["data"])
+
+    def test_migrate_rejects_changed_preflight_before_mutation(self):
+        old = nft_fixture(port=2210)
+        with patch.object(CLI, "native_port", return_value=(55985, "wslpe-1")), \
+             patch.object(CLI.os, "geteuid", return_value=0), \
+             patch.object(CLI, "run", side_effect=[
+                 result(stdout=LISTEN.replace("2210", "55985")),
+                 result(stdout=old),
+                 result(),
+                 result(stdout=nft_fixture(port=2211)),
+             ]) as runner, \
+             patch.object(sys, "argv", [
+                 "script", "--migrate-from-port", "2210",
+                 "--confirm-port", "55985",
+             ]):
+            self.assertEqual(CLI.main(), 1)
+        self.assertEqual(runner.call_count, 4)
+        self.assertFalse(any(
+            call.args[0] == ["nft", "-f", "-"] for call in runner.call_args_list
+        ))
+
+    def test_migrate_requires_explicit_old_port_and_current_port(self):
+        with patch.object(CLI, "native_port", return_value=(55985, "wslpe-1")), \
+             patch.object(CLI.os, "geteuid", return_value=0), \
+             patch.object(CLI, "run", side_effect=[
+                 result(stdout=LISTEN.replace("2210", "55985")),
+             ]) as runner, \
+             patch.object(sys, "argv", [
+                 "script", "--migrate-from-port", "2210",
+                 "--confirm-port", "2210",
+             ]):
+            self.assertEqual(CLI.main(), 1)
+        self.assertEqual(runner.call_count, 1)
+
+    def test_migrate_refuses_unknown_old_rule(self):
+        with patch.object(CLI, "native_port", return_value=(55985, "wslpe-1")), \
+             patch.object(CLI.os, "geteuid", return_value=0), \
+             patch.object(CLI, "run", side_effect=[
+                 result(stdout=LISTEN.replace("2210", "55985")),
+                 result(stdout=nft_fixture(port=2211)),
+             ]) as runner, \
+             patch.object(sys, "argv", [
+                 "script", "--migrate-from-port", "2210",
+                 "--confirm-port", "55985",
+             ]):
+            self.assertEqual(CLI.main(), 1)
+        self.assertEqual(runner.call_count, 2)
+        self.assertFalse(any("-f" in call.args[0] for call in runner.call_args_list))
+
     def test_wrong_explicit_port_never_applies(self):
         with patch.object(CLI, "native_port", return_value=(2210, "wslpe-1")), \
              patch.object(CLI.os, "geteuid", return_value=0), \
