@@ -23,6 +23,7 @@ from kingdoms.windows_lpe_vmware import WindowsLpeVmwareAdapter
 from kingdoms.wslpe_stage1 import bootstrap_native_wslpe, valid_prefix
 from kingdoms.wslpe_resume import resume_existing_wslpe
 from kingdoms.wslpe_stage1_repair import repair_native_wslpe_stage1
+from kingdoms.wslpe_license_maintenance import maintain_native_wslpe_license
 
 
 _upstream = runpy.run_path(
@@ -189,7 +190,7 @@ class GoadNomad(BaseGoad):
                        'course_preflight', 'course_vm_status',
                        'help', '?', 'exit', 'eof'}
             if (
-                action in ('install', 'resume', 'repair_stage1', 'load')
+                action in ('install', 'resume', 'repair_stage1', 'repair_license', 'load')
                 and self._course_selection() is not None
                 and self._course_selection().slug == 'windows-lpe'
             ):
@@ -197,7 +198,7 @@ class GoadNomad(BaseGoad):
             if action not in allowed:
                 Log.error(
                     'WSLPE full installation and lifecycle remain locked. '
-                    'Only confirmed windows-lpe Stage 1 install/resume/repair is allowed.'
+                    'Only confirmed windows-lpe Stage 1 install/resume/repair/license maintenance is allowed.'
                 )
                 return False
         if self._course_is_not_ready():
@@ -206,7 +207,7 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
-            if name in ('install', 'resume', 'repair_stage1', 'load') and self._course_selection().slug == 'windows-lpe':
+            if name in ('install', 'resume', 'repair_stage1', 'repair_license', 'load') and self._course_selection().slug == 'windows-lpe':
                 allowed.add(name)
             if name not in allowed:
                 Log.error(
@@ -545,6 +546,45 @@ class GoadNomad(BaseGoad):
             )
         return False
 
+    def do_repair_license(self, arg=''):
+        """Apply the existing Windows eval-rearm role on THIS registered WSLPE."""
+        selected = self._course_selection()
+        if (selected is None or selected.slug != 'windows-lpe'
+                or self.lab_manager.get_current_lab_name() != 'WSLPE'
+                or (arg or '').strip()):
+            Log.error('Usage: select windows-lpe, load existing instance, then repair_license')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        if instance is None or instance.lab_name != 'WSLPE':
+            Log.error('Load the exact native WSLPE instance before license maintenance')
+            return False
+        Log.warning(
+            'One WSLPE-only Windows evaluation maintenance action on the '
+            f'existing {instance.instance_id} guest. This reuses the '
+            'settings/eval_rearm role and may reboot Windows if the '
+            'evaluation grace is expired. No VM creation, learner, '
+            'LPE scenario or NORTH change.'
+        )
+        try:
+            confirmation = input(
+                'Type REPAIR WSLPE LICENSE to authorize this exact guest: '
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            Log.warning('WSLPE license maintenance cancelled')
+            return False
+        if confirmation != 'REPAIR WSLPE LICENSE':
+            Log.warning('WSLPE license maintenance cancelled; no changes made')
+            return False
+        success = maintain_native_wslpe_license(self.lab_manager, confirmed=True)
+        self.refresh_prompt()
+        if not success:
+            Log.warning(
+                'WSLPE Windows licensing remains unverified. Inspect before '
+                'any retry; do not run scenario installation.'
+            )
+        return False
+
     def do_install(self, arg=''):
         """Route interactive Windows LPE stage-1 bootstrap away from NORTH."""
         selected = self._course_selection()
@@ -776,6 +816,9 @@ class GoadNomad(BaseGoad):
                 )
                 print_menu_entry(
                     'repair_stage1', 'confirm one native partial-guest Tools and NIC recovery'
+                )
+                print_menu_entry(
+                    'repair_license', 'run existing WSLPE evaluation role on loaded VM only'
                 )
                 print_menu_entry(
                     'load <instance_id>', 'select only an existing local WSLPE instance'
