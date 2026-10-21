@@ -33,8 +33,15 @@ class NativeStage1RepairTests(unittest.TestCase):
         self.instance.set_status = Mock(side_effect=lambda status: setattr(
             self.instance, "status", status,
         ))
+        vmx = self.provider_dir / "guest.vmx"
+        vmx.write_text(
+            'ethernet0.connectionType = "nat"\n'
+            'ethernet0.generatedAddress = "00:0C:29:2F:D7:5B"\n',
+            encoding="utf-8",
+        )
         self.provider = SimpleNamespace(
             lab_name="WSLPE", path=str(self.provider_dir),
+            _vmx_path=Mock(return_value=str(vmx)),
             _winrm_forwarded_port=Mock(return_value=2200),
             _wait_winrm_ready=Mock(return_value=True),
             _ensure_vmware_tools=Mock(return_value=True),
@@ -136,6 +143,22 @@ class NativeStage1RepairTests(unittest.TestCase):
                 self.manager, confirmed=True))
         self.provider._run_vagrant_bounded.assert_called_once()
         self.instance.set_status.assert_not_called()
+
+    def test_registration_mac_must_be_known_before_any_tools_change(self):
+        self.provider._vmx_path.return_value = str(self.provider_dir / "unknown.vmx")
+        with self.patches():
+            self.assertFalse(repair.repair_native_wslpe_stage1(
+                self.manager, confirmed=True))
+        self.provider._ensure_vmware_tools.assert_not_called()
+        self.provider._run_vagrant_bounded.assert_not_called()
+
+    def test_proof_binds_windows_default_route_adapter_to_registered_vmx_mac(self):
+        with self.patches():
+            self.assertTrue(repair.repair_native_wslpe_stage1(
+                self.manager, confirmed=True))
+        self.assertTrue(all("000C292FD75B" in script for script in self.scripts))
+        self.assertTrue(all("WSLPE_STAGE1_WRONG_NATIVE_NAT_ADAPTER" in script
+                            for script in self.scripts))
 
     def test_missing_exercise_ip_does_not_mark_provided(self):
         def run_ps(script):
