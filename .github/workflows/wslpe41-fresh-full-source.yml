@@ -10,11 +10,13 @@ on:
       - 'kingdoms/wslpe41_install_flow.py'
       - 'kingdoms/wslpe41_network_auto.py'
       - 'kingdoms/wslpe41_host_preflight.py'
+      - 'kingdoms/wslpe41_native_identity.py'
       - 'scripts/wslpe41-install.py'
       - 'tests/test_wslpe41_fresh_contract.py'
       - 'tests/test_wslpe41_install_flow.py'
       - 'tests/test_wslpe41_network_auto.py'
       - 'tests/test_wslpe41_host_preflight.py'
+      - 'tests/test_wslpe41_native_identity.py'
       - '.github/workflows/wslpe41-fresh-full-source.yml'
   workflow_dispatch:
 
@@ -34,7 +36,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check pyyaml rich Jinja2 ansible-runner psutil 'ansible-core==2.17.14'
       - name: Compile source contract and run its behavioral regressions
         run: |
-          python -m py_compile kingdoms/wslpe41_fresh_contract.py kingdoms/wslpe41_install_flow.py kingdoms/wslpe41_network_auto.py kingdoms/wslpe41_host_preflight.py scripts/wslpe41-install.py tests/test_wslpe41_fresh_contract.py tests/test_wslpe41_install_flow.py tests/test_wslpe41_network_auto.py tests/test_wslpe41_host_preflight.py
+          python -m py_compile kingdoms/wslpe41_fresh_contract.py kingdoms/wslpe41_install_flow.py kingdoms/wslpe41_network_auto.py kingdoms/wslpe41_host_preflight.py kingdoms/wslpe41_native_identity.py scripts/wslpe41-install.py tests/test_wslpe41_fresh_contract.py tests/test_wslpe41_install_flow.py tests/test_wslpe41_network_auto.py tests/test_wslpe41_host_preflight.py tests/test_wslpe41_native_identity.py
           python -m unittest discover -s tests -p 'test_wslpe41_*.py' -v
           python scripts/wslpe41-install.py --plan
       - name: Run existing WSLPE source regression suite
