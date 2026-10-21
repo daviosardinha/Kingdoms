@@ -76,7 +76,7 @@ def authenticate_native_operator(context: AnsibleStageContext) -> bool:
     if result.returncode != 0 or not result.stdout or len(result.stdout) > 100_000:
         raise InstallBlocked("Operator HTTPS authentication failed")
     match = re.fullmatch(
-        r"ws01\\s+\\|\\s+SUCCESS\\s+=>\\s*(\\{.*\\})\\s*",
+        r"ws01\s+\|\s+SUCCESS\s+=>\s*(\{.*\})\s*",
         result.stdout.strip(), flags=re.DOTALL,
     )
     if match is None:
