@@ -80,6 +80,10 @@ class NativeStage1RepairTests(unittest.TestCase):
             repair, "inspect_vmware_guest", return_value=True))
         stack.enter_context(patch.object(
             repair, "_ensure_registered_guest_running", return_value=True))
+        stack.enter_context(patch(
+            "kingdoms.wslpe_license_maintenance.maintain_native_wslpe_license",
+            return_value=True,
+        ))
         return stack
 
     def test_one_confirmed_native_repair_uses_original_vagrant_provisioners(self):
