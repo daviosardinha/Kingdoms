@@ -74,13 +74,13 @@ class VmwareProvider(VagrantProvider):
         return False
 
     @staticmethod
-    def _winrm_session(port):
+    def _winrm_session(port, *, operation_timeout_sec=60, read_timeout_sec=90):
         return winrm.Session(
             f'http://127.0.0.1:{port}/wsman',
             auth=('vagrant', 'vagrant'),
             transport='ntlm',
-            operation_timeout_sec=60,
-            read_timeout_sec=90,
+            operation_timeout_sec=operation_timeout_sec,
+            read_timeout_sec=read_timeout_sec,
         )
 
     def _wait_winrm_ready(self, port, timeout=180):
@@ -202,7 +202,16 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
             return False
 
         try:
-            session = self._winrm_session(port)
+            # WSLPE's targeted MSI repair can legitimately take several
+            # minutes. Keep the same provider-owned WinRM channel and give
+            # only this installation request a bounded, longer read budget.
+            # GOAD retains its existing transport/timeouts unchanged.
+            if self.lab_name == 'WSLPE':
+                session = self._winrm_session(
+                    port, operation_timeout_sec=180, read_timeout_sec=210
+                )
+            else:
+                session = self._winrm_session(port)
             install = session.run_ps(self._vmware_tools_setup_script())
             # Existing GOAD installer source moved to a pure selector below.
             # WSLPE keeps the exact same native mount/WinRM/reboot lifecycle.
