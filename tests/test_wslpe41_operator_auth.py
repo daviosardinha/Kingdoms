@@ -37,7 +37,7 @@ class OperatorAuthTests(unittest.TestCase):
             self.assertEqual(data["ansible_winrm_server_cert_validation"], "validate")
             self.assertEqual(data["ansible_port"], 5986)
             self.assertEqual(path.stat().st_mode & 0o077, 0)
-            return SimpleNamespace(returncode=0, stdout='ws01 | SUCCESS => {"ping": "pong"}')
+            return SimpleNamespace(returncode=0, stdout='ws01 | SUCCESS => {\\n    "changed": false,\\n    "ping": "pong"\\n}')
         with patch("kingdoms.wslpe41_operator_auth._regular"), \
              patch("kingdoms.wslpe41_operator_auth.os.access", return_value=True), \
              patch("kingdoms.wslpe41_operator_auth._guest"), \
