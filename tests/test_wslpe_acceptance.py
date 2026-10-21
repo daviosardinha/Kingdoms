@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -64,6 +66,23 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
         self.assertIsNone(ACCEPTANCE.verify_output(
             name, "mayfly/windows10 (vmware_desktop, 2024.01.06)"
         ))
+
+    def test_preboot_native_import_works_with_absolute_script_and_isolated_python(self):
+        # Real operator invokes this script by absolute path from the repo's
+        # goad_nomad console. A direct execution must not rely on PYTHONPATH
+        # implicitly set by the unittest runner or current working directory.
+        snippet = (
+            "import runpy\n"
+            f"source = runpy.run_path({str(SCRIPT)!r}, run_name='isolated_preboot_probe')\n"
+            "result = source['verify_peer_wslpe_inventory']("
+            "'Total running VMs: 0\\n', '172.28.232')\n"
+            "assert result is None, result\n"
+        )
+        actual = subprocess.run(
+            [sys.executable, "-I", "-c", snippet], cwd="/",
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        self.assertEqual(actual.returncode, 0, actual.stderr)
 
     def test_existing_vm_and_unexpected_vmrun_output_block(self):
         name = "Existing VMware VM inventory (read-only)"
