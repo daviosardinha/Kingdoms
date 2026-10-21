@@ -29,10 +29,14 @@ guest test.
   telemetry, following its existing GOAD design. GOAD/NORTH's installer
   setup script and segmented lifecycle are unchanged.
 - `kingdoms/wslpe_stage1_repair.py`: checks an existing **CREATED**
-  local VMware/WSLPE instance, its **running** registered VMX, canonical source
-  Vagrantfile, exact workgroup Windows name, enabled NAT default-route adapter
-  with the **same MAC as its registered VMX**, and authenticated forwarded WinRM.
-  It then calls the existing provider's Tools repair, verifies Tools state,
+  local VMware/WSLPE instance and canonical source Vagrantfile. It validates
+  the exact existing Vagrant VMX registration against the local workspace and
+  VMware running inventory. If powered off, **only** an explicit, validated
+  `not running (vmware_desktop)` state permits **one** `vmrun start` attempt;
+  a VM already running is not started again. Windows then must prove the exact
+  workgroup name, enabled NAT default-route adapter with the **same MAC as the
+  registered VMX**, and authenticated forwarded WinRM.
+  The recovery calls the existing provider's Tools repair and verifies Tools state,
   runs exactly **one** native bounded `vagrant up WSLPE-WS01 --provision`,
   and verifies Windows, Tools and the instance's expected `<prefix>.31`
   exercise address. That Vagrantfile invokes the existing
@@ -68,9 +72,10 @@ Check `course` to verify the loaded instance's `CREATED` state. Then issue:
 repair_stage1
 ```
 
-Only after checking the scope and understanding that a **Windows-only**
-Tools installation/reboot and **one** Vagrant provisioning pass may occur,
-confirm `REPAIR WSLPE STAGE1` when prompted. Do **not** automatically retry
+Only after checking the scope and understanding that this operation can
+**power on the same stopped guest**, install/reboot Windows VMware Tools, and
+run **one** native Vagrant provisioning pass, confirm `REPAIR WSLPE STAGE1`
+when prompted. Do **not** automatically retry
 the command if it fails. Preserve the Vagrant/WinRM/MSI logs and inspect the
 specific failure. The original WSLPE VM and NORTH must remain unchanged.
 
@@ -81,7 +86,9 @@ entry point remains disabled until these are validated.
 
 ## Test scope
 
-Mock-only tests exercise the exact existing provider script selector, the
-VGAuth scoped MSI workaround, the existing native `vagrant --provision` call,
-registered Windows NAT MAC evidence and first-failure blocking. Source CI
+Mock-only tests exercise the exact existing provider script selector,
+the VGAuth scoped MSI workaround, the registered-VM power-on guard
+(including unknown Vagrant state and changed VMware inventory blocking),
+the native `vagrant --provision` call, the Windows NAT MAC evidence and
+first-failure blocking. Source CI
 success is not evidence that the live VM has been repaired.
