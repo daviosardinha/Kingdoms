@@ -31,14 +31,14 @@ class FoundationHandoffTests(unittest.TestCase):
                         prepare_native_foundation(self.context,
                             operator_handoff_approved=approved,
                             console_recovery_check=recovery,
-                            attest_fresh_guest=lambda _: attestation())
+                            attest_fresh_guest=lambda _: attestation(), authenticate_operator=lambda _: True)
             run.assert_not_called()
 
     def test_missing_attestor_prevents_mutation(self):
         with patch("kingdoms.wslpe41_native_foundation_handoff.run_foundation_stage") as run:
             with self.assertRaises(InstallBlocked):
                 prepare_native_foundation(self.context, operator_handoff_approved=True,
-                    console_recovery_check=lambda _: True, attest_fresh_guest=None)
+                    console_recovery_check=lambda _: True, attest_fresh_guest=None, authenticate_operator=lambda _: True)
             run.assert_not_called()
 
     def test_existing_playbooks_run_in_order(self):
@@ -48,7 +48,7 @@ class FoundationHandoffTests(unittest.TestCase):
         with patch("kingdoms.wslpe41_native_foundation_handoff.run_foundation_stage", side_effect=run) as mocked:
             result = prepare_native_foundation(self.context,
                 operator_handoff_approved=True, console_recovery_check=lambda _: True,
-                attest_fresh_guest=lambda _: attestation())
+                attest_fresh_guest=lambda _: attestation(), authenticate_operator=lambda _: True)
         self.assertEqual([call.args[1] for call in mocked.call_args_list], ["learner", "operator"])
         self.assertTrue(result.attestation.operator_recovery_ready)
 
@@ -60,7 +60,30 @@ class FoundationHandoffTests(unittest.TestCase):
             with self.assertRaises(InstallBlocked):
                 prepare_native_foundation(self.context,
                     operator_handoff_approved=True, console_recovery_check=lambda _: True,
-                    attest_fresh_guest=lambda _: attestation(operator_recovery_ready=False))
+                    attest_fresh_guest=lambda _: attestation(operator_recovery_ready=False),
+                    authenticate_operator=lambda _: True)
+
+    def test_operator_authentication_failure_blocks_attestation(self):
+        def run(context, stage, **kwargs):
+            return type("Proof", (), dict(passed=True,
+                instance_id=IDENTITY.instance_id, vmx=IDENTITY.vmx))()
+        with patch("kingdoms.wslpe41_native_foundation_handoff.run_foundation_stage", side_effect=run), \
+             patch("kingdoms.wslpe41_native_foundation_handoff.verify_attestation") as verify:
+            with self.assertRaises(InstallBlocked):
+                prepare_native_foundation(self.context,
+                    operator_handoff_approved=True, console_recovery_check=lambda _: True,
+                    attest_fresh_guest=lambda _: attestation(),
+                    authenticate_operator=lambda _: False)
+            verify.assert_not_called()
+
+    def test_missing_operator_authenticator_prevents_mutation(self):
+        with patch("kingdoms.wslpe41_native_foundation_handoff.run_foundation_stage") as run:
+            with self.assertRaises(InstallBlocked):
+                prepare_native_foundation(self.context,
+                    operator_handoff_approved=True, console_recovery_check=lambda _: True,
+                    attest_fresh_guest=lambda _: attestation(),
+                    authenticate_operator=None)
+            run.assert_not_called()
 
     def test_mismatched_foundation_proof_blocks(self):
         with patch("kingdoms.wslpe41_native_foundation_handoff.run_foundation_stage",
@@ -69,7 +92,7 @@ class FoundationHandoffTests(unittest.TestCase):
             with self.assertRaises(InstallBlocked):
                 prepare_native_foundation(self.context,
                     operator_handoff_approved=True, console_recovery_check=lambda _: True,
-                    attest_fresh_guest=lambda _: attestation())
+                    attest_fresh_guest=lambda _: attestation(), authenticate_operator=lambda _: True)
             run.assert_called_once()
 
 
