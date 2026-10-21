@@ -188,7 +188,7 @@ class GoadNomad(BaseGoad):
                        'course_preflight', 'course_vm_status',
                        'help', '?', 'exit', 'eof'}
             if (
-                action in ('install', 'resume', 'repair_stage1')
+                action in ('install', 'resume', 'repair_stage1', 'load')
                 and self._course_selection() is not None
                 and self._course_selection().slug == 'windows-lpe'
             ):
@@ -205,7 +205,7 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
-            if name in ('install', 'resume', 'repair_stage1') and self._course_selection().slug == 'windows-lpe':
+            if name in ('install', 'resume', 'repair_stage1', 'load') and self._course_selection().slug == 'windows-lpe':
                 allowed.add(name)
             if name not in allowed:
                 Log.error(
@@ -470,6 +470,39 @@ class GoadNomad(BaseGoad):
                 'WSLPE resume did not complete. Do not retry until state is inspected.'
             )
         return False
+
+    def do_load(self, arg):
+        """Allow selected windows-lpe to load ONLY a local native WSLPE instance."""
+        selected = self._course_selection()
+        if selected is not None and selected.slug == 'windows-lpe':
+            instance_id = (arg or '').strip()
+            instance = self.lab_manager.lab_instances.get_instance(instance_id)
+            current = self.lab_manager.get_current_instance()
+            if (not instance_id or instance is None
+                    or instance.lab_name != 'WSLPE'
+                    or instance.provider_name != 'vmware'
+                    or instance.provisioner_name != 'local'
+                    or (current is not None and current.instance_id != instance_id)):
+                Log.error('Only one existing native WSLPE instance can be loaded')
+                return False
+            workspace = Path(GoadPath.get_workspace_path())
+            expected = workspace / instance_id
+            if (workspace.is_symlink() or expected.is_symlink()
+                    or Path(instance.instance_path).resolve() != expected.resolve()
+                    or expected.parent.resolve() != workspace.resolve()):
+                Log.error('WSLPE instance is outside this operator checkout')
+                return False
+            self.lab_manager.load_instance(instance_id)
+            loaded = self.lab_manager.get_current_instance()
+            if loaded is None or loaded.instance_id != instance_id:
+                Log.error('Exact native WSLPE instance could not be loaded')
+                return False
+            self.refresh_prompt()
+            return False
+        if self._course_is_not_ready():
+            Log.error('Cannot load a different lab while this course is unavailable')
+            return False
+        return super().do_load(arg)
 
     def do_repair_stage1(self, arg=''):
         """Explicitly repair one existing CREATED WSLPE guest; never create a VM."""
@@ -740,6 +773,9 @@ class GoadNomad(BaseGoad):
                 )
                 print_menu_entry(
                     'repair_stage1', 'confirm one native partial-guest Tools and NIC recovery'
+                )
+                print_menu_entry(
+                    'load <instance_id>', 'select only an existing local WSLPE instance'
                 )
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Full course provisioning and other lifecycle actions remain disabled.')
