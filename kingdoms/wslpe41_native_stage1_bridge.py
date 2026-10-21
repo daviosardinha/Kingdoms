@@ -136,6 +136,22 @@ def create_guarded_native_guest(
             or workspaces[0] != native_workspace):
         raise InstallBlocked("Explicit native checkout and peer workspace inventory required")
 
+    # The creation receipt must name the actual checkout revision, not an
+    # arbitrary 40-character string supplied by a caller.
+    source_root = Path(GoadPath.get_project_path()).resolve()
+    try:
+        actual_commit = read_only_command(
+            "git", "-C", str(source_root), "rev-parse", "HEAD"
+        ).strip()
+        tracked_changes = read_only_command(
+            "git", "-C", str(source_root), "status", "--porcelain",
+            "--untracked-files=no"
+        )
+    except HostEvidenceBlocked as exc:
+        raise InstallBlocked("Cannot verify native KINGDOMS source revision") from exc
+    if actual_commit != source_commit or tracked_changes.strip():
+        raise InstallBlocked("WSLPE41 source checkout is not clean or revision differs")
+
     before_ids = _workspace_instance_ids(native_workspace)
     try:
         before_running = _running_vmx_paths(read_only_command("vmrun", "-T", "ws", "list"))
@@ -153,6 +169,13 @@ def create_guarded_native_guest(
     identity = create_native_guest_identity(
         manager, approved_prefix, source_commit, confirmed=True
     )
+    # Reject an identity from another checkout even when a caller's mock or
+    # misconfigured manager registered a plausible instance name.
+    new_instance = native_workspace / identity.instance_id
+    if (identity.workspace != str(native_workspace)
+            or not new_instance.is_dir() or new_instance.is_symlink()
+            or not Path(identity.vmx).is_relative_to(new_instance / "provider")):
+        raise InstallBlocked("New WSLPE41 guest does not belong to this native workspace")
     # This only attests that a previously unregistered native instance and VMX
     # appeared, not that its Windows OS or credentials are clean.
     after_ids = _workspace_instance_ids(native_workspace)
