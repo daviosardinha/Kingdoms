@@ -72,6 +72,22 @@
   deployed by this Stage 1 repair. See
   [native Stage 1 recovery](WSLPE41_NATIVE_STAGE1_RECOVERY.md).
 
+## October 21 read-only foundation reuse checkpoint
+
+- The existing WSLPE HTTPS certificate/WinRM/account audit is now also usable
+  **before** learner/operator creation through
+  `scripts/wslpe-account-audit.py --pre-foundation --expected-thumbprint <fresh-pin>`.
+  It preserves strict default learner-required release checks and does not
+  provision any Windows account. A new VM's HTTPS certificate thumbprint must
+  be collected independently from the new VM console; the old WSLPE master's
+  pin must never be reused. See
+  [native foundation reuse](WSLPE41_NATIVE_FOUNDATION_REUSE.md).
+- **Read-only source integration only:** the actual fresh guest's HTTPS trust,
+  management-network isolation, WinRM-free recovery, learner account creation,
+  dedicated operator authentication and credential handoff remain unproven.
+  No WSLPE41 foundation playbook, scenario or JEA #30 operation has yet run on
+  `bf5369-wslpe-vmware`.
+
 ## October 21 native creation and orchestrator source checkpoint
 
 - `kingdoms/wslpe41_native_stage1_bridge.py` now also exposes a **private
