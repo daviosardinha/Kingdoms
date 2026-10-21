@@ -46,7 +46,7 @@ def authenticate_native_operator(context: AnsibleStageContext) -> bool:
     # Refuse inherited insecure connection overrides; explicit extra-vars
     # have the highest precedence and pin the actual probe transport.
     overrides = {
-        "ansible_user": r".\\kingdom.operator",
+        "ansible_user": r".\kingdom.operator",
         "ansible_password": password,
         "ansible_connection": "winrm",
         "ansible_winrm_scheme": "https",
