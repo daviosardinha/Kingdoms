@@ -26,7 +26,7 @@
 - [ ] Verify `41/41` configuration acceptance on the genuinely fresh guest. No unresolved install or preservation failures.
 - [ ] Repeat the same clean install independently on **another new instance** to prove reproducibility. A single successful reused developer VM is insufficient.
 
-**Current source checkpoint:** `scripts/wslpe41-install.py --plan` displays all 41 scenarios as one installation; `--execute` intentionally fails closed until the new VMware/Windows runtime adapter is proven. Passing CI does not mean a new Windows guest was installed.
+**Current source checkpoint:** `scripts/wslpe41-install.py --plan` displays all 41 scenarios as one installation; `--execute` intentionally fails closed until the new VMware/Windows runtime adapter is proven. The single installation engine now maps **83 internal runtime stages** across the 41 scenarios: each scenario is applied and validated, while JEA #30 additionally requires source staging through Ansible **before** independent guest-console activation and fresh learner endpoint validation. These are internal steps of **one installation**, not 20+21 separate campaigns. Passing CI does not mean a new Windows guest was installed.
 
 ## Current operator commands (read-only)
 
