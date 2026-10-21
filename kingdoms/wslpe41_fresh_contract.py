@@ -17,8 +17,9 @@ EXCLUDED = {
     38: "dcom_server_launch_acl",
     40: "custom_rpc_authorization",
 }
-SELECTED_ADDITIONS = tuple(n for n in range(21, 46) if n not in EXCLUDED)
-EXPECTED_NUMBERS = tuple(range(1, 21)) + SELECTED_ADDITIONS
+# One canonical course manifest. Historical source implementation is reused, but
+# installation has no separate "foundation" or "additions" phase.
+EXPECTED_NUMBERS = tuple(number for number in range(1, 46) if number not in EXCLUDED)
 
 
 class FreshInstallContractError(ValueError):
@@ -43,6 +44,8 @@ def fresh_scenario_manifest() -> tuple[FreshScenario, ...]:
     if {r["number"]: r["id"] for r in rows if r["number"] in EXCLUDED} != EXCLUDED:
         raise FreshInstallContractError("Four explicit exclusions changed")
 
+    from kingdoms.wslpe45_batch_operator import index_rows
+    indexed = {item["number"]: item for item in index_rows()}
     result: list[FreshScenario] = []
     for row in rows:
         number = row["number"]
@@ -59,10 +62,12 @@ def fresh_scenario_manifest() -> tuple[FreshScenario, ...]:
             path = "ansible/wslpe45/jea_local_stage.yml"
             channel = "out_of_band_jea_activation"
         else:
-            path = (
-                "ansible/wslpe45/traversal.yml" if number == 35
-                else f"ansible/wslpe45/{identifier}.yml"
-            )
+            indexed_row = indexed.get(number)
+            if (indexed_row is None or indexed_row["id"] != identifier
+                    or indexed_row["status"] != "candidate"
+                    or indexed_row["source_ci"] != "passed"):
+                raise FreshInstallContractError(f"Unqualified scenario source: #{number}")
+            path = indexed_row["playbook"]
             channel = "standalone_ansible"
         source = ROOT / path
         if source.is_symlink() or not source.is_file():
