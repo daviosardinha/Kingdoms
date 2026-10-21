@@ -71,6 +71,36 @@ class WslpeWinrmGuardTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     guard.firewall_batch(port)
 
+    def test_atomic_migration_replaces_only_existing_exact_wslpe_rule(self):
+        batch = guard.migrated_firewall_batch(nft_fixture(port=2210), 2210, 55985)
+        self.assertEqual(
+            batch,
+            'replace rule inet kingdoms_wslpe_winrm local_winrm_only handle 3 '
+            'meta iifname != "lo" tcp dport 55985 drop '
+            'comment "KINGDOMS_WSLPE_WINRM"\\n',
+        )
+        self.assertNotIn("delete table", batch)
+        self.assertNotIn("flush", batch)
+        self.assertNotIn("vmnet8", batch)
+
+    def test_migration_rejects_wrong_old_port_and_ambiguous_rules(self):
+        with self.assertRaises(ValueError):
+            guard.migrated_firewall_batch(nft_fixture(2210), 2211, 55985)
+        with self.assertRaises(ValueError):
+            guard.migrated_firewall_batch(nft_fixture(2210), 2210, 2210)
+        with self.assertRaises(ValueError):
+            guard.migrated_firewall_batch(nft_fixture(host_only=False), 2210, 55985)
+        for bad_handle in (None, 0, -1, "3", True):
+            with self.subTest(handle=bad_handle):
+                data = json.loads(nft_fixture())
+                data["nftables"][2]["rule"]["handle"] = bad_handle
+                with self.assertRaises(ValueError):
+                    guard.migrated_firewall_batch(json.dumps(data), 2210, 55985)
+        extra = json.loads(nft_fixture())
+        extra["nftables"].append(extra["nftables"][2])
+        with self.assertRaises(ValueError):
+            guard.migrated_firewall_batch(json.dumps(extra), 2210, 55985)
+
     def test_privileged_owner_must_be_exact_vmnet_nat(self):
         output = (
             'LISTEN 0 20 0.0.0.0:2210 0.0.0.0:* '
