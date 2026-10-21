@@ -219,7 +219,7 @@ class NativeStage1RepairTests(unittest.TestCase):
             raise AssertionError("unexpected operation")
         with patch.object(repair.subprocess, "run", side_effect=command) as run:
             self.assertFalse(repair._ensure_registered_guest_running(self.provider))
-        self.assertEqual(sum(argv[0][3] == "start" for argv in run.call_args_list), 1)
+        self.assertEqual(sum(call.args[0][3] == "start" for call in run.call_args_list), 1)
 
     def test_tools_failure_blocks_vagrant_replay_and_status(self):
         self.provider._ensure_vmware_tools.return_value = False
