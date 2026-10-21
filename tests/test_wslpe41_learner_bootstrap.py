@@ -103,7 +103,7 @@ class NativeLearnerFoundationTests(unittest.TestCase):
         self.assertEqual(self.winrm.call_args.args[0], learner.READ_ONLY_RDP)
 
     def test_no_confirmation_never_touches_guest_or_creates_secret(self):
-        a, b, c as_ignored = self.patches()[:3]
+        a, b, c = self.patches()[:3]
         with a as preflight, b, c as secret:
             self.assertFalse(learner.bootstrap_native_wslpe_learner(
                 object(), confirmed=False,
