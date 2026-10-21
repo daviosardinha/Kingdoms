@@ -115,6 +115,11 @@ def verify_peer_wslpe_inventory(vmrun_output: str, candidate_prefix: str | None)
     and any guest registered inside the checkout being installed must block.
     The guest's Windows state and vmnet L2 isolation are not inferred here.
     """
+    # Running this file by absolute path sets sys.path[0] to scripts/, not the
+    # repository root. Resolve the local KINGDOMS package explicitly rather
+    # than relying on PYTHONPATH or how unittest happened to import this file.
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     from kingdoms.wslpe41_host_preflight import HostEvidenceBlocked, running_vm_count
     from kingdoms.wslpe41_native_identity import inspect_native_registration
 
