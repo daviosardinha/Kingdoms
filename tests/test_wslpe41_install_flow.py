@@ -61,7 +61,7 @@ class SingleInstallTests(unittest.TestCase):
         result = flow.install_41(self.identity, runner, self.root)
         report, path = self.read_report()
         self.assertEqual(result, path)
-        self.assertEqual(len(runner.calls), 82)
+        self.assertEqual(len(runner.calls), 83)
         self.assertEqual([n for n, stage in runner.calls if stage in ("apply", "activate")],
                          [s.number for s in flow.fresh_scenario_manifest()])
         self.assertEqual(report["configuration_validated"], 41)
@@ -78,11 +78,26 @@ class SingleInstallTests(unittest.TestCase):
     def test_jea_activates_through_independent_guest_console(self):
         runner = FakeRunner()
         flow.install_41(self.identity, runner, self.root)
+        self.assertIn((30, "stage"), runner.calls)
         self.assertIn((30, "activate"), runner.calls)
         self.assertNotIn((30, "apply"), runner.calls)
         record = next(r for r in self.read_report()[0]["scenarios"] if r["number"] == 30)
-        self.assertEqual(record["proofs"][0]["transport"], "guest_console")
-        self.assertEqual(record["proofs"][1]["transport"], "ansible")
+        self.assertEqual(record["staging"], "PASS")
+        self.assertEqual([p["stage"] for p in record["proofs"]],
+                         ["stage", "activate", "validate"])
+        self.assertEqual([p["transport"] for p in record["proofs"]],
+                         ["ansible", "guest_console", "ansible"])
+
+    def test_failed_jea_module_staging_never_reaches_console_activation(self):
+        runner = FakeRunner(fail_number=30, fail_stage="stage")
+        with self.assertRaisesRegex(flow.InstallBlocked, "missing exact runtime proof"):
+            flow.install_41(self.identity, runner, self.root)
+        report, path = self.read_report()
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["inflight"], {"number": 30, "stage": "stage"})
+        self.assertNotIn((30, "activate"), runner.calls)
+        self.assertNotIn((30, "validate"), runner.calls)
+        self.assertTrue((path.parent / ".incomplete").exists())
 
     def test_remote_jea_activation_never_counts_as_pass(self):
         runner = FakeRunner(bad_jea=True)
