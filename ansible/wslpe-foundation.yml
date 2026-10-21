@@ -70,8 +70,12 @@
     - name: Maintain approved Windows evaluation grace before learner creation
       ansible.builtin.import_role:
         name: settings/eval_rearm
+      tags:
+        - wslpe_license
 
     - name: Require enough Windows evaluation grace for a training session
+      tags:
+        - wslpe_license
       ansible.windows.win_powershell:
         script: |
           $ErrorActionPreference = 'Stop'
