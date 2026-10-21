@@ -35,7 +35,7 @@ class GuardedNativeCreationTests(unittest.TestCase):
         )
 
     def _create(self, *_args, **_kwargs):
-        (self.workspace / self.identity.instance_id).mkdir(parents=True)
+        (self.workspace / self.identity.instance_id).mkdir(parents=True, exist_ok=True)
         return self.identity
 
     @staticmethod
