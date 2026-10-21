@@ -24,6 +24,7 @@ from kingdoms.wslpe_stage1 import bootstrap_native_wslpe, valid_prefix
 from kingdoms.wslpe_resume import resume_existing_wslpe
 from kingdoms.wslpe_stage1_repair import repair_native_wslpe_stage1
 from kingdoms.wslpe_license_maintenance import maintain_native_wslpe_license
+from kingdoms.wslpe41_learner_bootstrap import bootstrap_native_wslpe_learner
 
 
 _upstream = runpy.run_path(
@@ -190,7 +191,7 @@ class GoadNomad(BaseGoad):
                        'course_preflight', 'course_vm_status',
                        'help', '?', 'exit', 'eof'}
             if (
-                action in ('install', 'resume', 'repair_stage1', 'repair_license', 'load')
+                action in ('install', 'resume', 'repair_stage1', 'repair_license', 'foundation_learner', 'load')
                 and self._course_selection() is not None
                 and self._course_selection().slug == 'windows-lpe'
             ):
@@ -207,7 +208,7 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
-            if name in ('install', 'resume', 'repair_stage1', 'repair_license', 'load') and self._course_selection().slug == 'windows-lpe':
+            if name in ('install', 'resume', 'repair_stage1', 'repair_license', 'foundation_learner', 'load') and self._course_selection().slug == 'windows-lpe':
                 allowed.add(name)
             if name not in allowed:
                 Log.error(
@@ -585,6 +586,53 @@ class GoadNomad(BaseGoad):
             )
         return False
 
+    def do_foundation_learner(self, arg=''):
+        """Run existing WSLPE learner foundation on one PROVIDED native guest."""
+        selected = self._course_selection()
+        if (selected is None or selected.slug != 'windows-lpe'
+                or self.lab_manager.get_current_lab_name() != 'WSLPE'
+                or (arg or '').strip()):
+            Log.error(
+                'Usage: select windows-lpe, load existing instance, '
+                'then foundation_learner'
+            )
+            return False
+        instance = self.lab_manager.get_current_instance()
+        if instance is None or instance.lab_name != 'WSLPE':
+            Log.error('Load only the exact native WSLPE instance first')
+            return False
+        Log.warning(
+            f'WSLPE-only learner foundation on the existing {instance.instance_id}. '
+            'This reuses ansible/wslpe-foundation.yml, may maintain Windows '
+            'licensing, creates a unique nonadmin local learner and verifies '
+            'its RDP-group membership. It uses the temporary native bootstrap '
+            'management channel bounded by authenticated VMware MAC and '
+            'independent pinned HTTPS account checks. No operator account, '
+            'LPE scenarios, other VM or NORTH mutation.'
+        )
+        try:
+            confirmation = input(
+                'Type INSTALL WSLPE LEARNER to authorize this exact guest: '
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            Log.warning('WSLPE learner foundation cancelled')
+            return False
+        if confirmation != 'INSTALL WSLPE LEARNER':
+            Log.warning('WSLPE learner foundation cancelled; no changes made')
+            return False
+        success = bootstrap_native_wslpe_learner(
+            self.lab_manager, confirmed=True,
+        )
+        self.refresh_prompt()
+        if not success:
+            Log.warning(
+                'WSLPE learner foundation stopped. Do not rerun blindly: '
+                'the existing Windows account or private credential may '
+                'have been partially created.'
+            )
+        return False
+
     def do_install(self, arg=''):
         """Route interactive Windows LPE stage-1 bootstrap away from NORTH."""
         selected = self._course_selection()
@@ -819,6 +867,9 @@ class GoadNomad(BaseGoad):
                 )
                 print_menu_entry(
                     'repair_license', 'run existing WSLPE evaluation role on loaded VM only'
+                )
+                print_menu_entry(
+                    'foundation_learner', 'run existing WSLPE local learner foundation once'
                 )
                 print_menu_entry(
                     'load <instance_id>', 'select only an existing local WSLPE instance'
