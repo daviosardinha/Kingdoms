@@ -188,7 +188,7 @@ class GoadNomad(BaseGoad):
                        'course_preflight', 'course_vm_status',
                        'help', '?', 'exit', 'eof'}
             if (
-                action in ('install', 'resume')
+                action in ('install', 'resume', 'repair_stage1')
                 and self._course_selection() is not None
                 and self._course_selection().slug == 'windows-lpe'
             ):
@@ -196,7 +196,7 @@ class GoadNomad(BaseGoad):
             if action not in allowed:
                 Log.error(
                     'WSLPE full installation and lifecycle remain locked. '
-                    'Only selected windows-lpe Stage 1 install or existing-guest resume is allowed.'
+                    'Only confirmed windows-lpe Stage 1 install/resume/repair is allowed.'
                 )
                 return False
         if self._course_is_not_ready():
@@ -205,7 +205,7 @@ class GoadNomad(BaseGoad):
             allowed = {'', 'courses', 'select_course', 'course', 'status',
                        'course_preflight', 'course_vm_status',
                        'course_vm_create', 'help', '?', 'exit', 'eof'}
-            if name in ('install', 'resume') and self._course_selection().slug == 'windows-lpe':
+            if name in ('install', 'resume', 'repair_stage1') and self._course_selection().slug == 'windows-lpe':
                 allowed.add(name)
             if name not in allowed:
                 Log.error(
@@ -737,6 +737,9 @@ class GoadNomad(BaseGoad):
                 )
                 print_menu_entry(
                     'resume', 'confirm start of existing powered-off WSLPE guest only'
+                )
+                print_menu_entry(
+                    'repair_stage1', 'confirm one native partial-guest Tools and NIC recovery'
                 )
             print_menu_entry('exit', 'leave operator console')
             Log.warning('Full course provisioning and other lifecycle actions remain disabled.')
