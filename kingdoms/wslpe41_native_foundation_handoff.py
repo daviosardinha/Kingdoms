@@ -13,6 +13,7 @@ from kingdoms.wslpe41_install_flow import (
     FreshGuestAttestation, FreshGuestIdentity, InstallBlocked, verify_attestation,
 )
 from kingdoms.wslpe41_stage_executor import AnsibleStageContext
+from kingdoms.wslpe41_operator_auth import authenticate_native_operator
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,6 @@ def prepare_native_foundation(
     operator_handoff_approved: bool,
     console_recovery_check: Callable[[FreshGuestIdentity], bool],
     attest_fresh_guest: Callable[[FreshGuestIdentity], FreshGuestAttestation],
-    authenticate_operator: Callable[[FreshGuestIdentity], bool],
 ) -> FoundationHandoff:
     """Apply existing learner/operator foundations, then independently attest.
 
@@ -39,7 +39,7 @@ def prepare_native_foundation(
     if operator_handoff_approved is not True:
         raise InstallBlocked("Operator handoff approval required before Windows mutation")
     if (not callable(console_recovery_check) or not callable(attest_fresh_guest)
-            or not callable(authenticate_operator)):
+           ):
         raise InstallBlocked("Independent console recovery and fresh guest attestors required")
     # The pre-mutation callback must be an actual provider-backed console check.
     if console_recovery_check(identity) is not True:
@@ -55,7 +55,7 @@ def prepare_native_foundation(
         raise InstallBlocked("Existing operator foundation did not prove this instance")
     # Require a separate authenticated operator-management probe, not a
     # CREATED_NOT_AUTHENTICATED playbook marker or an attestor boolean.
-    if authenticate_operator(identity) is not True:
+    if authenticate_native_operator(context) is not True:
         raise InstallBlocked("Independent authenticated operator management probe failed")
     # The operator playbook only creates an account; this independent attestor
     # must prove authenticated operator access, TLS, isolation and fresh origin.
