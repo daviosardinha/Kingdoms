@@ -28,6 +28,31 @@
 
 **Current source checkpoint:** `scripts/wslpe41-install.py --plan` displays all 41 scenarios as one installation; `--execute` intentionally fails closed until the new VMware/Windows runtime adapter is proven. Passing CI does not mean a new Windows guest was installed.
 
+## Current operator commands (read-only)
+
+Use a **separate checkout** for this development branch. These checks do not stop NORTH, alter VMware networks, or create a guest:
+
+```bash
+git clone --branch feature/wslpe41-fresh-full-installer --single-branch \
+  https://github.com/daviosardinha/Kingdoms.git \
+  "$HOME/kingdoms-wslpe41-fresh"
+cd "$HOME/kingdoms-wslpe41-fresh"
+"$HOME/.goad/.venv/bin/python" scripts/wslpe41-install.py --plan
+"$HOME/.goad/.venv/bin/python" scripts/wslpe41-install.py --host-plan \
+  --workspace "$HOME/kingdoms-rebuild/workspace"
+```
+
+The additional workspace must exist. Supply **every other known Kingdoms workspace** (including the old WSLPE master workspace) with further `--workspace` arguments. The host-plan checks live Linux addresses, all IPv4 route tables, VMware vmnet metadata, `vmrun`'s running guest inventory and the instance manifests in the provided workspaces. It reports a **candidate**, not global registration coverage, an actual dedicated VMnet, or permission to boot a guest. No Vagrant, Ansible, Windows or host network mutations occur. It is safe to run while NORTH is active.
+
+After a future native guest is created through the verified native provider, read-only registration inspection is available:
+
+```bash
+"$HOME/.goad/.venv/bin/python" scripts/wslpe41-install.py --native-status \
+  --instance-dir /absolute/path/to/new/kingdoms/workspace/instance-id
+```
+
+This proves only the exact provided WSLPE VMX registration and VMware running state, **not** that it was created by the current install or that the 41 scenarios are installed. Production `--execute` remains disabled until the creation-provenance, fresh TLS/management and guest runner gates are implemented and tested.
+
 ## Gate B — Merge into `main` (engineering acceptance)
 
 - [ ] Source CI and native Windows PowerShell 5.1 tests pass.
