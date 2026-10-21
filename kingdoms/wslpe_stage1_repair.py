@@ -301,9 +301,20 @@ def repair_native_wslpe_stage1(manager, *, confirmed: bool) -> bool:
     ):
         Log.error("WSLPE exercise NIC/VMTools proof missing; instance remains CREATED")
         return False
+    # A recovered VM can still be shut down by Windows License Monitoring.
+    # Invoke ONLY the existing WSLPE foundation's tagged eval-rearm/license
+    # gate; do not create the learner, alter NORTH or rerun scenario roles.
+    from kingdoms.wslpe_license_maintenance import maintain_native_wslpe_license
+    if not maintain_native_wslpe_license(manager, confirmed=True):
+        Log.error(
+            "WSLPE Stage 1 network recovered but Windows licensing is not ready; "
+            "instance remains CREATED. Do not replay Vagrant provisioning."
+        )
+        return False
+
     instance.set_status(PROVIDED)
     Log.success(
-        "WSLPE native Stage 1 recovered on the original VM: Tools, NAT, and "
-        "exercise IP verified; scenarios/learner NOT installed."
+        "WSLPE native Stage 1 recovered on the original VM: Tools, NAT, "
+        "exercise IP and Windows licensing verified; scenarios/learner NOT installed."
     )
     return True
