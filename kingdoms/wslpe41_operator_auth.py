@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -74,6 +75,8 @@ def authenticate_native_operator(context: AnsibleStageContext) -> bool:
     # Ansible output can contain sensitive transport diagnostics.
     if result.returncode != 0 or not result.stdout or len(result.stdout) > 100_000:
         raise InstallBlocked("Operator HTTPS authentication failed")
-    if "SUCCESS" not in result.stdout or '"ping": "pong"' not in result.stdout:
+    if not re.search(r'(?m)^ws01\\s+\\|\\s+SUCCESS\\s+=>\\s+\\{\\s*"ping"\\s*:\\s*"pong"\\s*\\}\\s*        raise InstallBlocked("Operator HTTPS authentication proof missing")
+    return True
+, result.stdout):
         raise InstallBlocked("Operator HTTPS authentication proof missing")
     return True
