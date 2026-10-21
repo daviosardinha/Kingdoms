@@ -1,0 +1,57 @@
+name: WSLPE management vmnet transaction source gate
+
+on:
+  push:
+    branches:
+      - feature/wslpe41-fresh-full-installer
+    paths:
+      - 'kingdoms/wslpe_management_vmnet_transaction.py'
+      - 'kingdoms/wslpe_management_vmnet_plan.py'
+      - 'tests/test_wslpe_management_vmnet_transaction.py'
+      - 'tests/test_wslpe_management_vmnet_plan.py'
+      - '.github/workflows/wslpe-management-vmnet-transaction.yml'
+  pull_request:
+    paths:
+      - 'kingdoms/wslpe_management_vmnet_transaction.py'
+      - 'kingdoms/wslpe_management_vmnet_plan.py'
+      - 'tests/test_wslpe_management_vmnet_transaction.py'
+      - 'tests/test_wslpe_management_vmnet_plan.py'
+      - '.github/workflows/wslpe-management-vmnet-transaction.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  simulated-transaction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile planning and transaction components
+        run: |
+          python -m py_compile \
+            kingdoms/wslpe_management_vmnet_plan.py \
+            kingdoms/wslpe_management_vmnet_transaction.py \
+            scripts/wslpe-management-vmnet-plan.py \
+            tests/test_wslpe_management_vmnet_plan.py \
+            tests/test_wslpe_management_vmnet_transaction.py
+      - name: Run read-only source and failure-recovery simulations
+        run: |
+          python -m unittest -v \
+            tests.test_wslpe_management_vmnet_plan \
+            tests.test_wslpe_management_vmnet_transaction
+      - name: Guard against accidental live CLI exposure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          planner = Path("scripts/wslpe-management-vmnet-plan.py").read_text()
+          installer = Path("scripts/wslpe41-install.py").read_text()
+          core = Path("kingdoms/wslpe_management_vmnet_transaction.py").read_text()
+          assert 'add_argument("--apply"' not in planner
+          assert "[BLOCKED] No production fresh-native runner is wired yet." in installer
+          assert "There is intentionally NO production CLI wiring" in core
+          print("PASS: no operator-accessible VMware allocation command")
+          PY
