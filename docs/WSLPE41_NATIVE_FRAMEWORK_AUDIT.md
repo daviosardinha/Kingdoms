@@ -57,3 +57,44 @@ network manager, Windows account manager or generic credential subsystem.
 
 Do not enable `--execute` or merge PR #44 until the provider-backed
 transport, isolation and fresh-install acceptance evidence exists.
+
+## Provider implementation audit (next integration gate)
+
+Inspected the actual provider factory and inheritance chain:
+
+`ProviderFactory.get_provider("vmware", ...)` selects
+`ProfiledGoadKingdomsVmwareProvider`, which inherits from
+`GoadKingdomsVmwareProvider -> GoadNomadVmwareProvider ->
+VmwareProvider -> VagrantProvider`.
+
+`VagrantProvider.install()` delegates to the existing command adapter's
+`run_vagrant(["up"], self.path)`; native WSLPE Stage 1 calls this through
+`provider.install()`. Preserve that path and its existing instance ownership.
+
+The existing `VmwareProvider._winrm_forwarded_port` and
+`_winrm_session` are **bootstrap-specific**: they use the forwarded
+guest 5985 port, HTTP and the fixed `vagrant/vagrant` account.
+`GoadNomadVmwareProvider._lab_winrm_session` likewise uses
+`vagrant/vagrant` for segmented GOAD readiness. Those helpers are
+not valid independent evidence of WSLPE41's separate operator
+authentication or trusted HTTPS/5986.
+
+The existing provider includes VMware Tools readiness/recovery and bounded
+Vagrant lifecycle operations, but this inspection has **not established**
+an independent WSLPE guest-console command channel that can recover from
+a broken WinRM listener. Do not equate `vmrun` inventory, VMware Tools
+health or bootstrap WinRM with that capability.
+
+### Required implementation boundary
+
+- Keep native Vagrant/provider instance creation, boot, status and recovery
+  under the existing manager/provider hierarchy.
+- Add a **WSLPE-scoped provider capability** only after the required
+  operator credentials, certificate validation and console behavior have
+  been specified and tested. It must target the exact native instance/VMX.
+- Prove operator authentication with the *operator* account, not the
+  bootstrap `vagrant` account; require trusted HTTPS/5986.
+- For JEA #30, prove recovery through an independent channel that does not
+  rely on the WinRM service being repaired.
+- Do not enable `--execute` or treat injected callbacks as provider proof
+  until a concrete implementation and negative tests exist.
