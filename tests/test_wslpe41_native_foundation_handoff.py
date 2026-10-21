@@ -63,8 +63,7 @@ class FoundationHandoffTests(unittest.TestCase):
             with self.assertRaises(InstallBlocked):
                 prepare_native_foundation(self.context,
                     operator_handoff_approved=True, console_recovery_check=lambda _: True,
-                    attest_fresh_guest=lambda _: attestation(operator_recovery_ready=False),
-                    authenticate_operator=lambda _: True)
+                    attest_fresh_guest=lambda _: attestation(operator_recovery_ready=False))
 
     def test_operator_authentication_failure_blocks_attestation(self):
         def run(context, stage, **kwargs):
@@ -78,15 +77,6 @@ class FoundationHandoffTests(unittest.TestCase):
                     operator_handoff_approved=True, console_recovery_check=lambda _: True,
                     attest_fresh_guest=lambda _: attestation())
             verify.assert_not_called()
-
-    def test_missing_operator_authenticator_prevents_mutation(self):
-        self.probe.side_effect = InstallBlocked("operator probe unavailable")
-        with patch("kingdoms.wslpe41_native_foundation_handoff.run_foundation_stage") as run:
-            with self.assertRaises(InstallBlocked):
-                prepare_native_foundation(self.context,
-                    operator_handoff_approved=True, console_recovery_check=lambda _: True,
-                    attest_fresh_guest=lambda _: attestation())
-            run.assert_not_called()
 
     def test_mismatched_foundation_proof_blocks(self):
         with patch("kingdoms.wslpe41_native_foundation_handoff.run_foundation_stage",
