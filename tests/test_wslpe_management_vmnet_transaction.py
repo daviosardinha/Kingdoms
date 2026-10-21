@@ -193,6 +193,16 @@ class ManagementVmnetTransactionTests(unittest.TestCase):
         self.assertEqual(self.networking.read_text(), BASE)
         self.assertEqual(json.loads(self.journal.read_text())["status"], "rolled_back")
 
+    def test_rejects_candidate_that_would_trim_original_bytes(self):
+        # The original planner normalizes trailing blank lines. An actual
+        # transaction must fail instead of rewriting any existing byte.
+        changed = BASE + "\n\n"
+        self.networking.write_text(changed)
+        with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "rewrite"):
+            self.apply(sha=txn._digest(changed.encode()))
+        self.assertFalse(self.journal.exists())
+        self.assertEqual(self.events, [])
+
     def test_symlinked_networking_is_blocked(self):
         actual = self.base / "real-networking"
         self.networking.rename(actual)
