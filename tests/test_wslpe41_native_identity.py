@@ -1,8 +1,12 @@
 """Exact native WSLPE VMX identity checks, all filesystem fixtures mocked."""
 import json
+from contextlib import redirect_stdout
+import importlib.util
+import io
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from kingdoms.wslpe41_host_preflight import HostEvidenceBlocked
 from kingdoms.wslpe41_native_identity import inspect_native_registration
@@ -39,6 +43,20 @@ class NativeIdentityTests(unittest.TestCase):
         self.assertEqual(proof.subnet, "172.28.232.0/24")
         self.assertIn("NOT fresh-build proof", proof.source)
         self.assertEqual(proof.instance_id, "wslpe41-001")
+
+    def test_native_status_cli_is_read_only_and_never_claims_freshness(self):
+        source = Path(__file__).resolve().parents[1] / "scripts/wslpe41-install.py"
+        spec = importlib.util.spec_from_file_location("wslpe41_native_cli", source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        result = io.StringIO()
+        with patch("kingdoms.wslpe41_host_preflight.read_only_command",
+                   return_value=self.running) as vmrun, redirect_stdout(result):
+            rc = module.main(["--native-status", "--instance-dir", str(self.instance)])
+        self.assertEqual(rc, 0)
+        self.assertIn("[NATIVE PROVIDED]", result.getvalue())
+        self.assertIn("NOT fresh-guest", result.getvalue())
+        vmrun.assert_called_once_with("vmrun", "-T", "ws", "list")
 
     def test_rejects_wrong_lab_and_domain_inventory(self):
         self.data["lab"] = "NORTH"
