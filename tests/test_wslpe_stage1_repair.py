@@ -100,6 +100,21 @@ class NativeStage1RepairTests(unittest.TestCase):
         self.assertIn("WSLPE_STAGE1_WRONG_WINDOWS_GUEST", self.scripts[0])
         self.assertEqual(self.instance.status, PROVIDED)
 
+    def test_license_expiry_blocks_provided_without_replaying_other_guest(self):
+        with self.patches(), patch(
+            "kingdoms.wslpe_license_maintenance.maintain_native_wslpe_license",
+            return_value=False,
+        ) as license_gate:
+            self.assertFalse(repair.repair_native_wslpe_stage1(
+                self.manager, confirmed=True,
+            ))
+        license_gate.assert_called_once_with(self.manager, confirmed=True)
+        self.instance.set_status.assert_not_called()
+        self.assertEqual(self.instance.status, CREATED)
+        self.provider._run_vagrant_bounded.assert_called_once_with(
+            ["up", "WSLPE-WS01", "--provision"], timeout=600,
+        )
+
     def test_no_operator_approval_never_runs_guest_or_vagrant(self):
         with self.patches():
             self.assertFalse(repair.repair_native_wslpe_stage1(
