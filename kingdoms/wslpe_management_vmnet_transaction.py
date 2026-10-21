@@ -204,6 +204,8 @@ class WslpeVmnetTransaction:
                 raise NetworkTransactionBlocked("Additive candidate contract failed") from exc
             if len(proposed) > MAX_NETWORKING_BYTES:
                 raise NetworkTransactionBlocked("Proposed VMware configuration too large")
+            if not proposed.startswith(original) or len(proposed) <= len(original):
+                raise NetworkTransactionBlocked("Proposal would rewrite existing VMware bytes")
             self.live_preflight(vmnet, subnet)  # Collision + complete VMX registration evidence
             self._zero_guests()
             if self._read_networking()[0] != original:
@@ -228,6 +230,7 @@ class WslpeVmnetTransaction:
                                 uid=data["uid"], gid=data["gid"])
                 data["status"] = "installed"
                 self._save(data)
+                self._zero_guests()
                 self.vmware_action("start")
                 self.verify_created_network(vmnet, subnet)  # host adapter and isolation acceptance
                 if _digest(self._read_networking()[0]) != data["proposed_sha256"]:
