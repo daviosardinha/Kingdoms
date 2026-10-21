@@ -76,7 +76,10 @@ def occupied_networks(
         match = SUBNET.fullmatch(line.strip())
         if match:
             number, key, value = match.groups()
-            vmnets.setdefault(number, {})[key] = value
+            entry = vmnets.setdefault(number, {})
+            if key in entry:
+                raise NetworkSelectionBlocked("Duplicate VMware subnet metadata")
+            entry[key] = value
         elif re.match(r"^answer\s+VNET_\d+_(?:HOSTONLY_SUBNET|HOSTONLY_NETMASK)\b", line.strip()):
             raise NetworkSelectionBlocked("Malformed VMware subnet metadata")
     if not vmnets:
