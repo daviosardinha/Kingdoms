@@ -56,6 +56,10 @@ def _trusted_binary(path: Path, *, allow_trusted_symlink: bool = False) -> None:
             details = resolved.stat()
         else:
             details = entry
+    except NetworkTransactionBlocked:
+        raise
+    except FileNotFoundError as exc:
+        raise NetworkTransactionBlocked(f"Required host binary missing: {path}") from exc
     except (OSError, RuntimeError) as exc:
         raise NetworkTransactionBlocked(f"Host binary path cannot be verified: {path}") from exc
     if (not stat.S_ISREG(details.st_mode) or details.st_uid != 0
