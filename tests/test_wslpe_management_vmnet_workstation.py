@@ -159,7 +159,7 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
             return SimpleNamespace(st_mode=kind | bits, st_uid=owner)
 
         for unsafe_target in (Path("/tmp/vmrun"), Path("/home/stark/vmrun")):
-            with (mock.patch.object(Path, "lstat", side_effect=lambda p: (
+            with (mock.patch.object(Path, "lstat", new=lambda p: (
                     mode(stat.S_IFLNK) if p == launcher else mode(stat.S_IFDIR))),
                   mock.patch.object(Path, "resolve", return_value=unsafe_target)):
                 with self.assertRaisesRegex(NetworkTransactionBlocked, "trusted /usr"):
@@ -186,12 +186,12 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
         def item(kind, owner=0, bits=0o755):
             return SimpleNamespace(st_mode=kind | bits, st_uid=owner)
 
-        with mock.patch.object(Path, "lstat", side_effect=lambda p: (
+        with mock.patch.object(Path, "lstat", new=lambda p: (
                 item(stat.S_IFLNK, owner=1000) if p == launcher else item(stat.S_IFDIR))):
             with self.assertRaisesRegex(NetworkTransactionBlocked, "Non-root-owned"):
                 ws._trusted_binary(launcher, allow_trusted_symlink=True)
 
-        with (mock.patch.object(Path, "lstat", side_effect=lambda p: (
+        with (mock.patch.object(Path, "lstat", new=lambda p: (
                 item(stat.S_IFLNK) if p == launcher else item(stat.S_IFDIR))),
               mock.patch.object(Path, "resolve", return_value=target),
               mock.patch.object(Path, "stat", return_value=item(stat.S_IFREG, owner=1000))):
