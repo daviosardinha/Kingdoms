@@ -76,19 +76,34 @@ def _environment(context: AnsibleStageContext) -> dict[str, str]:
         "ANSIBLE_ROLES_PATH": str(repo / "ansible" / "roles"),
         "ANSIBLE_NOCOLOR": "1",
     })
+    if context.management_address is not None:
+        if context.management_address != "172.28.233.31":
+            raise InstallBlocked("Unapproved management address")
+        shim = repo / "kingdoms" / "wslpe41_ansible_shim"
+        if not (shim / "sitecustomize.py").is_file() or shim.is_symlink():
+            raise InstallBlocked("Exact instance-scoped resolver module missing")
+        env["KINGDOMS_WSLPE41_PINNED_OPERATOR"] = context.identity.instance_id
+        env["PYTHONPATH"] = str(shim)
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy",
+                    "https_proxy", "all_proxy", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+            env.pop(key, None)
+        env["NO_PROXY"] = env["no_proxy"] = "WSLPE-WS01,localhost,127.0.0.1"
     return env
 
 
 def _inventory(context: AnsibleStageContext, env: dict[str, str]) -> None:
     """Resolve effective hostvars, not merely inventory file text."""
+    if context.management_address is not None:
+        _regular(context.inventory, private=True)
     tool = context.ansible.with_name("ansible-inventory")
     _regular(tool)
     if not os.access(tool, os.X_OK):
         raise InstallBlocked("Approved Ansible inventory executable is unavailable")
     try:
         result = subprocess.run(
-            [str(tool), "-i", str(context.inventory), "-i",
-             str(context.private_vars), "--list"],
+            ([str(tool), "-i", str(context.inventory)] +
+             ([] if context.management_address is not None else
+              ["-i", str(context.private_vars)]) + ["--list"]),
             cwd=Path(__file__).resolve().parents[1], env=env,
             capture_output=True, text=True, stdin=subprocess.DEVNULL,
             timeout=45, check=False,
@@ -116,13 +131,24 @@ def _inventory(context: AnsibleStageContext, env: dict[str, str]) -> None:
             or members("windows_lpe_standalone") != ["ws01"]
             or members("dc") or members("domain")
             or not isinstance(guest, dict)
-            or guest.get("ansible_host") != management_target
+            or guest.get("ansible_host") != (
+                "WSLPE-WS01" if context.management_address else management_target)
             or guest.get("ansible_connection") != "winrm"
             or guest.get("ansible_winrm_scheme") != "https"
             or str(guest.get("ansible_port")) != "5986"
             or guest.get("ansible_winrm_server_cert_validation") != "validate"
             or guest.get("domain_name") != "WSLPE"):
         raise InstallBlocked("Inventory is not the exact isolated HTTPS WSLPE guest")
+    if context.management_address is not None:
+        anchor = context.instance_dir / "ansible" / "operator-ca.pem"
+        _regular(anchor, private=True)
+        if (guest.get("ansible_winrm_ca_trust_path") != str(anchor)
+                or guest.get("ansible_winrm_transport") != "ntlm"
+                or guest.get("ansible_user") != r"WSLPE-WS01\\kingdom.operator"
+                or not isinstance(guest.get("ansible_password"), str)
+                or len(guest["ansible_password"]) < 24):
+            raise InstallBlocked("Existing-instance TLS pin or private operator identity invalid")
+
 
 
 def run_ansible_stage(
@@ -135,7 +161,7 @@ def run_ansible_stage(
             or context.private_vars.parent != context.instance_dir / "ansible"):
         raise InstallBlocked("WSLPE41 stage inventory must belong to this instance")
     _regular(context.ansible)
-    _regular(context.inventory)
+    _regular(context.inventory, private=context.management_address is not None)
     _regular(context.private_vars, private=True)
     if not os.access(context.ansible, os.X_OK):
         raise InstallBlocked("Approved Ansible executable is unavailable")
