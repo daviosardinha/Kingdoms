@@ -35,6 +35,7 @@ NETWORKING_SHA = "9717eecc5c8f05f4d214018a7da280c4484dc3d2e9a26a33902a9efe3e89f9
 NIC_LINES = (
     'ethernet2.present = "TRUE"',
     'ethernet2.connectionType = "custom"',
+    'ethernet2.virtualDev = "e1000e"',
     'ethernet2.vnet = "vmnet4"',
     'ethernet2.startConnected = "TRUE"',
     'ethernet2.addressType = "generated"',
@@ -137,7 +138,8 @@ def _read_vmx(vmx: Path, *, exact_legacy_0771_probe: bool = False) -> bytes:
 
 
 def identify(home: Path, *, existing_ok: bool = False,
-             exact_legacy_0771_probe: bool = False) -> Target:
+             exact_legacy_0771_probe: bool = False,
+             allow_legacy_management_model: bool = False) -> Target:
     if os.geteuid() == 0:
         raise NicBlocked("VMX transaction must run as original non-root Workstation owner")
     instance = home / "kingdoms-wslpe41-fresh/workspace" / INSTANCE
@@ -171,11 +173,13 @@ def identify(home: Path, *, existing_ok: bool = False,
     if inventory.count(vmx) != 1:
         raise NicBlocked("Fresh VMX not uniquely registered in user Workstation library")
     raw = _read_vmx(vmx, exact_legacy_0771_probe=exact_legacy_0771_probe)
-    verify_layout(raw, allow_management=existing_ok)
+    verify_layout(raw, allow_management=existing_ok,
+                  allow_legacy_model=allow_legacy_management_model)
     return Target(instance, vmx, raw, hashlib.sha256(raw).hexdigest())
 
 
-def verify_layout(raw: bytes, *, allow_management: bool = False) -> None:
+def verify_layout(raw: bytes, *, allow_management: bool = False,
+                  allow_legacy_model: bool = False) -> None:
     try:
         text = raw.decode("utf-8")
     except UnicodeError as exc:
@@ -202,6 +206,9 @@ def verify_layout(raw: bytes, *, allow_management: bool = False) -> None:
                 or mgmt.get("startconnected") != "TRUE"
                 or mgmt.get("addresstype") != "generated"):
             raise NicBlocked("Management slot 2 has unexpected VMware configuration")
+        model = mgmt.get("virtualdev")
+        if model != "e1000e" and not (allow_legacy_model and model is None):
+            raise NicBlocked("Management NIC model must be pinned to e1000e")
 
 
 def candidate_vmx(original: bytes) -> bytes:
