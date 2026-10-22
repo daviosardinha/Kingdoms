@@ -26,6 +26,66 @@ PREFIX = 24
 NETWORK = ipaddress.IPv4Network(SUBNET)
 
 
+class UnexpectedVmnet4Route(NetworkTransactionBlocked):
+    """Fail closed with bounded structured evidence preserved by the journal."""
+
+    def __init__(self, routes: list, addresses: list):
+        super().__init__("Unexpected vmnet4 route; refusing host IP repair")
+        self.network_evidence = {
+            "interface": VMNET,
+            "routes": [
+                {key: str(row[key])[:64] for key in
+                 ("dst", "dev", "type", "scope", "protocol", "table",
+                  "gateway", "via", "prefsrc", "src")
+                 if key in row and isinstance(row[key], (str, int))}
+                for row in routes[:12] if isinstance(row, dict)
+            ],
+            "ipv4": [
+                {"local": str(rec.get("local", ""))[:40],
+                 "prefixlen": rec.get("prefixlen")}
+                for rec in addresses[:4] if isinstance(rec, dict)
+            ],
+            "truncated": len(routes) > 12,
+        }
+
+
+def _allowed_host_only_routes(routes: list) -> bool:
+    """Only a directly connected subnet plus local/broadcast kernel entries.
+
+    Never normalize a vmnet4 with a default route, gateway, foreign subnet,
+    cross-VMnet device, or unknown routing type.
+    """
+    if not isinstance(routes, list) or len(routes) > 16:
+        return False
+    connected = 0
+    for row in routes:
+        if not isinstance(row, dict) or row.get("dev") != VMNET:
+            return False
+        if row.get("gateway") or row.get("via"):
+            return False
+        kind = row.get("type", "unicast")
+        dst = row.get("dst")
+        if kind in ("local", "broadcast"):
+            try:
+                single = ipaddress.IPv4Network(dst)
+            except (ValueError, TypeError):
+                return False
+            if single.prefixlen != 32 or single.network_address not in NETWORK:
+                return False
+            continue
+        if kind != "unicast" or dst != SUBNET or row.get("scope", "link") != "link":
+            return False
+        src = row.get("prefsrc", row.get("src"))
+        if src:
+            try:
+                if ipaddress.IPv4Address(src) not in NETWORK:
+                    return False
+            except (ValueError, TypeError):
+                return False
+        connected += 1
+    return connected <= 1
+
+
 def address_transition(*, vmnet: str, subnet: str, networking_text: str,
                        address_rows: list, link_rows: list,
                        route_rows: list) -> tuple[list[str], ...]:
@@ -51,13 +111,13 @@ def address_transition(*, vmnet: str, subnet: str, networking_text: str,
             or "link" in link or link.get("linkinfo", {}).get("info_kind") in
             {"bridge", "bond", "vlan", "veth"}):
         raise NetworkTransactionBlocked("vmnet4 is not a standalone UP host-only interface")
-    if not isinstance(route_rows, list) or any(
-            not isinstance(r, dict) or r.get("dev") != VMNET
-            or r.get("dst") != SUBNET or r.get("gateway") or r.get("via")
-            for r in route_rows):
-        raise NetworkTransactionBlocked("Unexpected vmnet4 route; refusing host IP repair")
     inet = [x for x in address_rows[0].get("addr_info", [])
             if isinstance(x, dict) and x.get("family") == "inet"]
+    if not _allowed_host_only_routes(route_rows):
+        raise UnexpectedVmnet4Route(
+            route_rows if isinstance(route_rows, list) else [],
+            inet,
+        )
     if len(inet) > 1:
         raise NetworkTransactionBlocked("Multiple vmnet4 IPv4 addresses; refusing repair")
     if inet:
