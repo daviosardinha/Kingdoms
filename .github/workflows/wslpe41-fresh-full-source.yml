@@ -36,7 +36,11 @@ on:
       - 'tests/test_wslpe41_foundation_stage.py'
       - 'tests/test_wslpe41_runtime_proof.py'
       - 'tests/test_wslpe41_stage_executor.py'
-      - 'tests/test_wslpe41_provided_installer_handoff.py'
+      - 'kingdoms/wslpe41_provided_runtime.py'
+      - 'kingdoms/wslpe41_ansible_shim/sitecustomize.py'
+      - 'scripts/wslpe41-prepare-provided-runtime.py'
+      - 'tests/test_wslpe41_provided_runtime.py'
+      - 'tests/test_wslpe41_provided_installer_handoff.py kingdoms/wslpe41_provided_runtime.py kingdoms/wslpe41_ansible_shim/sitecustomize.py scripts/wslpe41-prepare-provided-runtime.py tests/test_wslpe41_provided_runtime.py'
       - 'tests/test_wslpe41_native_foundation_runner.py'
       - '.github/workflows/wslpe41-fresh-full-source.yml'
   workflow_dispatch:
