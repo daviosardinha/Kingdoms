@@ -241,3 +241,48 @@ Observed output: **8** Workstation library entries; **0** VMXs referencing vmnet
 6. Only after the management handoff and WinRM-free console recovery pass, move to the existing one-shot 41-scenario installer. No premature claim that scenarios are deployed.
 
 **Operator instruction for now: do nothing on VMware; preserve both running guests.** All clearance evidence is point-in-time and must be reacquired after any host configuration or registration changes.
+
+
+## 2026-10-22: bounded VMware Workstation service adapter (source implementation)
+
+To reduce the gap between the previously source-tested transaction and a
+controlled operator action, the branch now includes
+`kingdoms/wslpe_management_vmnet_workstation.py`:
+
+- `WorkstationNetworkService.action()` recognizes **only** `stop` and `start`, verifies root context and the VMware binary's trust/mode,
+  then invokes `/usr/bin/vmware-networks --stop/--start` without a shell
+  using a bounded subprocess. There is no guest power operation.
+- `WorkstationHostAdapterVerifier.verify_host_adapter()` uses
+  read-only iproute2 JSON for the selected vmnet. It expects **exactly**
+  `vmnet4`, `172.28.233.254/24`, an UP host adapter,
+  the one connected `172.28.233.0/24` route, and VMware config
+  metadata with DHCP/NAT disabled and a host virtual adapter enabled.
+- It is a **host-address/metadata proof only**: it cannot establish Windows
+  WinRM reachability, absence of host routing/firewall leaks into NORTH,
+  or persistence over reboot/restart. Those remain separate acceptance
+  requirements before it could serve as a transaction commit gate.
+
+The adapters remain **unwired from any CLI or active installer**. In particular,
+no call to `vmware-networks` can be triggered through
+`goad.sh` or `scripts/wslpe41-install.py`. Do not invoke the
+internal Python classes directly on Kali. Before production wiring, reconcile
+the Workstation 26 binary locations and service semantics on the real host,
+guard all other-user VM consumers, implement full network-isolation acceptance,
+and verify the actual fail/rollback path during an owner-approved guest-free
+maintenance window.
+
+Additional simulated gate:
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" -m unittest -v \
+  tests.test_wslpe_management_vmnet_plan \
+  tests.test_wslpe_management_vmnet_transaction \
+  tests.test_wslpe_management_vmnet_host_gate \
+  tests.test_wslpe_management_vmnet_registry \
+  tests.test_wslpe_management_vmnet_workstation
+```
+
+**Stop condition unchanged:** two VMware guests are running. The next operator
+command is source testing only, not a vmnet4 creation command.
