@@ -384,3 +384,41 @@ reachability/firewall scope, no learner/NORTH management access, and
 WinRM-independent console recovery. Scenario runtime and clean-build
 41/41 evidence remain **NOT INSTALLED**. A ping pass must never be
 mistaken for operator credential or WinRM acceptance.
+
+
+## 2026-10-22: live Windows operator/WinRM pre-foundation audit
+
+Fresh guest elevated Windows console shows:
+- Query for local `kingdom.operator` returned no user record. This is
+  expected before the native operator foundation; do not invent or
+  rotate credentials manually.
+- WinRM service `Running`, startup `Automatic`.
+- Configured HTTP listener `Address=*`, port `5985`.
+- Configured HTTPS listener `Address=*`, port `5986`, hostname
+  `WSLPE-WS01`, and a certificate thumbprint. The WinRM listener's
+  `ListeningOn` list includes exercise `172.28.232.31`, operator
+  `172.28.233.31`, and NAT `192.168.213.249`.
+- `Get-NetTCPConnection -LocalPort 5986 -State Listen` returned no
+  record in the visible console result. This means HTTPS actual socket
+  readiness remains unproved; the listener configuration alone is not
+  successful TCP/TLS/authentication proof.
+- The command to read the management NIC network profile returned no
+  visible profile. Firewall scope still requires independent audit.
+- The already accepted Windows management IPv4 `172.28.233.31/24`
+  is Preferred, management DHCP disabled, no management default route or
+  DNS, with 3/3 replies Windows -> Kali `172.28.233.254`.
+
+**Pre-foundation operator release gate remains BLOCKED:** no authenticated
+`kingdom.operator` identity, no independently validated HTTPS service
+socket/certificate provenance or verified inbound management-only firewall
+scope. Wildcard WinRM listeners do **not** by themselves prove that firewall
+allows incoming traffic, nor do they meet final isolation requirements.
+
+Next use a read-only Windows and Kali consolidated audit for actual TCP
+5985/5986 listeners, active per-port firewall rules and remote-address
+scope, current fresh guest certificate/private key/SAN/expiry, current
+learner/operator local account status, and TLS/5986 host reachability.
+Keep native Vagrant bootstrap and the existing learner/operator Ansible
+foundation roles; do not blindly enable Basic/unencrypted WinRM or disable
+Windows Firewall. Complete live console recovery, pinned TLS and
+operator authentication before scenario deployment.
