@@ -27,6 +27,7 @@ from kingdoms.wslpe_management_vmnet_host_gate import (
     parse_vmware_processes, scoped_candidate_free,
 )
 from kingdoms.wslpe_management_vmnet_registry import audit_user_library
+from kingdoms.wslpe_management_vmnet_hostaddr import Vmnet4HostAddressReconciler
 from kingdoms.wslpe_management_vmnet_transaction import (
     MAX_NETWORKING_BYTES, NetworkTransactionBlocked,
     WslpeVmnetTransaction, _read_regular,
@@ -147,6 +148,7 @@ class Vmnet4MaintenanceRuntime:
                  vmrun: Callable[[str], str] = owner_vmrun_list,
                  service: WorkstationNetworkService | None = None,
                  adapter: WorkstationHostAdapterVerifier | None = None,
+                 reconciler: Vmnet4HostAddressReconciler | None = None,
                  route_run: Callable[..., str] = _host_run,
                  process_run: Callable[..., subprocess.CompletedProcess] = subprocess.run):
         if not callable(isolation_acceptance):
@@ -162,6 +164,7 @@ class Vmnet4MaintenanceRuntime:
         self.process_run = process_run
         self.service = service if service is not None else WorkstationNetworkService()
         self.adapter = adapter if adapter is not None else WorkstationHostAdapterVerifier()
+        self.reconciler = reconciler if reconciler is not None else Vmnet4HostAddressReconciler()
         self.route_run = route_run
 
     def _zero(self) -> int:
@@ -192,8 +195,11 @@ class Vmnet4MaintenanceRuntime:
         self._zero()
 
     def _verify(self, vmnet: str, subnet: str) -> None:
+        self._zero()  # Guests must still be off before changing host IPv4
         raw, _ = _read_regular(self.networking, MAX_NETWORKING_BYTES)
-        self.adapter.verify_host_adapter(vmnet, subnet, raw.decode("utf-8"))
+        text = raw.decode("utf-8")
+        self.reconciler.reconcile(vmnet, subnet, text)
+        self.adapter.verify_host_adapter(vmnet, subnet, text)
         # Must independently verify actual separation from NORTH and learner NIC.
         self.isolation_acceptance(vmnet, subnet)
 
