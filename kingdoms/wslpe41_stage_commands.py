@@ -34,7 +34,7 @@ class StageInvocation:
 def build_stage_invocation(
     scenario: FreshScenario, stage: str, *,
     ansible: Path, inventory: Path, varsfile: Path, expected_address: str,
-    instance_id: str,
+    instance_id: str, management_address: str | None = None,
 ) -> StageInvocation:
     """Construct one exact stage; never reuse golden-master runtime state."""
     if not isinstance(instance_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{4,100}", instance_id):
@@ -52,6 +52,10 @@ def build_stage_invocation(
     if any(not isinstance(path, Path) or not path.is_absolute() or path.is_symlink()
            for path in (ansible, inventory, varsfile)):
         raise StagePlanBlocked("Ansible executable/inventory paths must be absolute and nonlinked")
+    if management_address is not None:
+        if expected_address != "172.28.232.31" or management_address != "172.28.233.31":
+            raise StagePlanBlocked("Existing fresh WSLPE address pairing differs from pinned contract")
+    transport_address = management_address or str(address)
     if stage not in (("stage", "activate", "validate") if scenario.number == 30
                      else ("apply", "validate")):
         raise StagePlanBlocked("Unexpected stage for exact scenario")
@@ -71,7 +75,8 @@ def build_stage_invocation(
             "wslpe_action": stage,
             "wslpe_techniques": [scenario.identifier],
             "wslpe41_fresh_run": True,
-            "wslpe41_expected_address": str(address),
+            "wslpe41_expected_address": transport_address,
+            "wslpe41_learner_address": str(address),
             "wslpe41_stage_label": "apply" if stage == "apply" else "vulnerable",
             # Runtime environment must independently bind this to the
             # private fixture vars and the freshly provisioned instance.
@@ -81,7 +86,8 @@ def build_stage_invocation(
         marker = f"WSLPE41_STAGE={scenario.identifier}:{extra['wslpe41_stage_label']}:PASS"
         proof_kind = "windows_post_role_and_exact_role_validation"
     elif scenario.number == 30:
-        extra = {"wslpe_expected_address": str(address)}
+        extra = {"wslpe_expected_address": transport_address,
+                 "wslpe_learner_address": str(address)}
         if stage == "stage":
             extra.update(
                 wslpe_45_action="stage",
@@ -103,12 +109,13 @@ def build_stage_invocation(
         action = "apply" if stage == "apply" else "validate"
         state = None if action == "apply" else "vulnerable"
         argv = indexed_command(
-            ansible, inventory, varsfile, row, str(address), action, state,
+            ansible, inventory, varsfile, row, transport_address, action, state,
             "apply" if action == "apply" else "vulnerable",
         )
         extra = json.loads(argv[-1])
         # New guest: install shared standalone library; do not reuse the
         # previous golden-master preservation shortcut.
+        extra["wslpe_learner_address"] = str(address)
         extra["wslpe_deploy21"] = True
         extra["wslpe_pilot_preserve_shared"] = False
         argv[-1] = json.dumps(extra, separators=(",", ":"))
@@ -135,7 +142,7 @@ def build_stage_invocation(
 
 def one_install_invocations(
     *, ansible: Path, inventory: Path, varsfile: Path, expected_address: str,
-    instance_id: str,
+    instance_id: str, management_address: str | None = None,
 ) -> tuple[StageInvocation, ...]:
     """One ordered 41-scenario apply/validate transaction, 83 runtime stages."""
     result: list[StageInvocation] = []
@@ -145,7 +152,7 @@ def one_install_invocations(
             result.append(build_stage_invocation(
                 scenario, stage, ansible=ansible, inventory=inventory,
                 varsfile=varsfile, expected_address=expected_address,
-                instance_id=instance_id,
+                instance_id=instance_id, management_address=management_address,
             ))
     if len(result) != 83 or len({r.number for r in result}) != 41:
         raise StagePlanBlocked("Single WSLPE41 installation stage count drift")
