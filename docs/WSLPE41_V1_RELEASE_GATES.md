@@ -263,3 +263,35 @@ management address, operator HTTPS authentication, independent recovery
 or any of the 41 scenarios. It is a bounded single-VM integration stage.
 A separate Windows MAC-bound IP and operator handoff remain necessary
 before any scenario execution or release claim.
+
+
+## 2026-10-22: exact live management-NIC attachment committed
+
+Kali operator evidence for existing native fresh `bf5369-wslpe-vmware`:
+- One-time owner VMX permissions normalized from 0771 to 0600 with
+  `[VMX SHA256 UNCHANGED]`, private receipt and exact original contents
+  preserved.
+- `scripts/wslpe41-attach-management-nic.py --plan` passed with original
+  native registered VMX checksum
+  `4674db8143136629f41c71e80626d3d370e4fe90a537e0d178668abd6aef51`.
+- After separate exact operator approval, `--apply` reported
+  `[COMMITTED] Third NIC added to exact offline native WSLPE VMX`.
+  A private transaction journal exists at
+  `~/.local/state/kingdoms-wslpe41-mgmt-nic/bf5369-wslpe-vmware/journal.json`.
+- `ethernet0` provider NAT and `ethernet1` learner `vmnet3` preserved.
+  New `ethernet2` is dedicated custom `vmnet4`, backed by the already
+  proven host `172.28.233.254/24`.
+- `[PASS] FRESH_WSLPE_MANAGEMENT_NIC_COMMITTED`.
+
+**Host-side VMX guest adapter integration: PASS.** Do not repeat the one-time
+permission or NIC transaction, clear its journal or attach an additional NIC.
+The Windows VM was **not** booted by this command; no Windows management IP,
+adapter MAC matching, TLS pin, operator account, independent console recovery,
+learner isolation or 41/41 scenario execution is yet proven.
+
+Next stage: boot **only** the exact fresh VMX, confirm Windows license
+readiness and VMware Tools, obtain `ethernet2` generated MAC from the running
+VMX and match exactly one enabled Windows network adapter in the local guest
+console before applying `172.28.233.31/24` with no default gateway.
+Preserve native Vagrant NAT bootstrap until pinned operator management,
+WinRM-free recovery and learner separation are independently accepted.
