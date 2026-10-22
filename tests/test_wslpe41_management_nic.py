@@ -112,6 +112,32 @@ class Vmnet4ManagementNicTests(unittest.TestCase):
                 self.assertEqual(vmx.read_bytes(), VMX)
                 self.assertFalse((home / ".local").exists())
 
+    def test_vmx_file_metadata_reports_exact_blocker_without_loosened_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            vmx = Path(tmp) / "windows_10.vmx"
+            vmx.write_bytes(VMX)
+            vmx.chmod(0o600)
+            self.assertEqual(nic._read_vmx(vmx), VMX)
+            vmx.chmod(0o664)
+            with self.assertRaisesRegex(nic.NicBlocked, "group/other-writable: mode=0664"):
+                nic._read_vmx(vmx)
+            vmx.chmod(0o600)
+            with mock.patch.object(nic.os, "getuid", return_value=os.getuid() + 1):
+                with self.assertRaisesRegex(nic.NicBlocked, "owner mismatch: actual_uid"):
+                    nic._read_vmx(vmx)
+            alias = Path(tmp) / "vmx-hardlink"
+            os.link(vmx, alias)
+            with self.assertRaisesRegex(nic.NicBlocked, "link count: 2"):
+                nic._read_vmx(vmx)
+            alias.unlink()
+            with mock.patch.object(nic, "MAX_VMX", 10):
+                with self.assertRaisesRegex(nic.NicBlocked, "size out of bounds"):
+                    nic._read_vmx(vmx)
+            link = Path(tmp) / "vmx-symlink"
+            link.symlink_to(vmx)
+            with self.assertRaisesRegex(nic.NicBlocked, "symlink"):
+                nic._read_vmx(link)
+
     def test_all_guests_off_is_mandatory(self):
         def result(code, output):
             return mock.Mock(returncode=code, stdout=output, stderr=b"")
