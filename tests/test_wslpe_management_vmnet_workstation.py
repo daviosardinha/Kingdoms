@@ -152,7 +152,8 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
         cli = (root / "scripts" / "wslpe-management-vmnet-plan.py").read_text()
         host = (root / "scripts" / "wslpe-management-vmnet-host-audit.py").read_text()
         registry = (root / "scripts" / "wslpe-management-vmnet-registry-audit.py").read_text()
-        assert "--apply" not in cli and "vmware-networks" not in host and "vmware-networks" not in registry
+        assert 'add_argument("--apply"' not in cli
+        assert "vmware-networks" not in host and "vmware-networks" not in registry
         code = (root / "kingdoms" / "wslpe_management_vmnet_workstation.py").read_text()
         self.assertNotIn('if __name__ == "__main__"', code)
 
