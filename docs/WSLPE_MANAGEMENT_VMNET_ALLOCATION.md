@@ -779,3 +779,57 @@ two-adapter topology, learner/operator isolation, independently pinned
 Windows HTTPS WinRM certificate, operator credential application and
 authentication, WinRM-independent console recovery, and eventually
 41/41 Windows scenarios, including original release and clean-build gates.
+
+
+## 2026-10-22: first shared-network restart revealed host-address persistence gap
+
+The host allocation is **committed**, but the operator's deliberate,
+guest-free `vmware-networks --stop/--start` acceptance failed:
+
+| Network | Before restart | After restart |
+| --- | --- | --- |
+| WSLPE operator `vmnet4` | 172.28.233.254/24 | **172.28.233.1/24** |
+| NORTH `vmnet10` | 10.4.10.254/24 | **10.4.10.1/24** |
+| NORTH management `vmnet99` | 10.4.99.254/24 | **10.4.99.1/24** |
+| WSLPE exercise `vmnet3` | 172.28.232.1/24 | 172.28.232.1/24 |
+
+The config remained under the committed root journal, but the live
+`WorkstationHostAdapterVerifier` correctly refused `vmnet4` after
+VMware regenerated its default .1 addresses. This does **not** invalidate
+the committed allocation journal, and **must not** trigger a fresh apply,
+rollback or new VMware restart.
+
+The existing GOAD_NOMAD / NORTH network bootstrap implements an
+independent systemd host-address repair service and timer for
+`vmnet10` and `vmnet99`. WSLPE must **not** replace or alter it.
+
+Source integration now provides an independent, root-owned
+`kingdoms-wslpe-vmnet4-hostaddr.service/.timer` and standalone keeper
+`scripts/wslpe-vmnet4-hostaddr-keeper.py`. It requires the exact committed
+vmnet4 journal, verifies all pre-existing VMware network directives and
+the exact vmnet4 host-only metadata (tolerating only Workstation's
+documented removal of HOSTONLY_HOSTADDR hints), checks interface/route
+ownership, forwarding/bridge state, and corrects **only** VMware's
+`172.28.233.1/24` default or empty host address to
+`172.28.233.254/24`. Other addresses, extra routes, unexpected
+configuration and uncommitted journals refuse changes.
+
+The service runs **only a root-owned installed copy**, not executable
+Python from the user's writable repository. The independent 15s timer
+repairs vmnet4 after later VMware recreation; it cannot restart shared
+VMware networking, touch NORTH/WSLPE exercise interfaces or boot a VM.
+The guarded installer is
+`scripts/wslpe-vmnet4-install-persistence.sh`; it requires both guests
+off, exact clean source, a committed journal, explicit approval, and
+NORTH's address recovery verified **read-only** after its independent
+timer runs. It checks at least one vmnet4 timer interval.
+
+**Status:** source implemented and CI tested; not yet live installed.
+No new VMware restart is needed for this fix. Before starting a
+guest, receive `VMNET4_HOSTADDR_PERSISTENCE_INSTALLED` plus read-only
+NORTH addresses `10.4.10.254/24` and `10.4.99.254/24`.
+
+Further acceptance still requires actual post-recreation persistence,
+a fresh guest management NIC, credentialed `kingdom.operator` HTTPS
+WinRM, WinRM-free operator recovery, 41/41 scenario provisioning, and
+independent clean-build acceptance.
