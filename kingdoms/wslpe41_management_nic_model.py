@@ -57,16 +57,28 @@ def candidate(original: bytes) -> bytes:
     nic.verify_layout(original, allow_management=True, allow_legacy_model=True)
     text = original.decode("utf-8")
     slots = parse_vmx_networks(text)
-    if "virtualdev" in slots[2]:
-        raise nic.NicBlocked("Management virtual NIC model already set; manual review required")
+    # The original source omitted virtualDev. Workstation may keep it
+    # absent or persist the fallback e1000 after first power-on.
+    old_model = slots[2].get("virtualdev")
+    if old_model not in (None, "e1000"):
+        raise nic.NicBlocked("Management virtual NIC model is not a legacy e1000 candidate")
     if (slots[0].get("virtualdev", "").lower() != "e1000e"
             or slots[1].get("virtualdev", "").lower() != "e1000e"):
         raise nic.NicBlocked("Existing working NIC models are not both e1000e")
     if slots[2].get("generatedaddress", "").lower() != EXPECTED_MAC:
         raise nic.NicBlocked("Management MAC differs from captured Windows/VMware evidence")
     if not original.endswith(b"\n") or EXACT_LINE in original:
-        raise nic.NicBlocked("Cannot append exactly one model directive")
-    result = original + EXACT_LINE
+        raise nic.NicBlocked("Cannot update exactly one model directive")
+    if old_model == "e1000":
+        lines = original.splitlines(keepends=True)
+        found = [i for i, line in enumerate(lines)
+                 if re.fullmatch(rb'ethernet2\.virtualDev = "e1000"\r?\n', line)]
+        if len(found) != 1:
+            raise nic.NicBlocked("Legacy management NIC model has ambiguous VMX definition")
+        lines[found[0]] = EXACT_LINE
+        result = b"".join(lines)
+    else:
+        result = original + EXACT_LINE
     nic.verify_layout(result, allow_management=True)
     return result
 
