@@ -354,3 +354,51 @@ independent console recovery, and deploy/configuration-validate the 41
 scenarios. Release still requires a second clean independent build
 and learner-path acceptance. No changes to NORTH or the historical WSLPE
 master.
+
+
+## 2026-10-22: consolidated readiness PASS; guarded maintenance runtime source integration
+
+The operator ran `scripts/wslpe41-readiness-batch.py` on the native fresh
+WSLPE checkout. **PASS:** verified host binaries, management-source tests,
+41-scenario manifest, native instance. **DEFERRED (expected):** vmnet4
+proposal, running-VM ownership, registered/offline VMX ownership because
+two VMware guests remain active. `[BATCH PASS]` does **not** install
+vmnet4, operator credentials or the 41 Windows configurations.
+
+The feature branch now includes
+`kingdoms/wslpe_management_vmnet_runtime.py`. It binds the existing
+journaled transaction to the existing Linux Workstation adapter, while
+enforcing:
+- Root-only maintenance assembly with a pre-existing private 0700
+  root-owned state directory for its journal and exclusive lock.
+- Zero running guest agreement from *both* global `vmware-vmx`
+  processes and `vmrun` executed under the original non-root Workstation
+  owner's account rather than root's potentially empty user inventory.
+- Fresh candidate route/IP and all specified workspace VMX collision
+  checks; rereads the original owner's `inventory.vmls` library immediately
+  before the transaction and refuses foreign registrations.
+- The real vmnet4 host-only adapter validator **and a separate required
+  firewall/network isolation acceptance** before marking a transaction
+  committed. There is **no permissive/default isolation implementation**.
+
+Mock-only regressions validate owner UID scoping, independent zero-guest
+proof, collision refusal, private transaction state, explicit isolation
+acceptance, and refusal when live guests still exist. The dedicated source
+CI passed **73/73 tests**, with all six relevant GitHub workflows green.
+
+**Not yet executable on the host:** the owner-reviewed isolation acceptance
+implementation, the approved maintenance CLI/transaction enablement,
+real Workstation 26 restart/restore validation and controlled shutdown
+of running VMs. `scripts/wslpe41-readiness-batch.py` remains read-only;
+there is no production `--apply`. No extra one-by-one operator tests
+are needed at this stage.
+
+**Next controlled milestone:** implement and qualify the non-routing
+isolation verifier and final transaction entrypoint *as one package*;
+during an explicitly approved guest-free window, apply only vmnet4 and
+verify rollback with real host evidence. Only then attach the fresh
+native WSLPE guest management NIC and complete
+`kingdom.operator`/41-scenario Windows acceptance.
+
+No NORTH VM, historical WSLPE learner-test/master VM or original
+KINGDOMS topology is to be modified by this work.
