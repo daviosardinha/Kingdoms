@@ -46,8 +46,8 @@ Check ($specs.Count -eq 5) 'Five bounded management rules'
 Check ($specs[0].RemoteAddress[0] -eq '172.28.233.254') 'Sole allowed operator source'
 Check ($specs[1].LocalPort[0] -eq '5985' -and $specs[1].InterfaceAlias[0] -eq 'Any') 'HTTP blocked on every NIC'
 Check ((Normalize-Values $specs[2].InterfaceAlias) -eq 'Learner,NAT') 'HTTPS blocked on NAT and learner'
-Check ($specs[3].RemoteAddress -contains '::/0') 'No IPv6 source bypass'
-Check ($specs[4].LocalAddress -contains '::/0') 'No IPv6 destination bypass'
+Check ($specs[3].RemoteAddress -contains '::/1' -and $specs[3].RemoteAddress -contains '8000::/1') 'No IPv6 source bypass'
+Check ($specs[4].LocalAddress -contains '::/1' -and $specs[4].LocalAddress -contains '8000::/1') 'No IPv6 destination bypass'
 
 function Get-NetFirewallRule {
     param($PolicyStore, $Name)

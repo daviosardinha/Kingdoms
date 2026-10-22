@@ -5,6 +5,8 @@ ordinary Windows runs execute only harmless local child-process tests.
 """
 import base64
 import hashlib
+import ipaddress
+import json
 import os
 from pathlib import Path
 import random
@@ -159,6 +161,38 @@ class LoopbackWinRMTests(WindowsTransportTests):
         session.protocol.get_command_output = Mock(side_effect=capture)
         self.addCleanup(session.protocol.transport.close_session)
         return session
+
+    def test_real_firewall_address_filters_and_interrupted_hardening_resume(self):
+        source = base64.b64encode(management.SCRIPT.read_bytes()).decode('ascii')
+        fixture = Path(__file__).parent / 'fixtures' / 'wslpe-management-firewall-ci.ps1'
+        result = management.run_powershell(
+            self.session(), fixture.read_text(encoding='utf-8').replace('__SOURCE__', source),
+        )
+        self.assertEqual(result.status_code, 0, management.failure_detail(result))
+        self.assertIn(b'WSLPE_CI_OLD_IPV6_PREFIX=REPRODUCED', result.std_out)
+        self.assertIn(b'WSLPE_CI_FIREWALL_RESUME=PASS', result.std_out)
+        marker = 'WSLPE_CI_FIREWALL_SPECS='
+        rows = [line[len(marker):] for line in result.std_out.decode('utf-8-sig').splitlines()
+                if line.startswith(marker)]
+        self.assertEqual(len(rows), 1)
+        specs = {spec['Suffix']: spec for spec in json.loads(rows[0])}
+        # Verify complete complements, not a few sample IPs: only the intended
+        # IPv4 host is excluded from each block; no IPv6 address is excluded.
+        for suffix, key, permitted in (
+                ('HTTPS-OtherSource-Block', 'RemoteAddress', management.SOURCE),
+                ('HTTPS-OtherAddress-Block', 'LocalAddress', management.ADDRESS)):
+            ranges = {4: [], 6: []}
+            for value in specs[suffix][key]:
+                if '-' in value:
+                    low, high = map(ipaddress.ip_address, value.split('-'))
+                else:
+                    subnet = ipaddress.ip_network(value)
+                    low, high = subnet.network_address, subnet.broadcast_address
+                self.assertEqual(low.version, high.version)
+                ranges[low.version].append((int(low), int(high)))
+            excluded = int(ipaddress.ip_address(permitted))
+            self.assertEqual(sorted(ranges[4]), [(0, excluded - 1), (excluded + 1, 2**32 - 1)])
+            self.assertEqual(sorted(ranges[6]), [(0, 2**127 - 1), (2**127, 2**128 - 1)])
 
     def test_secure_service_policy_over_real_winrm_preserves_network_and_listeners(self):
         source = base64.b64encode(management.SCRIPT.read_bytes()).decode('ascii')

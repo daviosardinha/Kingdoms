@@ -177,6 +177,8 @@ function Protect-Folder {
 function Rule-Specs($Nics) {
     $mgmt = [string]$Nics['000C292FD76F'].Name
     # Explicit blocks override the image's broad allow rules. No existing rule is deleted.
+    # Windows Firewall requires IPv6 prefix lengths 1..128. The two /1 halves
+    # cover all IPv6 without the rejected ::/0 or an IPv4-widening Any keyword.
     return @(
         @{ Suffix='HTTPS-Allow'; Action='Allow'; LocalPort=@('5986');
            InterfaceAlias=@($mgmt); LocalAddress=@('172.28.233.31'); RemoteAddress=@('172.28.233.254') },
@@ -187,10 +189,10 @@ function Rule-Specs($Nics) {
            LocalAddress=@('Any'); RemoteAddress=@('Any') },
         @{ Suffix='HTTPS-OtherSource-Block'; Action='Block'; LocalPort=@('5986');
            InterfaceAlias=@($mgmt); LocalAddress=@('Any');
-           RemoteAddress=@('0.0.0.0-172.28.233.253','172.28.233.255-255.255.255.255','::/0') },
+           RemoteAddress=@('0.0.0.0-172.28.233.253','172.28.233.255-255.255.255.255','::/1','8000::/1') },
         @{ Suffix='HTTPS-OtherAddress-Block'; Action='Block'; LocalPort=@('5986');
            InterfaceAlias=@($mgmt); RemoteAddress=@('Any');
-           LocalAddress=@('0.0.0.0-172.28.233.30','172.28.233.32-255.255.255.255','::/0') }
+           LocalAddress=@('0.0.0.0-172.28.233.30','172.28.233.32-255.255.255.255','::/1','8000::/1') }
     )
 }
 
@@ -227,8 +229,10 @@ function Ensure-Rule($Spec) {
     if (-not (Get-NetFirewallRule -PolicyStore PersistentStore -Name $name -ErrorAction SilentlyContinue)) {
         $params = @{}
         foreach ($key in $Spec.Keys) { if ($key -ne 'Suffix') { $params[$key] = $Spec[$key] } }
-        $null = New-NetFirewallRule @params -Name $name -DisplayName $name -Group $Group `
-            -Enabled True -Direction Inbound -Protocol TCP -Profile Any -PolicyStore PersistentStore
+        try {
+            $null = New-NetFirewallRule @params -Name $name -DisplayName $name -Group $Group `
+                -Enabled True -Direction Inbound -Protocol TCP -Profile Any -PolicyStore PersistentStore
+        } catch { throw ('Firewall creation failed (' + $Spec.Suffix + '): ' + $_.Exception.Message) }
     }
     Assert-Rule $Spec
 }

@@ -24,6 +24,7 @@ on:
       - 'tests/test_wslpe41_management_recovery.ps1'
       - 'tests/test_wslpe41_management_transport_windows.py'
       - 'tests/fixtures/wslpe-management-winrm-ci.ps1'
+      - 'tests/fixtures/wslpe-management-firewall-ci.ps1'
       - 'ansible/wslpe-lpe-test.yml'
       - 'scripts/wslpe41-install.py'
       - 'tests/test_wslpe41_fresh_contract.py'
@@ -80,7 +81,7 @@ jobs:
           python-version: '3.12'
       - name: Install management transport test dependencies
         run: python -m pip install --disable-pip-version-check pywinrm pyyaml
-      - name: Verify PowerShell input streaming locally and over real NTLM-encrypted WinRM
+      - name: Verify input streaming, secure policy and real firewall rules over WinRM
         shell: powershell
         env:
           KINGDOMS_TEST_LOOPBACK_WINRM: '1'
