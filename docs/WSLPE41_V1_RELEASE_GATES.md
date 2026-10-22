@@ -196,3 +196,20 @@ After two clean builds, approved release image and validated backup, delete disp
   running VMs prohibit modifying shared VMware networking. New operator
   account creation/authenticated handoff, isolation, 41/41 installation and
   two clean builds are still release-blocking.
+
+
+## 2026-10-22 live host-network checkpoint
+
+The guarded root-only management vmnet4 transaction **committed** on the
+existing Kali VMware Workstation host, with interface
+`172.28.233.254/24`, connected `172.28.233.0/24` link route,
+source SHA256 `9717eecc5c8f05f4d214018a7da280c4484dc3d2e9a26a33902a9efe3e89f990`
+and root journal status `committed`. The network configuration before
+the additive operation had SHA256
+`538955e59ce433b3764e19e5d46073f2b476af54c15d5260465867d87ca15bff`.
+
+Only the **initial host allocation gate** is closed. VMware service
+restart/reboot persistence, fresh Windows management NIC, isolated
+operator HTTPS/WinRM, independent console recovery, real 41/41 scenario
+deployment and a second clean build remain open. Do not interpret the
+host network commit as course completion or readiness to merge.
