@@ -678,3 +678,37 @@ networking checksum is committed. Then address reboot/restart persistence
 before declaring complete operator management, attach only the fresh
 WSLPE management NIC, authenticate kingdom.operator, and run the 41
 Windows LPE scenarios with full validation. Retain all other workspaces.
+
+## 2026-10-22: third live failure — unexpected vmnet4 route
+
+The third owner-approved, guest-free allocation again restored the original
+VMware networking configuration. The protected journal recorded:
+`host-adapter-and-isolation-acceptance` / `Unexpected vmnet4 route;
+refusing host IP repair`. The postmortem found zero running VMs,
+no remaining vmnet4 interface, and the original networking source hash.
+The transient offending route was not recorded in the old failure journal.
+
+The vmnet4-only reconciler now accepts **only** the exact directly connected
+172.28.233.0/24 link route and optional in-subnet local/broadcast host
+routes. It continues to reject extra connected networks, foreign local
+routes, gateways, bridged adapters, off-subnet addresses, multiple IPv4
+addresses and wrong metadata. This is not a general relaxation of
+routing policy. No NORTH or global route mutation is performed.
+
+If VMware presents another unexpected route, a bounded, whitelisted
+`failure_network_evidence` snapshot now survives rollback in the
+root-only transaction journal and is shown by the read-only postmortem.
+It includes vmnet4-only route destinations, types, scopes, devices and the
+interface IPv4 address/prefix; it never serializes VMX, Windows credentials,
+the networking original_b64 backup, or arbitrary host routes.
+
+The root cause **cannot be stated conclusively from the third log**,
+because the failed route existed only between VMware start and rollback.
+Use no more speculative changes: any subsequent failed attempt must be
+diagnosed from the captured route evidence. The already rolled-back
+journal should be archived only with existing exact-hash, zero-VM and
+explicit maintenance approval gates. No new apply occurs implicitly.
+
+Return to NORTH only after actual vmnet4 host acceptance, the guest
+management NIC, authenticated operator identity, 41/41 Windows scenario
+validation and lifecycle recovery have been established.
