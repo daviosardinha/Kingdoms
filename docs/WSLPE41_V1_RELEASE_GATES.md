@@ -513,3 +513,36 @@ fail-closed, with native production runtime, console/JEA activation and
 independent clean-build proof still outstanding. Do not rerun the
 operator `--apply` merely to move into scenario installation. Preserve
 its accepted Windows console record, private credentials and receipts.
+
+
+## 2026-10-22: existing guest 41-scenario handoff (source integrated, no deployment)
+
+After the live `WSLPE_OPERATOR_MANAGEMENT=PASS` result on native fresh
+`bf5369-wslpe-vmware`, the correct next operation is to reuse this
+guest and its authenticated, isolated operator management, NOT invoke
+the earlier native orchestrator that creates another guest.
+
+The existing `scripts/wslpe41-install.py` now provides a scoped
+read-only `--provided-plan` mode. It verifies this exact running
+registered fresh VMware guest, reruns the existing
+`wslpe41_operator_management.run(apply=False)` live acceptance,
+builds all **41 canonical scenario / 83 stage** source invocations,
+distinguishes the learner/exercise target `172.28.232.31` from
+WinRM management `172.28.233.31:5986`, and reports remaining
+native inventory/private-fixture/JEA console capabilities without
+creating any scenario journal or modifying Windows.
+
+The `AnsibleStageContext` now optionally carries a distinct
+`management_address` so the secure runtime can require the vmnet4
+WinRM/HTTPS endpoint while scenario variables still reference the
+vmnet3 learner IP. Negative tests reject a WinRM inventory directed
+at the learner or NORTH when this supplied context is in use.
+
+This is a **source-only transition**, not scenario deployment.
+`--execute` remains intentionally blocked until the existing guest's
+instance-specific secure Ansible inventory/private vars, authenticated
+runtime context and independently recovered console JEA #30 execution
+have been implemented and live accepted. No model-mocked proof, full
+source suite or a previously completed master journal substitutes for
+41/41 on this fresh guest. Avoid rerunning account creation, VMX changes,
+or network maintenance as part of this handoff.
