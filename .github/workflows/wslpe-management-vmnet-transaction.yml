@@ -13,6 +13,11 @@ on:
       - 'kingdoms/wslpe_management_vmnet_runtime.py'
       - 'kingdoms/wslpe_management_vmnet_isolation.py'
       - 'kingdoms/wslpe_management_vmnet_hostaddr.py'
+      - 'scripts/wslpe-vmnet4-hostaddr-keeper.py'
+      - 'scripts/wslpe-vmnet4-install-persistence.sh'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.service'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.timer'
+      - 'tests/test_wslpe_vmnet4_hostaddr_keeper.py'
       - 'tests/test_wslpe_management_vmnet_hostaddr.py'
       - 'tests/test_wslpe_management_vmnet_isolation.py'
       - 'scripts/wslpe-vmnet4-maintenance.py'
@@ -42,6 +47,11 @@ on:
       - 'kingdoms/wslpe_management_vmnet_runtime.py'
       - 'kingdoms/wslpe_management_vmnet_isolation.py'
       - 'kingdoms/wslpe_management_vmnet_hostaddr.py'
+      - 'scripts/wslpe-vmnet4-hostaddr-keeper.py'
+      - 'scripts/wslpe-vmnet4-install-persistence.sh'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.service'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.timer'
+      - 'tests/test_wslpe_vmnet4_hostaddr_keeper.py'
       - 'tests/test_wslpe_management_vmnet_hostaddr.py'
       - 'tests/test_wslpe_management_vmnet_isolation.py'
       - 'scripts/wslpe-vmnet4-maintenance.py'
@@ -89,6 +99,8 @@ jobs:
             kingdoms/wslpe_management_vmnet_runtime.py \
             kingdoms/wslpe_management_vmnet_isolation.py \
             kingdoms/wslpe_management_vmnet_hostaddr.py \
+            scripts/wslpe-vmnet4-hostaddr-keeper.py \
+            tests/test_wslpe_vmnet4_hostaddr_keeper.py \
             tests/test_wslpe_management_vmnet_hostaddr.py \
             scripts/wslpe-vmnet4-maintenance.py \
             scripts/wslpe-vmnet4-postmortem.py \
@@ -117,10 +129,13 @@ jobs:
             tests.test_wslpe_management_vmnet_runtime \
             tests.test_wslpe_management_vmnet_isolation \
             tests.test_wslpe_management_vmnet_hostaddr \
+            tests.test_wslpe_vmnet4_hostaddr_keeper \
             tests.test_wslpe_vmnet4_maintenance \
             tests.test_wslpe_vmnet4_postmortem \
             tests.test_wslpe41_readiness_batch \
             tests.test_wslpe_management_vmnet_offline_native
+      - name: Verify host-address keeper install shell syntax
+        run: bash -n scripts/wslpe-vmnet4-install-persistence.sh
       - name: Prove consolidated source-only operator batch
         run: python scripts/wslpe41-readiness-batch.py --source-only
       - name: Guard against accidental live CLI exposure
