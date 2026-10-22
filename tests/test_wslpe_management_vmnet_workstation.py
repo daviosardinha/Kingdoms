@@ -124,7 +124,7 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
             executable.write_text("ok")
             symlink = Path(tmp) / "linked"
             symlink.symlink_to(executable)
-            with self.assertRaisesRegex(NetworkTransactionBlocked, "Unsafe"):
+            with self.assertRaisesRegex(NetworkTransactionBlocked, "Symlinked binary not permitted"):
                 ws._trusted_binary(symlink)
 
     def test_root_owned_vmrun_symlink_may_resolve_only_to_trusted_usr_tree(self):
