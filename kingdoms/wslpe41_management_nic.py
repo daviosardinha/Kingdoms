@@ -98,13 +98,37 @@ def host_operator_network_ready() -> None:
 
 
 def _read_vmx(vmx: Path) -> bytes:
-    if vmx.is_symlink():
-        raise NicBlocked("Linked VMX is forbidden")
-    st = vmx.stat()
-    if (not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid()
-            or st.st_nlink != 1 or st.st_size <= 0 or st.st_size > MAX_VMX
-            or st.st_mode & 0o022):
-        raise NicBlocked("VMX ownership, mode or size unsafe")
+    """Read exact user-owned VMX, reporting the specific failed file gate.
+
+    Do not broaden file ownership or access-mode policy. In particular,
+    a VMware-created group-writable VMX requires an explicit separate
+    owner-approved permission correction, not a silent trust bypass.
+    """
+    try:
+        st = vmx.lstat()
+    except OSError as exc:
+        raise NicBlocked("Registered VMX metadata unavailable") from exc
+    if stat.S_ISLNK(st.st_mode):
+        raise NicBlocked("Registered VMX is a symlink; refusing attachment")
+    if not stat.S_ISREG(st.st_mode):
+        raise NicBlocked("Registered VMX is not a regular file")
+    if st.st_uid != os.getuid():
+        raise NicBlocked(
+            f"Registered VMX owner mismatch: actual_uid={st.st_uid} "
+            f"expected_uid={os.getuid()} (mode={stat.S_IMODE(st.st_mode):04o})"
+        )
+    if st.st_nlink != 1:
+        raise NicBlocked(f"Registered VMX has unsafe link count: {st.st_nlink}")
+    if st.st_size <= 0 or st.st_size > MAX_VMX:
+        raise NicBlocked(
+            f"Registered VMX size out of bounds: bytes={st.st_size} maximum={MAX_VMX}"
+        )
+    if st.st_mode & 0o022:
+        raise NicBlocked(
+            f"Registered VMX is group/other-writable: "
+            f"mode={stat.S_IMODE(st.st_mode):04o} gid={st.st_gid}; "
+            "do not change permissions without an exact-instance maintenance gate"
+        )
     raw = vmx.read_bytes()
     if len(raw) != st.st_size:
         raise NicBlocked("VMX changed during snapshot")
