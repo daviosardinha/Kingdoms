@@ -131,9 +131,14 @@ def identify(home: Path, *, existing_ok: bool = False) -> Target:
             or info.get("ip_range") != "172.28.232" or info.get("extensions")):
         raise NicBlocked("Wrong native instance identity")
     vmx = Path(reg.read_text(encoding="utf-8").strip())
-    if (not vmx.is_absolute() or vmx.is_symlink()
-            or vmx.resolve(strict=True) != vmx
-            or not vmx.is_relative_to(provider.resolve(strict=True))):
+    if not vmx.is_absolute() or vmx.is_symlink():
+        raise NicBlocked("VMX escapes dedicated native provider")
+    try:
+        resolved = vmx.resolve(strict=True)
+        trusted_provider = provider.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise NicBlocked("Registered native VMX is missing or contains unsafe path aliases") from exc
+    if resolved != vmx or not vmx.is_relative_to(trusted_provider):
         raise NicBlocked("VMX escapes dedicated native provider")
     inventory = parse_workstation_library(_regular(home / ".vmware/inventory.vmls",
                                                    MAX_INVENTORY))
