@@ -41,7 +41,7 @@ def provided_plan() -> int:
         # still parameterize Windows scenarios using the learner address.
         guest = "172.28.232.31"
         operator = "172.28.233.31"
-        inventory = target.instance / "ansible" / "inventory"
+        inventory = target.instance / "ansible" / "inventory.yml"
         private_vars = target.instance / "ansible" / "private-vars.yml"
         ansible = Path.home() / ".goad/.venv/bin/ansible-playbook"
         stages = one_install_invocations(
