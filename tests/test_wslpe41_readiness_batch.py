@@ -41,6 +41,32 @@ class ReadinessBatchTests(unittest.TestCase):
             self.assertIn("/testhome/kingdoms-rebuild/workspace", args)
             self.assertIn("/testhome/vmware/KINGDOMS-WSLPE41-LEARNER-TEST", args)
 
+    def test_maintenance_mode_replaces_running_guest_checks_with_offline_proof(self):
+        checks = CLI.maintenance_commands(
+            root=Path("/testrepo"), home=Path("/testhome"), python="/test/python"
+        )
+        self.assertEqual(len(checks), 5)
+        self.assertEqual(checks[2].title, "Powered-off native VMX and exercise NIC")
+        self.assertEqual(checks[3].title, "Running VMware ownership")
+        self.assertEqual(checks[4].title, "Registered and offline VMX ownership")
+        self.assertNotIn("--native-status", str(checks))
+        self.assertNotIn("--native-workspace", str(checks))
+        self.assertIn("wslpe-management-vmnet-offline-native.py", str(checks))
+
+    def test_zero_vm_maintenance_evidence_is_success_without_deferred(self):
+        checks = CLI.maintenance_commands(
+            root=Path("/testrepo"), home=Path("/testhome"), python="/test/python"
+        )
+        results = {c.command: (0, "\n".join(c.required) +
+                   ("\nRan 100 tests" if c.required_pattern else "")) for c in checks}
+        # Source tests require an OK completion marker.
+        first = checks[0]
+        results[first.command] = (0, "\n".join(first.required) + "\nRan 100 tests")
+        status, messages = CLI.perform(checks, runner=lambda cmd: results[cmd])
+        self.assertEqual(status, 0)
+        self.assertTrue(any("[BATCH PASS]" in msg for msg in messages))
+        self.assertFalse(any(msg.startswith("[DEFERRED]") for msg in messages))
+
     def test_verified_two_running_guests_are_deferred_not_a_failure(self):
         results = {
             x.command: (0, "\n".join(x.required) + "\n" +
