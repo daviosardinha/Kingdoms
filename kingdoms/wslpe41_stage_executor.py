@@ -148,6 +148,7 @@ def run_ansible_stage(
             inventory=context.inventory, varsfile=context.private_vars,
             expected_address=context.expected_address,
             instance_id=context.identity.instance_id,
+            management_address=context.management_address,
         )
     except StagePlanBlocked as exc:
         raise InstallBlocked("Unapproved WSLPE41 stage invocation") from exc
