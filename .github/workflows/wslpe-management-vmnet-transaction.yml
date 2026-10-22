@@ -14,6 +14,8 @@ on:
       - 'kingdoms/wslpe_management_vmnet_isolation.py'
       - 'tests/test_wslpe_management_vmnet_isolation.py'
       - 'scripts/wslpe-vmnet4-maintenance.py'
+      - 'scripts/wslpe-vmnet4-postmortem.py'
+      - 'tests/test_wslpe_vmnet4_postmortem.py'
       - 'tests/test_wslpe_vmnet4_maintenance.py'
       - 'tests/test_wslpe_management_vmnet_runtime.py'
       - 'tests/test_wslpe_management_vmnet_workstation.py'
@@ -39,6 +41,8 @@ on:
       - 'kingdoms/wslpe_management_vmnet_isolation.py'
       - 'tests/test_wslpe_management_vmnet_isolation.py'
       - 'scripts/wslpe-vmnet4-maintenance.py'
+      - 'scripts/wslpe-vmnet4-postmortem.py'
+      - 'tests/test_wslpe_vmnet4_postmortem.py'
       - 'tests/test_wslpe_vmnet4_maintenance.py'
       - 'tests/test_wslpe_management_vmnet_runtime.py'
       - 'tests/test_wslpe_management_vmnet_workstation.py'
@@ -81,6 +85,8 @@ jobs:
             kingdoms/wslpe_management_vmnet_runtime.py \
             kingdoms/wslpe_management_vmnet_isolation.py \
             scripts/wslpe-vmnet4-maintenance.py \
+            scripts/wslpe-vmnet4-postmortem.py \
+            tests/test_wslpe_vmnet4_postmortem.py \
             tests/test_wslpe_management_vmnet_isolation.py \
             tests/test_wslpe_vmnet4_maintenance.py \
             tests/test_wslpe_management_vmnet_runtime.py \
@@ -105,6 +111,7 @@ jobs:
             tests.test_wslpe_management_vmnet_runtime \
             tests.test_wslpe_management_vmnet_isolation \
             tests.test_wslpe_vmnet4_maintenance \
+            tests.test_wslpe_vmnet4_postmortem \
             tests.test_wslpe41_readiness_batch \
             tests.test_wslpe_management_vmnet_offline_native
       - name: Prove consolidated source-only operator batch
