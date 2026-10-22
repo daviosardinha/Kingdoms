@@ -48,6 +48,10 @@ class Vmnet4RuntimeTests(unittest.TestCase):
             verify_host_adapter=lambda vmnet, subnet, text:
             self.commands.append(("verify", vmnet, subnet, text))
         )
+        self.reconciler = SimpleNamespace(
+            reconcile=lambda vmnet, subnet, text:
+            self.commands.append(("reconcile", vmnet, subnet, text))
+        )
         self.owner_vmrun = lambda owner: "Total running VMs: 0\n"
         self.process_run = lambda *_a, **_kw: subprocess.CompletedProcess(
             [], 1, "", ""
@@ -68,6 +72,7 @@ class Vmnet4RuntimeTests(unittest.TestCase):
             process_run=kwargs.pop("process_run", self.process_run),
             service=kwargs.pop("service", self.service),
             adapter=kwargs.pop("adapter", self.adapter),
+            reconciler=kwargs.pop("reconciler", self.reconciler),
             route_run=kwargs.pop("route_run", self.route_run),
             **kwargs
         )
@@ -175,18 +180,43 @@ class Vmnet4RuntimeTests(unittest.TestCase):
 
     def test_post_creation_host_and_isolation_proofs_are_both_required(self):
         runtime = self.runtime()
-        with mock.patch.object(rt, "_read_regular", return_value=(SOURCE.encode(), None)):
+        with (mock.patch.object(rt, "_read_regular", return_value=(SOURCE.encode(), None)),
+              mock.patch.object(runtime, "_zero", return_value=0)):
             runtime._verify(rt.VMNET, rt.SUBNET)
         self.assertEqual(self.isolated, [("vmnet4", rt.SUBNET)])
-        self.assertEqual(self.commands[0][:3], ("verify", "vmnet4", rt.SUBNET))
+        self.assertEqual([command[0] for command in self.commands], ["reconcile", "verify"])
+        self.assertEqual(self.commands[0][:3], ("reconcile", "vmnet4", rt.SUBNET))
 
     def test_failing_isolation_blocks_acceptance_even_after_adapter_passes(self):
         def deny(*_a):
             raise NetworkTransactionBlocked("NORTH forwarding still allowed")
         runtime = self.runtime(isolation_acceptance=deny)
-        with mock.patch.object(rt, "_read_regular", return_value=(SOURCE.encode(), None)):
+        with (mock.patch.object(rt, "_read_regular", return_value=(SOURCE.encode(), None)),
+              mock.patch.object(runtime, "_zero", return_value=0)):
             with self.assertRaisesRegex(NetworkTransactionBlocked, "NORTH forwarding"):
                 runtime._verify(rt.VMNET, rt.SUBNET)
+
+    def test_live_guest_on_host_blocks_address_reconciliation(self):
+        runtime = self.runtime()
+        with (mock.patch.object(rt, "_read_regular", return_value=(SOURCE.encode(), None)),
+              mock.patch.object(runtime, "_zero",
+                                side_effect=NetworkTransactionBlocked("guest started"))):
+            with self.assertRaisesRegex(NetworkTransactionBlocked, "guest started"):
+                runtime._verify(rt.VMNET, rt.SUBNET)
+        self.assertEqual(self.commands, [])
+
+    def test_reconciler_failure_never_reaches_adapter_or_isolation(self):
+        refusing = SimpleNamespace(
+            reconcile=lambda *_args: (_ for _ in ()).throw(
+                NetworkTransactionBlocked("foreign vmnet4 address"))
+        )
+        runtime = self.runtime(reconciler=refusing)
+        with (mock.patch.object(rt, "_read_regular", return_value=(SOURCE.encode(), None)),
+              mock.patch.object(runtime, "_zero", return_value=0)):
+            with self.assertRaisesRegex(NetworkTransactionBlocked, "foreign vmnet4"):
+                runtime._verify(rt.VMNET, rt.SUBNET)
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.isolated, [])
 
     def test_preflight_requires_original_owner_library_no_root_inference(self):
         library = self.base / ".vmware"
