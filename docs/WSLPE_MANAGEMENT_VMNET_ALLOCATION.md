@@ -640,3 +640,41 @@ attempt. Never overwrite or delete either historical or active journal.
 
 The 41-scenario Windows fresh installer remains unimplemented at runtime;
 do not confuse management host-network completion with `41/41` deployed.
+
+## 2026-10-22: second live failure = vmnet4 host-address normalization
+
+The second approved host maintenance attempt provided an exact failure phase:
+`host-adapter-and-isolation-acceptance`, with
+`vmnet4 must have only 172.28.233.254/24`.
+After automatic rollback the protected journal is `rolled_back`,
+the original networking SHA256 matches, vmnet4 is absent, and no
+VMware guests are running. The error proves an unexpected **post-start
+IPv4 state**, but does not by itself reveal whether vmnet4 had .1, no
+address, or multiple addresses during the transient transaction.
+
+Previous design already warned that Workstation may ignore HOSTONLY_HOSTADDR
+when starting a host-only network. The guarded runtime now includes
+`kingdoms/wslpe_management_vmnet_hostaddr.py`. Only after VMware's start,
+it examines exactly the new vmnet4 link, expected host-only metadata,
+current IPv4 and routes, **before** the original strict adapter and
+kernel isolation acceptance. It can normalize only an unnumbered vmnet4
+or a single correct-/24 IPv4 in 172.28.233.0/24 to
+172.28.233.254/24 using exact `/usr/bin/ip` argv. It refuses
+bridges, unexpected routes, off-subnet or multiple addresses, missing
+metadata, and running guests. No NORTH address, route, vmnet or system
+forwarding configuration is changed; a failure invokes the preexisting
+rollback transaction, recording a bounded cause in the new private journal.
+
+This source change is NOT proof of real host success or reboot persistence.
+It addresses only the observed address mismatch; vmnet4 isolation and
+NORTH coexistence must still pass existing live gates. Under another
+owner-approved guest-free window the old rolled-back journal can be
+preserved using the separately approved `--archive-rolled-back`
+operation; a fresh `--apply` still requires its own approval and pinned
+original hash. Do not blindly retry or delete any journal.
+
+Next live acceptance: verify vmnet4 is only 172.28.233.254/24 and
+networking checksum is committed. Then address reboot/restart persistence
+before declaring complete operator management, attach only the fresh
+WSLPE management NIC, authenticate kingdom.operator, and run the 41
+Windows LPE scenarios with full validation. Retain all other workspaces.
