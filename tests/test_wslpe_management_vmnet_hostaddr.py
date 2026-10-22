@@ -69,6 +69,39 @@ class HostAddressReconcileTests(unittest.TestCase):
                 with self.assertRaises(NetworkTransactionBlocked):
                     transition(addresses=addresses)
 
+    def test_expected_local_and_broadcast_host_routes_do_not_block(self):
+        kernel = ROUTE + [
+            {"dst": "172.28.233.1", "dev": "vmnet4", "type": "local",
+             "scope": "host", "table": "local"},
+            {"dst": "172.28.233.255", "dev": "vmnet4", "type": "broadcast",
+             "scope": "link", "table": "local"},
+        ]
+        result = transition(routes=kernel)
+        self.assertEqual(result[0][-2:], ["dev", "vmnet4"])
+        self.assertEqual(result[1][3], "172.28.233.254/24")
+
+    def test_foreign_local_route_is_still_refused_with_private_diagnostics(self):
+        routes = ROUTE + [
+            {"dst": "10.4.10.11", "dev": "vmnet4", "type": "local",
+             "scope": "host", "table": "local"}
+        ]
+        with self.assertRaises(h.UnexpectedVmnet4Route) as caught:
+            transition(routes=routes)
+        evidence = caught.exception.network_evidence
+        self.assertEqual(evidence["interface"], "vmnet4")
+        self.assertEqual(evidence["routes"][-1]["dst"], "10.4.10.11")
+        self.assertNotIn("original_b64", str(evidence))
+
+    def test_connected_route_with_gateway_or_foreign_prefsrc_is_refused(self):
+        for route in (
+            dict(ROUTE[0], gateway="172.28.233.1"),
+            dict(ROUTE[0], prefsrc="10.4.10.254"),
+            dict(ROUTE[0], scope="global"),
+        ):
+            with self.subTest(route=route):
+                with self.assertRaises(h.UnexpectedVmnet4Route):
+                    transition(routes=[route])
+
     def test_unexpected_routes_never_trigger_ip_write(self):
         for routes in (
             [{"dst": "default", "dev": "vmnet4"}],
