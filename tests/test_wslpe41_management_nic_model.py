@@ -66,8 +66,11 @@ class ManagementModelRepairTests(unittest.TestCase):
             model.candidate(LEGACY.replace(
                 b'ethernet1.virtualDev = "e1000e"',
                 b'ethernet1.virtualDev = "e1000"'))
-        with self.assertRaisesRegex(nic.NicBlocked, "already set"):
-            model.candidate(LEGACY + b'ethernet2.virtualDev = "e1000"\n')
+        vmware_explicit = LEGACY + b'ethernet2.virtualDev = "e1000"\n'
+        repaired = model.candidate(vmware_explicit)
+        self.assertEqual(repaired, LEGACY + model.EXACT_LINE)
+        with self.assertRaisesRegex(nic.NicBlocked, "not a legacy e1000"):
+            model.candidate(LEGACY + model.EXACT_LINE)
 
     def test_requires_committed_historical_journal_integrity(self):
         model._committed_attachment(self.home, self.vmx)
@@ -100,7 +103,7 @@ class ManagementModelRepairTests(unittest.TestCase):
             self.assertEqual(self.journal.read_bytes(), original_history)
             zero.assert_called()
             network.assert_called_once()
-            with self.assertRaisesRegex(nic.NicBlocked, "model already set"):
+            with self.assertRaisesRegex(nic.NicBlocked, "not a legacy e1000"):
                 model.candidate(self.vmx.read_bytes())
 
     def test_wrong_hash_missing_approval_and_duplicate_journal_denied(self):
