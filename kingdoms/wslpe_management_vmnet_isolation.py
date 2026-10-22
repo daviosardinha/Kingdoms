@@ -47,7 +47,11 @@ def validate_isolation_snapshot(*, vmnet: str, subnet: str,
         raise NetworkTransactionBlocked("Management interface bridged/enslaved/stacked")
     if not isinstance(ipv4_routes, list):
         raise NetworkTransactionBlocked("Invalid host IPv4 route inventory")
-    attached = [r for r in ipv4_routes if r.get("dev") == vmnet]
+    attached = [
+        r for r in ipv4_routes
+        if r.get("dev") == vmnet
+        and r.get("type", "unicast") not in {"local", "broadcast"}
+    ]
     if len(attached) != 1 or attached[0].get("dst") != subnet:
         raise NetworkTransactionBlocked("Unexpected vmnet4 routes in host routing tables")
     if any(r.get("gateway") or r.get("via") for r in attached):
