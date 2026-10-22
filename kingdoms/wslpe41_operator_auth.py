@@ -52,7 +52,7 @@ def authenticate_native_operator(context: AnsibleStageContext) -> bool:
         "ansible_winrm_scheme": "https",
         "ansible_port": 5986,
         "ansible_winrm_server_cert_validation": "validate",
-        "ansible_host": ("WSLPE-WS01" if context.management_address else context.expected_address),
+        "ansible_host": ("WSLPE-WS01" if getattr(context, "management_address", None) else context.expected_address),
     }
     try:
         with tempfile.TemporaryDirectory(prefix="wslpe41-operator-") as directory:
@@ -62,7 +62,7 @@ def authenticate_native_operator(context: AnsibleStageContext) -> bool:
                 json.dump(overrides, handle)
             result = subprocess.run(
                 ([str(ansible), "-i", str(context.inventory)] +
-                 ([] if context.management_address else ["-i", str(context.private_vars)]) +
+                 ([] if getattr(context, "management_address", None) else ["-i", str(context.private_vars)]) +
                  ["ws01", "-m", "ansible.windows.win_ping",
                   "-e", "@" + str(secret)]),
                 cwd=Path(__file__).resolve().parents[1], env=env,
