@@ -422,3 +422,19 @@ Keep native Vagrant bootstrap and the existing learner/operator Ansible
 foundation roles; do not blindly enable Basic/unencrypted WinRM or disable
 Windows Firewall. Complete live console recovery, pinned TLS and
 operator authentication before scenario deployment.
+
+## 2026-10-22: focused fresh operator-management repair (source implementation)
+
+The existing operator foundation is now reachable through
+`scripts/wslpe41-operator-management.py --apply`, scoped to the current
+`bf5369-wslpe-vmware` and its accepted three MAC addresses. The runner reuses the
+prepared private credential, authenticates the existing TLS certificate,
+requires an independent elevated-console recovery check, applies the original
+account foundation and proves a fresh operator HTTPS session before restricting
+HTTP/NAT/learner WinRM access. It preserves the bootstrap account, original
+listeners, certificates and all earlier transaction journals.
+
+See [focused operator repair and consolidated live acceptance](WSLPE41_OPERATOR_MANAGEMENT_FIX.md).
+**Live acceptance is pending:** no Windows account creation, management
+isolation or operator-authentication PASS is claimed by this source change.
+No 41-scenario deployment, other-lab change or main merge is part of this work.
