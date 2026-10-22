@@ -47,6 +47,7 @@ def provided_plan() -> int:
         stages = one_install_invocations(
             ansible=ansible, inventory=inventory, varsfile=private_vars,
             expected_address=guest, instance_id=target.instance.name,
+            management_address=operator,
         )
         if (len(stages) != 83 or len(set(stage.number for stage in stages)) != 41
                 or len([stage for stage in stages if stage.transport == "guest_console"]) != 1):
