@@ -127,6 +127,77 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
             with self.assertRaisesRegex(NetworkTransactionBlocked, "Unsafe"):
                 ws._trusted_binary(symlink)
 
+    def test_root_owned_vmrun_symlink_may_resolve_only_to_trusted_usr_tree(self):
+        import stat
+        from types import SimpleNamespace
+
+        launcher = Path("/usr/bin/vmrun")
+        target = Path("/usr/lib/vmware/bin/vmrun")
+
+        def mode(kind, owner=0):
+            return SimpleNamespace(st_mode=kind | 0o755, st_uid=owner)
+
+        def lstat(path):
+            if path == launcher:
+                return mode(stat.S_IFLNK)
+            return mode(stat.S_IFDIR)
+
+        with (mock.patch.object(Path, "lstat", lstat),
+              mock.patch.object(Path, "resolve", return_value=target),
+              mock.patch.object(Path, "stat", return_value=mode(stat.S_IFREG))):
+            ws._trusted_binary(launcher, allow_trusted_symlink=True)
+            with self.assertRaisesRegex(NetworkTransactionBlocked, "Symlinked binary"):
+                ws._trusted_binary(launcher)
+
+    def test_binary_symlink_refuses_untrusted_target_or_directory(self):
+        import stat
+        from types import SimpleNamespace
+
+        launcher = Path("/usr/bin/vmrun")
+        target = Path("/usr/lib/vmware/bin/vmrun")
+        def mode(kind, owner=0, bits=0o755):
+            return SimpleNamespace(st_mode=kind | bits, st_uid=owner)
+
+        for unsafe_target in (Path("/tmp/vmrun"), Path("/home/stark/vmrun")):
+            with (mock.patch.object(Path, "lstat", side_effect=lambda p: (
+                    mode(stat.S_IFLNK) if p == launcher else mode(stat.S_IFDIR))),
+                  mock.patch.object(Path, "resolve", return_value=unsafe_target)):
+                with self.assertRaisesRegex(NetworkTransactionBlocked, "trusted /usr"):
+                    ws._trusted_binary(launcher, allow_trusted_symlink=True)
+
+        def lstat(path):
+            if path == launcher:
+                return mode(stat.S_IFLNK)
+            if path == Path("/usr/lib/vmware"):
+                return mode(stat.S_IFDIR, bits=0o777)
+            return mode(stat.S_IFDIR)
+
+        with (mock.patch.object(Path, "lstat", lstat),
+              mock.patch.object(Path, "resolve", return_value=target)):
+            with self.assertRaisesRegex(NetworkTransactionBlocked, "Untrusted executable parent"):
+                ws._trusted_binary(launcher, allow_trusted_symlink=True)
+
+    def test_binary_symlink_requires_root_owned_launcher_and_target(self):
+        import stat
+        from types import SimpleNamespace
+
+        launcher = Path("/usr/bin/pgrep")
+        target = Path("/usr/bin/pgrep.real")
+        def item(kind, owner=0, bits=0o755):
+            return SimpleNamespace(st_mode=kind | bits, st_uid=owner)
+
+        with mock.patch.object(Path, "lstat", side_effect=lambda p: (
+                item(stat.S_IFLNK, owner=1000) if p == launcher else item(stat.S_IFDIR))):
+            with self.assertRaisesRegex(NetworkTransactionBlocked, "Non-root-owned"):
+                ws._trusted_binary(launcher, allow_trusted_symlink=True)
+
+        with (mock.patch.object(Path, "lstat", side_effect=lambda p: (
+                item(stat.S_IFLNK) if p == launcher else item(stat.S_IFDIR))),
+              mock.patch.object(Path, "resolve", return_value=target),
+              mock.patch.object(Path, "stat", return_value=item(stat.S_IFREG, owner=1000))):
+            with self.assertRaisesRegex(NetworkTransactionBlocked, "ownership/mode unsafe"):
+                ws._trusted_binary(launcher, allow_trusted_symlink=True)
+
     def test_host_adapter_calls_are_bounded_and_read_only(self):
         queries = []
         answers = [ADDR, LINK, ROUTE]
