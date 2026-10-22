@@ -32,6 +32,7 @@ from kingdoms.wslpe_management_vmnet_transaction import (
 )
 
 APPROVAL = "I_APPROVE_GUEST_FREE_VMNET4_MAINTENANCE"
+ARCHIVE_APPROVAL = "I_APPROVE_PRESERVE_AND_ARCHIVE_ROLLED_BACK_VMNET4"
 
 
 def workspaces(owner: str) -> tuple[Path, ...]:
@@ -77,6 +78,8 @@ def main(argv=None) -> int:
                       help="Owner-authorized guest-free allocation (changes host networking)")
     mode.add_argument("--recover", action="store_true",
                       help="Recover only an incomplete journal; no general uninstall")
+    mode.add_argument("--archive-rolled-back", action="store_true",
+                      help="Preserve finished failed transaction in private historical journal")
     mode.add_argument("--status", action="store_true",
                       help="Read-only current networking checksum (no guest mutation)")
     parser.add_argument("--owner", required=True, help="Original nonroot Workstation user")
@@ -97,9 +100,11 @@ def main(argv=None) -> int:
 
         if os.geteuid() != 0:
             raise NetworkTransactionBlocked("Root required for VMware maintenance")
-        if args.approve != APPROVAL:
+        expected_approval = ARCHIVE_APPROVAL if args.archive_rolled_back else APPROVAL
+        if args.approve != expected_approval:
             raise NetworkTransactionBlocked("Exact guest-free maintenance approval required")
-        if args.apply and not re.fullmatch(r"[0-9a-f]{64}", args.expected_sha256 or ""):
+        if (args.apply or args.archive_rolled_back) and not re.fullmatch(
+                r"[0-9a-f]{64}", args.expected_sha256 or ""):
             raise NetworkTransactionBlocked("Pinned live host networking SHA256 required")
         if args.recover and args.expected_sha256:
             raise NetworkTransactionBlocked("Recovery never takes a new source hash")
@@ -110,8 +115,8 @@ def main(argv=None) -> int:
             if root.is_symlink() or not root.is_dir():
                 raise NetworkTransactionBlocked(f"Missing/linked VMware workspace: {root}")
 
-        if args.recover and not (STATE_ROOT / "journal.json").is_file():
-            raise NetworkTransactionBlocked("No incomplete vmnet4 journal to recover")
+        if (args.recover or args.archive_rolled_back) and not (STATE_ROOT / "journal.json").is_file():
+            raise NetworkTransactionBlocked("No vmnet4 journal to recover/archive")
 
         create_private_state_dir(STATE_ROOT)
         verifier = Vmnet4KernelIsolationVerifier()
@@ -124,6 +129,15 @@ def main(argv=None) -> int:
             restored = transaction.recover()
             print(f"[RECOVERED] Exact original VMware networking SHA256={restored}")
             print("[NO VMX CHANGES] No guest adapter or Windows operation performed")
+            return 0
+        if args.archive_rolled_back:
+            archived = transaction.archive_rolled_back(
+                expected_source_sha256=args.expected_sha256,
+                vmnet4_absent=lambda: not Path("/sys/class/net/vmnet4").exists()
+                                 and not Path("/sys/class/net/vmnet4").is_symlink(),
+            )
+            print(f"[ARCHIVED] Historical rolled-back journal preserved: {archived}")
+            print("[NO NETWORK CHANGES] New apply still requires separate explicit approval")
             return 0
 
         actual, _ = _read_regular(NETWORKING, MAX_NETWORKING_BYTES)
