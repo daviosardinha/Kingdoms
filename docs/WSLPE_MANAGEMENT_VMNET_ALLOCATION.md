@@ -903,3 +903,28 @@ step.
 workstation and proceed with one approved VMX attachment if exact gates
 pass. Keep both VMs powered off until the attachment commits; never
 reuse the old master's VMware registration.
+
+
+## 2026-10-22: first fresh-guest VMX planner blocked on file metadata
+
+First read-only `scripts/wslpe41-attach-management-nic.py --plan`
+returned `[BLOCKED] WSLPE management NIC: VMX ownership, mode or size unsafe`.
+The operator's read-only snapshot showed:
+`vmrun -T ws list` = zero guests, `vmnet4` =
+`172.28.233.254/24`, and the exact fresh instance's private NIC
+transaction journal **does not exist**. Therefore neither the third
+NIC nor Windows management configuration has been changed.
+
+The source previously collapsed owner UID, group/other-writable mode,
+link count and size into a single error. The fail-closed reader now
+reports the exact failed condition and safe numeric metadata so the
+owner can distinguish an ordinary VMware-created permission bit from
+an unsafe owner or hardlink. It does not change file permissions or
+broaden trust. Run a single read-only `--plan` on the updated branch
+and resolve only the evidenced condition under the same guest-free,
+registered exact-VMX scope. Do not recursively chown/chmod a workspace
+or edit another WSLPE or NORTH VMX.
+
+**State:** `vmnet4` allocated and keeper installed; fresh guest NIC
+attachment not yet started; Windows operator access and 41/41 scenarios
+remain pending.
