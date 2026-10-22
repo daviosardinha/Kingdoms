@@ -488,3 +488,28 @@ handoff, preserves it as a backup, and retains the original transaction state.
 No network-category change or generic remoting/firewall setup is introduced.
 The same apply command resumes the transaction; live TLS/operator/isolation
 acceptance still requires the actual fresh guest result.
+
+
+## 2026-10-22: live focused operator-management repair PASS
+
+The operator's Kali screenshot confirms the existing native fresh guest
+`bf5369-wslpe-vmware` accepted
+`scripts/wslpe41-operator-management.py --apply` on
+`feature/wslpe41-fresh-full-installer` after source update to
+`a565ce0`. Reported live markers:
+
+- `[PASS] Existing operator authenticated; account will be reused`
+- `[PASS] WSLPE_OPERATOR_MANAGEMENT=PASS (live HTTPS, console record, policy and source probes)`
+- `[STOP] Management repair only; no scenario deployment or main merge`
+
+**Focused operator management repair: PASS as reported by its live
+acceptance script.** The operator identity was reused, with no claimed
+credential rotation or additional account creation. This supersedes
+earlier operator-management pre-foundation BLOCKED markers in this document.
+
+This does NOT attest that any scenario was installed. The existing
+`scripts/wslpe41-install.py --execute` remains intentionally
+fail-closed, with native production runtime, console/JEA activation and
+independent clean-build proof still outstanding. Do not rerun the
+operator `--apply` merely to move into scenario installation. Preserve
+its accepted Windows console record, private credentials and receipts.
