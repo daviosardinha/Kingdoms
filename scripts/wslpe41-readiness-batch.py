@@ -94,6 +94,20 @@ def commands(*, root: Path, home: Path, python: str) -> tuple[Check, ...]:
     )
 
 
+def maintenance_commands(*, root: Path, home: Path, python: str) -> tuple[Check, ...]:
+    """When VMs are OFF, use disk registration rather than a running-VM assertion."""
+    normal = commands(root=root, home=home, python=python)
+    offline = Check(
+        "Powered-off native VMX and exercise NIC",
+        (python, str(root / "scripts/wslpe-management-vmnet-offline-native.py"),
+         "--instance-dir", str(root / "workspace" / GUEST_ID)),
+        ("[PASS] Unique fresh native Vagrant VMX matches Workstation user library",
+         "[NATIVE OFFLINE] Exact WSLPE exercise: vmnet3 172.28.232.0/24"),
+    )
+    # Existing vmnet4 collision and registration audits work equally with 0 VMs.
+    return (normal[0], normal[1], offline, normal[4], normal[5])
+
+
 def run_command(cmd: tuple[str, ...]) -> tuple[int, str]:
     try:
         process = subprocess.run(
@@ -149,12 +163,16 @@ def perform(checks: tuple[Check, ...], runner=run_command) -> tuple[int, tuple[s
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-only", action="store_true",
-                        help="Run only source tests and installer manifest (CI-safe)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--source-only", action="store_true",
+                      help="Run only source tests and installer manifest (CI-safe)")
+    mode.add_argument("--maintenance", action="store_true",
+                      help="Use exact powered-off native VMX checks for guest-free maintenance")
     args = parser.parse_args(argv)
     print("[WSLPE41] Consolidated readiness batch | READ ONLY")
     print("[NO CHANGES] no sudo, VMware restart, VM stop, firewall or Windows mutation")
-    selected = commands(root=ROOT, home=Path.home(), python=sys.executable)
+    selected = (maintenance_commands(root=ROOT, home=Path.home(), python=sys.executable)
+                if args.maintenance else commands(root=ROOT, home=Path.home(), python=sys.executable))
     if not args.source_only:
         try:
             _trusted_binary(BIN)
@@ -173,6 +191,8 @@ def main(argv=None) -> int:
             return 2
     if args.source_only:
         selected = selected[:2]
+    if args.maintenance:
+        print("[MAINTENANCE] Powered-off VMX validation enabled; running-guest requirements omitted")
     exit_code, lines = perform(selected)
     for line in lines:
         print(line)
