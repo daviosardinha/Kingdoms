@@ -306,3 +306,51 @@ the Linux command check proves network service lifecycle semantics.
 The service adapter remains **unwired** from any runtime action.
 No network restart, VM stop, guest NIC change, or scenario installation
 is authorized by this checkpoint.
+
+
+## 2026-10-22: consolidated operator readiness batch (single command)
+
+Repeated one-by-one preflights are now replaced by a **single operator
+invocation**. This batch runs the five existing management-network source
+test modules, checks the existing 41/41 installer manifest, validates the
+exact running fresh native guest, verifies the live management vmnet/subnet
+proposal, reconciles the running guest VMX/process inventory, audits all
+eight current-user registered VMware library entries (without relying on
+their count), and checks the proven host binaries.
+
+Four explicit existing workspace roots are already included, including the
+preserved `KINGDOMS-WSLPE41-LEARNER-TEST`. Do not edit or remove any
+VMs to satisfy the batch.
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" scripts/wslpe41-readiness-batch.py
+```
+
+Interpretation:
+
+- `[PASS]` means the individual read-only check succeeded.
+- `[DEFERRED]` means both running guests are accounted for and shared
+  VMware networking **must not** be restarted.
+- `[BATCH PASS]` with a maintenance deferral is a **successful read-only
+  checkpoint**, not installation permission.
+- `[BATCH BLOCKED]` reports all independent failures together, not one
+  issue per separate user turn. Return the complete output for repair.
+- `[NOT INSTALLED]` explicitly states that vmnet4, operator auth and 41
+  scenario deployment are still separate live gates.
+
+Source CI also runs the batch's `--source-only` mode using mocks/fixture
+tests. The batch has **no apply or power command**, and must not be
+run with sudo. Run it once at the start of the next operator session or
+after a meaningful infrastructure change, not after every source commit.
+
+**Next engineering workstream after the batch:** finish the separately
+reviewed vmnet4 privileged transaction plus full host firewall/isolation
+and recovery capability, then use an owner-approved guest-free VMware
+maintenance window. After host management is established, attach only
+the fresh guest's management NIC, validate kingdom.operator and
+independent console recovery, and deploy/configuration-validate the 41
+scenarios. Release still requires a second clean independent build
+and learner-path acceptance. No changes to NORTH or the historical WSLPE
+master.
