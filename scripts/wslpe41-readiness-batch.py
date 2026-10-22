@@ -32,6 +32,7 @@ TESTS = (
     "tests.test_wslpe_management_vmnet_workstation",
     "tests.test_wslpe_management_vmnet_runtime",
     "tests.test_wslpe_management_vmnet_hostaddr",
+    "tests.test_wslpe_vmnet4_hostaddr_keeper",
     "tests.test_wslpe_vmnet4_postmortem",
     "tests.test_wslpe41_readiness_batch",
     "tests.test_wslpe_management_vmnet_isolation",
