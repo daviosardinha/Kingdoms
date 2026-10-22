@@ -8,6 +8,9 @@ on:
       - 'kingdoms/wslpe_management_vmnet_transaction.py'
       - 'kingdoms/wslpe_management_vmnet_plan.py'
       - 'kingdoms/wslpe_management_vmnet_host_gate.py'
+      - 'kingdoms/wslpe_management_vmnet_registry.py'
+      - 'scripts/wslpe-management-vmnet-registry-audit.py'
+      - 'tests/test_wslpe_management_vmnet_registry.py'
       - 'scripts/wslpe-management-vmnet-host-audit.py'
       - 'tests/test_wslpe_management_vmnet_host_gate.py'
       - 'tests/test_wslpe_management_vmnet_transaction.py'
@@ -18,6 +21,9 @@ on:
       - 'kingdoms/wslpe_management_vmnet_transaction.py'
       - 'kingdoms/wslpe_management_vmnet_plan.py'
       - 'kingdoms/wslpe_management_vmnet_host_gate.py'
+      - 'kingdoms/wslpe_management_vmnet_registry.py'
+      - 'scripts/wslpe-management-vmnet-registry-audit.py'
+      - 'tests/test_wslpe_management_vmnet_registry.py'
       - 'scripts/wslpe-management-vmnet-host-audit.py'
       - 'tests/test_wslpe_management_vmnet_host_gate.py'
       - 'tests/test_wslpe_management_vmnet_transaction.py'
@@ -44,6 +50,9 @@ jobs:
             kingdoms/wslpe_management_vmnet_host_gate.py \
             scripts/wslpe-management-vmnet-host-audit.py \
             tests/test_wslpe_management_vmnet_host_gate.py \
+            kingdoms/wslpe_management_vmnet_registry.py \
+            scripts/wslpe-management-vmnet-registry-audit.py \
+            tests/test_wslpe_management_vmnet_registry.py \
             scripts/wslpe-management-vmnet-plan.py \
             tests/test_wslpe_management_vmnet_plan.py \
             tests/test_wslpe_management_vmnet_transaction.py
@@ -52,7 +61,8 @@ jobs:
           python -m unittest -v \
             tests.test_wslpe_management_vmnet_plan \
             tests.test_wslpe_management_vmnet_transaction \
-            tests.test_wslpe_management_vmnet_host_gate
+            tests.test_wslpe_management_vmnet_host_gate \
+            tests.test_wslpe_management_vmnet_registry
       - name: Guard against accidental live CLI exposure
         run: |
           python - <<'PY'
@@ -61,10 +71,12 @@ jobs:
           installer = Path("scripts/wslpe41-install.py").read_text()
           core = Path("kingdoms/wslpe_management_vmnet_transaction.py").read_text()
           audit = Path("scripts/wslpe-management-vmnet-host-audit.py").read_text()
+          registry = Path("scripts/wslpe-management-vmnet-registry-audit.py").read_text()
           assert 'add_argument("--apply"' not in planner
           assert "[BLOCKED] No production fresh-native runner is wired yet." in installer
           assert "There is intentionally NO production CLI wiring" in core
           assert "vmware-networks" not in audit
+          assert "vmware-networks" not in registry
           assert "No VMware, host, guest, routing, or firewall mutation" in audit
           print("PASS: no operator-accessible VMware allocation command")
           PY
