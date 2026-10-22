@@ -402,3 +402,94 @@ native WSLPE guest management NIC and complete
 
 No NORTH VM, historical WSLPE learner-test/master VM or original
 KINGDOMS topology is to be modified by this work.
+
+
+## 2026-10-22: vmnet4 guarded maintenance entrypoint + kernel isolation (source-tested)
+
+`kingdoms/wslpe_management_vmnet_isolation.py` implements a read-only,
+fail-closed Linux **kernel non-routing** invariant for vmnet4: interface-
+scoped IPv4/IPv6 forwarding and global IPv6 forwarding must be disabled,
+the vmnet4 adapter must have no Linux bridge/master association, and
+the IPv4 routing tables must have only the directly connected vmnet4
+unicast route (normal local/broadcast kernel routes are allowed).
+It neither modifies the host firewall nor changes global forwarding
+settings. This is **not end-to-end network isolation proof**: the final
+Windows guest/NIC/WinRM policy and a negative connectivity test from
+the learner to NORTH and operator management still need live validation.
+
+`scripts/wslpe-vmnet4-maintenance.py` now offers an explicitly guarded
+`--apply` and emergency `--recover`. These operations invoke the
+existing owner-scoped VMware runtime, backup/journal transaction and
+Workstation service adapter. They **do not shut down VMware guests** or
+install a Windows scenario. They require:
+
+1. An operator-approved downtime window with **every VMware guest
+   already shut down by its owner**. Both `pgrep` and original-owner
+   `vmrun` inventory must report zero. If either sees a guest, the
+   operation is refused before creating transaction state.
+2. Run as root, supply the actual non-root Workstation owner
+   (`--owner stark` for the current Kali host), the exact
+   `I_APPROVE_GUEST_FREE_VMNET4_MAINTENANCE` token and, for apply,
+   the pinned current networking SHA256. A stale hash blocks.
+3. All four verified existing WSLPE/Kingdoms workspace roots must
+   exist unchanged, including the historical learner-test clone.
+   A re-audit of original-user VMware inventory and live host
+   address/route collisions is mandatory immediately before mutation.
+4. A private root-only journal/lock state and exact in-transaction
+   rollback on recognized failure. Unexpected VMware metadata drift
+   stops automated restore and requires explicit manual recovery.
+5. Exact `vmnet4` host adapter, host-only network metadata
+   (`172.28.233.254/24`, no DHCP/NAT) and kernel no-forward/no-bridge
+   acceptance before recording a commit.
+
+The new maintenance code and isolation probe are covered by mocks in
+the dedicated source regression. **No real VMware restart or Windows NIC
+installation has been performed by CI.**
+
+### Maintenance procedure (reserved; DO NOT execute while any VM is running)
+
+After the WSLPE checkout source is reviewed and owners approve downtime,
+the guests must be stopped independently, outside this script. The single
+operator maintenance invocation is then:
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+
+# Read-only pinned-source checksum. No VM stop or networking mutation.
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-vmnet4-maintenance.py \
+  --status --owner stark
+
+# Later, after guest-free proof and explicit downtime approval only,
+# a root operator uses --apply with the freshly printed exact SHA256.
+# Never replace this with the SHA from a previous session.
+```
+
+The final privileged apply syntax is:
+
+```bash
+sudo "$HOME/.goad/.venv/bin/python" scripts/wslpe-vmnet4-maintenance.py \
+  --apply --owner stark \
+  --expected-sha256 '<freshly-approved-64-digit-hash>' \
+  --approve I_APPROVE_GUEST_FREE_VMNET4_MAINTENANCE
+```
+
+If a crash interrupts before commit, the owner may inspect the
+root-only journal and run `--recover` with the same owner and exact
+maintenance-approval token, **again only with zero running guests**.
+Do not delete the private journal or apply twice. A committed allocation
+is never silently reverted.
+
+**Do not run either privileged command yet.** The active operator
+evidence still reports **2 running VMware guests**. Root-owned code
+execution, the shared networking restart and failure recovery have only
+been source-simulated; the real host's post-restart and guest recovery
+must be accepted during a deliberate maintenance window.
+
+**After vmnet4:** attach only the new native guest management NIC,
+authenticate the dedicated `kingdom.operator` over pinned HTTPS/5986,
+prove WinRM-independent console recovery and negative learner-to-
+management/NORTH connectivity, then install and validate 41/41 and
+repeat a second independent clean build. Return to NORTH after WSLPE
+acceptance; do not alter the existing NORTH network or course as
+part of this vmnet change.
