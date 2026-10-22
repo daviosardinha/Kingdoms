@@ -218,34 +218,54 @@ class WslpeVmnetTransaction:
                 "mode": stat.S_IMODE(info.st_mode), "uid": info.st_uid, "gid": info.st_gid,
             }
             self._save(data)  # Durable undo record BEFORE touching VMware
+            phase = "zero-guest-confirmation"
             try:
                 self._zero_guests()
+                phase = "vmware-network-stop"
                 self.vmware_action("stop")
                 data["status"] = "stopped"
                 self._save(data)
+                phase = "stopped-metadata-check"
                 self._zero_guests()
                 if self._read_networking()[0] != original:
                     raise NetworkTransactionBlocked("VMware metadata drift during stop")
+                phase = "additive-network-write"
                 _atomic_replace(self.networking, proposed, mode=data["mode"],
                                 uid=data["uid"], gid=data["gid"])
                 data["status"] = "installed"
                 self._save(data)
+                phase = "vmware-network-start"
                 self._zero_guests()
                 self.vmware_action("start")
-                self.verify_created_network(vmnet, subnet)  # host adapter and isolation acceptance
+                phase = "host-adapter-and-isolation-acceptance"
+                self.verify_created_network(vmnet, subnet)
+                phase = "post-start-metadata-integrity"
                 if _digest(self._read_networking()[0]) != data["proposed_sha256"]:
                     raise NetworkTransactionBlocked("VMware post-start metadata drift")
+                phase = "commit-journal"
                 data["status"] = "committed"
                 self._save(data)
                 return data["proposed_sha256"]
             except Exception as cause:
+                # This metadata belongs in the protected root-only journal.
+                # Avoid serializing arbitrary exception strings; all accepted
+                # NetworkTransactionBlocked strings originate in our own host
+                # gates, but still limit their length and keep an exception type.
+                reason = (str(cause)[:200] if isinstance(cause, NetworkTransactionBlocked)
+                          else type(cause).__name__)
+                data["failure_stage"] = phase
+                data["failure_class"] = type(cause).__name__
+                data["failure_reason"] = reason
                 try:
                     self._rollback(data)
                 except Exception as recovery_error:
                     raise NetworkTransactionBlocked(
-                        f"Allocation failed; RECOVERY REQUIRED: {recovery_error}"
+                        f"Allocation failed at {phase}; RECOVERY REQUIRED: {recovery_error}"
                     ) from cause
-                raise NetworkTransactionBlocked("Allocation failed; original configuration restored") from cause
+                raise NetworkTransactionBlocked(
+                    f"Allocation failed at {phase}; original configuration restored; "
+                    f"failure={reason}"
+                ) from cause
 
     def recover(self) -> str:
         """Explicit crash recovery; never automatically roll back a committed vmnet."""
