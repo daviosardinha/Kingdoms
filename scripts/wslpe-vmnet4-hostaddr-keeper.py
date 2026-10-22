@@ -192,6 +192,8 @@ def plan_snapshot(*, links: list[dict], addresses: list[dict],
     if current == EXPECTED_HOST:
         if len(vmnet_routes) != 1:
             raise Denied("Management connected route missing")
+        if vmnet_routes[0].get("prefsrc", vmnet_routes[0].get("src", "172.28.233.254")) != "172.28.233.254":
+            raise Denied("Management route source does not match committed host IP")
         return ()
     if current != VMWARE_DEFAULT:
         raise Denied("Foreign vmnet4 address, only VMware default .1 is repairable")
@@ -230,7 +232,9 @@ def main(argv=None) -> int:
         journal = json.loads(_read_root(JOURNAL, secret=True))
         source_sha = verify_committed_state(journal, _read_root(NETWORKING))
         print(f"[COMMITTED] vmnet4 source journal valid; current SHA256={source_sha}")
-        steps = plan_snapshot(*snapshot()[:3], forwarding=snapshot()[3])  # overwritten below
+        links, addresses, routes, forwarding = snapshot()
+        steps = plan_snapshot(links=links, addresses=addresses, routes=routes,
+                              forwarding=forwarding)
         if steps and args.check:
             print("[DRIFT] vmnet4 host IPv4 requires reconciliation")
             return 1
@@ -239,7 +243,9 @@ def main(argv=None) -> int:
                 continue
             _write_ip(action)
         if args.repair:
-            if plan_snapshot(*snapshot()[:3], forwarding=snapshot()[3]):
+            links, addresses, routes, forwarding = snapshot()
+            if plan_snapshot(links=links, addresses=addresses, routes=routes,
+                             forwarding=forwarding):
                 raise Denied("vmnet4 host-address verification incomplete")
         print("[PASS] VMNET4_HOSTADDR_PERSISTENCE=PASS")
         return 0
