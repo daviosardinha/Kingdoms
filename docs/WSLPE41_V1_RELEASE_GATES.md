@@ -213,3 +213,16 @@ restart/reboot persistence, fresh Windows management NIC, isolated
 operator HTTPS/WinRM, independent console recovery, real 41/41 scenario
 deployment and a second clean build remain open. Do not interpret the
 host network commit as course completion or readiness to merge.
+
+
+## 2026-10-22 host-network persistence acceptance blocked
+
+Initial vmnet4 allocation was committed successfully at .254, but an
+explicit guest-free VMware network restart regenerated vmnet4 at
+172.28.233.1/24 and temporarily reset NORTH vmnet10/vmnet99 to .1.
+Host address persistence is therefore **NOT YET ACCEPTED**. A distinct
+root-installed, vmnet4-only repair service/timer has been implemented
+in the feature branch, source-tested, but is not yet installed on
+the operator's Kali host. The existing NORTH address repair timer
+remains independent and unchanged. Confirm host address and NORTH
+recovery before attaching the Windows operator NIC.
