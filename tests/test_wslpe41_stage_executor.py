@@ -98,6 +98,33 @@ class AnsibleStageExecutorTests(unittest.TestCase):
                 with self.assertRaisesRegex(InstallBlocked, "isolated HTTPS"):
                     _inventory(self.context, self.env)
 
+    def test_secure_provided_guest_keeps_https_transport_on_vmnet4(self):
+        context = AnsibleStageContext(
+            **{**vars(self.context), "management_address": "172.28.233.31"}
+        )
+        with patch("kingdoms.wslpe41_stage_executor.subprocess.run",
+                   return_value=SimpleNamespace(
+                       returncode=0,
+                       stdout=self.inventory_json(guest="172.28.233.31"))):
+            _inventory(context, self.env)
+        # A valid TLS scheme is not enough if the WinRM transport still
+        # points at the learner/exercise vmnet3 address after firewall cutover.
+        with patch("kingdoms.wslpe41_stage_executor.subprocess.run",
+                   return_value=SimpleNamespace(
+                       returncode=0,
+                       stdout=self.inventory_json(guest="172.28.232.31"))):
+            with self.assertRaisesRegex(InstallBlocked, "isolated HTTPS"):
+                _inventory(context, self.env)
+        wrong = AnsibleStageContext(
+            **{**vars(self.context), "management_address": "10.4.10.11"}
+        )
+        with patch("kingdoms.wslpe41_stage_executor.subprocess.run",
+                   return_value=SimpleNamespace(
+                       returncode=0,
+                       stdout=self.inventory_json(guest="10.4.10.11"))):
+            with self.assertRaisesRegex(InstallBlocked, "roles are mismatched"):
+                _inventory(wrong, self.env)
+
     def test_runs_one_real_stage_and_requires_windows_marker(self):
         marker = f"WSLPE41_STAGE={self.scenario.identifier}:apply:PASS"
         completed = SimpleNamespace(returncode=0, stdout=marker + "\n", stderr="")
