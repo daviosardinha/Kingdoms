@@ -23,16 +23,44 @@ IP = Path("/usr/bin/ip")
 MAX_RESULT = 200_000
 
 
-def _trusted_binary(path: Path) -> None:
-    if not path.is_absolute() or path.is_symlink():
-        raise NetworkTransactionBlocked("Unsafe VMware/IP binary path")
+def _trusted_binary(path: Path, *, allow_trusted_symlink: bool = False) -> None:
+    """Require trusted system binaries; allow vendor/OS links only when requested.
+
+    vmware-networks and ip remain strict regular-file paths. vmrun and pgrep
+    may be root-owned symlinks to other root-controlled /usr binaries.
+    Refuse writable directory chains and symlinks into non-system locations.
+    """
+    if not path.is_absolute():
+        raise NetworkTransactionBlocked(f"Unsafe nonabsolute host binary: {path}")
     try:
-        details = path.stat()
-    except OSError as exc:
-        raise NetworkTransactionBlocked("Required host binary missing") from exc
+        entry = path.lstat()
+        if stat.S_ISLNK(entry.st_mode):
+            if not allow_trusted_symlink:
+                raise NetworkTransactionBlocked(f"Symlinked binary not permitted: {path}")
+            if entry.st_uid != 0:
+                raise NetworkTransactionBlocked(f"Non-root-owned binary symlink: {path}")
+            resolved = path.resolve(strict=True)
+            if not resolved.is_relative_to(Path("/usr")):
+                raise NetworkTransactionBlocked(
+                    f"Binary symlink leaves trusted /usr hierarchy: {path} -> {resolved}"
+                )
+            # Check both original and resolved directory chains, including
+            # world/group writable parents and intermediate symlink paths.
+            for directory in set(path.parents) | set(resolved.parents):
+                metadata = directory.lstat()
+                if (not stat.S_ISDIR(metadata.st_mode)
+                        or metadata.st_uid != 0 or metadata.st_mode & 0o022):
+                    raise NetworkTransactionBlocked(
+                        f"Untrusted executable parent directory: {directory}"
+                    )
+            details = resolved.stat()
+        else:
+            details = entry
+    except (OSError, RuntimeError) as exc:
+        raise NetworkTransactionBlocked(f"Host binary path cannot be verified: {path}") from exc
     if (not stat.S_ISREG(details.st_mode) or details.st_uid != 0
             or details.st_mode & 0o022 or not details.st_mode & 0o111):
-        raise NetworkTransactionBlocked("Host binary ownership or mode unsafe")
+        raise NetworkTransactionBlocked(f"Host binary ownership/mode unsafe: {path}")
 
 
 def _host_run(args: list[str], *, timeout: int = 90) -> str:
