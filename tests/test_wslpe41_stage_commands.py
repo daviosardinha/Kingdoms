@@ -84,6 +84,30 @@ class StageCommandTests(unittest.TestCase):
         self.assertTrue(validated.argv[-3].endswith("deploy21-jea-status.yml"))
         self.assertEqual(validated.evidence_marker, "WSLPE21_JEA_ACTIVE=PASS")
 
+    def test_existing_guest_routes_winrm_to_operator_and_preserves_learner(self):
+        stages = one_install_invocations(
+            ansible=ANSIBLE, inventory=INVENTORY,
+            varsfile=VARS, expected_address="172.28.232.31",
+            management_address="172.28.233.31", instance_id=INSTANCE,
+        )
+        self.assertEqual(len(stages), 83)
+        for item in stages:
+            if item.transport != "ansible":
+                continue
+            data = json.loads(item.argv[-1])
+            if item.number <= 20:
+                self.assertEqual(data["wslpe41_expected_address"], "172.28.233.31")
+                self.assertEqual(data["wslpe41_learner_address"], "172.28.232.31")
+            else:
+                self.assertEqual(data["wslpe_expected_address"], "172.28.233.31")
+                self.assertEqual(data["wslpe_learner_address"], "172.28.232.31")
+        with self.assertRaisesRegex(StagePlanBlocked, "pinned contract"):
+            one_install_invocations(
+                ansible=ANSIBLE, inventory=INVENTORY,
+                varsfile=VARS, expected_address="172.28.232.31",
+                management_address="10.4.10.11", instance_id=INSTANCE,
+            )
+
     def test_rejects_domain_guest_address(self):
         scenario = fresh_scenario_manifest()[0]
         with self.assertRaisesRegex(StagePlanBlocked, "Forbidden"):
