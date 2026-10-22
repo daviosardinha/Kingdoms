@@ -493,3 +493,35 @@ management/NORTH connectivity, then install and validate 41/41 and
 repeat a second independent clean build. Return to NORTH after WSLPE
 acceptance; do not alter the existing NORTH network or course as
 part of this vmnet change.
+
+
+## 2026-10-22: first live maintenance blocker resolved in source (binary path trust)
+
+The owner-confirmed maintenance command passed BOTH live guest-free checks
+and matched the pinned original VMware source SHA256:
+`538955e59ce433b3764e19e5d46073f2b476af54c15d5260465867d87ca15bff`.
+
+The first privileged invocation refused with
+`[BLOCKED] ... Unsafe VMware/IP binary path`, **before** transaction
+journaling, VMware network restart, host NIC creation, or VMX edits.
+
+Root cause in source: the generic strict executable validator rejected
+symbolic-link launchers for `/usr/bin/vmrun` and/or `/usr/bin/pgrep`
+while those two are normally installed via trusted system symlinks on
+some Linux Workstation hosts. The VMware network-changing binaries
+(`/usr/bin/vmware-networks` and `/usr/bin/ip`) retain strict no-link
+validation. Only `vmrun` and `pgrep` may use their root-owned symlink
+forms, and only if the resolved destination stays under root-controlled
+non-writable `/usr` parent directories with an executable regular file.
+The error reports the exact rejected path rather than a generic label.
+
+A new regression covers permitted vendor links, non-root owned links,
+unsafe directory chains and non-system targets. The consolidated
+readiness batch now checks all four executable paths. Do not reuse
+old code by bypassing the checker or creating filesystem aliases.
+
+**The host network is still NOT installed.** Before the next apply,
+re-run the single consolidated readiness batch and dynamically verify
+the exact original networking SHA256, zero VMware guests, and absence
+of any prior transaction journal. Refuse on any drift. The previous
+hash is evidence only, not a blanket authorization to apply later.
