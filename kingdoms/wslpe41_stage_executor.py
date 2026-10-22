@@ -30,8 +30,9 @@ class AnsibleStageContext:
     ansible: Path
     inventory: Path
     private_vars: Path
-    expected_address: str
+    expected_address: str  # learner/exercise target, not the WinRM transport
     timeout_seconds: int = 900
+    management_address: str | None = None  # separately isolated HTTPS/5986 endpoint
 
 
 def _regular(path: Path, *, private: bool = False) -> None:
@@ -104,11 +105,18 @@ def _inventory(context: AnsibleStageContext, env: dict[str, str]) -> None:
     def members(group: str) -> list:
         entry = data.get(group, {})
         return entry.get("hosts", []) if isinstance(entry, dict) else []
+    management_target = context.management_address or context.expected_address
+    # For the guarded existing-instance handoff, the HTTPS transport must
+    # use vmnet4; scenario parameters must still refer to learner vmnet3.
+    if context.management_address is not None and (
+            context.management_address != "172.28.233.31"
+            or context.expected_address != "172.28.232.31"):
+        raise InstallBlocked("Fresh WSLPE management and learner IP roles are mismatched")
     if (members("wslpe") != ["ws01"]
             or members("windows_lpe_standalone") != ["ws01"]
             or members("dc") or members("domain")
             or not isinstance(guest, dict)
-            or guest.get("ansible_host") != context.expected_address
+            or guest.get("ansible_host") != management_target
             or guest.get("ansible_connection") != "winrm"
             or guest.get("ansible_winrm_scheme") != "https"
             or str(guest.get("ansible_port")) != "5986"
