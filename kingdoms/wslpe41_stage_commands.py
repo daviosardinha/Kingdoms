@@ -55,7 +55,10 @@ def build_stage_invocation(
     if management_address is not None:
         if expected_address != "172.28.232.31" or management_address != "172.28.233.31":
             raise StagePlanBlocked("Existing fresh WSLPE address pairing differs from pinned contract")
-    transport_address = management_address or str(address)
+    # The operator listener's X.509 certificate has a DNS SAN for the
+    # exact guest name, not for its management IPv4. The process-scoped
+    # resolver pins that name to 172.28.233.31 without touching host DNS.
+    transport_address = "WSLPE-WS01" if management_address else str(address)
     if stage not in (("stage", "activate", "validate") if scenario.number == 30
                      else ("apply", "validate")):
         raise StagePlanBlocked("Unexpected stage for exact scenario")
@@ -121,6 +124,11 @@ def build_stage_invocation(
         extra["wslpe_deploy21"] = True
         extra["wslpe_pilot_preserve_shared"] = False
         argv[-1] = json.dumps(extra, separators=(",", ":"))
+        if management_address:
+            # private-vars.yml is vars_files content, NOT an inventory source.
+            if argv[3:5] != ["-i", str(varsfile)]:
+                raise StagePlanBlocked("Unexpected indexed Ansible inventory arguments")
+            del argv[3:5]
         return StageInvocation(
             scenario.number, scenario.identifier, stage, "ansible", tuple(argv),
             f"WSLPE21_STAGE={scenario.identifier}:{'apply' if stage == 'apply' else 'vulnerable'}:PASS",
@@ -132,7 +140,9 @@ def build_stage_invocation(
     if target.is_symlink() or not target.is_file():
         raise StagePlanBlocked("WSLPE stage playbook missing or linked")
     argv = (
-        str(ansible), "-i", str(inventory), "-i", str(varsfile),
+        (str(ansible), "-i", str(inventory)) if management_address else
+        (str(ansible), "-i", str(inventory), "-i", str(varsfile))
+    ) + (
         "--limit", "ws01,localhost", str(target), "-e",
         json.dumps(extra, separators=(",", ":")),
     )
