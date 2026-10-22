@@ -256,6 +256,14 @@ class WslpeVmnetTransaction:
                 data["failure_stage"] = phase
                 data["failure_class"] = type(cause).__name__
                 data["failure_reason"] = reason
+                evidence = getattr(cause, "network_evidence", None)
+                if isinstance(evidence, dict):
+                    # Source of this property is the internal vmnet4-only
+                    # route validator. Keep the structured snapshot private
+                    # in the root-owned journal and within its size limit.
+                    encoded = json.dumps(evidence, sort_keys=True)
+                    if len(encoded) <= 3000:
+                        data["failure_network_evidence"] = evidence
                 try:
                     self._rollback(data)
                 except Exception as recovery_error:
