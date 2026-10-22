@@ -83,22 +83,34 @@ def auth_helper():
 
 
 def run_powershell(session, script):
-    """Use WinRM's direct process API, not run_ps()'s 8191-char cmd.exe path."""
+    """Keep the launcher short; carry public source in WinRM's stdin stream."""
     from winrm import Response
-    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    # WINRS_SKIP_CMD_SHELL did not avoid the guest's command-size rejection.
+    # Only this fixed loader is an argument; source size cannot lengthen it.
+    loader = (
+        "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; try { "
+        "$code=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([Console]::In.ReadToEnd())); "
+        "& ([scriptblock]::Create($code)) "
+        "} catch { Write-Output ('WSLPE_OPERATOR_ERROR=' + ($_.Exception.Message -replace '[\\r\\n]+',' ')); exit 1 }"
+    )
+    payload = base64.b64encode(script.encode("utf-8"))
+    if len(payload) > 128_000:
+        raise ManagementBlocked("Management source exceeds the WinRM input transport limit")
+    encoded = base64.b64encode(loader.encode("utf-16le")).decode("ascii")
     executable = "powershell.exe"
     arguments = ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
-    # Leave headroom below CreateProcessW's 32767 UTF-16-code-unit limit.
-    # Encoding is ASCII; include the executable, switches, spaces and terminator.
-    if len(" ".join([executable, *arguments])) + 1 > 30_000:
-        raise ManagementBlocked("Management source exceeds the Windows command transport limit")
+    if len(" ".join([executable, *arguments])) + 1 > 8191:
+        raise ManagementBlocked("PowerShell input launcher exceeds the Windows command limit")
     protocol = session.protocol
     shell_id = protocol.open_shell()
     command_id = None
     try:
         command_id = protocol.run_command(
-            shell_id, executable, arguments, skip_cmd_shell=True,
+            shell_id, executable, arguments, console_mode_stdin=False, skip_cmd_shell=True,
         )
+        chunks = [payload[start:start + 8192] for start in range(0, len(payload), 8192)] or [b""]
+        for index, chunk in enumerate(chunks):
+            protocol.send_command_input(shell_id, command_id, chunk, end=index == len(chunks) - 1)
         return Response(protocol.get_command_output(shell_id, command_id))
     finally:
         try:
@@ -137,8 +149,7 @@ def invoke(session, mode: str, *, nonce="", install=False):
             + "Write-Output 'WSLPE_OPERATOR_CONSOLE=PASS'"
         )
     else:
-        # Compress the public source to stay below the direct CreateProcess
-        # limit after UTF-16LE EncodedCommand expansion.
+        # Compress public source to reduce the WinRM input-stream transfer.
         # The installed console recovery copy is the original readable source.
         encoded = base64.b64encode(gzip.compress(SCRIPT.read_bytes(), mtime=0)).decode("ascii")
         script = (

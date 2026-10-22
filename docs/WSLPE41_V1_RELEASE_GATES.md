@@ -457,3 +457,19 @@ all evidence. Regressions cover the actual SOAP option, cleanup, marker handling
 and real Windows PowerShell 5.1 command execution. The live error's stderr was
 not captured in the original output; the command-size defect is source-proven,
 and live guest acceptance still requires rerunning the focused `--apply`.
+
+## 2026-10-22: live direct-process retry failed; move source to WinRM stdin
+
+The follow-up screenshot confirms update to `120002c` and the explicit error
+`Windows rejected the command length before PowerShell started`. Initial
+Inspect still did not reach Prepare or any account/firewall mutation. Local
+PowerShell process tests were insufficient to validate the WinRM server path.
+
+The same runner now uses a fixed launcher below 2 KB and streams its public
+source through the existing encrypted WinRM session, in bounded chunks with
+explicit EOF. It does not depend on the direct-process flag to accept a large
+argument, write a guest staging file, replay a failed operation or rotate a
+credential. CI now exercises the same transport through a real NTLM-encrypted
+WinRM connection on a disposable hosted Windows runner as well as local
+PowerShell. Account, TLS, isolation and console handoff still require successful
+live acceptance on `bf5369-wslpe-vmware`.

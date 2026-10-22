@@ -120,17 +120,24 @@ class ManagementTests(unittest.TestCase):
         call = session.protocol.run_command.call_args
         executable, arguments = call.args[1:]
         command_line = ' '.join([executable, *arguments])
-        self.assertGreater(len(command_line), 8191)  # Original run_ps() cannot carry this.
-        self.assertLess(len(command_line) + 1, 30_000)
+        self.assertLess(len(command_line), 2048)
         self.assertTrue(call.kwargs['skip_cmd_shell'])
+        self.assertFalse(call.kwargs['console_mode_stdin'])
         self.assertEqual(executable, 'powershell.exe')
         self.assertIn('-NoProfile', arguments)
-        command = base64.b64decode(arguments[-1]).decode('utf-16le')
+        loader = base64.b64decode(arguments[-1]).decode('utf-16le')
+        self.assertIn('[Console]::In.ReadToEnd()', loader)
+        sends = session.protocol.send_command_input.call_args_list
+        payload = b''.join(call.args[2] for call in sends)
+        command = base64.b64decode(payload).decode('utf-8')
+        self.assertGreater(len(base64.b64encode(command.encode('utf-16le'))), 8191)
+        self.assertNotIn("$b='", loader)
+        self.assertEqual([call.kwargs['end'] for call in sends], [False] * (len(sends) - 1) + [True])
         encoded = command.split("$b='", 1)[1].split("'", 1)[0]
         self.assertEqual(gzip.decompress(base64.b64decode(encoded)), management.SCRIPT.read_bytes())
         session.run_ps.assert_not_called()
 
-    def test_pywinrm_serializes_direct_process_option_and_separate_executable(self):
+    def test_pywinrm_serializes_short_launcher_pipe_and_complete_input(self):
         import winrm
         session = winrm.Session('http://127.0.0.1:5985/wsman', auth=('unused', 'unused'), transport='ntlm')
         protocol = session.protocol
@@ -141,20 +148,29 @@ class ManagementTests(unittest.TestCase):
               patch.object(protocol, 'cleanup_command') as cleanup,
               patch.object(protocol, 'close_shell') as close):
             management.invoke(session, 'Verify', nonce='a' * 32)
-        document = ET.fromstring(send.call_args.args[0])
+        documents = [ET.fromstring(call.args[0]) for call in send.call_args_list]
+        document = documents[0]
         options = {node.attrib['Name']: node.text for node in document.iter()
                    if node.tag.endswith('}Option')}
         self.assertEqual(options['WINRS_SKIP_CMD_SHELL'], 'TRUE')
+        self.assertEqual(options['WINRS_CONSOLEMODE_STDIN'], 'FALSE')
         command = next(node.text for node in document.iter() if node.tag.endswith('}Command'))
         arguments = next(node.text for node in document.iter() if node.tag.endswith('}Arguments'))
         self.assertEqual(command, 'powershell.exe')
-        self.assertGreater(len(arguments), 8191)
+        self.assertLess(len(arguments), 2048)
         self.assertIn('-NonInteractive -EncodedCommand ', arguments)
+        streams = [node for document in documents[1:] for node in document.iter()
+                   if node.tag.endswith('}Stream')]
+        self.assertGreater(len(streams), 1)
+        self.assertTrue(all(node.attrib['Name'] == 'stdin' and node.attrib['CommandId'] == 'command' for node in streams))
+        self.assertEqual([node.attrib['End'] for node in streams], ['false'] * (len(streams) - 1) + ['true'])
+        script = base64.b64decode(b''.join(base64.b64decode(node.text) for node in streams)).decode('utf-8')
+        self.assertIn('-Mode Verify', script)
         cleanup.assert_called_once_with('shell', 'command')
         close.assert_called_once_with('shell')
 
     def test_direct_transport_always_closes_shell_after_command_or_output_failure(self):
-        for stage in ('run_command', 'get_command_output', 'cleanup_command'):
+        for stage in ('run_command', 'send_command_input', 'get_command_output', 'cleanup_command'):
             with self.subTest(stage=stage):
                 session = Mock()
                 protocol = session.protocol
@@ -171,11 +187,32 @@ class ManagementTests(unittest.TestCase):
                     protocol.cleanup_command.assert_called_once_with('shell', 'command')
                 protocol.run_command.assert_called_once()
 
-    def test_oversized_direct_command_is_rejected_before_opening_a_shell(self):
+    def test_oversized_input_is_rejected_before_opening_a_shell(self):
         session = Mock()
         with self.assertRaisesRegex(management.ManagementBlocked, 'transport limit'):
-            management.run_powershell(session, '#' * 12_000)
+            management.run_powershell(session, '#' * 100_000)
         session.protocol.open_shell.assert_not_called()
+
+    def test_large_unicode_source_uses_constant_launcher_and_exact_input_bytes(self):
+        script = "Write-Output 'ação 漢字'\n" + '#' * 40_000
+        session = Mock()
+        session.protocol.get_command_output.return_value = (b'', b'', 0)
+        management.run_powershell(session, script)
+        arguments = session.protocol.run_command.call_args.args[2]
+        self.assertLess(len(' '.join(arguments)), 2048)
+        sends = session.protocol.send_command_input.call_args_list
+        self.assertTrue(all(len(call.args[2]) <= 8192 for call in sends))
+        self.assertEqual(base64.b64decode(b''.join(call.args[2] for call in sends)).decode('utf-8'), script)
+        self.assertEqual([call.kwargs['end'] for call in sends], [False] * (len(sends) - 1) + [True])
+
+    def test_empty_input_still_closes_stdin(self):
+        session = Mock()
+        session.protocol.get_command_output.return_value = (b'', b'', 0)
+        management.run_powershell(session, '')
+        session.protocol.send_command_input.assert_called_once_with(
+            session.protocol.open_shell.return_value,
+            session.protocol.run_command.return_value, b'', end=True,
+        )
 
     def test_transport_error_is_actionable_without_exposing_raw_stderr(self):
         for stdout, stderr, expected in (

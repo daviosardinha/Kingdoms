@@ -20,9 +20,17 @@ does not create a functioning operator channel.
 The first live repair attempt stopped at `Inspect` before account or firewall
 changes. The original compressed inspection still expanded to a 17,755-character
 command through `Session.run_ps()`, which defaults to WinRM's `cmd.exe` path and
-therefore exceeds its 8,191-character limit. The runner now invokes
-`powershell.exe` with separate arguments and `WINRS_SKIP_CMD_SHELL=TRUE`, checks
-the complete direct-process command size, and always closes the remote shell.
+therefore exceeds its 8,191-character limit. The direct-process correction in
+`120002c` still failed on the live guest with the now-visible command-length
+error. Its local CreateProcess tests did not reproduce WinRM's server behavior.
+
+The runner now starts a fixed PowerShell input loader below 2 KB and sends the
+public source through WinRM's stdin stream in 8 KB chunks with explicit EOF.
+UTF-8/base64 preserves source bytes independently of the Windows console code
+page. Script size no longer lengthens the command line, regardless of whether
+WinRM honors `WINRS_SKIP_CMD_SHELL`. The authenticated/encrypted transport stays
+the same; no guest temporary file or automatic retry is introduced. Cleanup
+closes the remote command and shell even when input transfer fails.
 The decompression step is also inside the diagnostic catch, and errors without
 our marker report an exit code and output lengths without printing raw stderr.
 A split `Get-NetRoute` invocation was corrected so `-ErrorAction` belongs to the
@@ -142,10 +150,13 @@ management acceptance.
 ## Validation limits
 
 Source tests use mocked Windows commands and do not establish live success.
-Windows CI additionally runs the generated full-size command in real Windows
-PowerShell 5.1, reproduces its rejection through `cmd.exe`, checks a benign
+Windows CI tests the input loader in real Windows PowerShell 5.1 and over an
+actual NTLM-encrypted loopback WinRM connection. Both paths check a benign
 successful Prepare payload and the early wrong-guest rejection with the actual
-management source. These process tests do not configure WinRM or any lab.
+management source, and reproduce failure of the old oversized argument. The
+WinRM fixture is restricted to an explicitly enabled disposable GitHub-hosted
+runner, uses a temporary account and cleans up its account/listener/token policy.
+No lab VM is contacted, and no firewall rule or insecure authentication is enabled.
 The runner's live PASS is required on the actual VM. A console canary proves
 independent elevated recovery capability, not a completed outage/rollback drill.
 The rules are stored persistently, but reboot persistence needs a later live
