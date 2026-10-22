@@ -525,3 +525,47 @@ re-run the single consolidated readiness batch and dynamically verify
 the exact original networking SHA256, zero VMware guests, and absence
 of any prior transaction journal. Refuse on any drift. The previous
 hash is evidence only, not a blanket authorization to apply later.
+
+
+## 2026-10-22: powered-off maintenance readiness gate (corrected)
+
+During the approved guest-free window both WSLPE Windows VMs were shut down.
+The regular consolidated readiness command correctly found no VMware guests,
+but incorrectly treated this as a failure: `--native-status` and the
+original vmnet proposal utility require the fresh VMX to be *running*.
+This was a source/phase mismatch, not a failed Windows deployment.
+
+The new `--maintenance` mode replaces **only those two live-guest
+assertions** with `scripts/wslpe-management-vmnet-offline-native.py`.
+It validates the exact fresh WSLPE instance manifest, original Vagrant
+VMX registration, presence in the Workstation owner's offline library,
+the on-disk native ethernet0 NAT / ethernet1 custom vmnet3 topology and
+the corresponding unchanged host vmnet3 / 172.28.232.0/24 metadata.
+It continues to run source tests, 41-scenario manifest inspection,
+host running-VM inventory and offline VMware registration collision
+checking. No VM is booted and no VMware network operation is performed
+by the readiness command.
+
+Use **one** maintenance batch while ALL VMware VMs remain powered off:
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" scripts/wslpe41-readiness-batch.py --maintenance
+```
+
+Expected: five `[PASS]` checks and `[BATCH PASS]`, with **no**
+`[FAIL]` or `[DEFERRED]`. Any block must stop the protected
+transaction. Revalidate the current networking SHA256, zero guest
+processes, journal absence and owner authorization in the same operator
+maintenance procedure before privileged `--apply`.
+
+The normal `scripts/wslpe41-readiness-batch.py` remains unchanged
+in its intent: it requires a running fresh VMX and is for *normal
+live-guest* readiness only. Never start a guest merely to pass that
+check during a network maintenance window.
+
+The 41-scenario Windows runtime installer, dedicated
+`kingdom.operator`, guest NIC and cross-reboot isolation acceptance
+remain separate release requirements. This gate does not claim that
+vmnet4 is installed.
