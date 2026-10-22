@@ -102,6 +102,43 @@ class HostAddressReconcileTests(unittest.TestCase):
                 with self.assertRaises(h.UnexpectedVmnet4Route):
                     transition(routes=[route])
 
+    def test_exact_live_failure_route_with_prefsrc_is_valid_when_owner_proven(self):
+        full_table = [
+            {"dst": "default", "gateway": "192.168.1.1", "dev": "wlan0"},
+            {"dst": "10.4.10.0/24", "dev": "vmnet10", "protocol": "kernel"},
+            {"dst": "172.28.233.0/24", "dev": "vmnet4",
+             "prefsrc": "172.28.233.1", "protocol": "kernel", "scope": "link"},
+        ]
+        selected = h.select_vmnet4_main_routes(full_table)
+        self.assertEqual(selected, [full_table[-1]])
+        self.assertEqual(transition(routes=selected)[1][3], "172.28.233.254/24")
+
+    def test_filtered_device_json_does_not_prove_route_ownership(self):
+        # This is EXACTLY what the failed ip -j route show dev vmnet4 produced:
+        # dev omitted due to the command-line filter, not a foreign route.
+        filtered = [{"dst": "172.28.233.0/24", "prefsrc": "172.28.233.1",
+                     "protocol": "kernel", "scope": "link"}]
+        with self.assertRaises(h.UnexpectedVmnet4Route):
+            transition(routes=filtered)
+        with self.assertRaisesRegex(NetworkTransactionBlocked, "different interface"):
+            h.select_vmnet4_main_routes(filtered)
+
+    def test_unfiltered_foreign_device_and_duplicate_subnet_are_denied(self):
+        for rows in (
+            [{"dst": "172.28.233.0/24", "dev": "vmnet10"}],
+            [{"dst": "172.28.233.0/24", "dev": "vmnet4"},
+             {"dst": "172.28.233.0/24", "dev": "wlan0"}],
+            [{"dst": "default", "dev": "vmnet4"}],
+        ):
+            with self.subTest(rows=rows):
+                if any(x.get("dst") == h.SUBNET and x.get("dev") != h.VMNET
+                       for x in rows):
+                    with self.assertRaises(NetworkTransactionBlocked):
+                        h.select_vmnet4_main_routes(rows)
+                else:
+                    with self.assertRaises(h.UnexpectedVmnet4Route):
+                        transition(routes=h.select_vmnet4_main_routes(rows))
+
     def test_unexpected_routes_never_trigger_ip_write(self):
         for routes in (
             [{"dst": "default", "dev": "vmnet4"}],
@@ -128,7 +165,12 @@ class HostAddressReconcileTests(unittest.TestCase):
 
     def test_real_reconciler_uses_exact_argv_without_shell(self):
         calls = []
-        observations = iter((addr(), LINK, ROUTE))
+        observations = iter((
+            addr(), LINK,
+            [{"dst": "10.4.10.0/24", "dev": "vmnet10"},
+             {"dst": "172.28.233.0/24", "dev": "vmnet4",
+              "prefsrc": "172.28.233.1", "protocol": "kernel", "scope": "link"}],
+        ))
         def runner(argv, *, timeout):
             calls.append((argv, timeout))
             if len(calls) <= 3:
@@ -143,6 +185,8 @@ class HostAddressReconcileTests(unittest.TestCase):
             ["-4", "address", "add", "172.28.233.254/24", "dev", "vmnet4"],
         ])
         self.assertTrue(all(q[0][0] == "/usr/bin/ip" and q[1] == 15 for q in calls))
+        self.assertEqual(calls[2][0][1:],
+                         ["-j", "-4", "route", "show", "table", "main"])
 
     def test_wrong_vmnet_is_rejected_before_ip_execution(self):
         with self.assertRaisesRegex(NetworkTransactionBlocked, "Wrong"):
