@@ -210,6 +210,55 @@ class ManagementVmnetTransactionTests(unittest.TestCase):
         self.assertFalse(self.journal.exists())
         self.assertEqual(self.events, [])
 
+    def test_completed_rollback_archival_preserves_evidence_without_network_restart(self):
+        self.verify_fail = True
+        with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "restored"):
+            self.apply()
+        old_bytes = self.journal.read_bytes()
+        vmware_actions = tuple(self.events)
+        saved = self.manager.archive_rolled_back(
+            expected_source_sha256=txn._digest(BASE.encode()),
+            vmnet4_absent=lambda: True,
+        )
+        archived = Path(saved)
+        self.assertTrue(archived.is_file())
+        self.assertEqual(archived.read_bytes(), old_bytes)
+        self.assertFalse(self.journal.exists())
+        self.assertEqual(self.networking.read_text(), BASE)
+        self.assertEqual(tuple(self.events), vmware_actions)
+
+    def test_archival_requires_unchanged_original_checksum_and_no_vmnet4(self):
+        self.verify_fail = True
+        with self.assertRaises(txn.NetworkTransactionBlocked):
+            self.apply()
+        with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "source hash"):
+            self.manager.archive_rolled_back(
+                expected_source_sha256="0" * 64, vmnet4_absent=lambda: True)
+        with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "absence"):
+            self.manager.archive_rolled_back(
+                expected_source_sha256=txn._digest(BASE.encode()),
+                vmnet4_absent=lambda: False)
+        self.assertTrue(self.journal.exists())
+
+    def test_archival_refuses_any_running_guest(self):
+        self.verify_fail = True
+        with self.assertRaises(txn.NetworkTransactionBlocked):
+            self.apply()
+        self.guests = 1
+        with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "guest activity"):
+            self.manager.archive_rolled_back(
+                expected_source_sha256=txn._digest(BASE.encode()),
+                vmnet4_absent=lambda: True)
+        self.assertTrue(self.journal.exists())
+
+    def test_archival_refuses_committed_transactions(self):
+        self.apply()
+        with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "rolled_back"):
+            self.manager.archive_rolled_back(
+                expected_source_sha256=txn._digest(BASE.encode()),
+                vmnet4_absent=lambda: True)
+        self.assertTrue(self.journal.exists())
+
     def test_symlinked_networking_is_blocked(self):
         actual = self.base / "real-networking"
         self.networking.rename(actual)
