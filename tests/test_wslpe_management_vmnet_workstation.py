@@ -30,6 +30,12 @@ ROUTE = [{"dst": "172.28.233.0/24", "dev": "vmnet4", "scope": "link"}]
 
 
 class WorkstationHostCallbacksTests(unittest.TestCase):
+    def test_default_binaries_match_verified_kali_host_paths(self):
+        self.assertEqual(ws.BIN, Path("/usr/bin/vmware-networks"))
+        self.assertEqual(ws.IP, Path("/usr/bin/ip"))
+        self.assertEqual(ws.WorkstationNetworkService().binary, ws.BIN)
+        self.assertEqual(ws.WorkstationHostAdapterVerifier().ip_binary, ws.IP)
+
     def test_valid_host_only_nic_metadata_and_route(self):
         self.assertEqual(ws.validate_vmnet4_host_state(
             vmnet="vmnet4", subnet="172.28.233.0/24",
