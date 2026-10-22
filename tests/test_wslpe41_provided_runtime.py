@@ -74,7 +74,7 @@ class ProvidedRuntimeTests(unittest.TestCase):
         folder = self.instance / "ansible"
         folder.mkdir()
         (folder / "unrelated.yml").write_text("unrelated")
-        with self.assertRaisesRegex(InstallBlocked, "not empty"):
+        with self.assertRaisesRegex(InstallBlocked, "already exists"):
             self._context()
         self.assertTrue((folder / "unrelated.yml").exists())
 
