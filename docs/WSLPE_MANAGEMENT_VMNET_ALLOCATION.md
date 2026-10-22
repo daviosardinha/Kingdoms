@@ -173,3 +173,44 @@ network allocation, vmnet4 isolation, WinRM/TLS, or Windows operator access.
 removing NAT forwards, modifying Vagrant, or running the 41-stage install.
 A reviewed maintenance window and independently implemented VMware
 network restart/rollback/host adapter acceptance are still required.
+
+
+## 2026-10-22: Workstation registered/offline VM library audit (read only)
+
+The running-VM audit on Kali matched both sources: vmrun=2 and
+vmware-vmx=2; both live VMXs are under the supplied workspaces. It also
+confirmed that vmnet4 is free in current network metadata and those
+workspaces. The two running guests still prohibit shared network restart.
+
+A **separate read-only** source gate inspects the current VMware Workstation
+user's ~/.vmware/inventory.vmls library, follows its vmlistN.config
+VMX paths (including powered-off registered guests), and inspects explicit
+VMnet assignments. A registered VMX claiming vmnet4 blocks; missing,
+symlinked, malformed, out-of-workspace or library-omitted running VMXs
+fail closed or require further ownership review.
+
+Run this on the current Workstation owner's Kali account without sudo:
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+"$HOME/.goad/.venv/bin/python" -m unittest -v \
+  tests.test_wslpe_management_vmnet_plan \
+  tests.test_wslpe_management_vmnet_transaction \
+  tests.test_wslpe_management_vmnet_host_gate \
+  tests.test_wslpe_management_vmnet_registry
+
+"$HOME/.goad/.venv/bin/python" scripts/wslpe-management-vmnet-registry-audit.py \
+  --candidate-vmnet vmnet4 \
+  --workspace-root "$PWD/workspace" \
+  --workspace-root "$HOME/kingdoms-lpe-standalone/workspace" \
+  --workspace-root "$HOME/kingdoms-rebuild/workspace"
+```
+
+A missing library is not silently treated as an empty VMware registry.
+The user library is NOT a global inventory of all user accounts, unregistered
+VMXs, snapshots or detached disks. Inventory drift, unsupported encoding
+or paths and other-user VMware registrations require manual review.
+The audit never changes VMware files, never powers off guests, and never
+tries a network restart. It is source-tested only and still returns
+[DEFERRED] when the two guests remain on.
