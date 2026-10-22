@@ -569,3 +569,45 @@ The 41-scenario Windows runtime installer, dedicated
 `kingdom.operator`, guest NIC and cross-reboot isolation acceptance
 remain separate release requirements. This gate does not claim that
 vmnet4 is installed.
+
+
+## 2026-10-22: live vmnet4 transaction rollback — preserve failure evidence
+
+The first valid powered-off maintenance readiness passed every gate; during
+`sudo scripts/wslpe-vmnet4-maintenance.py --apply`, the privileged
+transaction reported `Allocation failed; original configuration restored`.
+This means the in-process rollback path reported success, **not** that
+all host interfaces, VMware services or other labs have been proven
+restored. The exact initial failure type was suppressed by the old
+exception wrapper; a `rolled_back` journal may exist and intentionally
+blocks an unsafe blind re-apply.
+
+A dedicated **read-only** forensic command was added:
+
+```bash
+cd "$HOME/kingdoms-wslpe41-fresh"
+git pull --ff-only
+sudo "$HOME/.goad/.venv/bin/python" scripts/wslpe-vmnet4-postmortem.py --owner stark
+vmrun -T ws list
+```
+
+It reports a whitelist of transaction status, original/candidate/current
+SHA256 fingerprints, any recorded failure stage, current vmnet4 interface
+and route state, forwarding flags and global VMware VM process count.
+It does **not** emit the journal's original_b64 network backup or alter
+host state. The previous transaction schema did not store the first
+failure reason; this report may therefore establish only rollback
+consistency rather than the exact failed acceptance predicate.
+A filtered contemporaneous VMware host log excerpt may also be required.
+
+The transaction source now preserves a bounded `failure_stage`,
+`failure_class` and `failure_reason` in **future** protected root
+journals and reports the stage on failed rollback. It does not modify
+or reinterpret the existing journal, and does not bypass any
+authorization/ownership/guest-zero checks.
+
+**Stop gate:** keep both Windows guests off; do not delete/rename the
+existing journal, force another apply, manually alter /etc/vmware/networking
+or assume that the original hash proves complete service recovery.
+Investigate the report, then design a single targeted repair and controlled
+recovery path that preserves NORTH and both WSLPE workspaces.
