@@ -361,3 +361,26 @@ reachability and negative management access from learner and NORTH,
 then configure pinned operator HTTPS/5986, `kingdom.operator`
 identity, console recovery, and complete 41/41 scenario execution.
 No other lab or VMware networking service mutation is necessary.
+
+
+## 2026-10-22: management IPv4 Preferred and Windows-to-host connectivity PASS
+
+Fresh Windows guest acceptance screenshot confirms management adapter
+`Ethernet2` (previously MAC matched as `00-0C-29-2F-D7-6F`) now has
+`172.28.233.31/24` in `Preferred` state, IPv4 DHCP disabled,
+interface `Connected`, no default gateway on management NIC and no
+DNS server addresses. Windows ICMP echo to Kali host
+`172.28.233.254` returned 3/3 replies (0% loss).
+The earlier `Tentative` state has resolved; this is expected during
+Windows duplicate-address detection. The previously observed Kali-to-Windows
+ICMP failure is **not yet independently diagnosed** and is not proof
+that the VMnet route fails (Windows Firewall may block echo).
+
+**Guest management IPv4 and outbound reachability gate: PASS.**
+Keep native NAT and learner vmnet3 unchanged. Remaining management
+requirements are independently authenticated inbound HTTPS/5986 using
+private instance credentials and pinned TLS cert, host-side inbound
+reachability/firewall scope, no learner/NORTH management access, and
+WinRM-independent console recovery. Scenario runtime and clean-build
+41/41 evidence remain **NOT INSTALLED**. A ping pass must never be
+mistaken for operator credential or WinRM acceptance.
