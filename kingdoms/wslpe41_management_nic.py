@@ -207,7 +207,7 @@ def verify_layout(raw: bytes, *, allow_management: bool = False,
                 or mgmt.get("addresstype") != "generated"):
             raise NicBlocked("Management slot 2 has unexpected VMware configuration")
         model = mgmt.get("virtualdev")
-        if model != "e1000e" and not (allow_legacy_model and model is None):
+        if model != "e1000e" and not (allow_legacy_model and model in (None, "e1000")):
             raise NicBlocked("Management NIC model must be pinned to e1000e")
 
 
