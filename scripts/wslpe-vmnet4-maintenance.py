@@ -115,8 +115,10 @@ def main(argv=None) -> int:
             if root.is_symlink() or not root.is_dir():
                 raise NetworkTransactionBlocked(f"Missing/linked VMware workspace: {root}")
 
-        if (args.recover or args.archive_rolled_back) and not (STATE_ROOT / "journal.json").is_file():
-            raise NetworkTransactionBlocked("No vmnet4 journal to recover/archive")
+        if args.recover and not (STATE_ROOT / "journal.json").is_file():
+            raise NetworkTransactionBlocked("No incomplete vmnet4 journal to recover")
+        if args.archive_rolled_back and not (STATE_ROOT / "journal.json").is_file():
+            raise NetworkTransactionBlocked("No completed vmnet4 journal to archive")
 
         create_private_state_dir(STATE_ROOT)
         verifier = Vmnet4KernelIsolationVerifier()
