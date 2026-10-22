@@ -246,3 +246,20 @@ Next: provider-compatible third NIC on the fresh registered guest ONLY;
 MAC-pinned Windows management IP, TLS-pinned operator HTTPS, console
 recovery, learner isolation, existing 41-stage runtime and independent
 clean-build validation.
+
+
+## 2026-10-22: offline vmnet4 management NIC integration ready for operator acceptance
+
+Source now includes a dedicated, journaled offline VMX third-NIC attachment
+for the **existing fresh** `bf5369-wslpe-vmware`, preserving the provider's
+NAT and vmnet3 exercise NIC. It refuses a guest start, foreign VMX,
+other Workstation registrations, a stale source hash, an unhealthy
+root-installed vmnet4 keeper, or an already present transaction journal.
+A passing `--plan` is not a NIC installation; `--apply` requires explicit
+owner approval and an exact pinned original VMX checksum.
+
+This is NOT evidence of Windows NIC enumeration, a guest-side static
+management address, operator HTTPS authentication, independent recovery
+or any of the 41 scenarios. It is a bounded single-VM integration stage.
+A separate Windows MAC-bound IP and operator handoff remain necessary
+before any scenario execution or release claim.
