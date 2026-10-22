@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import ssl
 import stat
+import subprocess
 
 import yaml
 
@@ -136,7 +137,10 @@ def prepare() -> AnsibleStageContext:
             "Exact instance Ansible runtime path already exists; inspect it, never overwrite")
     fixture = _fixture_variables()
     pem = ssl.DER_cert_to_PEM_cert(certificate).encode("ascii")
-    folder.mkdir(mode=0o700)
+    if not folder.exists():
+        folder.mkdir(mode=0o700)
+    elif folder.is_symlink() or not folder.is_dir() or list(folder.iterdir()):
+        raise InstallBlocked("Existing Ansible runtime folder not empty; refusing overwrite")
     if (folder.stat().st_uid != os.geteuid()
             or stat.S_IMODE(folder.stat().st_mode) != 0o700):
         raise InstallBlocked("Runtime directory not owner-private")
@@ -169,7 +173,9 @@ def prepare() -> AnsibleStageContext:
         workspace=str(target.instance.parent),
         vmx=str(target.vmx),
         subnet="172.28.232.0/24",
-        source_commit="0" * 40,  # Not a fresh-creation attestation.
+        source_commit=subprocess.check_output(
+            ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+            text=True, timeout=15).strip(),  # Current source, NOT creation proof.
     )
     return AnsibleStageContext(
         identity=identity, instance_dir=target.instance,
@@ -177,3 +183,53 @@ def prepare() -> AnsibleStageContext:
         inventory=inventory, private_vars=varsfile,
         expected_address="172.28.232.31", management_address="172.28.233.31",
     )
+
+
+def load_existing() -> tuple[AnsibleStageContext, str, str]:
+    """Reopen the exact prepared runtime without replacing secrets or receipts."""
+    target, receipt, certificate, operator, learner = existing_management()
+    folder = target.instance / "ansible"
+    if folder.is_symlink() or not folder.is_dir():
+        raise InstallBlocked("Exact native Ansible runtime missing")
+    info = folder.stat()
+    if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        raise InstallBlocked("Existing native Ansible runtime not owner-only")
+    from kingdoms.wslpe41_stage_executor import _regular
+    for name in ("inventory.yml", "private-vars.yml", "operator-ca.pem", "runtime.json"):
+        _regular(folder / name, private=True)
+    report = json.loads((folder / "runtime.json").read_text())
+    if (report.get("schema") != "kingdoms.wslpe41.provided-runtime.v1"
+            or report.get("status") != "committed"
+            or report.get("instance") != INSTANCE
+            or report.get("vmx") != str(target.vmx)
+            or report.get("certificate_sha256") != hashlib.sha256(certificate).hexdigest()
+            or report.get("management_receipt_sha256") != hashlib.sha256(
+                management.receipt_path().read_bytes()).hexdigest()):
+        raise InstallBlocked("Provided runtime receipt is stale or mismatched")
+    if (folder / "operator-ca.pem").read_bytes() != ssl.DER_cert_to_PEM_cert(certificate).encode("ascii"):
+        raise InstallBlocked("Pinned certificate differs from runtime trust anchor")
+    loaded_inventory = yaml.safe_load((folder / "inventory.yml").read_text())
+    if loaded_inventory != yaml.safe_load(_inventory(folder / "inventory.yml", password=operator)):
+        raise InstallBlocked("Runtime inventory differs from exact approved operator identity")
+    loaded_vars = yaml.safe_load((folder / "private-vars.yml").read_text())
+    if (not isinstance(loaded_vars, dict) or loaded_vars.get("wslpe_fixture_private") is not True
+            or loaded_vars.get("wslpe_fixture_instance_id") != INSTANCE
+            or not all(isinstance(loaded_vars.get(key), dict)
+                       and len(loaded_vars[key].get("password", "")) >= 24
+                       for key in FIXTURE_NAMES)):
+        raise InstallBlocked("Private fixture inventory incomplete")
+    identity = FreshGuestIdentity(
+        instance_id=INSTANCE, workspace=str(target.instance.parent),
+        vmx=str(target.vmx), subnet="172.28.232.0/24",
+        source_commit=subprocess.check_output(
+            ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+            text=True, timeout=15).strip(),
+    )
+    context = AnsibleStageContext(
+        identity=identity, instance_dir=target.instance,
+        ansible=Path.home() / ".goad/.venv/bin/ansible-playbook",
+        inventory=folder / "inventory.yml",
+        private_vars=folder / "private-vars.yml",
+        expected_address="172.28.232.31", management_address="172.28.233.31",
+    )
+    return context, operator, learner
