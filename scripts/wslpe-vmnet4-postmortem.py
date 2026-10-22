@@ -59,6 +59,7 @@ def journal_summary(path: Path, actual_sha: str) -> dict[str, object]:
         "failure_stage": str(data.get("failure_stage", "unrecorded"))[:80],
         "failure_class": str(data.get("failure_class", "unrecorded"))[:80],
         "failure_reason": str(data.get("failure_reason", "unrecorded"))[:200],
+        "vmnet4_failure_network_evidence": data.get("failure_network_evidence", "not captured"),
     }
 
 
