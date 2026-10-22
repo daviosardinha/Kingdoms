@@ -120,6 +120,27 @@ class ManagementVmnetTransactionTests(unittest.TestCase):
         self.assertEqual(saved["failure_class"], "RuntimeError")
         self.assertEqual(saved["failure_reason"], "RuntimeError")
 
+    def test_vmnet4_route_failure_evidence_survives_exact_rollback(self):
+        from kingdoms.wslpe_management_vmnet_hostaddr import UnexpectedVmnet4Route
+
+        def deny(_vmnet, _subnet):
+            raise UnexpectedVmnet4Route(
+                [{"dst": "172.28.233.0/24", "dev": "vmnet4"},
+                 {"dst": "10.4.10.0/24", "dev": "vmnet4"}],
+                [{"local": "172.28.233.1", "prefixlen": 24}],
+            )
+        self.manager.verify_created_network = deny
+        with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "restored"):
+            self.apply()
+        saved = json.loads(self.journal.read_text())
+        self.assertEqual(saved["status"], "rolled_back")
+        self.assertEqual(saved["failure_stage"], "host-adapter-and-isolation-acceptance")
+        self.assertEqual(
+            saved["failure_network_evidence"]["routes"][1]["dst"],
+            "10.4.10.0/24",
+        )
+        self.assertEqual(self.networking.read_text(), BASE)
+
     def test_failed_restart_recovers_exact_bytes_and_journals_rollback(self):
         self.fail_first_start = True
         with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "restored"):
