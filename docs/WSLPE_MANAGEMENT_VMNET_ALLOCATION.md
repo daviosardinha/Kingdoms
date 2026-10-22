@@ -712,3 +712,34 @@ explicit maintenance approval gates. No new apply occurs implicitly.
 Return to NORTH only after actual vmnet4 host acceptance, the guest
 management NIC, authenticated operator identity, 41/41 Windows scenario
 validation and lifecycle recovery have been established.
+
+## 2026-10-22: exact post-start vmnet4 route JSON source fix
+
+The fourth guest-free transaction produced the previously missing evidence:
+`ip -j -4 route show dev vmnet4` returned a connected kernel route
+with `dst=172.28.233.0/24`, `prefsrc=172.28.233.1`,
+`protocol=kernel`, `scope=link`, and **no explicit `dev` JSON key**.
+The filtered command itself constrains the result to vmnet4, but the
+validator assumed every record still includes a device key. This caused
+`Unexpected vmnet4 route; refusing host IP repair`. The original host
+config was restored; the latest journal is `rolled_back`, and there
+were zero running VMware guests. The record does *not* prove that .254
+would have survived a service restart or that network isolation is ready.
+
+The fix updates BOTH the post-start vmnet4 IPv4 reconciler and the final
+host adapter validator. Instead of weakening `dev == vmnet4`, both
+query the **unfiltered IPv4 main route table**, select routes with
+an explicit `dev=vmnet4`, and reject any conflicting route to
+172.28.233.0/24 owned by another device or with an absent device
+attribute. Foreign gateways, cross-subnet routes and unexpected
+routes **on vmnet4** remain forbidden. The address reconciler may
+then replace only VMware's in-subnet .1/24 with .254/24 and re-run
+the independent strict adapter and kernel isolation verification.
+
+CI fixtures replay the exact failed `prefsrc=.1` route and assert
+the absence of any bypass for foreign/non-attributed routes.
+This is still source-tested only, not a confirmed live allocation.
+
+Do not start guests until a new guest-free, approved maintenance action
+either commits or the rollback has been independently reviewed.
+Retain every archived historical journal.
