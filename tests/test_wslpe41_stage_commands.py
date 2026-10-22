@@ -95,11 +95,13 @@ class StageCommandTests(unittest.TestCase):
             if item.transport != "ansible":
                 continue
             data = json.loads(item.argv[-1])
+            self.assertEqual(item.argv[1:3], ("-i", str(INVENTORY)))
+            self.assertNotIn(str(VARS), item.argv)
             if item.number <= 20:
-                self.assertEqual(data["wslpe41_expected_address"], "172.28.233.31")
+                self.assertEqual(data["wslpe41_expected_address"], "WSLPE-WS01")
                 self.assertEqual(data["wslpe41_learner_address"], "172.28.232.31")
             else:
-                self.assertEqual(data["wslpe_expected_address"], "172.28.233.31")
+                self.assertEqual(data["wslpe_expected_address"], "WSLPE-WS01")
                 self.assertEqual(data["wslpe_learner_address"], "172.28.232.31")
         with self.assertRaisesRegex(StagePlanBlocked, "pinned contract"):
             one_install_invocations(
