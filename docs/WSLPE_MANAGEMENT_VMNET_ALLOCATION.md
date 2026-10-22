@@ -863,3 +863,43 @@ Vagrant/provider compatibility. Prove independent console restoration,
 pinned WinRM HTTPS/5986 operator authentication and negative
 learner-to-management/NORTH reachability before retiring Vagrant/NAT.
 Then execute the existing scenario journal and validate 41/41.
+
+
+## 2026-10-22: dedicated, offline fresh-VM management NIC transaction (source)
+
+A distinct, guarded `kingdoms/wslpe41_management_nic.py` transaction
+and `scripts/wslpe41-attach-management-nic.py` CLI now support
+**only** the already registered native WSLPE instance
+`bf5369-wslpe-vmware`, while it is powered off.
+
+The planner verifies the exact native instance manifest, provider-owned
+Vagrant `id` registration, uniquely matching Workstation user-library VMX,
+current two-adapter NAT/`vmnet3` VMX configuration, the installed root-owned
+`vmnet4` keeper and a passing committed-source/`.254` address check.
+It also requires `vmrun` to report zero guests and `pgrep` to find
+no `vmware-vmx` processes. It cannot operate as root.
+
+The explicit `--apply` uses an independently approved original-VMX
+SHA256, writes a private owner-only journal containing exact original VMX
+bytes before any VMX mutation, appends only `ethernet2` as
+`connectionType=custom, vnet=vmnet4, startConnected=TRUE,
+addressType=generated`, and verifies the resulting VMX. It does not
+modify `ethernet0` provisioning NAT, `ethernet1` learner `vmnet3`,
+VMware networking, VM power, Windows, NORTH or historical WSLPE machines.
+No second apply is permitted over an existing journal. Any failed
+post-write validation attempts exact rollback only if current VMX bytes
+still equal the proposed bytes and there are zero guests; never delete
+a partial journal blindly.
+
+This adds ONLY host-side virtual hardware. Windows still needs a
+MAC-identified static management address `172.28.233.31/24` with no
+management default gateway, followed by pinned HTTPS/5986 operator
+identity, negative learner/NORTH access tests, and WinRM-independent
+console recovery. Vagrant/provider ownership and later lifecycle
+survival require live validation. No 41 scenarios are installed at this
+step.
+
+**Live operator action pending:** run the read-only planner on the Kali
+workstation and proceed with one approved VMX attachment if exact gates
+pass. Keep both VMs powered off until the attachment commits; never
+reuse the old master's VMware registration.
