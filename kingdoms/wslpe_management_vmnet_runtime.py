@@ -56,7 +56,7 @@ def owner_vmrun_list(owner: str) -> str:
         raise NetworkTransactionBlocked("Unknown Workstation owner") from exc
     if account.pw_uid == 0 or not Path(account.pw_dir).is_dir():
         raise NetworkTransactionBlocked("Invalid non-root VMware library owner")
-    _trusted_binary(VMRUN)
+    _trusted_binary(VMRUN, allow_trusted_symlink=True)
 
     def set_user():
         os.setgroups([])
@@ -100,7 +100,7 @@ def running_zero(*, owner: str, vmrun: Callable[[str], str] = owner_vmrun_list,
     """Both sources must independently agree that NO VMware VM process exists."""
     if os.geteuid() != 0:
         raise NetworkTransactionBlocked("Guest-zero proof requires root")
-    _trusted_binary(PGREP)
+    _trusted_binary(PGREP, allow_trusted_symlink=True)
     try:
         result = process_run(
             [str(PGREP), "-c", "-x", "vmware-vmx"],
