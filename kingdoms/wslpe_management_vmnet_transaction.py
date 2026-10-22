@@ -275,3 +275,47 @@ class WslpeVmnetTransaction:
                 raise NetworkTransactionBlocked("Journal is not an unfinished transaction")
             self._rollback(data)
             return data["original_sha256"]
+
+
+    def archive_rolled_back(self, *, expected_source_sha256: str,
+                            vmnet4_absent: Callable[[], bool]) -> str:
+        """Archive a *completed* failed attempt; never delete evidence.
+
+        Root-only; under same transaction lock. No VMware service operation.
+        This cannot archive prepared/stopped/installed/committed journals.
+        A subsequent apply is a NEW separately approved transaction.
+        """
+        with self._exclusive():
+            self._zero_guests()
+            data = self._load()
+            if data["status"] != "rolled_back":
+                raise NetworkTransactionBlocked(
+                    "Only a completed rolled_back journal may be archived"
+                )
+            if data["vmnet"] != "vmnet4":
+                raise NetworkTransactionBlocked("Unexpected VMnet journal")
+            original_sha = data["original_sha256"]
+            if original_sha != expected_source_sha256:
+                raise NetworkTransactionBlocked("Original source hash changed")
+            current, _ = self._read_networking()
+            if _digest(current) != original_sha:
+                raise NetworkTransactionBlocked("Rollback networking bytes do not match original")
+            if b"VNET_4_" in current:
+                raise NetworkTransactionBlocked("vmnet4 still present in VMware configuration")
+            if not callable(vmnet4_absent) or vmnet4_absent() is not True:
+                raise NetworkTransactionBlocked("vmnet4 kernel absence not established")
+            self._zero_guests()
+            raw, _ = _read_regular(self.journal, MAX_JOURNAL_BYTES)
+            archive = self.journal.with_name(
+                "journal.rolled_back." + _digest(raw)[:20] + ".json"
+            )
+            if archive.exists() or archive.is_symlink():
+                raise NetworkTransactionBlocked("Historical journal archive already exists")
+            # Dedicated root-owned 0700 journal directory protected by lock.
+            os.rename(self.journal, archive)
+            directory_fd = os.open(self.journal.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            return str(archive)
