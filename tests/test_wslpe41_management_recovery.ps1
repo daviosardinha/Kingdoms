@@ -4,6 +4,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $source = Join-Path $PSScriptRoot '..\scripts\wslpe41-operator-management.ps1'
 $legacy = Join-Path $PSScriptRoot 'fixtures\wslpe-management-before-public-profile.ps1'
+if ((Get-FileHash -LiteralPath $legacy -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+    'edd8a6935fb8715c14d482e52b530694c818885767dcd1e4b372dc4b2bb8367b') {
+    throw 'Frozen recovery fixture bytes changed; check Git line-ending conversion'
+}
 $tokens=$null; $errors=$null
 $ast = [Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
