@@ -611,3 +611,32 @@ existing journal, force another apply, manually alter /etc/vmware/networking
 or assume that the original hash proves complete service recovery.
 Investigate the report, then design a single targeted repair and controlled
 recovery path that preserves NORTH and both WSLPE workspaces.
+
+## 2026-10-22: rollback forensics and protected archival
+
+The live protected postmortem confirms journal status **rolled_back**,
+with the exact original VMware source SHA256
+`538955e59ce433b3764e19e5d46073f2b476af54c15d5260465867d87ca15bff`
+matching the current /etc/vmware/networking file; no vmnet4 directive,
+interface or IP exists, and both VMware inventories show zero running guests.
+The earlier journal did not preserve the initial failure phase.
+
+The NORTH host-address repair service ran approximately every 16 seconds
+in the sampled logs; no evidence shows it caused the vmnet4 failure.
+Preserve NORTH service configuration and avoid speculative changes.
+
+A separate root-only `--archive-rolled-back` mode now archives the completed
+rollback journal verbatim in the same protected private directory, under the
+transaction lock. The operation refuses a non-rolled_back journal, source
+hash drift, unexpected vmnet4 presence, a guest-free check failure or an
+existing identical archive. It requires a **different explicit approval**
+from the later maintenance `--apply`. There is no implicit retry and no
+VMware service invocation during archiving.
+
+The next new `--apply` is separately authorized. It captures the original
+failure stage and a bounded reason in the root journal before a successful
+rollback, so a subsequent failure can be diagnosed without another blind
+attempt. Never overwrite or delete either historical or active journal.
+
+The 41-scenario Windows fresh installer remains unimplemented at runtime;
+do not confuse management host-network completion with `41/41` deployed.
