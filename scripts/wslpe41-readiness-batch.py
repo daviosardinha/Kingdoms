@@ -21,6 +21,7 @@ from kingdoms.wslpe_management_vmnet_workstation import (
     BIN, IP, _trusted_binary,
 )
 from kingdoms.wslpe_management_vmnet_transaction import NetworkTransactionBlocked
+from kingdoms.wslpe_management_vmnet_runtime import VMRUN, PGREP
 
 
 TESTS = (
@@ -158,10 +159,12 @@ def main(argv=None) -> int:
         try:
             _trusted_binary(BIN)
             _trusted_binary(IP)
+            _trusted_binary(VMRUN, allow_trusted_symlink=True)
+            _trusted_binary(PGREP, allow_trusted_symlink=True)
         except NetworkTransactionBlocked as exc:
             print(f"[FAIL] Host executables: {exc}")
             return 2
-        print("[PASS] VMware host executables: regular, owned by root, executable and not group writable")
+        print("[PASS] VMware, iproute2, vmrun and pgrep launchers: trusted system paths")
         if any(not p.is_dir() or p.is_symlink() for p in (
                 ROOT / "workspace", Path.home() / "kingdoms-lpe-standalone/workspace",
                 Path.home() / "kingdoms-rebuild/workspace",
