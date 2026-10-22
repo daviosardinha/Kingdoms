@@ -928,3 +928,35 @@ or edit another WSLPE or NORTH VMX.
 **State:** `vmnet4` allocated and keeper installed; fresh guest NIC
 attachment not yet started; Windows operator access and 41/41 scenarios
 remain pending.
+
+
+## 2026-10-22: exact fresh VMX 0771 blocker and owner-only repair
+
+Operator-provided Kali metadata identified the registered **fresh** WSLPE
+VMX file as UID 1000, GID 1000, mode **0771**, 1 hard link, regular file,
+4473 bytes. Current owner UID was 1000; there were zero running guests,
+the vmnet4 host address was 172.28.233.254/24 and there was no existing
+management NIC transaction journal.
+
+The original strict NIC planner correctly rejected the group-writable VMX.
+The subsequent read-only planner was blocked by `sudo -n` while checking
+the committed root-owned vmnet4 keeper. This is a separate expired sudo
+authorization gate, not evidence of network regression.
+
+A one-time `scripts/wslpe41-normalize-vmx-mode.py` maintenance utility now
+uses the same exact fresh registration, user-library ownership, original
+NAT/vmnet3 layout, zero-guest inventory and vmnet4 keeper checks. Its
+read-only `--plan` can inspect **only the exact observed mode 0771**;
+the normal `identify()` and NIC `attach()` remain strict and reject
+group-write permission bits. Explicit `--apply` requires a pinned SHA256
+and independent exact authorization, writes a private 0600 permission receipt,
+changes the identified file's mode to **0600 on the same O_NOFOLLOW fd**,
+and verifies its VMX bytes and SHA256 remain identical. No network, Windows,
+VM power, NAT or learner NIC mutations occur. Failed/partial receipts
+must be reviewed; never run recursively or reuse across another VM.
+
+The operator must run `sudo -v` on Kali before planning/repair, because
+the separately installed vmnet4 keeper uses `sudo -n`. Once the exact
+permission change is committed, run the existing read-only management NIC
+`--plan` and its separately approved journaled `--apply`. This stage
+is source-tested, but live permission and NIC acceptance remain pending.
