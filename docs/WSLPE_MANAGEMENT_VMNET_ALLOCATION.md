@@ -214,3 +214,30 @@ or paths and other-user VMware registrations require manual review.
 The audit never changes VMware files, never powers off guests, and never
 tries a network restart. It is source-tested only and still returns
 [DEFERRED] when the two guests remain on.
+
+
+## 2026-10-22: operator evidence — current WSLPE vmnet4 registry cleared
+
+**Current native exercise:** vmnet3 (172.28.232.0/24). **Proposed management:** vmnet4 (172.28.233.0/24). The preceding vmnet2/vmnet3 plan at the top of this document is historical and applies to a different WSLPE pilot. Do not allocate vmnet3 for this guest.
+
+The Kali owner reran the offline Workstation library audit with these exact workspace roots:
+- $HOME/kingdoms-wslpe41-fresh/workspace
+- $HOME/kingdoms-lpe-standalone/workspace
+- $HOME/kingdoms-rebuild/workspace
+- $HOME/vmware/KINGDOMS-WSLPE41-LEARNER-TEST (the preserved, registered learner-test clone)
+
+Observed output: **8** Workstation library entries; **0** VMXs referencing vmnet4; vmrun=**2** and vmware-vmx=**2**; no OTHER OWNER or NOT IN LIBRARY markers; **[DEFERRED] Guests still running; NO NETWORK RESTART.** This closes the specifically observed missing-workspace audit finding. This is not evidence of an installed vmnet4, actual guest NIC isolation, or an exhaustive inventory of other users' unregistered/offline files.
+
+### Unblocked vs still blocked
+
+**Source planning gate complete:** exact exercise/management proposal; running-VM and user-library ownership audited against supplied workspaces. **No VMware network mutation is authorized.**
+
+**Remaining implementation/acceptance work:**
+1. Review other user accounts/VMware registrations, stray VMXs outside the Workstation library and any externally managed VM network consumers. Check for state changes again immediately before the maintenance action.
+2. Implement and review actual root-only VMware Workstation 26 stop/start, persistent lock/journal locations, preflight-to-apply capability and independent adapter/IP/isolation verification. The existing Python transaction is source-only and its VMware callbacks are deliberately missing.
+3. In a separately agreed maintenance window, let each VM owner arrange an orderly guest shutdown. Never auto-stop these two VMs. Require dual zero-guest checks just before touching shared networking and re-prove expected /etc/vmware/networking bytes.
+4. Create **only** the vmnet4 management network via the reviewed transaction with a durable backup, and prove recovery and preservation of every pre-existing vmnet/NORTH route/NAT directive before guest changes.
+5. Attach and accept a dedicated management NIC on only the exact new WSLPE guest, with authenticated pinned-TLS WinRM via kingdom.operator and verified network isolation. Keep the historical master, learner-test VM, NORTH and other labs untouched.
+6. Only after the management handoff and WinRM-free console recovery pass, move to the existing one-shot 41-scenario installer. No premature claim that scenarios are deployed.
+
+**Operator instruction for now: do nothing on VMware; preserve both running guests.** All clearance evidence is point-in-time and must be reacquired after any host configuration or registration changes.
