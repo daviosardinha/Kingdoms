@@ -19,7 +19,7 @@ from kingdoms.wslpe_management_vmnet_transaction import NetworkTransactionBlocke
 
 
 BIN = Path("/usr/bin/vmware-networks")
-IP = Path("/usr/sbin/ip")
+IP = Path("/usr/bin/ip")
 MAX_RESULT = 200_000
 
 
