@@ -833,3 +833,33 @@ Further acceptance still requires actual post-recreation persistence,
 a fresh guest management NIC, credentialed `kingdom.operator` HTTPS
 WinRM, WinRM-free operator recovery, 41/41 scenario provisioning, and
 independent clean-build acceptance.
+
+
+## 2026-10-22: live WSLPE host-address persistence installed
+
+Operator's latest Kali evidence confirms:
+- `VMNET4_HOSTADDR_PERSISTENCE_INSTALLED` and two successive
+  `VMNET4_HOSTADDR_PERSISTENCE=PASS` results, including a timer interval.
+- `vmnet4`: `172.28.233.254/24` after VMware previously reset it to .1.
+- The dedicated `kingdoms-wslpe-vmnet4-hostaddr.timer` is enabled and active.
+- `vmnet10`: `10.4.10.254/24` and `vmnet99`: `10.4.99.254/24`
+  were independently restored without WSLPE writes.
+- `vmnet3`: `172.28.232.1/24` remained the learner exercise interface.
+- VMware network configuration still corresponds to the committed
+  `vmnet4` allocation; no Windows NIC or scenario installation was performed.
+
+**Host persistence keeper live installation gate: PASS.** This confirms
+correct installation and at least one timer interval, but does not yet
+prove full system reboot or another VMware service restart. Do not
+repeat shared network restarts as a generic diagnostic.
+
+**Next engineering milestone:** add the dedicated management adapter
+(slot 2 / `ethernet2`) to **only** registered fresh
+`bf5369-wslpe-vmware`, preserve NAT `ethernet0` and exercise
+`ethernet1` on `vmnet3`, and configure guest-side operator address
+`172.28.233.31/24` with no operator-network default gateway.
+Bind the management Windows NIC by its unique VMware MAC and preserve
+Vagrant/provider compatibility. Prove independent console restoration,
+pinned WinRM HTTPS/5986 operator authentication and negative
+learner-to-management/NORTH reachability before retiring Vagrant/NAT.
+Then execute the existing scenario journal and validate 41/41.
