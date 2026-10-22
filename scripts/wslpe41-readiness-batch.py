@@ -29,6 +29,7 @@ TESTS = (
     "tests.test_wslpe_management_vmnet_host_gate",
     "tests.test_wslpe_management_vmnet_registry",
     "tests.test_wslpe_management_vmnet_workstation",
+    "tests.test_wslpe41_readiness_batch",
 )
 GUEST_ID = "bf5369-wslpe-vmware"
 MANAGEMENT = "vmnet4"
