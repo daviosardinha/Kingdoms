@@ -21,6 +21,7 @@ on:
       - 'scripts/wslpe41-operator-management.ps1'
       - 'tests/test_wslpe41_operator_management.py'
       - 'tests/test_wslpe41_operator_management.ps1'
+      - 'tests/test_wslpe41_management_transport_windows.py'
       - 'ansible/wslpe-lpe-test.yml'
       - 'scripts/wslpe41-install.py'
       - 'tests/test_wslpe41_fresh_contract.py'
@@ -64,3 +65,19 @@ jobs:
         run: |
           echo '[SOURCE ONLY] Single 41-scenario installer source, fail-closed journal and JEA out-of-band requirement validated'
           echo '[NOT COMPLETE] Native 41-stage installation, fresh guest configuration, and second clean build'
+
+  windows-management-transport:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install management transport test dependencies
+        run: python -m pip install --disable-pip-version-check pywinrm pyyaml
+      - name: Reproduce cmd.exe size failure and execute direct Windows PowerShell transport
+        run: python -m unittest discover -s tests -p 'test_wslpe41_management_transport_windows.py' -v
+      - name: Parse and exercise management inspection and policy in Windows PowerShell 5.1
+        shell: powershell
+        run: ./tests/test_wslpe41_operator_management.ps1

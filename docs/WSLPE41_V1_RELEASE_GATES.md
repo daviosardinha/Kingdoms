@@ -438,3 +438,22 @@ See [focused operator repair and consolidated live acceptance](WSLPE41_OPERATOR_
 **Live acceptance is pending:** no Windows account creation, management
 isolation or operator-authentication PASS is claimed by this source change.
 No 41-scenario deployment, other-lab change or main merge is part of this work.
+
+## 2026-10-22: initial operator Inspect failed; command transport corrected
+
+The operator's Kali screenshot shows update to `838c3ec`, then
+`Windows Inspect failed: no success evidence`; the subsequent `--verify`
+correctly reports no completed management receipt. The run did not reach
+Prepare, account creation or firewall isolation. Existing VM/NIC/network
+acceptance remains intact; authenticated operator management remains pending.
+
+Source inspection found that the compressed Inspect command becomes 17,755
+characters after UTF-16LE/base64 encoding, but pywinrm `Session.run_ps()` uses
+`cmd.exe` by default, with its 8,191-character limit. The transport now uses the
+existing authenticated WinRM protocol's direct-process option with separate
+PowerShell arguments. The initial route query's misplaced newline is also
+corrected, and startup errors provide bounded diagnostics instead of hiding
+all evidence. Regressions cover the actual SOAP option, cleanup, marker handling
+and real Windows PowerShell 5.1 command execution. The live error's stderr was
+not captured in the original output; the command-size defect is source-proven,
+and live guest acceptance still requires rerunning the focused `--apply`.

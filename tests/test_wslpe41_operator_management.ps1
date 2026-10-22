@@ -15,6 +15,22 @@ function Check([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
     $script:checks++
 }
+# Execute the actual inspection command extent: a newline before -ErrorAction
+# previously parsed as a separate command, so an absent default route failed.
+$route = @($ast.FindAll({ param($node)
+    $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Get-NetRoute'
+}, $true))
+function Get-NetRoute {
+    [CmdletBinding()]
+    param($InterfaceIndex, $DestinationPrefix)
+    if ($InterfaceIndex -ne 15 -or $DestinationPrefix -ne '0.0.0.0/0' -or
+        $ErrorActionPreference -ne 'SilentlyContinue') { throw 'Route query lost its parameters' }
+    # No default route is the expected management configuration.
+}
+$mgmt = [pscustomobject]@{ifIndex=15}
+Check ($route.Count -eq 1) 'One management default-route query'
+$result = @(Invoke-Expression $route[0].Extent.Text)
+Check ($result.Count -eq 0) 'Absent default gateway must not fail inspection'
 function Get-Item { param($LiteralPath) [pscustomobject]@{Value=$script:wsValue} }
 $script:wsValue = 'false'
 Check (-not (Get-WSBool 'mock')) 'WSMan string false must not become true'

@@ -17,6 +17,21 @@ handoff for the current guest. The older management-firewall CLI also assumes
 the historical two-NIC `vmnet2` layout. Re-running those unrelated prerequisites
 does not create a functioning operator channel.
 
+The first live repair attempt stopped at `Inspect` before account or firewall
+changes. The original compressed inspection still expanded to a 17,755-character
+command through `Session.run_ps()`, which defaults to WinRM's `cmd.exe` path and
+therefore exceeds its 8,191-character limit. The runner now invokes
+`powershell.exe` with separate arguments and `WINRS_SKIP_CMD_SHELL=TRUE`, checks
+the complete direct-process command size, and always closes the remote shell.
+The decompression step is also inside the diagnostic catch, and errors without
+our marker report an exit code and output lengths without printing raw stderr.
+A split `Get-NetRoute` invocation was corrected so `-ErrorAction` belongs to the
+route query and an absent management default gateway does not fail inspection.
+
+For this initial-Inspect failure, update the branch and rerun the same `--apply`
+command below. No receipt deletion, password replacement, rollback or VM restart
+is required. `--verify` is meaningful only after the handoff succeeds.
+
 `scripts/wslpe41-operator-management.py` connects the existing pieces for this
 one instance:
 
@@ -127,6 +142,10 @@ management acceptance.
 ## Validation limits
 
 Source tests use mocked Windows commands and do not establish live success.
+Windows CI additionally runs the generated full-size command in real Windows
+PowerShell 5.1, reproduces its rejection through `cmd.exe`, checks a benign
+successful Prepare payload and the early wrong-guest rejection with the actual
+management source. These process tests do not configure WinRM or any lab.
 The runner's live PASS is required on the actual VM. A console canary proves
 independent elevated recovery capability, not a completed outage/rollback drill.
 The rules are stored persistently, but reboot persistence needs a later live
@@ -141,3 +160,5 @@ Implementation references:
 - [Microsoft: Windows Firewall rule precedence](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules)
 - [Ansible: workgroup WinRM configuration and NTLM](https://docs.ansible.com/projects/ansible/latest/os_guide/windows_winrm.html)
 - [Microsoft: UAC remote token filtering](https://learn.microsoft.com/en-us/troubleshoot/windows-server/windows-security/user-account-control-and-remote-restriction)
+- [Microsoft: WinRM direct command option](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wsmv/c793e333-c409-43c6-a2eb-6ae2489c7ef4)
+- [Microsoft: cmd.exe command length](https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/command-line-string-limitation)

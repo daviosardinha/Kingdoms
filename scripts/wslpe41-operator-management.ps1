@@ -55,8 +55,9 @@ function Assert-Guest {
         $_.PrefixLength -eq 24 -and [string]$_.AddressState -eq 'Preferred' }).Count -ne 1 -or
         @($ips | Where-Object { $_.IPAddress -ne '172.28.233.31' -and
             $_.IPAddress -notlike '169.254.*' }).Count) { throw 'Management IPv4 changed' }
-    if (@(Get-NetRoute -InterfaceIndex $mgmt.ifIndex -DestinationPrefix '0.0.0.0/0'
-        -ErrorAction SilentlyContinue).Count) { throw 'Management has a default gateway' }
+    if (@(Get-NetRoute -InterfaceIndex $mgmt.ifIndex -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue).Count) {
+        throw 'Management has a default gateway'
+    }
     $bootstrap = Get-LocalUser -Name vagrant
     $learner = Get-LocalUser -Name lpe.trainee
     $admins = Get-LocalGroup -SID 'S-1-5-32-544'

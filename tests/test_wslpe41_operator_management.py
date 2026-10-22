@@ -14,6 +14,7 @@ import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, Mock, patch
+import xml.etree.ElementTree as ET
 
 from kingdoms import wslpe41_operator_management as management
 
@@ -105,21 +106,90 @@ class ManagementTests(unittest.TestCase):
         auth.scoped_wslpe_resolution.assert_called_once_with(management.ADDRESS)
 
     def test_no_false_pass_on_missing_or_nonzero_windows_marker(self):
-        for result in (SimpleNamespace(status_code=1, std_out=b'WSLPE_OPERATOR_POLICY=PASS'),
-                       SimpleNamespace(status_code=0, std_out=b''),
-                       SimpleNamespace(status_code=0, std_out=b'WSLPE_OPERATOR_POLICY=PASS\n' * 2)):
-            session = SimpleNamespace(run_ps=Mock(return_value=result))
+        for output in ((b'WSLPE_OPERATOR_POLICY=PASS', b'', 1),
+                       (b'', b'', 0), (b'WSLPE_OPERATOR_POLICY=PASS\n' * 2, b'', 0)):
+            session = Mock()
+            session.protocol.get_command_output.return_value = output
             with self.assertRaises(management.ManagementBlocked):
                 management.invoke(session, 'Verify', nonce='a' * 32)
 
     def test_transport_fits_windows_command_limit_and_preserves_original_source(self):
         session = Mock()
-        session.run_ps.return_value = SimpleNamespace(status_code=0, std_out=b'WSLPE_OPERATOR_PREPARED=PASS\n')
+        session.protocol.get_command_output.return_value = (b'WSLPE_OPERATOR_PREPARED=PASS\n', b'', 0)
         management.invoke(session, 'Prepare', nonce='a' * 32, install=True)
-        command = session.run_ps.call_args.args[0]
-        self.assertLess(len(base64.b64encode(command.encode('utf-16le'))), 30_000)
+        call = session.protocol.run_command.call_args
+        executable, arguments = call.args[1:]
+        command_line = ' '.join([executable, *arguments])
+        self.assertGreater(len(command_line), 8191)  # Original run_ps() cannot carry this.
+        self.assertLess(len(command_line) + 1, 30_000)
+        self.assertTrue(call.kwargs['skip_cmd_shell'])
+        self.assertEqual(executable, 'powershell.exe')
+        self.assertIn('-NoProfile', arguments)
+        command = base64.b64decode(arguments[-1]).decode('utf-16le')
         encoded = command.split("$b='", 1)[1].split("'", 1)[0]
         self.assertEqual(gzip.decompress(base64.b64decode(encoded)), management.SCRIPT.read_bytes())
+        session.run_ps.assert_not_called()
+
+    def test_pywinrm_serializes_direct_process_option_and_separate_executable(self):
+        import winrm
+        session = winrm.Session('http://127.0.0.1:5985/wsman', auth=('unused', 'unused'), transport='ntlm')
+        protocol = session.protocol
+        reply = '<rsp:CommandResponse xmlns:rsp="http://schemas.microsoft.com/wbem/wsman/1/windows/shell"><rsp:CommandId>command</rsp:CommandId></rsp:CommandResponse>'
+        with (patch.object(protocol, 'open_shell', return_value='shell'),
+              patch.object(protocol, 'send_message', return_value=reply) as send,
+              patch.object(protocol, 'get_command_output', return_value=(b'WSLPE_OPERATOR_POLICY=PASS\n', b'', 0)),
+              patch.object(protocol, 'cleanup_command') as cleanup,
+              patch.object(protocol, 'close_shell') as close):
+            management.invoke(session, 'Verify', nonce='a' * 32)
+        document = ET.fromstring(send.call_args.args[0])
+        options = {node.attrib['Name']: node.text for node in document.iter()
+                   if node.tag.endswith('}Option')}
+        self.assertEqual(options['WINRS_SKIP_CMD_SHELL'], 'TRUE')
+        command = next(node.text for node in document.iter() if node.tag.endswith('}Command'))
+        arguments = next(node.text for node in document.iter() if node.tag.endswith('}Arguments'))
+        self.assertEqual(command, 'powershell.exe')
+        self.assertGreater(len(arguments), 8191)
+        self.assertIn('-NonInteractive -EncodedCommand ', arguments)
+        cleanup.assert_called_once_with('shell', 'command')
+        close.assert_called_once_with('shell')
+
+    def test_direct_transport_always_closes_shell_after_command_or_output_failure(self):
+        for stage in ('run_command', 'get_command_output', 'cleanup_command'):
+            with self.subTest(stage=stage):
+                session = Mock()
+                protocol = session.protocol
+                protocol.open_shell.return_value = 'shell'
+                protocol.run_command.return_value = 'command'
+                protocol.get_command_output.return_value = (b'', b'', 0)
+                getattr(protocol, stage).side_effect = RuntimeError('transport failure')
+                with self.assertRaises(RuntimeError):
+                    management.run_powershell(session, "Write-Output 'test'")
+                protocol.close_shell.assert_called_once_with('shell')
+                if stage == 'run_command':
+                    protocol.cleanup_command.assert_not_called()
+                else:
+                    protocol.cleanup_command.assert_called_once_with('shell', 'command')
+                protocol.run_command.assert_called_once()
+
+    def test_oversized_direct_command_is_rejected_before_opening_a_shell(self):
+        session = Mock()
+        with self.assertRaisesRegex(management.ManagementBlocked, 'transport limit'):
+            management.run_powershell(session, '#' * 12_000)
+        session.protocol.open_shell.assert_not_called()
+
+    def test_transport_error_is_actionable_without_exposing_raw_stderr(self):
+        for stdout, stderr, expected in (
+            (b'', b'The command line is too long.\r\nprivate-value', 'command length'),
+            (b'', b'#< CLIXML\r\nParserError private-value', 'PowerShell parser'),
+            (b'', b'private-value', 'exit code 1; stdout=0 bytes; stderr=13 bytes'),
+            (b'\xef\xbb\xbfWSLPE_OPERATOR_ERROR=Wrong standalone guest\n', b'private-value', 'Wrong standalone guest'),
+        ):
+            session = Mock()
+            session.protocol.get_command_output.return_value = (stdout, stderr, 1)
+            with self.assertRaises(management.ManagementBlocked) as raised:
+                management.invoke(session, 'Inspect')
+            self.assertIn(expected, str(raised.exception))
+            self.assertNotIn('private-value', str(raised.exception))
 
     def test_open_forbidden_socket_fails_and_route_failure_is_not_denial(self):
         for error in (None, OSError(errno.EADDRNOTAVAIL, 'no source'),

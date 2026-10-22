@@ -82,6 +82,47 @@ def auth_helper():
     return module
 
 
+def run_powershell(session, script):
+    """Use WinRM's direct process API, not run_ps()'s 8191-char cmd.exe path."""
+    from winrm import Response
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    executable = "powershell.exe"
+    arguments = ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded]
+    # Leave headroom below CreateProcessW's 32767 UTF-16-code-unit limit.
+    # Encoding is ASCII; include the executable, switches, spaces and terminator.
+    if len(" ".join([executable, *arguments])) + 1 > 30_000:
+        raise ManagementBlocked("Management source exceeds the Windows command transport limit")
+    protocol = session.protocol
+    shell_id = protocol.open_shell()
+    command_id = None
+    try:
+        command_id = protocol.run_command(
+            shell_id, executable, arguments, skip_cmd_shell=True,
+        )
+        return Response(protocol.get_command_output(shell_id, command_id))
+    finally:
+        try:
+            if command_id is not None:
+                protocol.cleanup_command(shell_id, command_id)
+        finally:
+            protocol.close_shell(shell_id)
+
+
+def failure_detail(result):
+    # Only our password-free management script's bounded marker is printable.
+    # Raw stderr can include CLIXML, source excerpts or library diagnostics.
+    messages = [line.partition("=")[2] for line in result.std_out.decode("utf-8-sig", errors="replace").splitlines()
+                if line.startswith("WSLPE_OPERATOR_ERROR=")]
+    if len(messages) == 1:
+        return messages[0][:240]
+    stderr = result.std_err[:100_000].decode("utf-8", errors="replace").casefold()
+    if "command line is too long" in stderr:
+        return "Windows rejected the command length before PowerShell started"
+    if "parsererror" in stderr:
+        return "PowerShell parser rejected the management command"
+    return f"no success evidence (exit code {int(result.status_code)}; stdout={len(result.std_out)} bytes; stderr={len(result.std_err)} bytes)"
+
+
 def invoke(session, mode: str, *, nonce="", install=False):
     if mode not in {"Inspect", "Prepare", "Harden", "Verify", "ConsoleStatus"}:
         raise ManagementBlocked("Unsupported remote management operation")
@@ -96,29 +137,24 @@ def invoke(session, mode: str, *, nonce="", install=False):
             + "Write-Output 'WSLPE_OPERATOR_CONSOLE=PASS'"
         )
     else:
-        # Compress the public source to stay below Windows' 32767-character
-        # CreateProcess limit after pywinrm's UTF-16LE EncodedCommand expansion.
+        # Compress the public source to stay below the direct CreateProcess
+        # limit after UTF-16LE EncodedCommand expansion.
         # The installed console recovery copy is the original readable source.
         encoded = base64.b64encode(gzip.compress(SCRIPT.read_bytes(), mtime=0)).decode("ascii")
         script = (
+            "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; try { "
             "$b='" + encoded + "'; $m=New-Object IO.MemoryStream(,([Convert]::FromBase64String($b))); "
             "$g=New-Object IO.Compression.GzipStream($m,[IO.Compression.CompressionMode]::Decompress); "
             "$o=New-Object IO.MemoryStream; $g.CopyTo($o); $g.Dispose(); "
             "$bytes=$o.ToArray(); $o.Dispose(); $s=[Text.Encoding]::UTF8.GetString($bytes); "
-            "try { & ([scriptblock]::Create($s)) "
+            "& ([scriptblock]::Create($s)) "
             f"-Mode {mode} -Nonce '{nonce}'"
             + (" -SourceBase64 ([Convert]::ToBase64String($bytes))" if install else "")
-            + " } catch { Write-Output ('WSLPE_OPERATOR_ERROR=' + $_.Exception.Message); exit 1 }"
+            + " } catch { Write-Output ('WSLPE_OPERATOR_ERROR=' + ($_.Exception.Message -replace '[\\r\\n]+',' ')); exit 1 }"
         )
-        if len(base64.b64encode(script.encode("utf-16le"))) > 30_000:
-            raise ManagementBlocked("Management source exceeds the Windows command transport limit")
-    result = session.run_ps(script)
+    result = run_powershell(session, script)
     if result.status_code != 0 or len(result.std_out) > 100_000:
-        # This management script never receives a password. Its bounded error
-        # marker is safe to show; raw CLIXML/HTTP/Ansible diagnostics are not.
-        messages = [line.partition("=")[2] for line in result.std_out.decode("utf-8", errors="replace").splitlines()
-                    if line.startswith("WSLPE_OPERATOR_ERROR=")]
-        detail = messages[0][:240] if len(messages) == 1 else "no success evidence"
+        detail = failure_detail(result)
         raise ManagementBlocked(f"Windows {mode} failed: {detail}; recovery state retained")
     if mode == "Inspect":
         return parse_inspection(result.std_out)
