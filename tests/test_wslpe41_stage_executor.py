@@ -102,17 +102,29 @@ class AnsibleStageExecutorTests(unittest.TestCase):
         context = AnsibleStageContext(
             **{**vars(self.context), "management_address": "172.28.233.31"}
         )
+        self.inventory.chmod(0o600)
+        ca = self.inventory.parent / "operator-ca.pem"
+        ca.write_text("test-pinned-cert")
+        ca.chmod(0o600)
+        import json
+        def secure(target):
+            data = json.loads(self.inventory_json(guest=target))
+            data["_meta"]["hostvars"]["ws01"].update({
+                "ansible_winrm_ca_trust_path": str(ca),
+                "ansible_winrm_transport": "ntlm",
+                "ansible_user": r"WSLPE-WS01\kingdom.operator",
+                "ansible_password": "private-operator-password-very-long",
+            })
+            return json.dumps(data)
         with patch("kingdoms.wslpe41_stage_executor.subprocess.run",
                    return_value=SimpleNamespace(
-                       returncode=0,
-                       stdout=self.inventory_json(guest="172.28.233.31"))):
+                       returncode=0, stdout=secure("WSLPE-WS01"))) as run:
             _inventory(context, self.env)
-        # A valid TLS scheme is not enough if the WinRM transport still
-        # points at the learner/exercise vmnet3 address after firewall cutover.
+        self.assertEqual(run.call_args.args[0][1:3], ["-i", str(self.inventory)])
+        self.assertNotIn(str(self.private_vars), run.call_args.args[0])
         with patch("kingdoms.wslpe41_stage_executor.subprocess.run",
                    return_value=SimpleNamespace(
-                       returncode=0,
-                       stdout=self.inventory_json(guest="172.28.232.31"))):
+                       returncode=0, stdout=secure("172.28.232.31"))):
             with self.assertRaisesRegex(InstallBlocked, "isolated HTTPS"):
                 _inventory(context, self.env)
         wrong = AnsibleStageContext(
@@ -120,8 +132,7 @@ class AnsibleStageExecutorTests(unittest.TestCase):
         )
         with patch("kingdoms.wslpe41_stage_executor.subprocess.run",
                    return_value=SimpleNamespace(
-                       returncode=0,
-                       stdout=self.inventory_json(guest="10.4.10.11"))):
+                       returncode=0, stdout=secure("WSLPE-WS01"))):
             with self.assertRaisesRegex(InstallBlocked, "roles are mismatched"):
                 _inventory(wrong, self.env)
 
