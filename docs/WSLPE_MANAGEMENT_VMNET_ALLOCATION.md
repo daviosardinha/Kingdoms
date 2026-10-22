@@ -743,3 +743,39 @@ This is still source-tested only, not a confirmed live allocation.
 Do not start guests until a new guest-free, approved maintenance action
 either commits or the rollback has been independently reviewed.
 Retain every archived historical journal.
+
+
+## 2026-10-22: live vmnet4 allocation COMMITTED — host checkpoint
+
+The operator ran the guarded guest-free maintenance transaction on Kali.
+Live output reported:
+
+- `[COMMITTED]` vmnet4 source SHA256
+  `9717eecc5c8f05f4d214018a7da280c4484dc3d2e9a26a33902a9efe3e89f990`.
+- `ip -br -4 addr show dev vmnet4` = `vmnet4 UNKNOWN 172.28.233.254/24`.
+- Connected route: `172.28.233.0/24 proto kernel scope link src 172.28.233.254`.
+- Root journal state: `committed`.
+- Original networking SHA256:
+  `538955e59ce433b3764e19e5d46073f2b476af54c15d5260465867d87ca15bff`.
+- Kernel non-routing and host-only interface gates passed within the protected transaction.
+
+**This closes initial live host vmnet4 allocation only.** Do not archive,
+recover, reapply or remove the committed journal. Historical rolled-back
+journals remain preserved. No fresh Windows guest management NIC was
+attached by this host transaction, no `kingdom.operator` handoff was
+completed and the 41-scenario installer was not executed.
+
+**Next acceptance:** Verify that the exact committed configuration and
+the pinned vmnet4 host address survive a controlled VMware networking
+service restart with every guest powered off. VMware Workstation can
+reassign an interface address after service recreation despite a
+HOSTONLY_HOSTADDR directive: do not claim persistence without testing.
+Any persistence repair must be vmnet4-only, separately guarded, and must
+never stop/start NORTH guests or alter another vmnet.
+
+Once host-side persistence is established, attach the management NIC
+ONLY to the fresh registered instance bf5369-wslpe-vmware. Verify
+two-adapter topology, learner/operator isolation, independently pinned
+Windows HTTPS WinRM certificate, operator credential application and
+authentication, WinRM-independent console recovery, and eventually
+41/41 Windows scenarios, including original release and clean-build gates.
