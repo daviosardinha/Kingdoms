@@ -36,8 +36,26 @@ our marker report an exit code and output lengths without printing raw stderr.
 A split `Get-NetRoute` invocation was corrected so `-ErrorAction` belongs to the
 route query and an absent management default gateway does not fail inspection.
 
+The next live run on `08cfb7f` passed Inspect and retrieved the existing HTTPS
+certificate. Prepare then hit the native WSMan configuration API's Public-network
+firewall check. The repair now disables Basic and unencrypted traffic using the
+documented WinRM service policies `AllowBasic=0` and `AllowUnencryptedTraffic=0`,
+and reads the effective WSMan values before proceeding. Their previous policy
+presence/values are added to the recovery journal before writing. Network
+categories, listeners and existing firewall rules are not reconfigured by this
+policy operation. These two security policies remain disabled during rollback,
+as the prior repair already required for Basic and plaintext.
+
+The failed Prepare already saved its original state and recovery script. The
+next apply can upgrade only that exact known script hash, with the same nonce
+and certificate, phase `prepared`, no console acknowledgement, no operator
+account and no repair firewall rules. It atomically replaces the script while
+retaining the old bytes as `management.before-public-profile.ps1`. The original
+recovery facts and private credential remain intact. Other mismatches still stop.
+
 For this initial-Inspect failure, update the branch and rerun the same `--apply`
-command below. No receipt deletion, password replacement, rollback or VM restart
+command below. The Public-profile Prepare failure also resumes with that command.
+No receipt deletion, password replacement, rollback or VM restart
 is required. `--verify` is meaningful only after the handoff succeeds.
 
 `scripts/wslpe41-operator-management.py` connects the existing pieces for this
@@ -157,6 +175,11 @@ management source, and reproduce failure of the old oversized argument. The
 WinRM fixture is restricted to an explicitly enabled disposable GitHub-hosted
 runner, uses a temporary account and cleans up its account/listener/token policy.
 No lab VM is contacted, and no firewall rule or insecure authentication is enabled.
+An additional real WinRM test verifies the effective secure policy source and
+checks that network categories, listeners and firewall rules remain unchanged.
+The actual Prepare body is also exercised against a saved prior recovery script,
+including fresh installation, interrupted upgrade, repeat execution and rejected
+identity/state/source mismatches. Windows commands in that recovery test are mocked.
 The runner's live PASS is required on the actual VM. A console canary proves
 independent elevated recovery capability, not a completed outage/rollback drill.
 The rules are stored persistently, but reboot persistence needs a later live
@@ -173,3 +196,4 @@ Implementation references:
 - [Microsoft: UAC remote token filtering](https://learn.microsoft.com/en-us/troubleshoot/windows-server/windows-security/user-account-control-and-remote-restriction)
 - [Microsoft: WinRM direct command option](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wsmv/c793e333-c409-43c6-a2eb-6ae2489c7ef4)
 - [Microsoft: cmd.exe command length](https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/command-line-string-limitation)
+- [Microsoft: WinRM service security policies](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-remotemanagement)

@@ -160,5 +160,69 @@ class LoopbackWinRMTests(WindowsTransportTests):
         self.addCleanup(session.protocol.transport.close_session)
         return session
 
+    def test_secure_service_policy_over_real_winrm_preserves_network_and_listeners(self):
+        source = base64.b64encode(management.SCRIPT.read_bytes()).decode('ascii')
+        # Only the explicitly enabled hosted fixture's temporary account runs
+        # this test. Registry policy is restored in finally; no lab is contacted.
+        script = r'''
+$ErrorActionPreference='Stop'
+if ($env:USERNAME -cnotmatch '^wslpeci-[a-f0-9]{8}$' -or $env:COMPUTERNAME -eq 'WSLPE-WS01') {
+    throw 'Expected disposable CI account'
+}
+$tokens=$null; $errors=$null
+$ast=[Management.Automation.Language.Parser]::ParseInput(
+    [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__SOURCE__')), [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw 'Production script parse failed' }
+foreach ($definition in $ast.FindAll({ param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+    $node.Name -in @('Set-SecureWinRM','Get-WSBool')
+}, $false)) { Invoke-Expression $definition.Extent.Text }
+$path='SOFTWARE\Policies\Microsoft\Windows\WinRM\Service'
+$key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($path, $true)
+$existed=$null -ne $key
+$saved=@{}
+foreach ($name in @('AllowBasic','AllowUnencryptedTraffic')) {
+    $present=$existed -and $key.GetValueNames() -contains $name
+    $saved[$name]=@{Present=$present}
+    if ($present) { $saved[$name].Value=$key.GetValue($name); $saved[$name].Kind=$key.GetValueKind($name) }
+}
+if ($key) { $key.Dispose() }
+function Snapshot-Management {
+    return (@{
+        Profiles=@(Get-NetConnectionProfile | Select-Object InterfaceIndex,NetworkCategory | Sort-Object InterfaceIndex)
+        Listeners=@(Get-WSManInstance winrm/config/listener -Enumerate | Select-Object Address,Transport,Port,Hostname,CertificateThumbprint | Sort-Object Transport,Address)
+        Rules=@(Get-NetFirewallRule | Select-Object Name,Enabled,Profile,Action | Sort-Object Name)
+    } | ConvertTo-Json -Depth 5 -Compress)
+}
+$before=Snapshot-Management
+$StatePath=Join-Path $env:TEMP ('wslpe-policy-' + [guid]::NewGuid().ToString('N') + '.clixml')
+$state=[pscustomobject]@{Instance='ci-only'; Nonce='unchanged'}
+try {
+    Set-SecureWinRM $state
+    if ((Get-Item WSMan:\localhost\Service\Auth\Basic).SourceOfValue -ne 'GPO' -or
+        (Get-Item WSMan:\localhost\Service\AllowUnencrypted).SourceOfValue -ne 'GPO') {
+        throw 'Effective WinRM values must come from service policy'
+    }
+    if ((Snapshot-Management) -cne $before) { throw 'Management policy altered network, listeners or firewall' }
+    if ((Import-Clixml -LiteralPath $StatePath).Nonce -cne 'unchanged') { throw 'Recovery nonce changed' }
+    Write-Output 'WSLPE_CI_SECURE_POLICY=PASS'
+} finally {
+    $key=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($path, $true)
+    if ($key) {
+        foreach ($name in $saved.Keys) {
+            if ($saved[$name].Present) { $key.SetValue($name,$saved[$name].Value,$saved[$name].Kind) }
+            else { $key.DeleteValue($name,$false) }
+        }
+        $empty=$key.ValueCount -eq 0 -and $key.SubKeyCount -eq 0
+        $key.Dispose()
+        if (-not $existed -and $empty) { [Microsoft.Win32.Registry]::LocalMachine.DeleteSubKey($path) }
+    }
+    if (Test-Path -LiteralPath $StatePath) { Remove-Item -LiteralPath $StatePath }
+}
+'''.replace('__SOURCE__', source)
+        result = management.run_powershell(self.session(), script)
+        self.assertEqual(result.status_code, 0, management.failure_detail(result))
+        self.assertIn(b'WSLPE_CI_SECURE_POLICY=PASS', result.std_out)
+
 if __name__ == '__main__':
     unittest.main()

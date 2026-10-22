@@ -21,6 +21,7 @@ on:
       - 'scripts/wslpe41-operator-management.ps1'
       - 'tests/test_wslpe41_operator_management.py'
       - 'tests/test_wslpe41_operator_management.ps1'
+      - 'tests/test_wslpe41_management_recovery.ps1'
       - 'tests/test_wslpe41_management_transport_windows.py'
       - 'tests/fixtures/wslpe-management-winrm-ci.ps1'
       - 'ansible/wslpe-lpe-test.yml'
@@ -61,7 +62,9 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_wslpe_*.py' -v
       - name: Parse and exercise operator PowerShell policy with mock Windows cmdlets
         shell: pwsh
-        run: ./tests/test_wslpe41_operator_management.ps1
+        run: |
+          ./tests/test_wslpe41_operator_management.ps1
+          ./tests/test_wslpe41_management_recovery.ps1
       - name: Explicitly prohibit source-only success being called a full installation
         run: |
           echo '[SOURCE ONLY] Single 41-scenario installer source, fail-closed journal and JEA out-of-band requirement validated'
@@ -84,4 +87,6 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_wslpe41_management_transport_windows.py' -v
       - name: Parse and exercise management inspection and policy in Windows PowerShell 5.1
         shell: powershell
-        run: ./tests/test_wslpe41_operator_management.ps1
+        run: |
+          ./tests/test_wslpe41_operator_management.ps1
+          ./tests/test_wslpe41_management_recovery.ps1

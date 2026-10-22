@@ -473,3 +473,18 @@ credential. CI now exercises the same transport through a real NTLM-encrypted
 WinRM connection on a disposable hosted Windows runner as well as local
 PowerShell. Account, TLS, isolation and console handoff still require successful
 live acceptance on `bf5369-wslpe-vmware`.
+
+## 2026-10-22: Inspect passed; native WSMan setting write blocked Prepare
+
+The screenshot after updating to `08cfb7f` shows exact guest/certificate Inspect
+PASS. Prepare then failed with the native WinRM Public-network firewall exception.
+It had already written its recovery record/source; operator foundation and console
+handoff were not reached. This is not an operator-management acceptance PASS.
+
+Prepare/rollback now enforce disabled Basic and plaintext through the documented
+WinRM service policy values, with effective-value readback. A guarded migration
+accepts only the exact old recovery source before any console/account/firewall
+handoff, preserves it as a backup, and retains the original transaction state.
+No network-category change or generic remoting/firewall setup is introduced.
+The same apply command resumes the transaction; live TLS/operator/isolation
+acceptance still requires the actual fresh guest result.

@@ -12,6 +12,8 @@ $Instance = 'bf5369-wslpe-vmware'
 $Folder = 'C:\ProgramData\Kingdoms\OperatorManagement-bf5369'
 $StatePath = Join-Path $Folder 'state.clixml'
 $ScriptPath = Join-Path $Folder 'management.ps1'
+$PreviousScriptPath = Join-Path $Folder 'management.before-public-profile.ps1'
+$PendingScriptPath = Join-Path $Folder 'management.pending.ps1'
 $Group = 'Kingdoms WSLPE41 operator bf5369'
 $Prefix = 'Kingdoms-WSLPE41-bf5369-'
 $Policy = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
@@ -19,6 +21,64 @@ $Policy = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
 function Get-WSBool([string] $Path) {
     # WSMan provider values can be strings. [bool]'false' is TRUE in PowerShell.
     return [Convert]::ToBoolean([string](Get-Item -LiteralPath $Path).Value)
+}
+
+function Set-SecureWinRM($State) {
+    # Native WSMan configuration PUTs can reject Public/unidentified networks,
+    # even when disabling plaintext. These documented service policies enforce
+    # the same two values without changing network categories or firewall rules.
+    $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WinRM\Service'
+    $settings = @{
+        AllowBasic='WSMan:\localhost\Service\Auth\Basic'
+        AllowUnencryptedTraffic='WSMan:\localhost\Service\AllowUnencrypted'
+    }
+    if (-not $State.PSObject.Properties['WinRMPolicyBefore']) {
+        $before = @{}
+        foreach ($name in $settings.Keys) {
+            $value = $null
+            if (Test-Path -LiteralPath $key) {
+                $value = (Get-ItemProperty -LiteralPath $key).PSObject.Properties[$name]
+            }
+            $before[$name] = @{ Present=($null -ne $value); Value=$(if ($value) { $value.Value } else { $null }) }
+        }
+        $State | Add-Member -NotePropertyName WinRMPolicyBefore -NotePropertyValue $before
+        $State | Export-Clixml -LiteralPath $StatePath
+    }
+    if (-not (Test-Path -LiteralPath $key)) { $null = New-Item -Path $key -Force }
+    foreach ($name in $settings.Keys) {
+        $null = New-ItemProperty -LiteralPath $key -Name $name -PropertyType DWord -Value 0 -Force
+    }
+    # Fresh cmdlet reads must prove effective policy; registry writes alone are
+    # not acceptance. No restart, network reconfiguration or insecure fallback.
+    foreach ($name in $settings.Keys) {
+        if (Get-WSBool $settings[$name]) { throw ('WinRM secure policy is not effective: ' + $name) }
+    }
+}
+
+function Sync-RecoverySource($State, [string] $EncodedSource) {
+    $current = [IO.File]::ReadAllBytes($ScriptPath)
+    if ([Convert]::ToBase64String($current) -ceq $EncodedSource) { return }
+    # Only the shipped version which failed before the console/account handoff
+    # may be upgraded. Preserve its bytes and the original state/nonce/secret.
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hash = [BitConverter]::ToString($sha.ComputeHash($current)).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    if ($hash -cne 'edd8a6935fb8715c14d482e52b530694c818885767dcd1e4b372dc4b2bb8367b' -or
+        $State.Phase -cne 'prepared' -or $State.ConsoleNonce -cne '' -or
+        (Get-LocalUser -Name kingdom.operator -ErrorAction SilentlyContinue) -or
+        @(Get-NetFirewallRule -Name ($Prefix + '*') -ErrorAction SilentlyContinue).Count) {
+        throw 'Existing recovery transaction differs; preserve it and inspect'
+    }
+    if (Test-Path -LiteralPath $PreviousScriptPath) { throw 'Prior recovery backup already exists; preserve it and inspect' }
+    if (Test-Path -LiteralPath $PendingScriptPath) {
+        if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($PendingScriptPath)) -cne $EncodedSource) {
+            throw 'Pending recovery source differs; preserve it and inspect'
+        }
+    } else {
+        [IO.File]::WriteAllBytes($PendingScriptPath, [Convert]::FromBase64String($EncodedSource))
+    }
+    [IO.File]::Replace($PendingScriptPath, $ScriptPath, $PreviousScriptPath)
+    Write-Output 'WSLPE_OPERATOR_RECOVERY_UPDATED=PASS'
 }
 
 function Assert-Guest {
@@ -92,7 +152,8 @@ function Read-State {
 
 function Protect-Folder {
     # Refuse filesystem redirection before touching privileged recovery files.
-    foreach ($path in @('C:\ProgramData\Kingdoms', $Folder, $StatePath, $ScriptPath)) {
+    foreach ($path in @('C:\ProgramData\Kingdoms', $Folder, $StatePath, $ScriptPath,
+        $PreviousScriptPath, $PendingScriptPath)) {
         if ((Test-Path -LiteralPath $path) -and
             ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
             throw 'Recovery path must not contain reparse points'
@@ -189,8 +250,7 @@ if ($Mode -eq 'Rollback') {
     }
     # NTLM message encryption preserves native bootstrap recovery without
     # re-enabling insecure authentication, even if the base image allowed it.
-    Set-Item WSMan:\localhost\Service\Auth\Basic -Value $false
-    Set-Item WSMan:\localhost\Service\AllowUnencrypted -Value $false
+    Set-SecureWinRM $state
     if ($state.TokenPolicyPresent) {
         Set-ItemProperty $Policy LocalAccountTokenFilterPolicy -Value $state.TokenPolicy
     } else {
@@ -239,18 +299,17 @@ if ($Mode -eq 'Prepare') {
         [IO.File]::WriteAllBytes($ScriptPath, [Convert]::FromBase64String($SourceBase64))
     }
     $state = Read-State
-    if ($state.Nonce -cne $Nonce -or
-        [Convert]::ToBase64String([IO.File]::ReadAllBytes($ScriptPath)) -cne $SourceBase64) {
+    if ($state.Nonce -cne $Nonce) {
         throw 'Existing recovery transaction differs; preserve it and inspect'
     }
+    Sync-RecoverySource $state $SourceBase64
     if (-not (Get-WSBool 'WSMan:\localhost\Service\Auth\Negotiate')) {
         throw 'Existing NTLM/Negotiate bootstrap is not enabled'
     }
     # Documented requirement for an administrative workgroup WinRM account.
     # EnableLUA stays 1. Basic and plaintext are never enabled by this repair.
     Set-ItemProperty $Policy LocalAccountTokenFilterPolicy -Type DWord -Value 1
-    Set-Item WSMan:\localhost\Service\Auth\Basic -Value $false
-    Set-Item WSMan:\localhost\Service\AllowUnencrypted -Value $false
+    Set-SecureWinRM $state
     Ensure-Rule (Rule-Specs $Nics)[0]
     Write-Output 'WSLPE_OPERATOR_PREPARED=PASS'
     return
