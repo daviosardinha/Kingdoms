@@ -286,3 +286,23 @@ git pull --ff-only
 
 **Stop condition unchanged:** two VMware guests are running. The next operator
 command is source testing only, not a vmnet4 creation command.
+
+
+## 2026-10-22: confirmed host command paths (read-only operator evidence)
+
+The Workstation host reported:
+- `command -v vmware-networks` = `/usr/bin/vmware-networks`
+- `command -v ip` = `/usr/bin/ip`
+- Both executables reported as root-owned, permissions `755` using `stat -L`.
+
+The `WorkstationHostAdapterVerifier` default was corrected from
+`/usr/sbin/ip` to `/usr/bin/ip`, and a source regression pins both
+observed executable paths. Because `stat -L` dereferences symlinks,
+these results alone **do not prove** that either executable or a parent
+directory is not a symlink; real execution remains gated on the
+adapter's own path validation and operator verification. Do not assume
+the Linux command check proves network service lifecycle semantics.
+
+The service adapter remains **unwired** from any runtime action.
+No network restart, VM stop, guest NIC change, or scenario installation
+is authorized by this checkpoint.
