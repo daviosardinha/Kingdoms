@@ -115,6 +115,25 @@ def _json_list(raw: str, command: str) -> list:
     return rows
 
 
+def _select_verified_main_routes(routes: list, *, vmnet: str, subnet: str) -> list[dict]:
+    """Verify main-table routes without relying on dev-filtered iproute2 JSON."""
+    if vmnet != "vmnet4" or subnet != "172.28.233.0/24":
+        raise NetworkTransactionBlocked("Wrong WSLPE management routing contract")
+    if not isinstance(routes, list) or len(routes) > 4096:
+        raise NetworkTransactionBlocked("Invalid global main route table")
+    selected = []
+    for entry in routes:
+        if not isinstance(entry, dict):
+            raise NetworkTransactionBlocked("Invalid main route record")
+        if entry.get("dst") == subnet and entry.get("dev") != vmnet:
+            raise NetworkTransactionBlocked("Management subnet has foreign route owner")
+        if entry.get("dev") == vmnet:
+            selected.append(entry)
+    if len(selected) > 16:
+        raise NetworkTransactionBlocked("Excessive vmnet4 routes")
+    return selected
+
+
 def validate_vmnet4_host_state(*, vmnet: str, subnet: str,
                                networking_text: str,
                                address_rows: list, link_rows: list,
@@ -180,11 +199,12 @@ class WorkstationHostAdapterVerifier:
         commands = (
             [binary, "-j", "-4", "address", "show", "dev", vmnet],
             [binary, "-j", "link", "show", "dev", vmnet],
-            [binary, "-j", "-4", "route", "show", "dev", vmnet],
+            [binary, "-j", "-4", "route", "show", "table", "main"],
         )
         data = [_json_list(self.run(parts, timeout=15), kind)
                 for parts, kind in zip(commands, ("address", "link", "route"))]
+        routes = _select_verified_main_routes(data[2], vmnet=vmnet, subnet=subnet)
         return validate_vmnet4_host_state(
             vmnet=vmnet, subnet=subnet, networking_text=networking_text,
-            address_rows=data[0], link_rows=data[1], route_rows=data[2],
+            address_rows=data[0], link_rows=data[1], route_rows=routes,
         )
