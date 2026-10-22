@@ -36,6 +36,8 @@ class MaintenanceCliTests(unittest.TestCase):
         self.txn = SimpleNamespace(
             apply=lambda **k: self.calls.append(("apply", k)) or "finalhash",
             recover=lambda: self.calls.append(("recover",)) or "originalhash",
+            archive_rolled_back=lambda **k:
+                self.calls.append(("archive", k)) or "/private/archive.json",
         )
         self.assembled = SimpleNamespace(assemble=lambda: self.txn)
 
@@ -159,6 +161,35 @@ class MaintenanceCliTests(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertIn("never takes", out)
         self.assertEqual(self.calls, [])
+
+    def test_archive_requires_separate_approval_from_apply(self):
+        patches = self.patches()
+        with mock.patch.object(APP.os, "geteuid", return_value=0):
+            status, output = self.call([
+                "--archive-rolled-back", "--owner", "stark",
+                "--expected-sha256", self.expected, "--approve", APP.APPROVAL,
+            ])
+        self.assertEqual(status, 2)
+        self.assertIn("approval", output)
+        patches["running_zero"].assert_not_called()
+        self.assertEqual(self.calls, [])
+
+    def test_authorized_archive_is_separate_from_network_apply(self):
+        patches = self.patches()
+        with (mock.patch.object(APP.os, "geteuid", return_value=0),
+              mock.patch.object(APP.Path, "is_file", return_value=True)):
+            status, output = self.call([
+                "--archive-rolled-back", "--owner", "stark",
+                "--expected-sha256", self.expected,
+                "--approve", APP.ARCHIVE_APPROVAL,
+            ])
+        self.assertEqual(status, 0)
+        self.assertIn("[ARCHIVED]", output)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0][0], "archive")
+        self.assertEqual(self.calls[0][1]["expected_source_sha256"], self.expected)
+        self.assertTrue(callable(self.calls[0][1]["vmnet4_absent"]))
+        patches["running_zero"].assert_called_once()
 
     def test_read_only_status_rejects_approval_token(self):
         self.patches()
