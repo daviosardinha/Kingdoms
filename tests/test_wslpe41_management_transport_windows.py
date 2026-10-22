@@ -144,7 +144,8 @@ class LoopbackWinRMTests(WindowsTransportTests):
             'http://127.0.0.1:5985/wsman',
             auth=(os.environ['COMPUTERNAME'] + '\\' + self.username, self.password),
             transport='ntlm', message_encryption='always', proxy=None,
-            operation_timeout_sec=15, read_timeout_sec=25,
+            # First logon of the temporary CI account can initialize a profile.
+            operation_timeout_sec=60, read_timeout_sec=70,
         )
         for name in ('run_command', 'send_command_input', 'cleanup_command', 'close_shell'):
             setattr(session.protocol, name, Mock(wraps=getattr(session.protocol, name)))
