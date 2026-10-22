@@ -546,3 +546,42 @@ have been implemented and live accepted. No model-mocked proof, full
 source suite or a previously completed master journal substitutes for
 41/41 on this fresh guest. Avoid rerunning account creation, VMX changes,
 or network maintenance as part of this handoff.
+
+
+## 2026-10-22: existing-instance secure Ansible runtime integration (source stage)
+
+The operator's consolidated `--provided-plan` output on the fresh guest
+confirmed **41 scenarios / 83 planned stages**, live
+`WSLPE_OPERATOR_MANAGEMENT=PASS`, and missing instance-specific
+Ansible inventory plus private fixtures. Existing `bf5369-wslpe-vmware`
+and its accepted `vmnet4`/operator state are preserved.
+
+Implementation now provides
+`scripts/wslpe41-prepare-provided-runtime.py --prepare`. It independently
+re-verifies the existing registered guest and **accepted** management
+receipt before any write; reuses the original local operator, learner
+secrets and pinned TLS leaf; creates exact instance-owned mode-0700
+`ansible/` folder with mode-0600 `inventory.yml`,
+`private-vars.yml`, `operator-ca.pem` and
+`runtime.json`; generates fresh private fixture secrets only for the five
+existing credential-based Windows LPE scenarios. It refuses overwrite or
+automatic recreation and does not modify the VM, Windows accounts,
+firewall, VMware networks, NORTH or the historical WSLPE.
+
+The runtime uses `WSLPE-WS01` as the Ansible TLS DNS-SAN hostname,
+mapped only in the Ansible Python process to `172.28.233.31:5986`,
+without `/etc/hosts`/shared resolver edits or relaxed certificate checks.
+Scenario-side learner IPv4 remains `172.28.232.31`; scenario playbook
+hostvars now compare the HTTPS transport name. The private fixture vars
+file is **not** treated as an Ansible inventory source. A follow-up
+`--verify` validates the existing files and runs a *real* operator
+Ansible HTTPS `win_ping` with exact certificate validation.
+
+**Source integration only; no scenario has yet been installed by this
+step.** Do not interpret source CI, operator transport success or a
+stage manifest as 41/41. The execution journal and JEA #30 independent
+VMware-console activation have not been wired into an approved provided
+guest installer; `--execute` remains deliberately blocked. Further
+development must use the same bound instance, authenticated transport,
+one guarded 41/83 runtime journal and independent console recovery,
+with no new VM or network maintenance.
