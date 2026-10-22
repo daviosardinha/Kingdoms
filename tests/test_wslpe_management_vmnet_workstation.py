@@ -75,6 +75,34 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
                         networking_text=CONFIG, address_rows=addresses,
                         link_rows=LINK, route_rows=routes)
 
+    def test_complete_main_table_proves_route_device_before_host_acceptance(self):
+        full_table = [
+            {"dst": "default", "dev": "wlan0", "gateway": "192.168.1.1"},
+            {"dst": "172.28.232.0/24", "dev": "vmnet3"},
+            {"dst": "172.28.233.0/24", "dev": "vmnet4",
+             "prefsrc": "172.28.233.254", "protocol": "kernel", "scope": "link"},
+        ]
+        selected = ws._select_verified_main_routes(
+            full_table, vmnet="vmnet4", subnet="172.28.233.0/24")
+        self.assertEqual(selected, [full_table[-1]])
+        self.assertEqual(ws.validate_vmnet4_host_state(
+            vmnet="vmnet4", subnet="172.28.233.0/24",
+            networking_text=CONFIG, address_rows=ADDR, link_rows=LINK,
+            route_rows=selected), "HOST_VMNET4_ADDRESS_AND_METADATA=PASS")
+
+    def test_no_dev_in_unfiltered_table_or_conflicting_subnet_is_rejected(self):
+        invalid = [
+            [{"dst": "172.28.233.0/24", "scope": "link"}],
+            [{"dst": "172.28.233.0/24", "dev": "vmnet10"}],
+            [{"dst": "172.28.233.0/24", "dev": "vmnet4"},
+             {"dst": "172.28.233.0/24", "dev": "wlan0"}],
+        ]
+        for routes in invalid:
+            with self.subTest(routes=routes):
+                with self.assertRaises(NetworkTransactionBlocked):
+                    ws._select_verified_main_routes(
+                        routes, vmnet="vmnet4", subnet="172.28.233.0/24")
+
     def test_down_or_duplicate_adapter_denied(self):
         for links in (
             [dict(LINK[0], flags=["BROADCAST"], operstate="DOWN")],
@@ -200,7 +228,10 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
 
     def test_host_adapter_calls_are_bounded_and_read_only(self):
         queries = []
-        answers = [ADDR, LINK, ROUTE]
+        answers = [ADDR, LINK, [
+            {"dst": "default", "dev": "wlan0", "gateway": "192.168.1.1"},
+            ROUTE[0],
+        ]]
         def capture(args, *, timeout):
             queries.append((args, timeout))
             return json.dumps(answers.pop(0))
@@ -211,7 +242,7 @@ class WorkstationHostCallbacksTests(unittest.TestCase):
         self.assertEqual([q[0][1:] for q in queries], [
             ["-j", "-4", "address", "show", "dev", "vmnet4"],
             ["-j", "link", "show", "dev", "vmnet4"],
-            ["-j", "-4", "route", "show", "dev", "vmnet4"],
+            ["-j", "-4", "route", "show", "table", "main"],
         ])
         self.assertEqual([t for _, t in queries], [15] * 3)
 
