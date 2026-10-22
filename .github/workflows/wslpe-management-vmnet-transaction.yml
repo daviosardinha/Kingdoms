@@ -13,6 +13,9 @@ on:
       - 'kingdoms/wslpe_management_vmnet_runtime.py'
       - 'kingdoms/wslpe_management_vmnet_isolation.py'
       - 'kingdoms/wslpe_management_vmnet_hostaddr.py'
+      - 'kingdoms/wslpe41_management_nic.py'
+      - 'scripts/wslpe41-attach-management-nic.py'
+      - 'tests/test_wslpe41_management_nic.py'
       - 'scripts/wslpe-vmnet4-hostaddr-keeper.py'
       - 'scripts/wslpe-vmnet4-install-persistence.sh'
       - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.service'
@@ -47,6 +50,9 @@ on:
       - 'kingdoms/wslpe_management_vmnet_runtime.py'
       - 'kingdoms/wslpe_management_vmnet_isolation.py'
       - 'kingdoms/wslpe_management_vmnet_hostaddr.py'
+      - 'kingdoms/wslpe41_management_nic.py'
+      - 'scripts/wslpe41-attach-management-nic.py'
+      - 'tests/test_wslpe41_management_nic.py'
       - 'scripts/wslpe-vmnet4-hostaddr-keeper.py'
       - 'scripts/wslpe-vmnet4-install-persistence.sh'
       - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.service'
@@ -99,6 +105,9 @@ jobs:
             kingdoms/wslpe_management_vmnet_runtime.py \
             kingdoms/wslpe_management_vmnet_isolation.py \
             kingdoms/wslpe_management_vmnet_hostaddr.py \
+            kingdoms/wslpe41_management_nic.py \
+            scripts/wslpe41-attach-management-nic.py \
+            tests/test_wslpe41_management_nic.py \
             scripts/wslpe-vmnet4-hostaddr-keeper.py \
             tests/test_wslpe_vmnet4_hostaddr_keeper.py \
             tests/test_wslpe_management_vmnet_hostaddr.py \
@@ -129,6 +138,7 @@ jobs:
             tests.test_wslpe_management_vmnet_runtime \
             tests.test_wslpe_management_vmnet_isolation \
             tests.test_wslpe_management_vmnet_hostaddr \
+            tests.test_wslpe41_management_nic \
             tests.test_wslpe_vmnet4_hostaddr_keeper \
             tests.test_wslpe_vmnet4_maintenance \
             tests.test_wslpe_vmnet4_postmortem \
