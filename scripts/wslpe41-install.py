@@ -15,6 +15,68 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from kingdoms.wslpe41_fresh_contract import fresh_scenario_manifest
 
 
+def provided_plan() -> int:
+    """One read-only live handoff for the existing, already managed fresh VM.
+
+    This NEVER creates/re-provisions a guest or creates a 41-install journal.
+    It deliberately does not upgrade --execute into an unsafe installer.
+    """
+    from kingdoms.wslpe41_operator_management import (
+        ManagementBlocked, exact_target, run as management_verify,
+    )
+    from kingdoms.wslpe41_stage_commands import one_install_invocations
+
+    try:
+        target = exact_target()
+        if target.instance.name != "bf5369-wslpe-vmware":
+            raise ManagementBlocked("Provided instance identity mismatch")
+        proofs = []
+        management_verify(apply=False, report=proofs.append)
+        if not any(line.startswith("[PASS] WSLPE_OPERATOR_MANAGEMENT=PASS")
+                   for line in proofs):
+            raise ManagementBlocked("Fresh operator HTTPS handoff has no live proof")
+
+        # In secure operation, the learner's vmnet3 IP is an exercise target
+        # and is NOT the WinRM management transport. Existing stage plans
+        # still parameterize Windows scenarios using the learner address.
+        guest = "172.28.232.31"
+        operator = "172.28.233.31"
+        inventory = target.instance / "ansible" / "inventory"
+        private_vars = target.instance / "ansible" / "private-vars.yml"
+        ansible = Path.home() / ".goad/.venv/bin/ansible-playbook"
+        stages = one_install_invocations(
+            ansible=ansible, inventory=inventory, varsfile=private_vars,
+            expected_address=guest, instance_id=target.instance.name,
+        )
+        if (len(stages) != 83 or len(set(stage.number for stage in stages)) != 41
+                or len([stage for stage in stages if stage.transport == "guest_console"]) != 1):
+            raise ManagementBlocked("Canonical 41/83 stage mapping has drifted")
+        print("[PASS] Existing fresh VMware instance uniquely identified")
+        print("[PASS] Existing kingdom.operator live TLS/policy/isolation re-verified")
+        print(f"[PASS] WSLPE41_PROVIDED_STAGE_MAP=41 scenarios / {len(stages)} stages")
+        print(f"[LEARNER TARGET] {guest} (vmnet3; never WinRM transport)")
+        print(f"[OPERATOR TRANSPORT] {operator}:5986 (vmnet4; pinned TLS required)")
+        for label, path, private in (
+            ("Ansible executable", ansible, False),
+            ("Secure native inventory", inventory, False),
+            ("Private fixture vars", private_vars, True),
+        ):
+            if (not path.is_file() or path.is_symlink()
+                    or (private and path.stat().st_mode & 0o077)):
+                print(f"[PENDING] {label}: exact instance-owned runtime input missing or unsafe")
+            else:
+                print(f"[EXISTS] {label}; effective contents not yet attested")
+        print("[PENDING] Bind dedicated operator HTTPS, private secrets and exact inventory")
+        print("[PENDING] Independent VMware-console JEA #30 activation and WinRM recovery")
+        print("[NOT EXECUTED] No scenario, VM, account, firewall, route or journal changes")
+        print("[NOT AUTHORIZED] --execute is still blocked until runtime acceptance")
+        return 0
+    except (ManagementBlocked, OSError, ValueError, RuntimeError) as exc:
+        print(f"[BLOCKED] Existing WSLPE41 installer handoff: {type(exc).__name__}")
+        print("[NO CHANGES] No VM, guest, Ansible or scenario mutations")
+        return 2
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
@@ -24,6 +86,8 @@ def main(argv=None) -> int:
                       help="read-only VMware/host/VPN/native instance subnet discovery")
     mode.add_argument("--native-status", action="store_true",
                       help="read-only proof of an existing native WSLPE VMX registration")
+    mode.add_argument("--provided-plan", action="store_true",
+                      help="read-only 41/83 stage and live operator handoff for the existing fresh guest")
     parser.add_argument("--workspace", action="append", default=None,
                         help="additional native Kingdoms workspace to inspect (repeatable; host-plan only)")
     parser.add_argument("--instance-dir", default=None,
@@ -37,6 +101,8 @@ def main(argv=None) -> int:
     print("KINGDOMS | WSLPE41 | ONE FRESH INSTALLATION")
     print("[SCOPE] Exactly 41 scenarios, one ordered installer, one journal, one guest")
     print("[EXCLUDED] Historical IDs 25,36,38,40 are not part of this course")
+    if args.provided_plan:
+        return provided_plan()
     if args.execute:
         print("[BLOCKED] No production fresh-native runner is wired yet.")
         print("[BLOCKED] Guest creation, learner/operator bootstrap, per-scenario execution,")
