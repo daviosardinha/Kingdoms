@@ -56,6 +56,9 @@ def journal_summary(path: Path, actual_sha: str) -> dict[str, object]:
         "current_matches_original": actual_sha == original,
         "current_matches_candidate": actual_sha == proposed,
         "original_failure_captured": bool(data.get("failure_reason")),
+        "failure_stage": str(data.get("failure_stage", "unrecorded"))[:80],
+        "failure_class": str(data.get("failure_class", "unrecorded"))[:80],
+        "failure_reason": str(data.get("failure_reason", "unrecorded"))[:200],
     }
 
 
