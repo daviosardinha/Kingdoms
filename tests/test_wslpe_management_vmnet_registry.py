@@ -47,7 +47,7 @@ class WorkstationLibraryAuditTests(unittest.TestCase):
         self.roots = (self.fresh, self.master)
         self.running = RunningVmwareInventory(
             vmrun_count=2, process_count=2,
-            vmx_paths=tuple(sorted((str(self.fresh_vmx), str(self.master_vmx))),
+            vmx_paths=tuple(sorted((str(self.fresh_vmx), str(self.master_vmx)))),
         )
 
     @staticmethod
