@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore WSLPE vmnet4 management IPv4 after VMware host-only adapter resets
+After=vmware.service
+
+[Timer]
+OnBootSec=10s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit=kingdoms-wslpe-vmnet4-hostaddr.service
+
+[Install]
+WantedBy=timers.target
