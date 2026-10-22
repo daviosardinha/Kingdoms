@@ -68,6 +68,33 @@ fi
 sudo systemctl enable --now kingdoms-wslpe-vmnet4-hostaddr.timer
 sudo /usr/bin/python3 "$TARGET" --check
 
+echo "===== VERIFY PERIODIC CORRECTION ====="
+# One completed timer interval must not introduce drift or fail the service.
+sleep 18
+sudo /usr/bin/python3 "$TARGET" --check
+if systemctl is-failed --quiet kingdoms-wslpe-vmnet4-hostaddr.service; then
+  echo "[BLOCKED] vmnet4 persistence service reported failure"; exit 2
+fi
+
+echo "===== VERIFY NORTH HOST ADDRESS RECOVERY (READ ONLY) ====="
+# NORTH has an existing independent repair timer. Observe; never invoke or
+# modify its helper, service, routing, or VMware network configuration.
+NORTH_READY=0
+for attempt in $(seq 1 12); do
+  if ip -4 -o addr show dev vmnet10 | awk '{print $4}' | grep -Fxq '10.4.10.254/24' &&
+     ip -4 -o addr show dev vmnet99 | awk '{print $4}' | grep -Fxq '10.4.99.254/24'; then
+    NORTH_READY=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$NORTH_READY" -ne 1 ]]; then
+  echo "[BLOCKED] NORTH host-only addresses not restored by their owner timer"
+  echo "No NORTH or VMware network changes made by this installer"
+  exit 2
+fi
+echo "[PASS] NORTH vmnet10/vmnet99 addresses recovered without WSLPE writes"
+
 echo "===== VERIFY PRESERVED VMWARE NETWORKS ====="
 ip -br -4 addr show | grep -E '^vmnet(1|2|3|4|8|10|99)[[:space:]]' || true
 systemctl is-enabled kingdoms-wslpe-vmnet4-hostaddr.timer
