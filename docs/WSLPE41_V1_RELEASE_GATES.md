@@ -337,3 +337,27 @@ applying, and boot only that guest afterwards to prove exact MAC
 `172.28.233.31/24` on the **MAC-matched adapter only**, with no gateway.
 The Windows operator/WinRM, negative learner/NORTH isolation and 41/41
 fresh scenario acceptance remain open.
+
+
+## 2026-10-22: live Windows E1000e management NIC enumeration PASS
+
+Operator's Windows PowerShell screenshot confirms the fresh WSLPE guest
+now enumerates and reports **Up** the third physical VMware NIC:
+`Ethernet2`, InterfaceIndex `15`, MAC `00-0C-29-2F-D7-6F`,
+Intel(R) 82574L Gigabit Network Connection. The independent
+exact-instance model-repair transaction committed
+`ethernet2.virtualDev=e1000e` while the VM was offline.
+The pre-existing NAT and vmnet3 learner NICs still report Up:
+`00-0C-29-2F-D7-5B` and `00-0C-29-2F-D7-65`.
+
+**Windows hardware/driver enumeration gate: PASS.**
+This supersedes the previous uninitialized PRO/1000 MT device finding.
+Do not rerun either VMX attachment or model-repair journal transaction.
+
+**Still pending:** apply/verify guest-only static
+`172.28.233.31/24` on the unique MAC-matched management adapter,
+with **no IPv4 default gateway or DNS** on vmnet4. Prove host/guest
+reachability and negative management access from learner and NORTH,
+then configure pinned operator HTTPS/5986, `kingdom.operator`
+identity, console recovery, and complete 41/41 scenario execution.
+No other lab or VMware networking service mutation is necessary.
