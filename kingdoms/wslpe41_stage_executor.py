@@ -144,7 +144,7 @@ def _inventory(context: AnsibleStageContext, env: dict[str, str]) -> None:
         _regular(anchor, private=True)
         if (guest.get("ansible_winrm_ca_trust_path") != str(anchor)
                 or guest.get("ansible_winrm_transport") != "ntlm"
-                or guest.get("ansible_user") != r"WSLPE-WS01\\kingdom.operator"
+                or guest.get("ansible_user") != "WSLPE-WS01\\kingdom.operator"
                 or not isinstance(guest.get("ansible_password"), str)
                 or len(guest["ansible_password"]) < 24):
             raise InstallBlocked("Existing-instance TLS pin or private operator identity invalid")
