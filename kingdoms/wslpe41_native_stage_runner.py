@@ -59,6 +59,7 @@ class NativeStageRunner:
                 inventory=self.context.inventory, varsfile=self.context.private_vars,
                 expected_address=self.context.expected_address,
                 instance_id=self.context.identity.instance_id,
+                management_address=self.context.management_address,
             )
         except StagePlanBlocked as exc:
             raise InstallBlocked("JEA #30 invocation is not approved") from exc
