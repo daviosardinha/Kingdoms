@@ -226,3 +226,23 @@ in the feature branch, source-tested, but is not yet installed on
 the operator's Kali host. The existing NORTH address repair timer
 remains independent and unchanged. Confirm host address and NORTH
 recovery before attaching the Windows operator NIC.
+
+
+## 2026-10-22: WSLPE vmnet4 keeper live PASS
+
+Operator installed the root-owned vmnet4-only address keeper and active
+15-second timer on Kali. Live output demonstrated
+`VMNET4_HOSTADDR_PERSISTENCE=PASS` (twice, across timer interval) and
+`VMNET4_HOSTADDR_PERSISTENCE_INSTALLED`. WSLPE `vmnet4`
+was `172.28.233.254/24`; independent NORTH `vmnet10` and
+`vmnet99` were `10.4.10.254/24` and `10.4.99.254/24`.
+All guests were kept off and no shared network restart was used.
+
+This **supersedes** the earlier "keeper not installed" status.
+It closes local keeper installation and immediate host address acceptance,
+not reboot persistence, Windows operator NIC, authentication or 41/41.
+
+Next: provider-compatible third NIC on the fresh registered guest ONLY;
+MAC-pinned Windows management IP, TLS-pinned operator HTTPS, console
+recovery, learner isolation, existing 41-stage runtime and independent
+clean-build validation.
