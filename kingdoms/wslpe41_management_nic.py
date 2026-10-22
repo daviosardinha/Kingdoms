@@ -97,7 +97,7 @@ def host_operator_network_ready() -> None:
             raise NicBlocked("vmnet4 address persistence timer not healthy")
 
 
-def _read_vmx(vmx: Path) -> bytes:
+def _read_vmx(vmx: Path, *, exact_legacy_0771_probe: bool = False) -> bytes:
     """Read exact user-owned VMX, reporting the specific failed file gate.
 
     Do not broaden file ownership or access-mode policy. In particular,
@@ -123,7 +123,8 @@ def _read_vmx(vmx: Path) -> bytes:
         raise NicBlocked(
             f"Registered VMX size out of bounds: bytes={st.st_size} maximum={MAX_VMX}"
         )
-    if st.st_mode & 0o022:
+    if st.st_mode & 0o022 and not (
+            exact_legacy_0771_probe and stat.S_IMODE(st.st_mode) == 0o771):
         raise NicBlocked(
             f"Registered VMX is group/other-writable: "
             f"mode={stat.S_IMODE(st.st_mode):04o} gid={st.st_gid}; "
@@ -135,7 +136,8 @@ def _read_vmx(vmx: Path) -> bytes:
     return raw
 
 
-def identify(home: Path, *, existing_ok: bool = False) -> Target:
+def identify(home: Path, *, existing_ok: bool = False,
+             exact_legacy_0771_probe: bool = False) -> Target:
     if os.geteuid() == 0:
         raise NicBlocked("VMX transaction must run as original non-root Workstation owner")
     instance = home / "kingdoms-wslpe41-fresh/workspace" / INSTANCE
@@ -168,7 +170,7 @@ def identify(home: Path, *, existing_ok: bool = False) -> Target:
                                                    MAX_INVENTORY))
     if inventory.count(vmx) != 1:
         raise NicBlocked("Fresh VMX not uniquely registered in user Workstation library")
-    raw = _read_vmx(vmx)
+    raw = _read_vmx(vmx, exact_legacy_0771_probe=exact_legacy_0771_probe)
     verify_layout(raw, allow_management=existing_ok)
     return Target(instance, vmx, raw, hashlib.sha256(raw).hexdigest())
 
