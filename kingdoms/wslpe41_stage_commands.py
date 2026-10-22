@@ -76,7 +76,7 @@ def build_stage_invocation(
             "wslpe_techniques": [scenario.identifier],
             "wslpe41_fresh_run": True,
             "wslpe41_expected_address": transport_address,
-            "wslpe41_learner_address": str(address),
+            **({"wslpe41_learner_address": str(address)} if management_address else {}),
             "wslpe41_stage_label": "apply" if stage == "apply" else "vulnerable",
             # Runtime environment must independently bind this to the
             # private fixture vars and the freshly provisioned instance.
@@ -86,8 +86,9 @@ def build_stage_invocation(
         marker = f"WSLPE41_STAGE={scenario.identifier}:{extra['wslpe41_stage_label']}:PASS"
         proof_kind = "windows_post_role_and_exact_role_validation"
     elif scenario.number == 30:
-        extra = {"wslpe_expected_address": transport_address,
-                 "wslpe_learner_address": str(address)}
+        extra = {"wslpe_expected_address": transport_address}
+        if management_address:
+            extra["wslpe_learner_address"] = str(address)
         if stage == "stage":
             extra.update(
                 wslpe_45_action="stage",
@@ -115,7 +116,8 @@ def build_stage_invocation(
         extra = json.loads(argv[-1])
         # New guest: install shared standalone library; do not reuse the
         # previous golden-master preservation shortcut.
-        extra["wslpe_learner_address"] = str(address)
+        if management_address:
+            extra["wslpe_learner_address"] = str(address)
         extra["wslpe_deploy21"] = True
         extra["wslpe_pilot_preserve_shared"] = False
         argv[-1] = json.dumps(extra, separators=(",", ":"))
