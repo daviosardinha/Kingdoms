@@ -39,7 +39,9 @@ class WindowsTransportTests(unittest.TestCase):
         session.protocol.get_command_output.side_effect = execute
         return session
 
-    def old_command(self, session, script):
+    def old_command(self, script):
+        # Reproduce the cmd.exe limit locally. Opening another remote shell for
+        # this obsolete path adds no coverage of the production stdin runner.
         encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
         result = subprocess.run(
             ['cmd.exe', '/d', '/c', 'powershell.exe', '-EncodedCommand', encoded],
@@ -58,7 +60,7 @@ class WindowsTransportTests(unittest.TestCase):
         payload = b''.join(c.args[2] for c in session.protocol.send_command_input.call_args_list)
         script = base64.b64decode(payload).decode('utf-8')
         self.assertGreater(len(base64.b64encode(script.encode('utf-16le'))), 8191)
-        old = self.old_command(session, script)
+        old = self.old_command(script)
         self.assertNotEqual(old.status_code, 0)
         self.assertNotIn(b'WSLPE_OPERATOR_ERROR=', old.std_out)
         self.assertIn(b'command line is too long', old.std_err.lower())
@@ -157,10 +159,6 @@ class LoopbackWinRMTests(WindowsTransportTests):
         session.protocol.get_command_output = Mock(side_effect=capture)
         self.addCleanup(session.protocol.transport.close_session)
         return session
-
-    def old_command(self, session, script):
-        return session.run_ps(script)
-
 
 if __name__ == '__main__':
     unittest.main()
