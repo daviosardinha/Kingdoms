@@ -86,6 +86,30 @@ def _allowed_host_only_routes(routes: list) -> bool:
     return connected <= 1
 
 
+def select_vmnet4_main_routes(routes: list) -> list[dict]:
+    """Verify vmnet4 route ownership using the UNFILTERED main routing table.
+
+    The Linux 'ip route show dev vmnet4' filtered JSON sometimes omits 'dev',
+    making a filtered result unsuitable for proving interface ownership.
+    Query the complete main table and require explicit devices instead.
+    """
+    if not isinstance(routes, list) or len(routes) > 4096:
+        raise NetworkTransactionBlocked("Unbounded/invalid global IPv4 main route inventory")
+    selected = []
+    for item in routes:
+        if not isinstance(item, dict):
+            raise NetworkTransactionBlocked("Invalid IPv4 route record")
+        dst = item.get("dst")
+        dev = item.get("dev")
+        if dst == SUBNET and dev != VMNET:
+            raise NetworkTransactionBlocked("Management subnet routed through a different interface")
+        if dev == VMNET:
+            selected.append(item)
+    if len(selected) > 16:
+        raise NetworkTransactionBlocked("Unexpected number of vmnet4 routes")
+    return selected
+
+
 def address_transition(*, vmnet: str, subnet: str, networking_text: str,
                        address_rows: list, link_rows: list,
                        route_rows: list) -> tuple[list[str], ...]:
@@ -159,9 +183,12 @@ class Vmnet4HostAddressReconciler:
         link = _json_list(self.run(
             [binary, "-j", "link", "show", "dev", vmnet],
             timeout=15), "vmnet4 link")
-        routes = _json_list(self.run(
-            [binary, "-j", "-4", "route", "show", "dev", vmnet],
-            timeout=15), "vmnet4 routes")
+        # Do NOT trust the dev-filtered JSON: iproute2 can omit the 'dev'
+        # field when a device filter was supplied on the command line.
+        global_routes = _json_list(self.run(
+            [binary, "-j", "-4", "route", "show", "table", "main"],
+            timeout=15), "IPv4 main routing table")
+        routes = select_vmnet4_main_routes(global_routes)
         operations = address_transition(
             vmnet=vmnet, subnet=subnet, networking_text=networking_text,
             address_rows=address, link_rows=link, route_rows=routes,
