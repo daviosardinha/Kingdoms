@@ -295,3 +295,45 @@ VMX and match exactly one enabled Windows network adapter in the local guest
 console before applying `172.28.233.31/24` with no default gateway.
 Preserve native Vagrant NAT bootstrap until pinned operator management,
 WinRM-free recovery and learner separation are independently accepted.
+
+
+## 2026-10-22: Windows detected uninitialized management virtual hardware
+
+The fresh guest successfully booted and Windows licensing was active
+(EnterpriseEval, LicenseStatus=1). Windows PowerShell displayed only
+two operational network adapters:
+- vmnet3 learner `00-0C-29-2F-D7-65`, `172.28.232.31/24`
+- NAT bootstrap `00-0C-29-2F-D7-5B`, `192.168.213.249/24`
+
+Kali VMX inspection independently proved the third adapter is present,
+enabled and assigned to vmnet4, with generated MAC
+`00:0c:29:2f:d7:6f`. The Windows PnP inventory also shows an Unknown
+Intel(R) PRO/1000 MT Network Connection (`PCI\\VEN_8086&DEV_100F`),
+while the two working devices are Intel(R) 82574L
+(`PCI\\VEN_8086&DEV_10D3`).
+
+The offline NIC append implementation omitted
+`ethernet2.virtualDev`; VMware thus exposed its legacy E1000 model
+rather than the working E1000e virtual device. This is the likely
+explanation for Windows's uninitialized adapter; the PCI evidence is
+strong but an exact management MAC match in Windows remains pending.
+
+The future fresh-NIC template now pins `ethernet2.virtualDev="e1000e"`.
+For the existing **committed** fresh guest, a distinct
+`scripts/wslpe41-fix-management-nic-model.py` maintenance tool has been
+added. It verifies exact registration, the committed *original* NIC
+attachment journal, unchanged NIC0/NIC1, old management MAC, healthy
+vmnet4 host-only network, and a pinned VMX hash. It changes only an
+absent or exactly `e1000` third-adapter virtual device model to
+`e1000e`, while offline under explicit authorization. It writes a
+private second recovery journal and preserves the first NIC-attachment
+journal; it performs no Windows driver installation, no VMware network
+restart and no other VM modification.
+
+**Status:** source fix implemented, live pending. Shut down only the
+fresh WSLPE guest normally, establish zero running VMware guests before
+applying, and boot only that guest afterwards to prove exact MAC
+`00-0C-29-2F-D7-6F` becomes a working Windows adapter. Then apply
+`172.28.233.31/24` on the **MAC-matched adapter only**, with no gateway.
+The Windows operator/WinRM, negative learner/NORTH isolation and 41/41
+fresh scenario acceptance remain open.
