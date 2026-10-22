@@ -114,14 +114,21 @@ class ManagementVmnetTransactionTests(unittest.TestCase):
         with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "restored"):
             self.apply()
         self.assertEqual(self.networking.read_text(), BASE)
-        self.assertEqual(json.loads(self.journal.read_text())["status"], "rolled_back")
+        saved = json.loads(self.journal.read_text())
+        self.assertEqual(saved["status"], "rolled_back")
+        self.assertEqual(saved["failure_stage"], "host-adapter-and-isolation-acceptance")
+        self.assertEqual(saved["failure_class"], "RuntimeError")
+        self.assertEqual(saved["failure_reason"], "RuntimeError")
 
     def test_failed_restart_recovers_exact_bytes_and_journals_rollback(self):
         self.fail_first_start = True
         with self.assertRaisesRegex(txn.NetworkTransactionBlocked, "restored"):
             self.apply()
         self.assertEqual(self.networking.read_text(), BASE)
-        self.assertEqual(json.loads(self.journal.read_text())["status"], "rolled_back")
+        saved = json.loads(self.journal.read_text())
+        self.assertEqual(saved["status"], "rolled_back")
+        self.assertEqual(saved["failure_stage"], "vmware-network-start")
+        self.assertEqual(saved["failure_class"], "RuntimeError")
         self.assertEqual(self.events, ["preflight", "stop", "start", "stop", "start"])
 
     def test_live_workspace_ownership_preflight_fails_before_journal(self):
