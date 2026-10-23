@@ -93,3 +93,31 @@ The existing original pre-AD router provisioning policy, parent route and authen
 **Operator steps:** pull candidate commit `e1d94a8` or later, run `python3 -m unittest -v tests.test_course1_pre_ad_resume tests.test_install_noninteractive` and `bash scripts/course1-rollout.sh --source`, then issue the verified native `./goad.sh -t resume-north -l NORTH -p vmware -i 93fd1b-north-vmware -r build.yml`. Capture pipeline `PIPESTATUS` in Bash. Do not use native `install -i`, `vagrant up`, `--ansible_only`, or `-t start` in this unusual pre-AD state.
 
 **Release boundary:** This is **development recovery only**. The user explicitly requires a wholly fresh `./goad.sh -t install -l NORTH -p vmware` from zero (and complete AD/SQL/Phase03/LPE/isolation/lifecycle checks) before merging PR #45 and parent PR #35.
+
+## 2026-10-23 WS01 Windows evaluation shutdown maintenance
+
+Windows 10 evaluation guest `mayfly/windows10` is used for `GOAD-WS01`. Historical 2026-10-15 / Oct 21 WSLPE instances using this image showed `TIMEBASED_EVAL`, `GracePeriodRemaining=0` and Winlogon/License Monitoring (`wlms.exe`) shutdowns; an idempotent existing `ansible/roles/settings/eval_rearm/tasks/main.yml` fixed those by using supported `slmgr.vbs /rearm` **only when expired**, rebooting and verifying grace.
+
+The currently installed NORTH guest `93fd1b-north-vmware` has twice powered off unexpectedly during build, while its vmnet10 NIC config, host vmnet10 routing and NAT owner remained correct. This is **consistent with** the prior WLMS behavior, but this guest's specific Event 1074 license-shutdown evidence is not yet collected. Never claim a confirmed current-guest root cause solely from VMware power state.
+
+NORTH's existing `ansible/ws01.yml` already imported `settings/eval_rearm`, but this happens **after** `build.yml`, much too late for an expired WS01 that powers off in the meantime. Fix:
+
+- `ansible/north-ws01-eval-maintenance.yml` imports **the same role** before initial AD configuration, via an isolated, runtime-generated one-guest WinRM inventory. If the role needs `/rearm`, its `win_reboot` and post-reboot verification execute before proceeding. The maintenance play also requires at least 24h of valid evaluation grace when `TIMEBASED_EVAL` is present.
+- `scripts/north-ws01-eval-maintenance.py` validates native NORTH network owner and exact original GOAD-WS01 VMX/vmnet10/MAC, discovers only this guest's forwarded TCP/5985 port, then runs the existing Ansible role. Never disables WLMS/Windows Defender/firewall, never changes VMware network state, and does not create or alter other VMs. Its `--start-existing` operator flag starts only that WS01 VMX if it is powered off.
+- `GoadKingdomsVmwareProvider.install` invokes the same helper on NORTH WS01 immediately after first Vagrant/VMware guest bring-up and recovery, before any of the 21 long AD playbooks. This is not inserted into the immutable 21-play manifest; it is a bounded pre-AD guest-readiness operation. Full KINGDOMS install is untouched.
+- The original `ansible/ws01.yml` later calls the same role idempotently for future grace maintenance.
+
+### Recovery of the Oct 23 interrupted instance
+
+From the clean source checkout `~/kingdoms-north-fresh-test`, with other NORTH VMs and network ownership preserved:
+
+```bash
+sudo -v
+python3 scripts/north-ws01-eval-maintenance.py \
+  --provider-dir "$HOME/kingdoms-north-fresh-test/workspace/93fd1b-north-vmware/provider" \
+  --start-existing
+```
+
+If the guest has expired licensing and can establish authenticated NAT WinRM, expect `WINDOWS_EVAL=REARMED`, a normal guest reboot and `WINDOWS_EVAL_READY=PASS` followed by `NORTH_WS01_LICENSE_READY=PASS`. If healthy already, the role is read-only/idempotent except for its verification tasks. If the role fails or the VM cannot remain on long enough for WinRM, **stop** and inspect Windows shutdown Event 1074 or the VMware power-off logs before attempting anything else. No automatic retries, no bypass of Windows licensing, and no attempt to rearm beyond Microsoft's allowed count.
+
+After the role passes, operator must check all five VMs still running and `10.4.10.31:5986` reachable/authenticated, then use native existing-instance `resume-north -i 93fd1b-north-vmware -r build.yml` to finish *development recovery only*. A truly fresh uninterrupted one-command install remains mandatory before release/merge.
