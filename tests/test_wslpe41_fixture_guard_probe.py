@@ -67,6 +67,42 @@ class FixtureGuardProbeTests(unittest.TestCase):
         self.assertEqual(self.journal.read_bytes(), self.old)
         inventory.assert_called_once()
 
+    def test_temp_controller_play_is_assert_only_without_secret_copy(self):
+        import yaml
+        original = self.journal.read_bytes()
+        captured = []
+        def inspect_command(args, **kwargs):
+            source = Path(args[args.index("--limit") + 2])
+            assert source.name == "controller-only.yml"
+            assert source.exists()
+            assert source.stat().st_mode & 0o077 == 0
+            content = source.read_text()
+            assert "Exercise the shared Windows LPE role" not in content
+            assert "operator" not in content.lower()
+            assert "windows_lpe_unattend_credentials" in content
+            doc = yaml.safe_load(content)
+            assert len(doc) == 1
+            assert doc[0]["hosts"] == "localhost"
+            assert all("ansible.builtin.assert" in item for item in doc[0]["tasks"])
+            captured.append(source)
+            return SimpleNamespace(returncode=0, stderr="", stdout=(
+                "TASK [Refuse source-visible fixture credentials in any non-status action]\\n"
+                "TASK [Require the local learner secret for technique application]\\n"))
+        self._run()
+        with patch.object(probe.subprocess, "run", side_effect=inspect_command):
+            self.assertTrue(probe.prove(report=lambda _: None))
+        self.assertEqual(len(captured), 1)
+        self.assertFalse(captured[0].exists())
+        self.assertEqual(self.journal.read_bytes(), original)
+
+    def test_early_ansible_failure_is_categorized_without_raw_stderr(self):
+        diagnostic = probe._safe_ansible_failure(
+            "ERROR! couldn't resolve module/action 'fake_module' "
+            "secret-token-12345", "")
+        self.assertIn("ANSIBLE_MODULE_UNAVAILABLE", diagnostic)
+        self.assertNotIn("secret-token", diagnostic)
+        self.assertIn("stderr_sha256=", diagnostic)
+
     def test_failed_controller_guard_blocks_without_journal_write(self):
         runner, _ = self._run(returncode=2, stdout=(
             "TASK [Refuse source-visible fixture credentials in any non-status action]\n"))
