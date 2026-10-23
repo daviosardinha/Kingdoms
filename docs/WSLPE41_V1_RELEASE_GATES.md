@@ -585,3 +585,41 @@ guest installer; `--execute` remains deliberately blocked. Further
 development must use the same bound instance, authenticated transport,
 one guarded 41/83 runtime journal and independent console recovery,
 with no new VM or network maintenance.
+
+
+## 2026-10-23: authenticated private runtime PASS; guarded provided-VM 41/83 execution available
+
+On the operator's actual Kali host, the one-time
+`scripts/wslpe41-prepare-provided-runtime.py --prepare` returned:
+`[PASS] Instance-owned private inventory, vars and pinned TLS certificate`,
+`[PASS] Exact operator Ansible win_ping over verified HTTPS/5986` and
+`[PASS] WSLPE41_PROVIDED_RUNTIME_READY`. It expressly reported
+`[NOT INSTALLED] No 41-scenario guest mutation executed`.
+
+The existing-VM workflow now has a separate
+`scripts/wslpe41-provided-install.py`. On this exact prepared and
+authenticated `bf5369-wslpe-vmware` only,
+`--start --authorize START-EXISTING-WSLPE41` performs a guarded
+single journal (83 stages, 41 approved scenarios), collecting exact
+runtime stage proofs and refusing automatic replay after interruption.
+It pauses after JEA #30 source staging, before **local** JEA endpoint
+activation, displaying the Windows PowerShell 5.1 command that MUST
+run in the elevated active VMware guest console. It requires that
+console-side operation's exact nonce-bound local witness and restored
+WinRM listener before `--resume` continues the remaining stages.
+`--status` is read-only. This provided-existing-guest path is
+deliberately distinct from the source-only new-VM `--execute`
+contract; it never claims the existing instance was newly created by
+this installation.
+
+The source CI at commit `d558d37d22480fb88f1f8ec37e92581799cfba04`
+passed six workflows; installer source contract passed **215** tests
+and the existing standalone WSLPE regression passed **558**. These
+are source tests, **not** proof that any Windows scenario is installed.
+
+**Status today: READY FOR FIRST LIVE PROVIDED-VM INSTALL ATTEMPT, not
+41/41 yet.** The operator must run the new start command locally.
+After the run, count only actual journaled, Windows-validated scenarios.
+When JEA pauses, use the emitted guest-console code, then explicitly
+continue. Never treat mock journal tests or a printed marker as live
+guest acceptance, and do not touch NORTH, global VMnets or old WSLPE.
