@@ -97,6 +97,10 @@ class StageCommandTests(unittest.TestCase):
             data = json.loads(item.argv[-1])
             self.assertEqual(item.argv[1:3], ("-i", str(INVENTORY)))
             self.assertNotIn(str(VARS), item.argv)
+            self.assertEqual(item.argv.count("-e"), 2)
+            self.assertEqual(item.argv[item.argv.index("-e") + 1], "@" + str(VARS))
+            self.assertEqual(json.loads(item.argv[-1]).get("wslpe_fixture_private"), None)
+            self.assertNotIn("RedKeep-Deploy-2026!", str(item.argv))
             if item.number <= 20:
                 self.assertEqual(data["wslpe41_expected_address"], "WSLPE-WS01")
                 self.assertEqual(data["wslpe41_learner_address"], "172.28.232.31")
