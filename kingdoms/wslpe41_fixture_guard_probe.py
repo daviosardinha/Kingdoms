@@ -98,6 +98,11 @@ def prove(report=print) -> bool:
         raise InstallBlocked("First-stage source/localhost isolation selector drift")
     args[at + 1] = "localhost"
     args.insert(1, "--check")
+    # 'localhost' is implicit for some Ansible inventories and may not
+    # match --limit. Explicitly add only the controller host to this probe.
+    # The original managed inventory remains unchanged and still contains
+    # the authoritative ws01 group/hostvars used by the assertions.
+    args[1:1] = ["-i", "localhost,"]
     # The full two-play source resolves Windows modules/roles even when
     # --limit localhost skips the Windows play. Extract exactly the assert-only
     # controller play into an owner-private transient source so this check
@@ -105,7 +110,13 @@ def prove(report=print) -> bool:
     # Do not copy or serialize credentials into the transient playbook.
     with tempfile.TemporaryDirectory(prefix="kingdoms-wslpe41-controller-") as td:
         controller = Path(td) / "controller-only.yml"
-        controller.write_text(yaml.safe_dump([first_play], sort_keys=False),
+        # The private instance inventory defines WinRM under 'all.vars'.
+        # Run the transient controller play LOCALLY without contaminating
+        # the original Windows hostvars used for identity assertions.
+        controller_play = dict(first_play)
+        controller_play["vars"] = dict(first_play.get("vars") or {})
+        controller_play["vars"]["ansible_connection"] = "local"
+        controller.write_text(yaml.safe_dump([controller_play], sort_keys=False),
                               encoding="utf-8")
         controller.chmod(0o600)
         args[args.index(str(yaml_file))] = str(controller)
