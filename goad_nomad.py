@@ -15,6 +15,7 @@ import threading
 import time
 
 from goad.lab_names import canonical_lab_name, public_lab_name
+from goad.course1_pre_ad_resume import assert_pre_ad_north_resume, PreADResumeError
 from goad.log import Log
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
@@ -458,10 +459,35 @@ class GoadNomad(BaseGoad):
             if provider._course1_unwired():
                 Log.error('NORTH resume refused by host-network ownership check')
                 return False
+            # Only a failed *first* installation, before even build.yml, may
+            # use pre-AD management preparation. Normal partial/installed
+            # NORTH resumes retain the original AD-aware mode transition.
+            pre_ad = (start_playbook == manifest[0]
+                      and start_playbook == 'build.yml'
+                      and provider.get_runtime_mode() == 'unknown')
+            if pre_ad:
+                try:
+                    for marker in assert_pre_ad_north_resume(
+                            provider, manifest, start_playbook):
+                        Log.success(marker)
+                except (PreADResumeError, OSError, ValueError) as exc:
+                    Log.error(f'NORTH pre-AD resume refused: {exc}')
+                    return False
+
             self._install_phase = f'NORTH Ansible resume from {start_playbook}'
             Log.info(f'NORTH: resuming existing instance from {start_playbook}; '
                      'no Vagrant VM bring-up will be repeated')
-            if not provisioner.run_from(start_playbook):
+            if pre_ad:
+                provider._north_pre_ad_resume_authorized = True
+            try:
+                # run_from does the exact first/remaining 21-play manifest and
+                # the standard exercise-mode finalization; the special flag
+                # affects only pre-Ansible management prep in this invocation.
+                result = provisioner.run_from(start_playbook)
+            finally:
+                if pre_ad:
+                    provider._north_pre_ad_resume_authorized = False
+            if not result:
                 Log.error('NORTH Ansible resume failed; instance remains incomplete')
                 return False
             instance.set_status(READY)
