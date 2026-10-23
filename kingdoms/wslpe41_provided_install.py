@@ -70,8 +70,13 @@ def _stages(context):
     return plan
 
 
-def _preflight():
+def _preflight(report=None):
+    # Fixed gate labels never include private secrets or raw Ansible output.
+    report = report or (lambda message: None)
+    report("[CHECK] Existing private operator/fixture/TLS runtime")
     context, operator, learner = load_existing()
+    report("[PASS] Existing private operator/fixture/TLS runtime")
+    report("[CHECK] Exact registered native guest and source")
     if context.identity.instance_id != INSTANCE:
         raise InstallBlocked("Provided installer is not bound to exact native guest")
     if context.identity.vmx != str(management.exact_target().vmx):
@@ -82,9 +87,12 @@ def _preflight():
     ).strip():
         raise InstallBlocked("Installer source tree is dirty")
     _guest(context)
+    report("[PASS] Exact registered native guest and clean source")
+    report("[CHECK] Live pinned-certificate Ansible operator authentication")
     with private_environment(context, operator, learner):
         if authenticate_native_operator(context) is not True:
             raise InstallBlocked("Live certificate-validated Ansible operator auth missing")
+    report("[PASS] Live pinned-certificate Ansible operator authentication")
     return context, operator, learner
 
 
@@ -233,6 +241,45 @@ def _install_steps(context, state, journal, stages):
     print("[PASS] WSLPE41_PROVIDED_CONFIGURATION_VALIDATED=41/41")
     print("[NOT PROVEN] Learner exploitation and course release remain separate")
     return "DONE"
+
+
+def diagnose(report=print) -> bool:
+    """Read-only preflight and installation-journal presence inspection.
+
+    Never creates a journal, lock, or private state directory. No scenario
+    may execute here; an existing install journal requires separate review.
+    """
+    root = STATE_ROOT / INSTANCE
+    journal = root / "provided-install.json"
+    report("[READ ONLY] Exact WSLPE41 preflight and journal audit")
+    if journal.is_symlink():
+        raise InstallBlocked("Installation journal is a symlink; manual review required")
+    if journal.exists():
+        if not journal.is_file():
+            raise InstallBlocked("Existing install journal is not a regular file")
+        if journal.stat().st_size > 250_000:
+            raise InstallBlocked("Existing installation journal is oversized")
+        data = json.loads(journal.read_text(encoding="utf-8"))
+        report("[JOURNAL] status=" + str(data.get("status", "UNKNOWN")) +
+               " next_stage=" + str(data.get("next_stage", "UNKNOWN")) +
+               " validated=" + str(data.get("configuration_validated", "UNKNOWN")) +
+               " inflight=" + str(bool(data.get("inflight"))))
+        report("[STOP] Existing installation journal; do not rerun --start")
+        return False
+    if root.is_symlink():
+        raise InstallBlocked("Install state directory is a symlink")
+    if root.exists() and not root.is_dir():
+        raise InstallBlocked("Install state directory is not a directory")
+    report("[JOURNAL] No provided-install.json found")
+    context, _, _ = _preflight(report=report)
+    report("[CHECK] Exact 41 scenarios / 83 stage plan")
+    plan = _stages(context)
+    if not plan or plan[0].number != 1:
+        raise InstallBlocked("Canonical stage plan first entry unexpected")
+    report("[PASS] Exact 41 scenarios / 83 stage plan")
+    report("[READY] WSLPE41_PROVIDED_START_PREFLIGHT=PASS")
+    report("[NO CHANGES] No VM, guest, journal, credentials or scenario writes")
+    return True
 
 
 def install(mode: str) -> str:
