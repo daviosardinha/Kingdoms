@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import hashlib
+import re
 
 from kingdoms.wslpe41_fresh_contract import FreshScenario
 from kingdoms.wslpe41_host_preflight import HostEvidenceBlocked, read_only_command
@@ -188,8 +190,20 @@ def run_ansible_stage(
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InstallBlocked("WSLPE41 Ansible stage failed or timed out") from exc
-    # Recheck the exact running VMX after the guest mutation, before accepting proof.
+    # Recheck exact registered VMX before reporting any stage result.
     _guest(context)
+    if result.returncode != 0:
+        # Do not log raw Ansible stdout/stderr: a fixture playbook can contain
+        # intentionally vulnerable credential artifacts. Report only the last
+        # static Ansible task name, bounded exit code and transcript digest.
+        names = re.findall(r"(?m)^TASK \\[([^\\]\r\n]{1,200})\\]", result.stdout)
+        last = names[-1] if names else "no-task-marker"
+        last = re.sub(r"[^A-Za-z0-9 ._:/()-]", "_", last)[:100]
+        digest = hashlib.sha256(result.stdout.encode("utf-8")).hexdigest()[:12]
+        raise InstallBlocked(
+            f"Scenario #{scenario.number} {stage}: Ansible rc={result.returncode}; "
+            f"last_task={last}; stdout_sha256_prefix={digest}"
+        )
     try:
         return verify_observed_stage(
             invocation,
