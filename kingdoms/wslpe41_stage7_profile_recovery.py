@@ -53,7 +53,7 @@ using System;
 using System.Text;
 using System.Runtime.InteropServices;
 public static class KingdomsWslpe41CreateProfile {
-    [DllImport("userenv.dll", EntryPoint="CreateProfileW", CharSet=CharSet.Unicode, ExactSpelling=true)]
+    [DllImport("userenv.dll", EntryPoint="CreateProfile", CharSet=CharSet.Unicode, ExactSpelling=true)]
     public static extern int CreateProfile(string sid, string userName, StringBuilder profilePath, uint count);
 }
 '@ -ErrorAction Stop
