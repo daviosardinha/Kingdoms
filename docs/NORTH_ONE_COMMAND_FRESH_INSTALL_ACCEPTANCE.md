@@ -74,3 +74,22 @@ bash scripts/course1-rollout.sh --source
 The dedicated GitHub Actions job `NORTH native bootstrap NAT lifecycle regression` runs the dependency-free NAT, attestation and existing host transaction tests, independent of local VMware. The original CLI bootstrap tests remain in the local source suite.
 
 The actual merge test still requires a **newly clean VMware host** with no pre-existing NAT forwards, a fresh five-VM installation via exactly `./goad.sh -t install -l NORTH -p vmware`, all 21 Ansible plays, exercise isolation, Phase 01-04 acceptance and lifecycle. Completing provisioning on the interrupted VM may aid development; it is NOT a fresh-install release PASS.
+
+## 2026-10-23 interruption recovery: first playbook, pre-AD only
+
+The first exact CLI fresh installation `93fd1b-north-vmware` completed all five VMware VM materializations, but failed in the **first and only** recorded Ansible phase `Provisioning management-plane preparation` before even `build.yml`. Operator verified `provider_success=True`, `status=failed`, `.goad-nomad-mode=unknown`, and manually restored the identical original GOAD-WS01 VMX. Owner + all five running VMX now pass independent read-only inspection.
+
+Normal `resume-north` calls the AD-aware mode transition; it cannot be used *as-is* before AD exists. The candidate patch introduces an **extremely narrow one-call exception** for `resume-north -i 93fd1b-north-vmware -r build.yml`, gated by:
+
+- Exact current NORTH+VMware provider and valid native owner verification.
+- `build.yml` is first in the actual NORTH manifest; the requested start is exactly that file.
+- Provider mode still `unknown`; instance status is `ready for provisioning`, never READY.
+- Exactly **one** unambiguous, non-symlinked install receipt with `provider_success=true`, `status=failed`, and **one failed** `Provisioning management-plane preparation` phase; no Ansible playbook success or attempt.
+- All five expected Vagrant registration files and original VMX files under that provider, and the five original VMX guests running. No absent WS01 and no newly provisioned VM substituted.
+- Pre-AD authorization exists only during the single provisioner `run_from(build.yml)` call and is revoked in `finally`, including Ansible failure.
+
+The existing original pre-AD router provisioning policy, parent route and authenticated management readiness are reused (without AD-readiness preconditions). After the 21 playbooks complete, original finalization restores exercise isolation. An incomplete Ansible run remains incomplete; never mark READY on failure.
+
+**Operator steps:** pull candidate commit `e1d94a8` or later, run `python3 -m unittest -v tests.test_course1_pre_ad_resume tests.test_install_noninteractive` and `bash scripts/course1-rollout.sh --source`, then issue the verified native `./goad.sh -t resume-north -l NORTH -p vmware -i 93fd1b-north-vmware -r build.yml`. Capture pipeline `PIPESTATUS` in Bash. Do not use native `install -i`, `vagrant up`, `--ansible_only`, or `-t start` in this unusual pre-AD state.
+
+**Release boundary:** This is **development recovery only**. The user explicitly requires a wholly fresh `./goad.sh -t install -l NORTH -p vmware` from zero (and complete AD/SQL/Phase03/LPE/isolation/lifecycle checks) before merging PR #45 and parent PR #35.
