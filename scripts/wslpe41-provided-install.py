@@ -15,6 +15,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from kingdoms.wslpe41_management_nic import NicBlocked
 from kingdoms.wslpe41_install_flow import InstallBlocked
 from kingdoms.wslpe41_provided_install import install
 
@@ -45,6 +46,19 @@ def main(argv=None):
         if result == "PAUSED":
             print("[JEA HANDOFF] Only interactive VMware-console action is permitted next")
         return 0
+    except NicBlocked as exc:
+        # Only the purpose-built VMware host/VMX guard raises NicBlocked.
+        # Its messages contain fixed gate names and non-secret file metadata,
+        # never credentials or raw subprocess stderr. Surface the precise gate
+        # so an expired sudo session is not mistaken for a VMX/NIC regression.
+        detail = str(exc)
+        print("[BLOCKED] WSLPE41 exact VMware safety gate: "
+              + (detail[:320] if detail else "unspecified"), flush=True)
+        if detail == "Host maintenance guard failed: sudo":
+            print("[ACTION] Refresh Kali sudo authorization with 'sudo -v'; "
+                  "then recheck the existing vmnet4 keeper", flush=True)
+        print("[NO SCENARIOS] Inspect original journal before retrying --start", flush=True)
+        return 2
     except (InstallBlocked, ValueError, OSError, RuntimeError) as exc:
         print(f"[BLOCKED] Provided WSLPE41 stage installer: {type(exc).__name__}", flush=True)
         print("[PRESERVED] Journal/guest/credentials unchanged by any automatic retry", flush=True)
