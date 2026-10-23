@@ -1,0 +1,119 @@
+name: WSLPE41 independent fresh installer source gate
+
+on:
+  push:
+    branches:
+      - feature/wslpe41-fresh-full-installer
+  pull_request:
+    paths:
+      - 'kingdoms/wslpe41_fresh_contract.py'
+      - 'kingdoms/wslpe41_install_flow.py'
+      - 'kingdoms/wslpe41_network_auto.py'
+      - 'kingdoms/wslpe41_host_preflight.py'
+      - 'kingdoms/wslpe41_native_identity.py'
+      - 'kingdoms/wslpe41_stage_commands.py'
+      - 'kingdoms/wslpe41_runtime_proof.py'
+      - 'kingdoms/wslpe41_stage_executor.py'
+      - 'kingdoms/wslpe41_foundation_executor.py'
+      - 'kingdoms/wslpe41_native_stage_runner.py'
+      - 'kingdoms/wslpe41_operator_management.py'
+      - 'scripts/wslpe41-operator-management.py'
+      - 'scripts/wslpe41-operator-management.ps1'
+      - 'tests/test_wslpe41_operator_management.py'
+      - 'tests/test_wslpe41_operator_management.ps1'
+      - 'tests/test_wslpe41_management_recovery.ps1'
+      - 'tests/test_wslpe41_management_transport_windows.py'
+      - 'tests/fixtures/wslpe-management-winrm-ci.ps1'
+      - 'tests/fixtures/wslpe-management-firewall-ci.ps1'
+      - 'ansible/wslpe-lpe-test.yml'
+      - 'scripts/wslpe41-install.py'
+      - 'tests/test_wslpe41_fresh_contract.py'
+      - 'tests/test_wslpe41_install_flow.py'
+      - 'tests/test_wslpe41_network_auto.py'
+      - 'tests/test_wslpe41_host_preflight.py'
+      - 'tests/test_wslpe41_native_identity.py'
+      - 'tests/test_wslpe41_stage_commands.py'
+      - 'tests/test_wslpe41_foundation_stage.py'
+      - 'tests/test_wslpe41_runtime_proof.py'
+      - 'tests/test_wslpe41_stage_executor.py'
+      - 'kingdoms/wslpe41_provided_runtime.py'
+      - 'kingdoms/wslpe41_ansible_shim/sitecustomize.py'
+      - 'scripts/wslpe41-prepare-provided-runtime.py'
+      - 'tests/test_wslpe41_provided_runtime.py'
+      - 'kingdoms/wslpe41_provided_install.py'
+      - 'scripts/wslpe41-provided-install.py'
+      - 'tests/test_wslpe41_provided_install.py'
+      - 'kingdoms/wslpe41_first_stage_audit.py'
+      - 'scripts/wslpe41-inspect-blocked-stage1.py'
+      - 'tests/test_wslpe41_first_stage_audit.py'
+      - 'tests/test_wslpe41_stage1_recovery.py'
+      - 'kingdoms/wslpe41_fixture_guard_probe.py'
+      - 'scripts/wslpe41-prove-fixture-guard.py'
+      - 'tests/test_wslpe41_fixture_guard_probe.py'
+      - 'tests/test_wslpe41_private_fixture_recovery.py'
+      - 'kingdoms/wslpe41_stage7_readonly_audit.py'
+      - 'scripts/wslpe41-inspect-blocked-stage7.py'
+      - 'tests/test_wslpe41_stage7_readonly_audit.py'
+      - 'kingdoms/wslpe41_stage7_profile_recovery.py'
+      - 'scripts/wslpe41-recover-blocked-stage7.py'
+      - 'tests/test_wslpe41_stage7_profile_recovery.py'
+      - 'kingdoms/wslpe41_jea_stage_recovery.py'
+      - 'scripts/wslpe41-recover-jea30-stage.py'
+      - 'tests/test_wslpe41_jea_stage_recovery.py'
+      - 'ansible/wslpe45/jea_local_stage.yml'
+      - 'tests/test_wslpe41_provided_installer_handoff.py kingdoms/wslpe41_provided_runtime.py kingdoms/wslpe41_ansible_shim/sitecustomize.py scripts/wslpe41-prepare-provided-runtime.py tests/test_wslpe41_provided_runtime.py'
+      - 'tests/test_wslpe41_native_foundation_runner.py'
+      - '.github/workflows/wslpe41-fresh-full-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install WSLPE source dependencies
+        run: python -m pip install --disable-pip-version-check pyyaml rich Jinja2 ansible-runner psutil pywinrm cryptography 'ansible-core==2.17.14'
+      - name: Compile source contract and run its behavioral regressions
+        run: |
+          python -m py_compile kingdoms/wslpe41_fresh_contract.py kingdoms/wslpe41_install_flow.py kingdoms/wslpe41_network_auto.py kingdoms/wslpe41_host_preflight.py kingdoms/wslpe41_native_identity.py kingdoms/wslpe41_stage_commands.py kingdoms/wslpe41_runtime_proof.py kingdoms/wslpe41_stage_executor.py kingdoms/wslpe41_foundation_executor.py kingdoms/wslpe41_native_stage_runner.py scripts/wslpe41-install.py tests/test_wslpe41_fresh_contract.py tests/test_wslpe41_install_flow.py tests/test_wslpe41_network_auto.py tests/test_wslpe41_host_preflight.py tests/test_wslpe41_native_identity.py tests/test_wslpe41_stage_commands.py tests/test_wslpe41_foundation_stage.py tests/test_wslpe41_runtime_proof.py tests/test_wslpe41_stage_executor.py tests/test_wslpe41_native_foundation_runner.py tests/test_wslpe41_provided_installer_handoff.py kingdoms/wslpe41_provided_runtime.py kingdoms/wslpe41_provided_install.py scripts/wslpe41-prepare-provided-runtime.py scripts/wslpe41-provided-install.py tests/test_wslpe41_provided_runtime.py tests/test_wslpe41_provided_install.py kingdoms/wslpe41_first_stage_audit.py scripts/wslpe41-inspect-blocked-stage1.py tests/test_wslpe41_first_stage_audit.py tests/test_wslpe41_stage1_recovery.py kingdoms/wslpe41_fixture_guard_probe.py scripts/wslpe41-prove-fixture-guard.py tests/test_wslpe41_fixture_guard_probe.py tests/test_wslpe41_private_fixture_recovery.py kingdoms/wslpe41_stage7_readonly_audit.py scripts/wslpe41-inspect-blocked-stage7.py tests/test_wslpe41_stage7_readonly_audit.py kingdoms/wslpe41_stage7_profile_recovery.py scripts/wslpe41-recover-blocked-stage7.py tests/test_wslpe41_stage7_profile_recovery.py kingdoms/wslpe41_jea_stage_recovery.py scripts/wslpe41-recover-jea30-stage.py tests/test_wslpe41_jea_stage_recovery.py
+          python -m unittest discover -s tests -p 'test_wslpe41_*.py' -v
+          python scripts/wslpe41-install.py --plan
+      - name: Run existing WSLPE source regression suite
+        run: python -m unittest discover -s tests -p 'test_wslpe_*.py' -v
+      - name: Parse and exercise operator PowerShell policy with mock Windows cmdlets
+        shell: pwsh
+        run: |
+          ./tests/test_wslpe41_operator_management.ps1
+          ./tests/test_wslpe41_management_recovery.ps1
+      - name: Explicitly prohibit source-only success being called a full installation
+        run: |
+          echo '[SOURCE ONLY] Single 41-scenario installer source, fail-closed journal and JEA out-of-band requirement validated'
+          echo '[NOT COMPLETE] Native 41-stage installation, fresh guest configuration, and second clean build'
+
+  windows-management-transport:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install management transport test dependencies
+        run: python -m pip install --disable-pip-version-check pywinrm pyyaml
+      - name: Verify input streaming, secure policy and real firewall rules over WinRM
+        shell: powershell
+        env:
+          KINGDOMS_TEST_LOOPBACK_WINRM: '1'
+        run: python -m unittest discover -s tests -p 'test_wslpe41_management_transport_windows.py' -v
+      - name: Parse and exercise management inspection and policy in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          ./tests/test_wslpe41_operator_management.ps1
+          ./tests/test_wslpe41_management_recovery.ps1

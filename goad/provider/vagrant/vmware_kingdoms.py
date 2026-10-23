@@ -618,6 +618,27 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         return False
 
     def _wait_guest_ip(self, vmx, timeout=180):
+        # Reuse KINGDOMS' authenticated-guest-as-authority pattern for the
+        # standalone WSLPE Windows client. When WinRM reaches the exact
+        # native guest and VMTools is running, unreliable Workstation/VIX
+        # getGuestIPAddress output is advisory, not a reason to reinstall
+        # Tools or abandon the existing guest. The WSLPE Stage1 recovery
+        # separately proves its actual Windows NAT MAC and exercise IP.
+        if self.lab_name == 'WSLPE':
+            registered = self._vmx_path('WSLPE-WS01')
+            if (not registered or not vmx
+                    or os.path.realpath(registered) != os.path.realpath(vmx)):
+                Log.error('WSLPE guest IP probe rejected a different native VMX')
+                return False
+            port = self._winrm_forwarded_port('WSLPE-WS01')
+            if (port and self._wait_winrm_ready(port, 40)
+                    and self._guest_tools_healthy(port)):
+                Log.info(
+                    'KINGDOMS WSLPE: authenticated WinRM and running VMTools '
+                    'verified; host-side guest IP reporting is advisory'
+                )
+                return True
+            return False
         context = getattr(self, '_tools_reporting_context', None)
         if context is None:
             return super()._wait_guest_ip(vmx, timeout)

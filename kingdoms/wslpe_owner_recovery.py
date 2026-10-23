@@ -56,13 +56,29 @@ def rehearse_owner_timer(uid: int, username: str,
         ])
         if arm.returncode:
             raise ValueError("Independent owner-context systemd timer unavailable")
+
+        def observed_marker() -> bool:
+            if marker.is_symlink():
+                raise ValueError("Timed WSLPE owner proof has wrong identity")
+            if not marker.is_file():
+                return False
+            if marker.stat().st_uid != uid:
+                raise ValueError("Timed WSLPE owner proof has wrong identity")
+            return True
+
+        # --on-active is intentionally short. A fast systemd timer can fire
+        # and become inactive before the follow-up is-active query. The
+        # independently owner-verified sentinel is stronger evidence than
+        # the now-inactive timer state. Do not misclassify this as failure.
+        if observed_marker():
+            return unit
         state = runner(["sudo", "-n", "systemctl", "is-active", f"{unit}.timer"])
         if state.returncode or state.stdout.strip() != "active":
+            if observed_marker():
+                return unit
             raise ValueError("Owner-context timer not confirmed active")
         for _ in range(15):
-            if marker.is_file():
-                if marker.is_symlink() or marker.stat().st_uid != uid:
-                    raise ValueError("Timed WSLPE owner proof has wrong identity")
+            if observed_marker():
                 return unit
             sleep(1)
         raise ValueError("Owner-context recovery timer did not execute")

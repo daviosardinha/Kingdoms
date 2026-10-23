@@ -1,0 +1,2 @@
+# Frozen recovery bytes sent from Kali; preserve their hash on Windows CI.
+tests/fixtures/wslpe-management-before-public-profile.ps1 -text

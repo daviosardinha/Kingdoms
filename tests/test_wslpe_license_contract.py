@@ -66,12 +66,31 @@ class WslpeWindowsLicenseContractTests(unittest.TestCase):
         self.assertNotIn("'/rearm'", self.stage2)
         self.assertNotIn("Restart-Computer", self.stage2)
 
-    def test_stage1_boot_never_runs_rearm_or_learner_install(self):
+    def test_native_stage1_uses_existing_license_role_via_guarded_adapter(self):
         source = NATIVE_BOOT.read_text(encoding="utf-8")
-        self.assertNotIn("settings/eval_rearm", source)
-        self.assertNotIn("slmgr", source)
-        self.assertNotIn("wslpe-foundation.yml", source)
-        self.assertNotIn("win_reboot", source)
+        repair = (ROOT / "kingdoms/wslpe_stage1_repair.py").read_text()
+        adapter = (ROOT / "kingdoms/wslpe_license_maintenance.py").read_text()
+        for target in (source, repair):
+            self.assertIn("maintain_native_wslpe_license(manager, confirmed=True)", target)
+            self.assertLess(target.index("maintain_native_wslpe_license(manager, confirmed=True)"),
+                            target.index("instance.set_status(PROVIDED)"))
+            self.assertNotIn("slmgr.vbs", target)
+            self.assertNotIn("win_reboot", target)
+        self.assertIn('"--tags", LICENSE_TAG', adapter)
+        self.assertIn('"--limit", "ws01"', adapter)
+        self.assertIn("WSLPE_LICENSE_READY=PASS", adapter)
+        self.assertNotIn("New-LocalUser", adapter)
+
+    def test_license_tag_selects_existing_role_and_gate_not_learner(self):
+        self.assertEqual(self.wslpe.count("name: settings/eval_rearm"), 1)
+        before_learner = self.wslpe.split(
+            "- name: Create standard local WSLPE learner"
+        )[0]
+        self.assertEqual(before_learner.count("- wslpe_license"), 2)
+        after_learner = self.wslpe.split(
+            "- name: Create standard local WSLPE learner"
+        )[1]
+        self.assertNotIn("wslpe_license", after_learner)
 
     def test_rearm_role_does_not_disable_defensive_controls(self):
         for content in (self.role, self.wslpe):

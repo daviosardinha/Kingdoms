@@ -215,9 +215,22 @@ def bootstrap_native_wslpe(manager, prefix: str, *, confirmed: bool) -> bool:
         Log.error("WSLPE VM boot not independently proven. Do not provision.")
         return False
 
+    # A booted Windows 10 evaluation can later shut itself down through WLMS.
+    # Reuse the existing WSLPE foundation's tagged licensing tasks before we
+    # certify Stage 1 as PROVIDED. No learner/operator or scenario is created.
+    from kingdoms.wslpe_license_maintenance import maintain_native_wslpe_license
+    if not maintain_native_wslpe_license(manager, confirmed=True):
+        Log.error(
+            "WSLPE guest exists but Windows licensing is not proven; "
+            "instance remains CREATED. Inspect, then use repair_license "
+            "on this exact existing guest; do not recreate it."
+        )
+        return False
+
     instance.set_status(PROVIDED)
     Log.success(
-        "WSLPE STAGE 1 COMPLETE: native guest running, instance status PROVIDED. "
-        "The course is NOT READY and vulnerabilities have NOT been installed."
+        "WSLPE STAGE 1 COMPLETE: native guest running, Windows license "
+        "validated, instance status PROVIDED. The course is NOT READY and "
+        "vulnerabilities/learner have NOT been installed."
     )
     return True

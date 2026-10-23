@@ -4,8 +4,10 @@
 This is NOT a replacement for the proven NORTH network lifecycle. The nft
 table affects only non-loopback INPUT packets addressed to the current WSLPE
 WinRM forwarded TCP port. No vmnet/NAT service restarts, no VM state changes.
---apply must be run by an operator as root with --confirm-port equal to the
-actual native WSLPE Vagrant port. Never removes/overwrites an existing table.
+--apply requires the exact native port. --migrate-from-port requires the
+independently verified original WSLPE-only rule, the current native port and
+explicit confirmation. It replaces only that one rule by handle (atomic
+nftables transaction). Never deletes a table or touches another lab.
 """
 from __future__ import annotations
 
@@ -19,7 +21,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from kingdoms.wslpe_winrm_guard import (
-    TABLE, firewall_batch, require_vmware_nat_owner, verify_firewall_json,
+    TABLE, firewall_batch, migrated_firewall_batch,
+    require_vmware_nat_owner, verify_firewall_json,
 )
 
 INSPECTOR_FILE = ROOT / "scripts/wslpe-stage2-inspect.py"
@@ -65,9 +68,14 @@ def native_port() -> tuple[int, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument(
         "--apply", action="store_true",
         help="Add a scoped, in-memory host INPUT drop for non-loopback access",
+    )
+    action.add_argument(
+        "--migrate-from-port", type=int, metavar="OLD_PORT",
+        help="Explicitly replace the one verified WSLPE-only guard on OLD_PORT",
     )
     parser.add_argument(
         "--confirm-port", type=int,
@@ -82,6 +90,36 @@ def main() -> int:
         if output.returncode != 0:
             raise ValueError("Cannot inspect privileged TCP listener ownership")
         owner_verified = require_vmware_nat_owner(output.stdout, port)
+        if args.migrate_from_port is not None:
+            # Existing table can only be updated by explicit, exact old-port
+            # provenance. Do not fall into normal --apply if it differs.
+            if args.confirm_port != port or not owner_verified:
+                raise ValueError("Native current port confirmation or VMware NAT owner missing")
+            snapshot = run(["nft", "-j", "list", "table", "inet", TABLE])
+            if snapshot.returncode != 0:
+                raise ValueError("Existing WSLPE guard unavailable for migration")
+            batch = migrated_firewall_batch(
+                snapshot.stdout, args.migrate_from_port, port
+            )
+            checked = run(["nft", "-c", "-f", "-"], data=batch)
+            if checked.returncode != 0:
+                raise ValueError("nftables rejected checked WSLPE-only rule replacement")
+            # Detect intervening changes before mutation. The nft rule-handle
+            # transaction also fails if the original rule was removed.
+            latest = run(["nft", "-j", "list", "table", "inet", TABLE])
+            if latest.returncode != 0 or latest.stdout != snapshot.stdout:
+                raise ValueError("WSLPE guard changed since migration preflight")
+            applied = run(["nft", "-f", "-"], data=batch)
+            if applied.returncode != 0:
+                raise ValueError("WSLPE-only rule replacement failed")
+            if not installed_guard(port):
+                raise ValueError("Post-migration WSLPE guard verification failed")
+            print(f"[PASS] Exact WSLPE input guard migrated from TCP/"
+                  f"{args.migrate_from_port} to TCP/{port}")
+            print("[IMPORTANT] In-memory rule only; external reachability and "
+                  "reboot persistence remain unverified")
+            print("[NO CHANGES] Other nftables tables, VMware NAT and NORTH untouched")
+            return 0
         guarded = installed_guard(port)
         print(f"KINGDOMS WSLPE HOST WINRM GUARD | instance={instance_name}")
         print(f"[INFO] Guest WinRM TCP 5985 -> VMware NAT host TCP {port}")

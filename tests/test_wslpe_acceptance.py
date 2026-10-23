@@ -6,8 +6,12 @@ or connect to a Windows guest.
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -63,6 +67,23 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
             name, "mayfly/windows10 (vmware_desktop, 2024.01.06)"
         ))
 
+    def test_preboot_native_import_works_with_absolute_script_and_isolated_python(self):
+        # Real operator invokes this script by absolute path from the repo's
+        # goad_nomad console. A direct execution must not rely on PYTHONPATH
+        # implicitly set by the unittest runner or current working directory.
+        snippet = (
+            "import runpy\n"
+            f"source = runpy.run_path({str(SCRIPT)!r}, run_name='isolated_preboot_probe')\n"
+            "result = source['verify_peer_wslpe_inventory']("
+            "'Total running VMs: 0\\n', '172.28.232')\n"
+            "assert result is None, result\n"
+        )
+        actual = subprocess.run(
+            [sys.executable, "-I", "-c", snippet], cwd="/",
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        self.assertEqual(actual.returncode, 0, actual.stderr)
+
     def test_existing_vm_and_unexpected_vmrun_output_block(self):
         name = "Existing VMware VM inventory (read-only)"
         self.assertIsNotNone(ACCEPTANCE.verify_output(name, "unexpected success"))
@@ -75,6 +96,69 @@ class WslpeConsolidatedAcceptanceTests(unittest.TestCase):
         self.assertIsNotNone(ACCEPTANCE.verify_output(
             name, "Total running VMs: 1\n/home/host/kingdoms-lpe-ws01.vmx"
         ))
+
+    def _registered_peer(self, root: Path, prefix: str = "172.28.231"):
+        instance = root / "peer" / "workspace" / "d986ad-wslpe-vmware"
+        machine = (instance / "provider" / ".vagrant" / "machines" /
+                   "WSLPE-WS01" / "vmware_desktop")
+        vmx = machine / "native-uuid" / "windows_10.vmx"
+        vmx.parent.mkdir(parents=True)
+        vmx.write_text('config.version = "8"\n')
+        (machine / "id").write_text(str(vmx))
+        (instance / "instance.json").write_text(json.dumps({
+            "id": instance.name, "lab": "WSLPE", "provider": "vmware",
+            "provisioner": "local", "status": "ready for provisioning",
+            "extensions": [], "ip_range": prefix,
+        }))
+        return vmx, instance
+
+    def test_existing_registered_peer_wslpe_can_coexist_on_separate_subnet(self):
+        name = "Existing VMware VM inventory (read-only)"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vmx, instance = self._registered_peer(root)
+            output = "Total running VMs: 2\n" + str(vmx) + "\n/north/GOAD-DC01.vmx\n"
+            with patch.object(ACCEPTANCE, "ROOT", root / "fresh"):
+                self.assertIsNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.231"))
+                self.assertIsNotNone(ACCEPTANCE.verify_output(name, output))
+                # Existing guest is accepted only through its exact Vagrant ID.
+                (instance / "provider" / ".vagrant" / "machines" /
+                 "WSLPE-WS01" / "vmware_desktop" / "id").write_text("/wrong.vmx")
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
+
+    def test_unregistered_prototype_or_same_checkout_vm_is_blocked(self):
+        name = "Existing VMware VM inventory (read-only)"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            vmx, instance = self._registered_peer(root)
+            output = "Total running VMs: 1\n" + str(vmx) + "\n"
+            with patch.object(ACCEPTANCE, "ROOT", instance.parent.parent):
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
+            for raw in (
+                "/home/user/vmware/KINGDOMS-WSLPE41-LEARNER-TEST/test.vmx",
+                "/home/user/WSLPE-WS01.vmx",
+            ):
+                with self.subTest(raw=raw):
+                    suspicious = "Total running VMs: 1\n" + raw + "\n"
+                    with patch.object(ACCEPTANCE, "ROOT", root / "fresh"):
+                        self.assertIsNotNone(ACCEPTANCE.verify_output(
+                            name, suspicious, candidate_prefix="172.28.232"))
+
+    def test_vmware_inventory_must_be_complete_not_just_contain_header(self):
+        name = "Existing VMware VM inventory (read-only)"
+        for output in (
+            "Total running VMs: 2\n/one.vmx\n",
+            "Total running VMs: 2\n/one.vmx\n/one.vmx\n",
+            "Total running VMs: 0\n/a.vmx\n",
+        ):
+            with self.subTest(output=output):
+                self.assertIsNotNone(ACCEPTANCE.verify_output(
+                    name, output, candidate_prefix="172.28.232"))
 
     def test_preview_and_network_require_explicit_success_evidence(self):
         name = "Native WSLPE Vagrantfile and inventory render + Ruby syntax"

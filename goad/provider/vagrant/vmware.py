@@ -12,6 +12,8 @@ from goad.log import Log
 from goad.provider.vagrant.vagrant import VagrantProvider
 from goad.utils import *
 
+from kingdoms.wslpe_vmware_tools import WSLPE_VMTOOLS_SETUP
+
 
 class VmwareProvider(VagrantProvider):
     provider_name = VMWARE
@@ -72,13 +74,13 @@ class VmwareProvider(VagrantProvider):
         return False
 
     @staticmethod
-    def _winrm_session(port):
+    def _winrm_session(port, *, operation_timeout_sec=60, read_timeout_sec=90):
         return winrm.Session(
             f'http://127.0.0.1:{port}/wsman',
             auth=('vagrant', 'vagrant'),
             transport='ntlm',
-            operation_timeout_sec=60,
-            read_timeout_sec=90,
+            operation_timeout_sec=operation_timeout_sec,
+            read_timeout_sec=read_timeout_sec,
         )
 
     def _wait_winrm_ready(self, port, timeout=180):
@@ -137,6 +139,31 @@ if ($svc -and $file) {
             time.sleep(5)
         return False
 
+    def _vmware_tools_setup_script(self):
+        """Select only the WSLPE-specific VGAuth lock repair; leave GOAD unchanged."""
+        if self.lab_name == 'WSLPE':
+            return WSLPE_VMTOOLS_SETUP
+        return r'''
+$ErrorActionPreference = 'Stop'
+$deadline = (Get-Date).AddSeconds(90)
+$setup = $null
+while ((Get-Date) -lt $deadline -and -not $setup) {
+    $setup = Get-CimInstance Win32_LogicalDisk |
+        Where-Object { $_.DriveType -eq 5 } |
+        ForEach-Object {
+            $candidate = "$($_.DeviceID)\setup.exe"
+            if (Test-Path $candidate) { $candidate }
+        } |
+        Select-Object -First 1
+    if (-not $setup) { Start-Sleep -Seconds 2 }
+}
+if (-not $setup) { throw 'VMware Tools setup.exe was not found on a mounted CD/DVD drive' }
+
+$p = Start-Process -FilePath $setup -ArgumentList '/S','/v"/qn REBOOT=ReallySuppress"' -Wait -PassThru
+Write-Output "GOAD_VMTOOLS_INSTALL_EXIT=$($p.ExitCode)"
+if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
+'''
+
     def _install_vmware_tools(self, machine, vmx, port):
         Log.warning(f'GOAD_NOMAD: {machine} has no healthy VMware Tools; bootstrapping them')
 
@@ -175,27 +202,21 @@ if ($svc -and $file) {
             return False
 
         try:
-            session = self._winrm_session(port)
-            install = session.run_ps(r'''
-$ErrorActionPreference = 'Stop'
-$deadline = (Get-Date).AddSeconds(90)
-$setup = $null
-while ((Get-Date) -lt $deadline -and -not $setup) {
-    $setup = Get-CimInstance Win32_LogicalDisk |
-        Where-Object { $_.DriveType -eq 5 } |
-        ForEach-Object {
-            $candidate = "$($_.DeviceID)\setup.exe"
-            if (Test-Path $candidate) { $candidate }
-        } |
-        Select-Object -First 1
-    if (-not $setup) { Start-Sleep -Seconds 2 }
-}
-if (-not $setup) { throw 'VMware Tools setup.exe was not found on a mounted CD/DVD drive' }
+            # WSLPE's targeted MSI repair can legitimately take several
+            # minutes. Keep the same provider-owned WinRM channel and give
+            # only this installation request a bounded, longer read budget.
+            # GOAD retains its existing transport/timeouts unchanged.
+            if self.lab_name == 'WSLPE':
+                session = self._winrm_session(
+                    port, operation_timeout_sec=180, read_timeout_sec=210
+                )
+            else:
+                session = self._winrm_session(port)
+            install = session.run_ps(self._vmware_tools_setup_script())
+            # Existing GOAD installer source moved to a pure selector below.
+            # WSLPE keeps the exact same native mount/WinRM/reboot lifecycle.
+            #
 
-$p = Start-Process -FilePath $setup -ArgumentList '/S','/v"/qn REBOOT=ReallySuppress"' -Wait -PassThru
-Write-Output "GOAD_VMTOOLS_INSTALL_EXIT=$($p.ExitCode)"
-if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
-''')
             if install.status_code != 0:
                 Log.error(f'GOAD_NOMAD: VMware Tools installer failed for {machine}')
                 return False

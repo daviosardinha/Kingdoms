@@ -1,0 +1,17 @@
+[Unit]
+Description=KINGDOMS WSLPE dedicated vmnet4 host-only operator address
+After=network.target vmware.service
+ConditionPathExists=/var/lib/kingdoms/wslpe-vmnet4/journal.json
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/bin/python3 /usr/local/libexec/kingdoms/wslpe-vmnet4-hostaddr-keeper.py --repair
+TimeoutStartSec=40
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6

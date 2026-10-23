@@ -1,0 +1,192 @@
+name: WSLPE management vmnet transaction source gate
+
+on:
+  push:
+    branches:
+      - feature/wslpe41-fresh-full-installer
+    paths:
+      - 'kingdoms/wslpe_management_vmnet_transaction.py'
+      - 'kingdoms/wslpe_management_vmnet_plan.py'
+      - 'kingdoms/wslpe_management_vmnet_host_gate.py'
+      - 'kingdoms/wslpe_management_vmnet_registry.py'
+      - 'kingdoms/wslpe_management_vmnet_workstation.py'
+      - 'kingdoms/wslpe_management_vmnet_runtime.py'
+      - 'kingdoms/wslpe_management_vmnet_isolation.py'
+      - 'kingdoms/wslpe_management_vmnet_hostaddr.py'
+      - 'kingdoms/wslpe41_management_nic.py'
+      - 'kingdoms/wslpe41_management_nic_model.py'
+      - 'scripts/wslpe41-fix-management-nic-model.py'
+      - 'tests/test_wslpe41_management_nic_model.py'
+      - 'scripts/wslpe41-attach-management-nic.py'
+      - 'scripts/wslpe41-normalize-vmx-mode.py'
+      - 'tests/test_wslpe41_vmx_mode_maintenance.py'
+      - 'tests/test_wslpe41_management_nic.py'
+      - 'scripts/wslpe-vmnet4-hostaddr-keeper.py'
+      - 'scripts/wslpe-vmnet4-install-persistence.sh'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.service'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.timer'
+      - 'tests/test_wslpe_vmnet4_hostaddr_keeper.py'
+      - 'tests/test_wslpe_management_vmnet_hostaddr.py'
+      - 'tests/test_wslpe_management_vmnet_isolation.py'
+      - 'scripts/wslpe-vmnet4-maintenance.py'
+      - 'scripts/wslpe-vmnet4-postmortem.py'
+      - 'tests/test_wslpe_vmnet4_postmortem.py'
+      - 'tests/test_wslpe_vmnet4_maintenance.py'
+      - 'tests/test_wslpe_management_vmnet_runtime.py'
+      - 'tests/test_wslpe_management_vmnet_workstation.py'
+      - 'scripts/wslpe41-readiness-batch.py'
+      - 'scripts/wslpe-management-vmnet-offline-native.py'
+      - 'tests/test_wslpe_management_vmnet_offline_native.py'
+      - 'tests/test_wslpe41_readiness_batch.py'
+      - 'scripts/wslpe-management-vmnet-registry-audit.py'
+      - 'tests/test_wslpe_management_vmnet_registry.py'
+      - 'scripts/wslpe-management-vmnet-host-audit.py'
+      - 'tests/test_wslpe_management_vmnet_host_gate.py'
+      - 'tests/test_wslpe_management_vmnet_transaction.py'
+      - 'tests/test_wslpe_management_vmnet_plan.py'
+      - '.github/workflows/wslpe-management-vmnet-transaction.yml'
+  pull_request:
+    paths:
+      - 'kingdoms/wslpe_management_vmnet_transaction.py'
+      - 'kingdoms/wslpe_management_vmnet_plan.py'
+      - 'kingdoms/wslpe_management_vmnet_host_gate.py'
+      - 'kingdoms/wslpe_management_vmnet_registry.py'
+      - 'kingdoms/wslpe_management_vmnet_workstation.py'
+      - 'kingdoms/wslpe_management_vmnet_runtime.py'
+      - 'kingdoms/wslpe_management_vmnet_isolation.py'
+      - 'kingdoms/wslpe_management_vmnet_hostaddr.py'
+      - 'kingdoms/wslpe41_management_nic.py'
+      - 'kingdoms/wslpe41_management_nic_model.py'
+      - 'scripts/wslpe41-fix-management-nic-model.py'
+      - 'tests/test_wslpe41_management_nic_model.py'
+      - 'scripts/wslpe41-attach-management-nic.py'
+      - 'tests/test_wslpe41_management_nic.py'
+      - 'scripts/wslpe-vmnet4-hostaddr-keeper.py'
+      - 'scripts/wslpe-vmnet4-install-persistence.sh'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.service'
+      - 'ops/systemd/kingdoms-wslpe-vmnet4-hostaddr.timer'
+      - 'tests/test_wslpe_vmnet4_hostaddr_keeper.py'
+      - 'tests/test_wslpe_management_vmnet_hostaddr.py'
+      - 'tests/test_wslpe_management_vmnet_isolation.py'
+      - 'scripts/wslpe-vmnet4-maintenance.py'
+      - 'scripts/wslpe-vmnet4-postmortem.py'
+      - 'tests/test_wslpe_vmnet4_postmortem.py'
+      - 'tests/test_wslpe_vmnet4_maintenance.py'
+      - 'tests/test_wslpe_management_vmnet_runtime.py'
+      - 'tests/test_wslpe_management_vmnet_workstation.py'
+      - 'scripts/wslpe41-readiness-batch.py'
+      - 'scripts/wslpe-management-vmnet-offline-native.py'
+      - 'tests/test_wslpe_management_vmnet_offline_native.py'
+      - 'tests/test_wslpe41_readiness_batch.py'
+      - 'scripts/wslpe-management-vmnet-registry-audit.py'
+      - 'tests/test_wslpe_management_vmnet_registry.py'
+      - 'scripts/wslpe-management-vmnet-host-audit.py'
+      - 'tests/test_wslpe_management_vmnet_host_gate.py'
+      - 'tests/test_wslpe_management_vmnet_transaction.py'
+      - 'tests/test_wslpe_management_vmnet_plan.py'
+      - '.github/workflows/wslpe-management-vmnet-transaction.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  simulated-transaction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install existing WSLPE manifest parser dependency
+        run: python -m pip install "PyYAML>=6,<7"
+      - name: Compile planning and transaction components
+        run: |
+          python -m py_compile \
+            kingdoms/wslpe_management_vmnet_plan.py \
+            kingdoms/wslpe_management_vmnet_transaction.py \
+            kingdoms/wslpe_management_vmnet_host_gate.py \
+            scripts/wslpe-management-vmnet-host-audit.py \
+            tests/test_wslpe_management_vmnet_host_gate.py \
+            kingdoms/wslpe_management_vmnet_registry.py \
+            kingdoms/wslpe_management_vmnet_workstation.py \
+            kingdoms/wslpe_management_vmnet_runtime.py \
+            kingdoms/wslpe_management_vmnet_isolation.py \
+            kingdoms/wslpe_management_vmnet_hostaddr.py \
+            kingdoms/wslpe41_management_nic.py \
+            kingdoms/wslpe41_management_nic_model.py \
+            scripts/wslpe41-fix-management-nic-model.py \
+            tests/test_wslpe41_management_nic_model.py \
+            scripts/wslpe41-attach-management-nic.py \
+            scripts/wslpe41-normalize-vmx-mode.py \
+            tests/test_wslpe41_vmx_mode_maintenance.py \
+            tests/test_wslpe41_management_nic.py \
+            scripts/wslpe-vmnet4-hostaddr-keeper.py \
+            tests/test_wslpe_vmnet4_hostaddr_keeper.py \
+            tests/test_wslpe_management_vmnet_hostaddr.py \
+            scripts/wslpe-vmnet4-maintenance.py \
+            scripts/wslpe-vmnet4-postmortem.py \
+            tests/test_wslpe_vmnet4_postmortem.py \
+            tests/test_wslpe_management_vmnet_isolation.py \
+            tests/test_wslpe_vmnet4_maintenance.py \
+            tests/test_wslpe_management_vmnet_runtime.py \
+            tests/test_wslpe_management_vmnet_workstation.py \
+            scripts/wslpe41-readiness-batch.py \
+            scripts/wslpe-management-vmnet-offline-native.py \
+            tests/test_wslpe_management_vmnet_offline_native.py \
+            tests/test_wslpe41_readiness_batch.py \
+            scripts/wslpe-management-vmnet-registry-audit.py \
+            tests/test_wslpe_management_vmnet_registry.py \
+            scripts/wslpe-management-vmnet-plan.py \
+            tests/test_wslpe_management_vmnet_plan.py \
+            tests/test_wslpe_management_vmnet_transaction.py
+      - name: Run read-only source and failure-recovery simulations
+        run: |
+          python -m unittest -v \
+            tests.test_wslpe_management_vmnet_plan \
+            tests.test_wslpe_management_vmnet_transaction \
+            tests.test_wslpe_management_vmnet_host_gate \
+            tests.test_wslpe_management_vmnet_registry \
+            tests.test_wslpe_management_vmnet_workstation \
+            tests.test_wslpe_management_vmnet_runtime \
+            tests.test_wslpe_management_vmnet_isolation \
+            tests.test_wslpe_management_vmnet_hostaddr \
+            tests.test_wslpe41_management_nic \
+            tests.test_wslpe41_management_nic_model \
+            tests.test_wslpe41_vmx_mode_maintenance \
+            tests.test_wslpe_vmnet4_hostaddr_keeper \
+            tests.test_wslpe_vmnet4_maintenance \
+            tests.test_wslpe_vmnet4_postmortem \
+            tests.test_wslpe41_readiness_batch \
+            tests.test_wslpe_management_vmnet_offline_native
+      - name: Verify host-address keeper install shell syntax
+        run: bash -n scripts/wslpe-vmnet4-install-persistence.sh
+      - name: Prove consolidated source-only operator batch
+        run: python scripts/wslpe41-readiness-batch.py --source-only
+      - name: Guard against accidental live CLI exposure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          planner = Path("scripts/wslpe-management-vmnet-plan.py").read_text()
+          installer = Path("scripts/wslpe41-install.py").read_text()
+          core = Path("kingdoms/wslpe_management_vmnet_transaction.py").read_text()
+          audit = Path("scripts/wslpe-management-vmnet-host-audit.py").read_text()
+          registry = Path("scripts/wslpe-management-vmnet-registry-audit.py").read_text()
+          driver = Path("kingdoms/wslpe_management_vmnet_workstation.py").read_text()
+          runtime = Path("kingdoms/wslpe_management_vmnet_runtime.py").read_text()
+          operator = Path("scripts/wslpe-vmnet4-maintenance.py").read_text()
+          batch = Path("scripts/wslpe41-readiness-batch.py").read_text()
+          assert 'add_argument("--apply"' not in planner
+          assert "[BLOCKED] No production fresh-native runner is wired yet." in installer
+          assert "There is intentionally NO production CLI wiring" in core
+          assert "vmware-networks" not in audit
+          assert "vmware-networks" not in registry
+          assert 'if __name__ == "__main__"' not in driver
+          assert 'if __name__ == "__main__"' not in runtime
+          assert 'required=True' in operator
+          assert 'I_APPROVE_GUEST_FREE_VMNET4_MAINTENANCE' in operator
+          assert 'add_argument("--apply"' not in batch
+          assert "vmware-networks --stop" not in batch
+          assert "No VMware, host, guest, routing, or firewall mutation" in audit
+          print("PASS: no operator-accessible VMware allocation command")
+          PY

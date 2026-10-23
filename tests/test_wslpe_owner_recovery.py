@@ -67,6 +67,58 @@ class WslpeOwnerRecoveryTests(unittest.TestCase):
         self.assertRegex(unit, r"^kingdoms-wslpe-owner-check-[a-f0-9]{16}$")
         self.assertFalse(Path(calls[0][-1]).exists())
 
+    @unittest.skipIf(os.getuid() == 0, "owner timer race test requires nonroot")
+    def test_fired_timer_marker_can_win_race_with_inactive_systemd_timer(self):
+        username = pwd.getpwuid(os.getuid()).pw_name
+        calls = []
+        def runner(argv, timeout=20):
+            calls.append(argv)
+            if argv[:3] == ["sudo", "-n", "systemd-run"]:
+                Path(argv[-1]).touch()
+                return completed()
+            return completed(rc=3, stdout="inactive\\n")
+        unit = rehearse_owner_timer(os.getuid(), username, runner, lambda _: None)
+        self.assertIn("kingdoms-wslpe-owner-check-", unit)
+        self.assertEqual(len(calls), 1, "Owner-verified marker makes timer state irrelevant")
+
+    @unittest.skipIf(os.getuid() == 0, "owner timer failure test requires nonroot")
+    def test_timer_denied_sudo_fails_with_fixed_safe_reason(self):
+        username = pwd.getpwuid(os.getuid()).pw_name
+        with self.assertRaisesRegex(ValueError,
+                                    "Independent owner-context systemd timer unavailable"):
+            rehearse_owner_timer(
+                os.getuid(), username,
+                runner=lambda argv, timeout=20: completed(rc=1),
+                sleep=lambda _: None,
+            )
+
+    def test_cli_explains_exact_failed_recovery_stage_without_stderr_leak(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from types import SimpleNamespace as Namespace
+        vmx = Path("/tmp/mock-wslpe-owner-vmx")
+        preview = Namespace(
+            north_source_contract=lambda: None,
+            running_exact=lambda path: True,
+            collect=lambda: {"vmx": vmx},
+        )
+        with (patch.object(CHECK, "exact_vmware_owner",
+                           return_value=(vmx, 1000, "stark")),
+              patch.object(CHECK, "mod", return_value=preview),
+              patch.object(CHECK, "rehearse_owner_timer",
+                           side_effect=ValueError(
+                               "Independent owner-context systemd timer unavailable"
+                           )),
+              patch("sys.argv", ["wslpe-owner", "--rehearse", "--vmrun-readonly"])):
+            capture = StringIO()
+            with redirect_stdout(capture):
+                self.assertEqual(CHECK.main(), 1)
+        output = capture.getvalue()
+        self.assertIn("WSLPE_RECOVERY_STAGE=owner_systemd_timer", output)
+        self.assertIn("REASON=SYSTEMD_RUN_FAILED", output)
+        self.assertIn("sudo -n -l", output)
+        self.assertNotIn("stark", output)
+
     def test_script_never_calls_mutating_north_or_vmware_commands(self):
         source = (ROOT / "scripts/wslpe-p1c-owner-recovery-check.py").read_text()
         owner_source = (ROOT / "kingdoms/wslpe_owner_recovery.py").read_text()

@@ -56,11 +56,12 @@ boxes.append(
         v.vmx["memsize"] = box[:mem]
         v.vmx["numvcpus"] = box[:cpus]
 
-{% if lab_name == 'GOAD' %}
+{% if lab_name == 'GOAD' or lab_name == 'WSLPE' %}
         # Multi-NIC Windows guests must use the provisioning NAT address for
         # Vagrant management. VMware Tools can otherwise return an exercise NIC
-        # first (for example 10.4.30.12), which is intentionally unreachable
-        # from the host outside GOAD_NOMAD's temporary routed management plane.
+        # first (for example 10.4.30.12 for GOAD, or the WSLPE exercise
+        # address on its separate host-only vmnet). The vmnet8 NAT forward
+        # must use the guest's NAT-side DHCP lease, not the exercise NIC.
         if box[:os] == "windows"
           v.enable_vmrun_ip_lookup = false
           v.vmx["ethernet0.startConnected"] = "TRUE"

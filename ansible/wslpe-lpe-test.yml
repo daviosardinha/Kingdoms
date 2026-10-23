@@ -25,6 +25,12 @@
   vars:
     wslpe_action: status
     wslpe_techniques: []
+    # The controller guard evaluates whole private fixture dictionaries.
+    # Two fixture fields reference the learner binding supplied to the
+    # Windows role below; provide the same workgroup values on localhost.
+    # Never store or pass the learner secret as a command-line literal.
+    windows_lpe_learner_account: 'WSLPE-WS01\lpe.trainee'
+    windows_lpe_learner_password: "{{ lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') }}"
   tasks:
     - name: Require a single WSLPE target and exact approved action
       ansible.builtin.assert:
@@ -36,6 +42,28 @@
         fail_msg: >-
           Use a single WSLPE Windows host and exactly one named technique
           for apply/validate/reset. A full profile is not yet approved.
+
+    - name: Restrict the unified fresh installer to its exact standalone Windows target
+      ansible.builtin.assert:
+        that:
+          - groups.get('wslpe', []) == ['ws01']
+          - groups.get('windows_lpe_standalone', []) == ['ws01']
+          - (groups.get('domain', []) | length) == 0
+          - (groups.get('dc', []) | length) == 0
+          - hostvars['ws01']['ansible_host'] == wslpe41_expected_address
+          - hostvars['ws01']['ansible_connection'] == 'winrm'
+          - hostvars['ws01']['domain_name'] == 'WSLPE'
+          - hostvars['ws01']['ansible_port'] | int == 5986
+          - hostvars['ws01']['ansible_winrm_scheme'] == 'https'
+          - hostvars['ws01']['ansible_winrm_server_cert_validation'] == 'validate'
+          - wslpe_action in ['apply', 'validate']
+          - (wslpe_techniques | length) == 1
+          - wslpe41_stage_label == ('apply' if wslpe_action == 'apply' else 'vulnerable')
+          - (wslpe41_instance_id | default('')) == lookup('env', 'KINGDOMS_WSLPE_INSTANCE_ID')
+          - (wslpe41_instance_id | default('') | length) >= 4
+        fail_msg: 'Fresh WSLPE41 installation requires one exact HTTPS workgroup guest and private instance identity'
+        quiet: true
+      when: wslpe41_fresh_run | default(false) | bool
 
     - name: Refuse source-visible fixture credentials in any non-status action
       ansible.builtin.assert:
@@ -120,3 +148,39 @@
     - name: Use exact local LSA policy for WSLPE-only SeBackup and SeImpersonate
       ansible.builtin.include_tasks: wslpe-user-rights-tasks.yml
       when: (wslpe_techniques | intersect(['sebackup_privilege', 'seimpersonate_privilege']) | length) == 1
+
+  # The first 20 scenarios already implement apply/validate in the shared role.
+  # Only the independent WSLPE41 installer opts in to this additional proof.
+  # NORTH and existing manual/pilot WSLPE role behavior stay unchanged.
+  post_tasks:
+    - name: Obtain post-role proof from the exact Windows guest
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $system = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+          $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          $learner = Get-LocalUser -Name 'lpe.trainee' -ErrorAction Stop
+          $admins = Get-LocalGroup -SID 'S-1-5-32-544' -ErrorAction Stop
+          if ($env:COMPUTERNAME -cne 'WSLPE-WS01' -or $system.PartOfDomain -or
+              $os.Caption -notmatch 'Windows 10' -or [int]$os.ProductType -ne 1 -or
+              -not $learner.Enabled -or
+              @((Get-LocalGroupMember -Group $admins.Name -ErrorAction Stop) |
+                Where-Object { $_.SID.Value -eq $learner.SID.Value }).Count -ne 0) {
+              throw 'WSLPE41 post-role identity or learner integrity failed'
+          }
+          Write-Output 'WSLPE41_POST_ROLE_GUEST=PASS'
+      register: wslpe41_windows_stage_proof
+      changed_when: false
+      when: wslpe41_fresh_run | default(false) | bool
+
+    - name: Require exact Windows output after shared-role completion
+      ansible.builtin.assert:
+        that:
+          - wslpe41_windows_stage_proof.output == ['WSLPE41_POST_ROLE_GUEST=PASS']
+        quiet: true
+      when: wslpe41_fresh_run | default(false) | bool
+
+    - name: Emit exact unified installer stage evidence
+      ansible.builtin.debug:
+        msg: "WSLPE41_STAGE={{ wslpe_techniques[0] }}:{{ wslpe41_stage_label }}:PASS"
+      when: wslpe41_fresh_run | default(false) | bool

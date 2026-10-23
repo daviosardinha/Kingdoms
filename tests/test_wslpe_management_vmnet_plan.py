@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kingdoms.wslpe_management_vmnet_plan import candidate_plan, inventory, vmx_conflicts
+from kingdoms.wslpe_management_vmnet_plan import candidate_plan, inventory, vmx_conflicts, native_exercise_binding
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/wslpe-management-vmnet-plan.py"
@@ -129,6 +129,78 @@ class VmnetPlanTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("[SOURCE READY]", capture.getvalue())
             self.assertEqual(f.read_text(), HOST_CONFIG)
+
+    def test_new_native_vmnet3_exercise_yields_independent_vmnet4_proposal(self):
+        current = HOST_CONFIG + (
+            "answer VNET_3_DHCP no\n"
+            "answer VNET_3_NAT no\n"
+            "answer VNET_3_HOSTONLY_NETMASK 255.255.255.0\n"
+            "answer VNET_3_HOSTONLY_SUBNET 172.28.232.0\n"
+        )
+        vmx = (
+            'ethernet0.connectionType = "nat"\n'
+            'ethernet0.startConnected = "TRUE"\n'
+            'ethernet0.present = "TRUE"\n'
+            'ethernet1.connectionType = "custom"\n'
+            'ethernet1.present = "TRUE"\n'
+            'ethernet1.vnet = "vmnet3"\n'
+        )
+        selected = native_exercise_binding(vmx, "172.28.232", current)
+        self.assertEqual(selected, ("vmnet3", "172.28.232.0/24"))
+        candidate = candidate_plan(
+            current, vmnet="vmnet4", subnet="172.28.233.0/24",
+            exercise_vmnet=selected[0], exercise_subnet=selected[1],
+        )
+        self.assertTrue(candidate.startswith(current))
+        self.assertIn("answer VNET_4_HOSTONLY_SUBNET 172.28.233.0", candidate)
+        with self.assertRaises(ValueError):
+            native_exercise_binding(vmx, "172.28.231", current)
+        with self.assertRaises(ValueError):
+            candidate_plan(
+                current, vmnet="vmnet4", subnet="172.28.232.0/24",
+                exercise_vmnet=selected[0], exercise_subnet=selected[1],
+            )
+        with self.assertRaises(ValueError):
+            candidate_plan(
+                current, vmnet="vmnet3", subnet="172.28.233.0/24",
+                exercise_vmnet=selected[0], exercise_subnet=selected[1],
+            )
+
+    def test_native_guest_source_planner_defers_while_vms_running(self):
+        current = HOST_CONFIG + (
+            "answer VNET_3_DHCP no\n"
+            "answer VNET_3_NAT no\n"
+            "answer VNET_3_HOSTONLY_NETMASK 255.255.255.0\n"
+            "answer VNET_3_HOSTONLY_SUBNET 172.28.232.0\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            networking = base / "networking"
+            networking.write_text(current)
+            north, fresh = base / "north", base / "fresh"
+            north.mkdir()
+            fresh.mkdir()
+            (north / "NORTH.vmx").write_text('ethernet1.vnet = "vmnet10"\n')
+            (fresh / "WSLPE.vmx").write_text('ethernet1.vnet = "vmnet3"\n')
+            (fresh / "instance.json").write_text(
+                '{"ip_range":"172.28.232"}\n'
+            )
+            argv = [
+                "--native-workspace", str(fresh),
+                "--workspace-root", str(north),
+            ]
+            with (mock.patch.object(CLI, "NETWORKING", networking),
+                  mock.patch.object(CLI, "native_target",
+                                    return_value=("vmnet3", "172.28.232.0/24")),
+                  mock.patch.object(CLI.checker, "run_ip", return_value=[]),
+                  mock.patch.object(CLI, "vmware_running", return_value=2),
+                  redirect_stdout(StringIO()) as capture):
+                self.assertEqual(CLI.main(argv), 2)
+            output = capture.getvalue()
+            self.assertIn("[NATIVE] Exact WSLPE exercise: vmnet3 172.28.232.0/24", output)
+            self.assertIn("[PROPOSAL] Operator-only: vmnet4 172.28.233.0/24", output)
+            self.assertIn("[DEFERRED] 2 VMware guest process(es) running", output)
+            self.assertEqual(networking.read_text(), current)
 
     def test_planner_exposes_no_apply_or_vmware_mutation(self):
         text = SCRIPT.read_text(encoding="utf-8")

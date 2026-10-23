@@ -114,4 +114,15 @@
               }
           }
           Write-Output 'WSLPE45_JEA_LOCAL_SOURCE=STAGED_NOT_EXECUTED'
+      register: wslpe_jea_source_stage
       changed_when: false
+
+    - name: Independently require exact staged source marker
+      ansible.builtin.assert:
+        that:
+          - wslpe_jea_source_stage.output == ['WSLPE45_JEA_LOCAL_SOURCE=STAGED_NOT_EXECUTED']
+        quiet: true
+
+    - name: Emit verified JEA source-staging runtime proof
+      ansible.builtin.debug:
+        msg: WSLPE45_JEA_LOCAL_SOURCE=STAGED_NOT_EXECUTED
