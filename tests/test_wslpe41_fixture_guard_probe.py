@@ -120,8 +120,8 @@ class FixtureGuardProbeTests(unittest.TestCase):
 
     def test_sensitive_failed_condition_is_identified_without_secret_content(self):
         self._run(returncode=2, stdout=(
-            "TASK [Private fixture check INSTANCE_IDENTITY_MATCH]\\n"
-            "fatal: [localhost]: FAILED! => censored\\n"))
+            "TASK [Private fixture check INSTANCE_IDENTITY_MATCH]\n"
+            "fatal: [localhost]: FAILED! => censored\n"))
         with self.assertRaisesRegex(
             InstallBlocked, "failed_condition=INSTANCE_IDENTITY_MATCH"
         ) as raised:
