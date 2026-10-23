@@ -230,7 +230,18 @@ class GoadNomad(BaseGoad):
             Log.error('Instance creation failed')
             return False
 
-        return self.do_install_instance()
+        # ONLY the explicit new-instance CLI path may bootstrap NORTH's
+        # absent VMware networks. Existing-instance install/resume/start/reset
+        # never gains this privilege and retains the owner's fail-closed guard.
+        self._native_north_bootstrap_requested = (
+            self.lab_manager.get_current_lab_name() == 'NORTH'
+            and self.lab_manager.get_current_provider_name() == 'vmware'
+        )
+        try:
+            return self.do_install_instance()
+        finally:
+            self._native_north_bootstrap_requested = False
+
     def do_prepare_north(self):
         """Create the native NORTH instance files only; never start Vagrant.
 
@@ -277,6 +288,65 @@ class GoadNomad(BaseGoad):
         instance = self.lab_manager.get_current_instance()
         return instance is not None and instance.get_status() == READY
 
+    def _bootstrap_north_fresh_network(self, provider):
+        """One-command NORTH bootstrap on an empty host, never an owner repair.
+
+        A new instance has already been registered by the explicit CLI install.
+        The canonical vmnet transaction independently checks no running VMs,
+        no overlapping networks/registered MACs, then holds its global lock for
+        backup, restart, ownership record and persistent .254 validation.
+        """
+        instance = self.lab_manager.get_current_instance()
+        if (instance is None
+                or getattr(instance, 'lab_name', None) != 'NORTH'
+                or getattr(instance, 'provider_name', None) != 'vmware'
+                or getattr(provider, 'lab_name', None) != 'NORTH'):
+            Log.error('NORTH bootstrap requires the exact new native instance')
+            return False
+
+        target = Path(str(instance.instance_provider_path))
+        provider_path = getattr(provider, 'path', None)
+        if (not target.is_absolute() or target.is_symlink()
+                or not target.is_dir() or provider_path is None
+                or Path(str(provider_path)).resolve() != target.resolve()):
+            Log.error('NORTH bootstrap provider identity does not match this instance')
+            return False
+
+        owner = Path('/etc/vmware/kingdoms-course1-owner.json')
+        if owner.exists() or owner.is_symlink():
+            Log.error(
+                'NORTH network ownership already exists; new installation '
+                'cannot reassign or repair the existing owner'
+            )
+            return False
+        setup = provider._script('setup-vmware-networks.sh')
+        if not setup:
+            Log.error('NORTH network setup source missing')
+            return False
+
+        self._install_phase = 'NORTH fresh-host network bootstrap'
+        Log.info(
+            'NORTH: preparing owned VMware networking for the exact new '
+            'instance (clean host required, rollback protected)'
+        )
+        try:
+            result = subprocess.run(
+                ['sudo', '-n', 'bash', setup, '--north', 'native-bootstrap',
+                 '--provider-dir', str(target)],
+                check=False, timeout=240,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'NORTH fresh-host network bootstrap failed: {type(exc).__name__}')
+            return False
+        if result.returncode != 0 or provider._course1_unwired():
+            Log.error(
+                'NORTH fresh-host bootstrap or immutable ownership verification '
+                'failed; no VMware guests will be started'
+            )
+            return False
+        Log.success('NORTH fresh-host VMware owner and .254 interfaces verified')
+        return True
+
     def do_provide(self, arg=''):
         """Run the provider and return the result from *this* attempt.
 
@@ -292,6 +362,10 @@ class GoadNomad(BaseGoad):
         if provider is None:
             Log.error('No provider loaded for the current instance')
             return False
+
+        if getattr(self, '_native_north_bootstrap_requested', False):
+            if not self._bootstrap_north_fresh_network(provider):
+                return False
 
         self._install_phase = 'provider bring-up / VM readiness'
         phase_started = time.monotonic()
