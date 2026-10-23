@@ -193,7 +193,7 @@ def known_vmware_hostaddr_normalization(proposed: bytes, observed: bytes, layout
 
 
 def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
-                               layout: dict) -> tuple[str, ...]:
+                               layout: dict, reviewed_nat_retirements=None) -> tuple[str, ...]:
     """Accept only safe VMware/Vagrant runtime normalization of owned vmnets.
 
     The commit-time owner SHA remains immutable. Unlike the initial apply
@@ -253,14 +253,22 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
     recorded = entries(owned_text)
     active = entries(observed_text)
     removed = recorded - active
-    if removed:
+    additions = active - recorded
+    # Never erase a foreign directive by calling it Vagrant normalization.
+    # The optional retirement proof is a separate, root-owned host attestation:
+    # absence of that proof preserves the original fail-closed behavior.
+    reviewed = frozenset() if reviewed_nat_retirements is None else reviewed_nat_retirements
+    if type(reviewed) is not frozenset or any(type(item) is not str for item in reviewed):
+        raise NetworkPlanError("Reviewed NAT retirements must be exact immutable lines")
+    if removed and (len(removed) != len(reviewed)
+                    or set(removed) != reviewed
+                    or any(removed[line] != 1 for line in removed)):
         raise NetworkPlanError(
             "VMware removed or modified owned/foreign network declarations: "
             + repr(sorted(removed.elements())[:4])
         )
-    additions = active - recorded
-    if not additions:
-        return ("VMware network declarations are semantically unchanged",)
+    if reviewed and not removed:
+        raise NetworkPlanError("Stale or unused NAT retirement authorization")
 
     # This subnet comes from the immutable original backup, not the live
     # config. Never accept new forwarding to NORTH's isolated 10.4 networks.
@@ -303,6 +311,40 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
         if key in port_keys or active[declaration] != 1:
             raise NetworkPlanError("Duplicate VMware NAT forwarding host port")
         port_keys.add(key)
+
+    # A reviewed baseline removal must be an *exact* old vmnet8 TCP
+    # management forward that was replaced at the same host port. This is
+    # not permission to delete unrelated NAT forwards, or to redirect an
+    # approved host port into NORTH's isolated networks.
+    for declaration in reviewed:
+        words = declaration.split()
+        if (len(words) != 6 or words[0:3] !=
+                ["add_nat_portfwd", "8", "tcp"]):
+            raise NetworkPlanError("Reviewed retirement is not vmnet8 TCP management")
+        try:
+            host_port, guest_port = int(words[3]), int(words[5])
+            guest_ip = ipaddress.IPv4Address(words[4])
+        except ValueError as exc:
+            raise NetworkPlanError("Malformed reviewed NAT retirement") from exc
+        if (host_port < 1025 or host_port > 65535
+                or guest_port not in (22, 5985, 5986)
+                or guest_ip not in nat_range
+                or guest_ip in (nat_range.network_address,
+                                nat_range.broadcast_address)
+                or recorded[declaration] != 1
+                or active[declaration] != 0):
+            raise NetworkPlanError("Reviewed NAT retirement fails pinned baseline policy")
+        replacements = [
+            line for line in additions.elements()
+            if line.startswith("add_nat_portfwd 8 tcp ")
+            and len(line.split()) == 6
+            and line.split()[3] == words[3]
+        ]
+        if len(replacements) != 1:
+            raise NetworkPlanError(
+                "Reviewed retired host port lacks unique replacement")
+    if not additions and not removed:
+        return ("VMware network declarations are semantically unchanged",)
 
     for declaration in additions.elements():
         parts = declaration.split()
