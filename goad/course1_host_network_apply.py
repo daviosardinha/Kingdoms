@@ -482,7 +482,7 @@ def main():
             for item in inspect_installed_north(args.provider_dir):
                 print("[PASS] " + item, flush=True)
         except (NorthSetupError, ValueError, OSError, RuntimeError) as exc:
-            parser.exit(1, "[BLOCKED] NORTH fresh-install bootstrap: " + str(exc) + "\\n")
+            parser.exit(1, "[BLOCKED] NORTH fresh-install bootstrap: " + str(exc) + "\n")
         return
 
     # The original --north apply CLI remains unchanged. Verification is a
