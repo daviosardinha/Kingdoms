@@ -388,6 +388,120 @@ def recover_clean_blocked_stage1() -> str:
         os.close(lock)
 
 
+def recover_private_fixture_guard_stage1() -> str:
+    """Last explicit, guard-specific recovery for already archived empty stage1.
+
+    The original and second blocked journals remain immutable archived evidence.
+    No generic replay or journal deletion. The successful Ansible localhost-only
+    private-fixture probe is mandatory BEFORE creating a new journal.
+    """
+    from kingdoms.wslpe41_first_stage_audit import inspect as inspect_windows
+    from kingdoms.wslpe41_fixture_guard_probe import prove as prove_private_guard
+    from kingdoms.wslpe41_stage_executor import _environment, _inventory
+
+    context, operator, learner = _preflight()
+    state_dir = private_instance_directory(STATE_ROOT, INSTANCE)
+    journal = state_dir / "provided-install.json"
+    first_archive = state_dir / "provided-install.blocked-stage1.json"
+    previous_intent = state_dir / "stage1-recovery-intent.json"
+    second_archive = state_dir / "provided-install.blocked-fixture-stage1.json"
+    intent = state_dir / "private-fixture-recovery-intent.json"
+    lock = os.open(state_dir / ".install.lock",
+                   os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if second_archive.exists() or second_archive.is_symlink() or intent.exists() or intent.is_symlink():
+            raise InstallBlocked("Private fixture recovery already attempted or interrupted")
+        for path in (journal, first_archive, previous_intent):
+            if path.is_symlink() or not path.is_file():
+                raise InstallBlocked("Expected complete private stage1 recovery lineage missing")
+            meta = path.stat()
+            if (meta.st_uid != os.geteuid() or meta.st_mode & 0o077
+                    or meta.st_nlink != 1 or meta.st_size > 250_000):
+                raise InstallBlocked("Unsafe existing stage1 recovery evidence")
+        raw = journal.read_bytes()
+        failed = json.loads(raw)
+        first = first_archive.read_bytes()
+        initial = json.loads(first)
+        first_intent = json.loads(previous_intent.read_text(encoding="utf-8"))
+        prior = failed.get("recovery", {})
+        if (failed.get("schema") != SCHEMA or failed.get("instance") != INSTANCE
+                or failed.get("vmx") != context.identity.vmx
+                or not re.fullmatch(r"[a-f0-9]{40}", str(failed.get("source_commit", "")))
+                or not re.fullmatch(r"[a-f0-9]{32}", str(failed.get("jea_nonce", "")))
+                or failed.get("status") != "BLOCKED"
+                or failed.get("next_stage") != 0
+                or failed.get("configuration_validated") != 0
+                or failed.get("inflight") != {"number": 1, "stage": "apply"}
+                or failed.get("proofs") != []
+                or failed.get("failure_class") != "InstallBlocked"
+                or not str(failed.get("failure_gate", "")).startswith(
+                    "Scenario #1 apply: Ansible rc=2; last_task=Refuse source-visible fixture credentials in any non-status action")
+                or not isinstance(prior, dict)
+                or prior.get("kind") != "one-time-empty-stage1"
+                or prior.get("archived_sha256") != hashlib.sha256(first).hexdigest()
+                or prior.get("new_source_commit") != failed["source_commit"]
+                or not isinstance(first_intent, dict)
+                or first_intent != prior
+                or initial.get("status") != "BLOCKED"
+                or initial.get("next_stage") != 0
+                or initial.get("proofs") != []):
+            raise InstallBlocked("Not the exact twice-blocked empty fixture-guard stage1 lineage")
+        windows = {}
+        if inspect_windows(report=print, evidence_out=windows):
+            raise InstallBlocked("Stage1 Windows service exists; no safe recovery")
+        if any(windows.get(key) is not False for key in (
+                "service_exists", "service_matches_expected",
+                "scenario_directory_exists", "service_executable_exists",
+                "candidate_exists")):
+            raise InstallBlocked("Stage1 Windows artifacts are present or uncertain")
+        if prove_private_guard(report=print) is not True:
+            raise InstallBlocked("Controller-only private-fixture guard not proven")
+        plan = _stages(context)
+        first_stage = plan[0]
+        if (first_stage.number != 1 or first_stage.stage != "apply"
+                or first_stage.transport != "ansible"
+                or first_stage.argv.count("@" + str(context.private_vars)) != 1):
+            raise InstallBlocked("Canonical first stage private fixture binding drift")
+        with private_environment(context, operator, learner):
+            env = _environment(context)
+            _inventory(context, env)
+            syntax = subprocess.run(
+                [first_stage.argv[0], "--syntax-check", *first_stage.argv[1:]],
+                cwd=ROOT, env=env, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL, timeout=90, check=False,
+            )
+            if syntax.returncode:
+                raise InstallBlocked(
+                    f"Exact stage1 Ansible syntax check failed rc={syntax.returncode}; original journals preserved")
+            print("[PASS] Private fixture guard, stage1 syntax and empty Windows fixture")
+            new_state = _base_state(context)
+            new_state["recovery"] = {
+                "kind": "one-time-private-fixture-guard-stage1",
+                "original_archive_sha256": hashlib.sha256(first).hexdigest(),
+                "second_blocked_sha256": hashlib.sha256(raw).hexdigest(),
+                "previous_source_commit": failed["source_commit"],
+                "current_source_commit": context.identity.source_commit,
+                "private_guard": "PASS",
+                "windows_absence": "PASS",
+                "ansible_syntax": "PASS",
+            }
+            # Commit an irrevocable recovery intent before archiving and
+            # executing. A crash leaves an explicit stop, not a replay path.
+            fd = os.open(intent, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(json.dumps(new_state["recovery"], sort_keys=True).encode("utf-8"))
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(journal, second_archive)
+            checkpoint(journal, new_state)
+            print("[ARCHIVED] Second blocked stage1 journal, both prior journals preserved")
+            print("[STARTING] Controller-proven private fixture deployment on existing VM")
+            return _install_steps(context, new_state, journal, plan)
+    finally:
+        os.close(lock)
+
+
 def install(mode: str) -> str:
     if mode not in ("start", "resume", "status"):
         raise InstallBlocked("Invalid provided installation mode")
@@ -399,7 +513,7 @@ def install(mode: str) -> str:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         stages = _stages(context)
         if mode == "start":
-            if (state_dir / "stage1-recovery-intent.json").exists() or (state_dir / "stage1-recovery-intent.json").is_symlink():
+            if any((state_dir / name).exists() or (state_dir / name).is_symlink() for name in ("stage1-recovery-intent.json", "private-fixture-recovery-intent.json")):
                 raise InstallBlocked("Previous first-stage recovery intent found; normal start prohibited")
             if journal.exists() or journal.is_symlink():
                 raise InstallBlocked("Existing provided installation journal; never replay")
