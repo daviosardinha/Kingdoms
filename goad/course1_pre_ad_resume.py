@@ -83,7 +83,9 @@ def assert_pre_ad_north_resume(provider, manifest, start_playbook):
         if (not isinstance(vmx, str) or not vmx
                 or not ident.is_file() or ident.is_symlink()
                 or not Path(vmx).is_file() or Path(vmx).is_symlink()
-                or Path(vmx).resolve(strict=True).parent.parent.parent.parent.parent != root
+                or not Path(vmx).resolve(strict=True).is_relative_to(
+                    (root / ".vagrant" / "machines" / machine / "vmware_desktop").resolve(strict=True)
+                )
                 or ident.read_text(encoding="utf-8").strip() != vmx):
             raise PreADResumeError("Pre-AD NORTH VMX registration missing or foreign: " + machine)
 
