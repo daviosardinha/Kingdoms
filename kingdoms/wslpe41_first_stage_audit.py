@@ -39,7 +39,7 @@ Write-Output ('WSLPE41_STAGE1_AUDIT=' + ($result | ConvertTo-Json -Compress))
 """
 
 
-def inspect(*, report=print) -> bool:
+def inspect(*, report=print, evidence_out=None) -> bool:
     path = STATE_ROOT / INSTANCE / "provided-install.json"
     if path.is_symlink() or not path.is_file():
         raise InstallBlocked("Exact first-stage install journal unavailable")
@@ -86,5 +86,7 @@ def inspect(*, report=print) -> bool:
     report("[WINDOWS FIXTURE] " + (
         "PRESENT_NEEDS_VALIDATION" if obj["service_matches_expected"] else
         "PARTIALLY_PRESENT" if present else "ABSENT"))
+    if evidence_out is not None:
+        evidence_out.update(obj)  # Exact parsed Windows evidence, not a printed marker.
     report("[NO CHANGES] Journal and Windows remain unchanged; no automatic replay")
     return obj["service_matches_expected"]
