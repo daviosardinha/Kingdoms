@@ -272,6 +272,70 @@ class Course1VmnetPlanTests(unittest.TestCase):
         with self.assertRaises(NetworkPlanError):
             verify_owned_vmnet_runtime(owned, missing_hash, baseline, self.layout)
 
+    def test_exact_oct23_retired_vagrant_nat_requires_approved_proof(self):
+        # Operator's 2026-10-23 original host baseline captured three
+        # abandoned .249 forwards; VMware reused those host ports during the
+        # five-VM bring-up. Original mapping is never silently disposable.
+        old = (
+            "add_nat_portfwd 8 tcp 2200 192.168.213.249 5985",
+            "add_nat_portfwd 8 tcp 2201 192.168.213.249 5986",
+            "add_nat_portfwd 8 tcp 2202 192.168.213.249 22",
+        )
+        original, _, sample = self.vmware_post_vagrant_fixture()
+        baseline = original + ("\\n".join(old) + "\\n").encode()
+        owned = render_vmnet_config(baseline.decode(), self.layout).encode()
+        runtime = ("\\n".join(
+            line for line in owned.decode().splitlines()
+            if line and not line.startswith("#")
+            and not line.startswith("add_nat_portfwd ")
+        ) + "\\n").encode()
+        runtime += (
+            b"add_nat_portfwd 8 tcp 2200 192.168.213.251 22\\n"
+            b"add_nat_portfwd 8 tcp 2201 192.168.213.252 5985\\n"
+            b"add_nat_portfwd 8 tcp 2202 192.168.213.252 5986\\n"
+            b"add_nat_portfwd 8 tcp 2203 192.168.213.252 22\\n"
+        )
+        with self.assertRaises(NetworkPlanError):
+            verify_owned_vmnet_runtime(owned, runtime, baseline, self.layout)
+        verified = verify_owned_vmnet_runtime(
+            owned, runtime, baseline, self.layout,
+            reviewed_nat_retirements=frozenset(old)
+        )
+        self.assertEqual(len(verified), 2)
+
+        for invalid in (
+            frozenset(old[:2]), frozenset(("surprise",)), frozenset(),
+            frozenset((*old, "add_nat_portfwd 8 tcp 2299 192.168.213.249 22")),
+        ):
+            with self.subTest(proof=invalid):
+                with self.assertRaises(NetworkPlanError):
+                    verify_owned_vmnet_runtime(
+                        owned, runtime, baseline, self.layout,
+                        reviewed_nat_retirements=invalid
+                    )
+
+        # Proof does not permit retiring any OTHER original forwarding.
+        foreign = b"add_nat_portfwd 8 tcp 2210 192.168.213.248 22\\n"
+        with self.assertRaises(NetworkPlanError):
+            verify_owned_vmnet_runtime(
+                render_vmnet_config((baseline + foreign).decode(), self.layout).encode(),
+                runtime, baseline + foreign, self.layout,
+                reviewed_nat_retirements=frozenset(old)
+            )
+
+        for tamper in (
+            (b"VNET_20_NAT no", b"VNET_20_NAT yes"),
+            (b"192.168.213.252 5986", b"10.4.10.11 5986"),
+            (b"192.168.213.252 5986", b"192.168.213.252 3389"),
+            (b"add_nat_portfwd 8 tcp 2202 192.168.213.252 5986\\n", b""),
+        ):
+            with self.subTest(tamper=tamper):
+                with self.assertRaises(NetworkPlanError):
+                    verify_owned_vmnet_runtime(
+                        owned, runtime.replace(*tamper), baseline, self.layout,
+                        reviewed_nat_retirements=frozenset(old)
+                    )
+
     def test_config_module_is_no_write_and_has_no_runtime_commands(self):
         source = (Path(__file__).resolve().parents[1] /
                   "goad/course1_vmnet_config.py").read_text()
