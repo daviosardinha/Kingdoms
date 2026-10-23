@@ -85,6 +85,13 @@ class FixtureGuardProbeTests(unittest.TestCase):
             assert doc[0]["hosts"] == "localhost"
             assert doc[0]["vars"]["ansible_connection"] == "local"
             assert all("ansible.builtin.assert" in item for item in doc[0]["tasks"])
+            checks = [t for t in doc[0]["tasks"]
+                      if t["name"].startswith("Private fixture check ")]
+            assert len(checks) == 8
+            assert all(t.get("no_log") is True for t in checks)
+            assert checks[0]["name"] == "Private fixture check PRIVATE_FIXTURE_FLAG"
+            assert checks[-1]["name"] == "Private fixture check STORED_WINLOGON_FIXTURE_DEFINED"
+            assert all(len(t["ansible.builtin.assert"]["that"]) == 1 for t in checks)
             captured.append(source)
             return SimpleNamespace(returncode=0, stderr="", stdout=(
                 "TASK [Refuse source-visible fixture credentials in any non-status action]\\n"
@@ -110,6 +117,16 @@ class FixtureGuardProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallBlocked, "controller-only Ansible fixture guard FAILED"):
             probe.prove()
         self.assertEqual(self.journal.read_bytes(), self.old)
+
+    def test_sensitive_failed_condition_is_identified_without_secret_content(self):
+        self._run(returncode=2, stdout=(
+            "TASK [Private fixture check INSTANCE_IDENTITY_MATCH]\\n"
+            "fatal: [localhost]: FAILED! => censored\\n"))
+        with self.assertRaisesRegex(
+            InstallBlocked, "failed_condition=INSTANCE_IDENTITY_MATCH"
+        ) as raised:
+            probe.prove()
+        self.assertNotIn("password", str(raised.exception).lower())
 
     def test_unrelated_or_missing_journal_refused_without_ansible(self):
         runner, _ = self._run()
