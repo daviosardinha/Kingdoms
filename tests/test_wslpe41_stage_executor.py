@@ -160,7 +160,7 @@ class AnsibleStageExecutorTests(unittest.TestCase):
                   patch("kingdoms.wslpe41_stage_executor._inventory"),
                   patch("kingdoms.wslpe41_stage_executor.subprocess.run",
                         return_value=SimpleNamespace(returncode=code, stdout=stdout, stderr=""))):
-                with self.assertRaisesRegex(InstallBlocked, "runtime proof missing"):
+                with self.assertRaisesRegex(InstallBlocked, "runtime proof missing" if code == 0 else "Ansible rc=1"):
                     run_ansible_stage(self.context, self.scenario, "apply")
 
     def test_rejects_jea_activation_without_guest_console(self):
