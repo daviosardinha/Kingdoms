@@ -59,7 +59,7 @@ class FixtureGuardProbeTests(unittest.TestCase):
         output = []
         self.assertTrue(probe.prove(report=output.append))
         args = runner.call_args.args[0]
-        self.assertEqual(args[0:2], [str(self.context.ansible), "--check"])
+        self.assertEqual(args[0:4], [str(self.context.ansible), "-i", "localhost,", "--check"])
         self.assertEqual(args[args.index("--limit")+1], "localhost")
         self.assertEqual(args.count("@" + str(self.context.private_vars)), 1)
         self.assertEqual(args.count("-e"), 2)
@@ -83,6 +83,7 @@ class FixtureGuardProbeTests(unittest.TestCase):
             doc = yaml.safe_load(content)
             assert len(doc) == 1
             assert doc[0]["hosts"] == "localhost"
+            assert doc[0]["vars"]["ansible_connection"] == "local"
             assert all("ansible.builtin.assert" in item for item in doc[0]["tasks"])
             captured.append(source)
             return SimpleNamespace(returncode=0, stderr="", stdout=(
