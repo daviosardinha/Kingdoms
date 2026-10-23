@@ -379,7 +379,16 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
         # treating the mutable VMware configuration file as immutable.
         # NORTH additionally proves *all* observed changes are explicitly
         # permitted VMware/Vagrant runtime normalization, never silent edits.
-        retirement = reviewed_nat_retirements(identity, saved.read_bytes(), owner_uid=owner_uid)
+        # Resolve the optional retirement receipt alongside the verified
+        # owner record, never against the developer's real /etc/vmware when
+        # inspecting a fixture with its own owner/networking/backup paths.
+        # Native production owner is /etc/vmware/kingdoms-course1-owner.json,
+        # so this still resolves to the root-owned production attestation.
+        retirement_path = record_path.parent / RETIRED_NAT.name
+        retirement = reviewed_nat_retirements(
+            identity, saved.read_bytes(), source=retirement_path,
+            owner_uid=owner_uid
+        )
         verify_owned_vmnet_runtime(
             committed, installed, saved.read_bytes(), layout,
             reviewed_nat_retirements=retirement
