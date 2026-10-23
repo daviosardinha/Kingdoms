@@ -102,6 +102,31 @@ class FixtureGuardProbeTests(unittest.TestCase):
         self.assertFalse(captured[0].exists())
         self.assertEqual(self.journal.read_bytes(), original)
 
+    def test_controller_play_resolves_private_fixture_learner_references(self):
+        """Controller must bind same private learner context as Windows role."""
+        import yaml
+        root = Path(__file__).resolve().parents[1]
+        playbook = yaml.safe_load(
+            (root / "ansible/wslpe-lpe-test.yml").read_text(encoding="utf-8")
+        )
+        controller, target = playbook
+        defaults = yaml.safe_load(
+            (root / "ansible/roles/windows_lpe/defaults/main.yml")
+            .read_text(encoding="utf-8")
+        )
+        self.assertEqual(controller["hosts"], "localhost")
+        self.assertEqual(controller["vars"]["windows_lpe_learner_account"],
+                         r"WSLPE-WS01\\lpe.trainee")
+        self.assertEqual(controller["vars"]["windows_lpe_learner_password"],
+                         "{{ lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') }}")
+        self.assertEqual(defaults["windows_lpe_powershell_history_credentials"]["target_account"],
+                         "{{ windows_lpe_learner_account }}")
+        self.assertEqual(defaults["windows_lpe_stored_runas_credentials"]["owner_password"],
+                         "{{ windows_lpe_learner_password }}")
+        self.assertEqual(target["hosts"], "wslpe")
+        self.assertNotIn("windows_lpe_learner_password",
+                         str(self.journal.read_bytes()))
+
     def test_early_ansible_failure_is_categorized_without_raw_stderr(self):
         diagnostic = probe._safe_ansible_failure(
             "ERROR! couldn't resolve module/action 'fake_module' "
