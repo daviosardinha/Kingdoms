@@ -23,6 +23,8 @@ class FirstStageRecoveryTests(unittest.TestCase):
         self.root = base / "state"
         self.journal = self.root / provided.INSTANCE / "provided-install.json"
         self.journal.parent.mkdir(mode=0o700, parents=True)
+        self.root.chmod(0o700)
+        self.journal.parent.chmod(0o700)
         self.identity = FreshGuestIdentity(
             instance_id=provided.INSTANCE, workspace=str(base),
             vmx=str(base / "fresh.vmx"),
