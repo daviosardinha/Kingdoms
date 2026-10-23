@@ -1488,6 +1488,15 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         narrow state. Installed/maintenance instances have a recorded runtime mode
         and continue through the normal AD-aware mode controller.
         """
+        # A prior first install may have completed all five VM bring-ups yet
+        # stopped at management-plane preparation (before build.yml). The
+        # console can grant a one-call authorization after verifying the exact
+        # failed receipt, matching provider owner, roster and live VMware VMX.
+        # Never use this for established AD or normal snapshot/start paths.
+        if (self.lab_name == 'NORTH'
+                and getattr(self, '_north_pre_ad_resume_authorized', False) is True
+                and self.get_runtime_mode() == 'unknown'):
+            return True
         profile = getattr(self, '_kingdoms_install_profile', None)
         return (
             self.lab_name in ('GOAD', 'NORTH')
