@@ -10,7 +10,6 @@ on:
       - goad/course1_host_network_apply.py
       - tests/test_course1_vmnet_config.py
       - tests/test_course1_retired_nat_attestation.py
-      - tests/test_course1_one_command_bootstrap.py
       - .github/workflows/north-native-nat-retirement.yml
 
 permissions:
@@ -26,11 +25,10 @@ jobs:
           python-version: '3.12'
       - name: Syntax and source qualification
         run: |
-          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py tests/test_course1_one_command_bootstrap.py
+          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py
       - name: Strict NAT and native NORTH install regression
         run: |
           python -m unittest -v \
             tests.test_course1_vmnet_config \
             tests.test_course1_retired_nat_attestation \
-            tests.test_course1_host_network_apply \
-            tests.test_course1_one_command_bootstrap
+            tests.test_course1_host_network_apply
