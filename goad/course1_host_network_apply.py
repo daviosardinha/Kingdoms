@@ -396,6 +396,28 @@ def diagnose_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
 
 
 def main():
+    # This is reserved for an explicit *new* NORTH install, never for
+    # existing-instance repair. It captures the current baseline SHA as a
+    # compare-and-swap guard, NOT as a prior human-reviewed snapshot.
+    # apply() still performs zero-running-guest, address, VMX, lock, and
+    # ownership checks before any VMware/systemd modification.
+    if len(sys.argv) > 1 and sys.argv[1] == "native-bootstrap":
+        parser = argparse.ArgumentParser(
+            description="Guarded clean-host network bootstrap for native NORTH install")
+        parser.add_argument("--provider-dir", required=True)
+        args = parser.parse_args(sys.argv[2:])
+        try:
+            require_explicit_root()
+            _plain_regular(NETWORKING)
+            baseline_sha256 = hashlib.sha256(NETWORKING.read_bytes()).hexdigest()
+            print("[NORTH] Captured live VMware baseline for native fresh install", flush=True)
+            apply(args.provider_dir, baseline_sha256)
+            for item in inspect_installed_north(args.provider_dir):
+                print("[PASS] " + item, flush=True)
+        except (NorthSetupError, ValueError, OSError, RuntimeError) as exc:
+            parser.exit(1, "[BLOCKED] NORTH fresh-install bootstrap: " + str(exc) + "\\n")
+        return
+
     # The original --north apply CLI remains unchanged. Verification is a
     # distinct, root-readable, read-only action; never call apply from it.
     if len(sys.argv) > 1 and sys.argv[1] == "diagnose":
