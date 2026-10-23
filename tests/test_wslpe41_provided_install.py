@@ -133,6 +133,22 @@ class Provided41JournalTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallBlocked, "nonce"):
             provided.console_command("invalid")
 
+    def test_cli_reports_precise_sudo_guard_without_starting_any_scenario(self):
+        source = Path(__file__).resolve().parents[1] / "scripts/wslpe41-provided-install.py"
+        spec = importlib.util.spec_from_file_location("provided_cli_gate_test", source)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from kingdoms.wslpe41_management_nic import NicBlocked
+        with (patch.object(mod, "install",
+                           side_effect=NicBlocked("Host maintenance guard failed: sudo")) as actual,
+              redirect_stdout(io.StringIO()) as output):
+            self.assertEqual(
+                mod.main(["--start", "--authorize", "START-EXISTING-WSLPE41"]), 2)
+        self.assertEqual(actual.call_args.args, ("start",))
+        self.assertIn("Host maintenance guard failed: sudo", output.getvalue())
+        self.assertIn("sudo -v", output.getvalue())
+        self.assertIn("[NO SCENARIOS]", output.getvalue())
+
     def test_cli_requires_explicit_existing_guest_approval(self):
         source = Path(__file__).resolve().parents[1] / "scripts/wslpe41-provided-install.py"
         spec = importlib.util.spec_from_file_location("provided_cli_test", source)
