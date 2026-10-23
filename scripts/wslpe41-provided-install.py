@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from kingdoms.wslpe41_management_nic import NicBlocked
 from kingdoms.wslpe41_install_flow import InstallBlocked
-from kingdoms.wslpe41_provided_install import install
+from kingdoms.wslpe41_provided_install import install, diagnose
 
 
 def main(argv=None):
@@ -29,6 +29,8 @@ def main(argv=None):
                       help="continue only after Windows-console JEA #30 witness")
     mode.add_argument("--status", action="store_true",
                       help="inspect exact provided install journal without scenario writes")
+    mode.add_argument("--diagnose", action="store_true",
+                      help="read-only preflight with specific failed gate and journal check")
     parser.add_argument("--authorize", default="",
                         help="mandatory confirmation START-EXISTING-WSLPE41 before --start")
     args = parser.parse_args(argv)
@@ -38,10 +40,12 @@ def main(argv=None):
     if not args.start and args.authorize:
         print("[BLOCKED] --authorize belongs only to --start")
         return 2
-    selection = "start" if args.start else "resume" if args.resume else "status"
+    selection = "diagnose" if args.diagnose else "start" if args.start else "resume" if args.resume else "status"
     print("[SCOPE] Existing bf5369-wslpe-vmware ONLY; NORTH and old WSLPE excluded", flush=True)
     print("[MODE] " + selection + " | one journal | 41 scenarios / 83 stages", flush=True)
     try:
+        if args.diagnose:
+            return 0 if diagnose() else 2
         result = install(selection)
         if result == "PAUSED":
             print("[JEA HANDOFF] Only interactive VMware-console action is permitted next")
@@ -59,7 +63,14 @@ def main(argv=None):
                   "then recheck the existing vmnet4 keeper", flush=True)
         print("[NO SCENARIOS] Inspect original journal before retrying --start", flush=True)
         return 2
-    except (InstallBlocked, ValueError, OSError, RuntimeError) as exc:
+    except InstallBlocked as exc:
+        # InstallBlocked is raised with a fixed program-authored safety reason;
+        # do not forward Ansible stdout/stderr or credential contents.
+        reason = str(exc).replace("\\r", " ").replace("\\n", " ")[:240]
+        print("[BLOCKED] WSLPE41 installation invariant: " + reason, flush=True)
+        print("[PRESERVED] Review journal and gate before considering --start", flush=True)
+        return 2
+    except (ValueError, OSError, RuntimeError) as exc:
         print(f"[BLOCKED] Provided WSLPE41 stage installer: {type(exc).__name__}", flush=True)
         print("[PRESERVED] Journal/guest/credentials unchanged by any automatic retry", flush=True)
         return 2
