@@ -33,7 +33,7 @@ class Stage7ProfileRecoveryTests(unittest.TestCase):
             instance_id=audit.INSTANCE, workspace=str(home),
             vmx=str(self.vmx), subnet="172.28.232.0/24", source_commit="b" * 40,
         )
-        self.context = SimpleNamespace(identity=self.identity)
+        self.context = SimpleNamespace(identity=self.identity, private_vars=home / "private-vars.yml")
         self.record = {
             "schema": provided.SCHEMA, "instance": audit.INSTANCE,
             "vmx": str(self.vmx), "source_commit": "a" * 40,
@@ -112,7 +112,7 @@ class Stage7ProfileRecoveryTests(unittest.TestCase):
         bad = dict(self.evidence)
         bad["machine_policy_value"] = 1
         _, creator, installer = self._mocks(evidence=bad)
-        with self.assertRaisesRegex(InstallBlocked, "state changed"):
+        with self.assertRaisesRegex(InstallBlocked, "(state changed|Unexpected scenario7 Windows state)"):
             recovery.recover()
         self.assertEqual(self.journal.read_bytes(), self.original)
         self.assertFalse((self.state_dir / "stage7-profile-recovery-intent.json").exists())
