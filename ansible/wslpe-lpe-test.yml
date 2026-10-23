@@ -25,6 +25,12 @@
   vars:
     wslpe_action: status
     wslpe_techniques: []
+    # The controller guard evaluates whole private fixture dictionaries.
+    # Two fixture fields reference the learner binding supplied to the
+    # Windows role below; provide the same workgroup values on localhost.
+    # Never store or pass the learner secret as a command-line literal.
+    windows_lpe_learner_account: 'WSLPE-WS01\lpe.trainee'
+    windows_lpe_learner_password: "{{ lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') }}"
   tasks:
     - name: Require a single WSLPE target and exact approved action
       ansible.builtin.assert:
