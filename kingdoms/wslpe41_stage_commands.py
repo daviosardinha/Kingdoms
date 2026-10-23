@@ -129,6 +129,10 @@ def build_stage_invocation(
             if argv[3:5] != ["-i", str(varsfile)]:
                 raise StagePlanBlocked("Unexpected indexed Ansible inventory arguments")
             del argv[3:5]
+            # Private fixtures are variable data, never an inventory source.
+            # File-path argument only; do not expose credential values in argv.
+            # Extra-vars carry across both controller and Windows plays.
+            argv[-2:-2] = ["-e", "@" + str(varsfile)]
         return StageInvocation(
             scenario.number, scenario.identifier, stage, "ansible", tuple(argv),
             f"WSLPE21_STAGE={scenario.identifier}:{'apply' if stage == 'apply' else 'vulnerable'}:PASS",
@@ -143,8 +147,9 @@ def build_stage_invocation(
         (str(ansible), "-i", str(inventory)) if management_address else
         (str(ansible), "-i", str(inventory), "-i", str(varsfile))
     ) + (
-        "--limit", "ws01,localhost", str(target), "-e",
-        json.dumps(extra, separators=(",", ":")),
+        "--limit", "ws01,localhost", str(target),
+        *((("-e", "@" + str(varsfile)) if management_address else ())),
+        "-e", json.dumps(extra, separators=(",", ":")),
     )
     return StageInvocation(
         scenario.number, scenario.identifier, stage, "ansible", argv,
