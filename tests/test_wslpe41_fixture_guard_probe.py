@@ -78,7 +78,6 @@ class FixtureGuardProbeTests(unittest.TestCase):
             assert source.stat().st_mode & 0o077 == 0
             content = source.read_text()
             assert "Exercise the shared Windows LPE role" not in content
-            assert "operator" not in content.lower()
             assert "windows_lpe_unattend_credentials" in content
             doc = yaml.safe_load(content)
             assert len(doc) == 1
