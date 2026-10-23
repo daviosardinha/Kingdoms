@@ -122,7 +122,7 @@ class Stage7ProfileRecoveryTests(unittest.TestCase):
     def test_native_profile_failure_blocks_and_never_replays_stage7(self):
         _, creator, installer = self._mocks(
             profile_failure=InstallBlocked("Native CreateProfile stage7 preparation failed"))
-        with self.assertRaisesRegex(InstallBlocked, "native", flags=0):
+        with self.assertRaisesRegex(InstallBlocked, "Native CreateProfile"):
             recovery.recover()
         new = json.loads(self.journal.read_text())
         self.assertEqual(new["status"], "BLOCKED")
