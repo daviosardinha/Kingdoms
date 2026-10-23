@@ -149,6 +149,48 @@ class Provided41JournalTests(unittest.TestCase):
         self.assertIn("sudo -v", output.getvalue())
         self.assertIn("[NO SCENARIOS]", output.getvalue())
 
+    def test_readonly_diagnose_stops_on_existing_journal_without_preflight(self):
+        journal = self._journal()
+        journal.parent.mkdir(parents=True, mode=0o700)
+        journal.write_text(json.dumps({
+            "status": "BLOCKED", "next_stage": 0,
+            "configuration_validated": 0,
+            "inflight": {"number": 1, "stage": "apply"},
+        }))
+        with (patch.object(provided, "STATE_ROOT", self.root),
+              patch.object(provided, "_preflight") as preflight):
+            output = []
+            self.assertFalse(provided.diagnose(report=output.append))
+            self.assertIn("[STOP] Existing installation journal; do not rerun --start", output)
+            self.assertTrue(any("inflight=True" in line for line in output))
+        preflight.assert_not_called()
+
+    def test_readonly_diagnose_passes_without_state_or_scenario_writes(self):
+        with (patch.object(provided, "STATE_ROOT", self.root),
+              patch.object(provided, "_preflight",
+                           return_value=(self.context, "O", "L")) as preflight,
+              patch.object(provided, "run_ansible_stage") as installer):
+            output = []
+            self.assertTrue(provided.diagnose(report=output.append))
+            self.assertIn("[READY] WSLPE41_PROVIDED_START_PREFLIGHT=PASS", output)
+        self.assertFalse(self.root.exists())
+        installer.assert_not_called()
+        preflight.assert_called_once()
+
+    def test_cli_surfaces_safe_installblocked_diagnostic(self):
+        source = Path(__file__).resolve().parents[1] / "scripts/wslpe41-provided-install.py"
+        spec = importlib.util.spec_from_file_location("provided_diagnostic_cli", source)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with (patch.object(mod, "diagnose",
+                           side_effect=InstallBlocked("Installer source tree is dirty")) as diagnostic,
+              patch.object(mod, "install") as install,
+              redirect_stdout(io.StringIO()) as output):
+            self.assertEqual(mod.main(["--diagnose"]), 2)
+        diagnostic.assert_called_once()
+        install.assert_not_called()
+        self.assertIn("Installer source tree is dirty", output.getvalue())
+
     def test_cli_requires_explicit_existing_guest_approval(self):
         source = Path(__file__).resolve().parents[1] / "scripts/wslpe41-provided-install.py"
         spec = importlib.util.spec_from_file_location("provided_cli_test", source)
