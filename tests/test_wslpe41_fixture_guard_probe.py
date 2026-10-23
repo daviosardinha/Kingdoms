@@ -116,7 +116,7 @@ class FixtureGuardProbeTests(unittest.TestCase):
         )
         self.assertEqual(controller["hosts"], "localhost")
         self.assertEqual(controller["vars"]["windows_lpe_learner_account"],
-                         r"WSLPE-WS01\\lpe.trainee")
+                         r"WSLPE-WS01\lpe.trainee")
         self.assertEqual(controller["vars"]["windows_lpe_learner_password"],
                          "{{ lookup('ansible.builtin.env', 'KINGDOMS_WSLPE_LEARNER_PASSWORD') }}")
         self.assertEqual(defaults["windows_lpe_powershell_history_credentials"]["target_account"],
