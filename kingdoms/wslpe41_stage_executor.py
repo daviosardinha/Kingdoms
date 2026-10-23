@@ -196,7 +196,7 @@ def run_ansible_stage(
         # Do not log raw Ansible stdout/stderr: a fixture playbook can contain
         # intentionally vulnerable credential artifacts. Report only the last
         # static Ansible task name, bounded exit code and transcript digest.
-        names = re.findall(r"(?m)^TASK \\[([^\\]\r\n]{1,200})\\]", result.stdout)
+        names = re.findall(r"(?m)^TASK \[([^\r\n]{1,180})\]", result.stdout)
         last = names[-1] if names else "no-task-marker"
         last = re.sub(r"[^A-Za-z0-9 ._:/()-]", "_", last)[:100]
         digest = hashlib.sha256(result.stdout.encode("utf-8")).hexdigest()[:12]
