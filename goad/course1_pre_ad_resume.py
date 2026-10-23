@@ -50,7 +50,7 @@ def assert_pre_ad_north_resume(provider, manifest, start_playbook):
         raise PreADResumeError("Pre-AD NORTH instance metadata is invalid") from exc
     if (not isinstance(data, dict) or data.get("id") != root.parent.name
             or data.get("lab") != "NORTH" or data.get("provider") != "vmware"
-            or data.get("status") == "ready"):
+            or data.get("status") != "ready for provisioning"):
         raise PreADResumeError("Pre-AD recovery instance identity/status differs")
 
     receipts = root.parent / "install-timings"
