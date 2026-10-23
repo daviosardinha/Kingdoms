@@ -1,7 +1,7 @@
 """Regression coverage for explicit non-interactive CLI installs."""
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from goad_nomad import GoadNomad, _dispatch_task
 
@@ -104,6 +104,44 @@ class InstallNonInteractiveTests(unittest.TestCase):
         manager.get_current_lab_name.return_value = 'GOAD'
         self.assertFalse(console.do_resume_north('vulnerabilities.yml'))
         provisioner.run_from.assert_called_once()
+
+    def test_first_playbook_resume_uses_scoped_pre_ad_gate(self):
+        console, manager, provider, provisioner = self._north_resume_console()
+        provider.get_runtime_mode.return_value = 'unknown'
+        observed = []
+        def run(playbook):
+            observed.append((playbook, provider._north_pre_ad_resume_authorized))
+            return True
+        provisioner.run_from.side_effect = run
+        with patch('goad_nomad.assert_pre_ad_north_resume',
+                   return_value=('exact receipt',)) as proof:
+            self.assertTrue(console.do_resume_north('build.yml'))
+        proof.assert_called_once()
+        self.assertEqual(observed, [('build.yml', True)])
+        self.assertIs(provider._north_pre_ad_resume_authorized, False)
+        provider.install.assert_not_called()
+
+    def test_first_playbook_resume_rejects_missing_receipt(self):
+        console, manager, provider, provisioner = self._north_resume_console()
+        provider.get_runtime_mode.return_value = 'unknown'
+        with patch('goad_nomad.assert_pre_ad_north_resume',
+                   side_effect=Exception('unexpected')) as proof:
+            # Fail closed without invoking provider/Ansible. A *typed*
+            # PreADResumeError is the expected user-facing case.
+            from goad.course1_pre_ad_resume import PreADResumeError
+            proof.side_effect = PreADResumeError('receipt not trusted')
+            self.assertFalse(console.do_resume_north('build.yml'))
+        provisioner.run_from.assert_not_called()
+        manager.get_current_instance.return_value.set_status.assert_not_called()
+
+    def test_scoped_pre_ad_grant_cleared_when_ansible_fails(self):
+        console, manager, provider, provisioner = self._north_resume_console()
+        provider.get_runtime_mode.return_value = 'unknown'
+        provisioner.run_from.return_value = False
+        with patch('goad_nomad.assert_pre_ad_north_resume', return_value=('ok',)):
+            self.assertFalse(console.do_resume_north('build.yml'))
+        self.assertIs(provider._north_pre_ad_resume_authorized, False)
+        manager.get_current_instance.return_value.set_status.assert_not_called()
 
     def test_non_interactive_create_skips_confirmation_and_creates_instance(self):
         goad = GoadNomad.__new__(GoadNomad)
