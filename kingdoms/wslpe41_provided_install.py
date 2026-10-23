@@ -220,8 +220,13 @@ def _install_steps(context, state, journal, stages):
         try:
             proof = run_ansible_stage(context, scenarios[step.number], step.stage)
             verify_stage(scenarios[step.number], step.stage, proof)
-        except BaseException:
+        except BaseException as exc:
             state["status"] = "BLOCKED"
+            # Keep only source-authored, bounded error classification, not
+            # Ansible output, Windows private data or credential material.
+            state["failure_class"] = type(exc).__name__
+            if isinstance(exc, InstallBlocked):
+                state["failure_gate"] = str(exc)[:240]
             checkpoint(journal, state)
             raise
         state["proofs"].append({
