@@ -92,6 +92,40 @@ def prove(report=print) -> bool:
         raise InstallBlocked("Controller preflight is no longer assert-only")
     if not all("ansible.builtin.assert" in task for task in tasks):
         raise InstallBlocked("Controller preflight gained mutating task")
+    # Derive diagnostic predicates from the canonical guard itself.
+    # Keep the original assert unchanged; each probe checks exactly one
+    # existing expression with no_log and a fixed condition name, never
+    # exposing private values or source-controlled credential fixtures.
+    guarded = [i for i, task in enumerate(tasks)
+               if task.get("name") == "Refuse source-visible fixture credentials in any non-status action"]
+    if len(guarded) != 1:
+        raise InstallBlocked("Canonical fixture guard missing or duplicated")
+    guard = tasks[guarded[0]]
+    original = guard.get("ansible.builtin.assert", {})
+    expressions = original.get("that", [])
+    labels = (
+        "PRIVATE_FIXTURE_FLAG",
+        "INSTANCE_IDENTITY_MATCH",
+        "INSTANCE_ID_PRESENT",
+        "UNATTEND_FIXTURE_DEFINED",
+        "POWERSHELL_HISTORY_FIXTURE_DEFINED",
+        "HARDCODED_APPLICATION_FIXTURE_DEFINED",
+        "STORED_RUNAS_FIXTURE_DEFINED",
+        "STORED_WINLOGON_FIXTURE_DEFINED",
+    )
+    if (len(expressions) != len(labels)
+            or not guard.get("no_log")
+            or original.get("quiet") is not True):
+        raise InstallBlocked("Canonical private credential guard shape changed")
+    diagnostic_tasks = [
+        {"name": "Private fixture check " + label,
+         "ansible.builtin.assert": {
+             "that": [expression], "quiet": True,
+             "fail_msg": "Credential condition blocked"},
+         "when": "wslpe_action != 'status'",
+         "no_log": True}
+        for label, expression in zip(labels, expressions)
+    ]
     args = list(first.argv)
     at = args.index("--limit")
     if args[at + 1] != "ws01,localhost" or args.count(str(yaml_file)) != 1:
@@ -116,6 +150,8 @@ def prove(report=print) -> bool:
         controller_play = dict(first_play)
         controller_play["vars"] = dict(first_play.get("vars") or {})
         controller_play["vars"]["ansible_connection"] = "local"
+        controller_play["tasks"] = (tasks[:guarded[0]] +
+                                     diagnostic_tasks + tasks[guarded[0]:])
         controller.write_text(yaml.safe_dump([controller_play], sort_keys=False),
                               encoding="utf-8")
         controller.chmod(0o600)
@@ -131,9 +167,16 @@ def prove(report=print) -> bool:
         names = re.findall(r"(?m)^TASK \[([^\r\n]{1,180})\]", result.stdout)
         last = re.sub(r"[^A-Za-z0-9 ._:/()-]", "_",
                       names[-1] if names else "no-task-marker")[:100]
+        if "Private fixture check " in last:
+            condition = last.split("Private fixture check ", 1)[1]
+            if condition not in labels:
+                condition = "UNRECOGNIZED_CONDITION"
+        else:
+            condition = "NOT_DETERMINED"
         raise InstallBlocked(
             f"Private controller-only Ansible fixture guard FAILED: rc={result.returncode}; "
-            f"last_task={last}; {_safe_ansible_failure(result.stderr, result.stdout)}")
+            f"failed_condition={condition}; last_task={last}; "
+            f"{_safe_ansible_failure(result.stderr, result.stdout)}")
     for marker in ("Refuse source-visible fixture credentials in any non-status action",
                    "Require the local learner secret for technique application"):
         if result.stdout.count("TASK [" + marker + "]") != 1:
