@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from kingdoms.wslpe41_management_nic import NicBlocked
 from kingdoms.wslpe41_install_flow import InstallBlocked
-from kingdoms.wslpe41_provided_install import install, diagnose
+from kingdoms.wslpe41_provided_install import install, diagnose, recover_clean_blocked_stage1
 
 
 def main(argv=None):
@@ -31,22 +31,32 @@ def main(argv=None):
                       help="inspect exact provided install journal without scenario writes")
     mode.add_argument("--diagnose", action="store_true",
                       help="read-only preflight with specific failed gate and journal check")
+    mode.add_argument("--recover-clean-stage1", action="store_true",
+                      help="one approved recovery of exact BLOCKED stage1 after independent Windows absence")
     parser.add_argument("--authorize", default="",
                         help="mandatory confirmation START-EXISTING-WSLPE41 before --start")
     args = parser.parse_args(argv)
     if args.start and args.authorize != "START-EXISTING-WSLPE41":
         print("[BLOCKED] Exact existing-guest installation authorization required")
         return 2
-    if not args.start and args.authorize:
-        print("[BLOCKED] --authorize belongs only to --start")
+    if args.recover_clean_stage1 and args.authorize != "RECOVER-EMPTY-WSLPE41-STAGE1":
+        print("[BLOCKED] Exact one-time stage1 recovery authorization required")
         return 2
-    selection = "diagnose" if args.diagnose else "start" if args.start else "resume" if args.resume else "status"
+    if not (args.start or args.recover_clean_stage1) and args.authorize:
+        print("[BLOCKED] --authorize belongs only to --start or --recover-clean-stage1")
+        return 2
+    selection = ("recover-clean-stage1" if args.recover_clean_stage1 else
+                 "diagnose" if args.diagnose else "start" if args.start else
+                 "resume" if args.resume else "status")
     print("[SCOPE] Existing bf5369-wslpe-vmware ONLY; NORTH and old WSLPE excluded", flush=True)
     print("[MODE] " + selection + " | one journal | 41 scenarios / 83 stages", flush=True)
     try:
         if args.diagnose:
             return 0 if diagnose() else 2
-        result = install(selection)
+        if args.recover_clean_stage1:
+            result = recover_clean_blocked_stage1()
+        else:
+            result = install(selection)
         if result == "PAUSED":
             print("[JEA HANDOFF] Only interactive VMware-console action is permitted next")
         return 0
