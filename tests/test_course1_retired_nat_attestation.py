@@ -18,7 +18,7 @@ class RetiredNatAttestationTests(unittest.TestCase):
             "schema": "kingdoms.north.retired-nat.v1",
             "provider": provider,
             "baseline_sha256": hashlib.sha256(base).hexdigest(),
-            "reviewed_prior_owner": "ac9fda-north-vmware",
+            "reviewed_prior_owner": "bf5369-wslpe-vmware",
             "removed_rules": [
                 "add_nat_portfwd 8 tcp 2200 192.168.213.249 5985",
                 "add_nat_portfwd 8 tcp 2201 192.168.213.249 5986",
@@ -59,6 +59,40 @@ class RetiredNatAttestationTests(unittest.TestCase):
                         reviewed_nat_retirements(
                             provider, baseline, source=path, owner_uid=os.geteuid()
                         )
+
+    def test_prior_owner_cannot_be_fabricated_or_unrelated(self):
+        with TemporaryDirectory() as d:
+            path = Path(d) / "attest.json"
+            baseline = b"baseline bytes"
+            provider = "/tmp/exact-north/provider"
+            sample = self.sample(baseline, provider)
+            for prior in (
+                "bf5369-wslpe-vmware", "ac9fda-north-vmware"
+            ):
+                with self.subTest(owner=prior):
+                    path.write_text(json.dumps({
+                        **sample, "reviewed_prior_owner": prior
+                    }))
+                    path.chmod(0o600)
+                    self.assertEqual(
+                        reviewed_nat_retirements(
+                            provider, baseline, source=path,
+                            owner_uid=os.geteuid()),
+                        frozenset(sample["removed_rules"])
+                    )
+            for prior in (
+                "bf5369-kingdoms-vmware", "d986ad-wslpe-vmware/other",
+                "bf5369-WSLPE-vmware", "../bf5369-wslpe-vmware", "",
+            ):
+                with self.subTest(owner=prior):
+                    path.write_text(json.dumps({
+                        **sample, "reviewed_prior_owner": prior
+                    }))
+                    path.chmod(0o600)
+                    with self.assertRaises(NorthSetupError):
+                        reviewed_nat_retirements(
+                            provider, baseline, source=path,
+                            owner_uid=os.geteuid())
 
     def test_duplicate_extra_rules_and_unsafe_file_refused(self):
         with TemporaryDirectory() as d:
