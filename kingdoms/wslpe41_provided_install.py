@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import fcntl
+import hashlib
+import stat
 import json
 import os
 from pathlib import Path
@@ -287,6 +289,105 @@ def diagnose(report=print) -> bool:
     return True
 
 
+def recover_clean_blocked_stage1() -> str:
+    """ONE explicit recovery from a blocked/empty first stage, no journal deletion.
+
+    This only authorizes a new stage-1 run after independent Windows absence,
+    private journal attestation and an Ansible syntax check. If the process
+    crashes during archival, a permanent recovery intent blocks normal start.
+    """
+    from kingdoms.wslpe41_first_stage_audit import inspect as inspect_windows
+    from kingdoms.wslpe41_stage_executor import _environment, _inventory
+
+    context, operator, learner = _preflight()
+    state_dir = private_instance_directory(STATE_ROOT, INSTANCE)
+    journal = state_dir / "provided-install.json"
+    archived = state_dir / "provided-install.blocked-stage1.json"
+    intent = state_dir / "stage1-recovery-intent.json"
+    lock = os.open(state_dir / ".install.lock",
+                   os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if (archived.exists() or archived.is_symlink()
+                or intent.exists() or intent.is_symlink()):
+            raise InstallBlocked("Previous stage1 recovery already attempted or interrupted")
+        if journal.is_symlink() or not journal.is_file():
+            raise InstallBlocked("Original blocked installation journal missing or linked")
+        st = journal.stat()
+        if (st.st_uid != os.geteuid() or st.st_mode & 0o077
+                or st.st_nlink != 1 or st.st_size > 250_000):
+            raise InstallBlocked("Existing blocked journal ownership/mode unsafe")
+        raw = journal.read_bytes()
+        old = json.loads(raw)
+        if (old.get("schema") != SCHEMA or old.get("instance") != INSTANCE
+                or old.get("vmx") != context.identity.vmx
+                or not re.fullmatch(r"[a-f0-9]{40}", str(old.get("source_commit", "")))
+                or not re.fullmatch(r"[a-f0-9]{32}", str(old.get("jea_nonce", "")))
+                or old.get("status") != "BLOCKED"
+                or old.get("next_stage") != 0
+                or old.get("configuration_validated") != 0
+                or old.get("inflight") != {"number": 1, "stage": "apply"}
+                or old.get("proofs") != []):
+            raise InstallBlocked("Recovery requires the exact failed stage1 apply with zero proofs")
+
+        # The old source revision may differ from HEAD because the explicit
+        # recovery implementation itself changed. This exception is allowed
+        # ONLY for the exact zero-proof first stage and is journaled below.
+        windows = {}
+        if inspect_windows(report=print, evidence_out=windows):
+            raise InstallBlocked("Service already matches scenario1; do not replay")
+        if any(windows.get(key) is not False for key in (
+                "service_exists", "service_matches_expected",
+                "scenario_directory_exists", "service_executable_exists",
+                "candidate_exists")):
+            raise InstallBlocked("Stage1 Windows artifacts are present or uncertain")
+
+        stages = _stages(context)
+        first = stages[0]
+        if (first.number != 1 or first.stage != "apply"
+                or first.transport != "ansible" or not first.argv):
+            raise InstallBlocked("Canonical first stage drift")
+        with private_environment(context, operator, learner):
+            env = _environment(context)
+            _inventory(context, env)
+            syntax = subprocess.run(
+                [str(first.argv[0]), "--syntax-check", *first.argv[1:]],
+                cwd=ROOT, env=env, capture_output=True, text=True,
+                stdin=subprocess.DEVNULL, timeout=90, check=False,
+            )
+            if syntax.returncode:
+                raise InstallBlocked(
+                    f"First-stage Ansible syntax check failed (rc={syntax.returncode}); "
+                    "original journal preserved; review source before attempting recovery"
+                )
+            print("[PASS] Exact stage1 Ansible syntax-check; no Windows changes")
+            print("[PASS] Exact original BLOCKED journal and absent Windows fixture")
+            new_state = _base_state(context)
+            new_state["recovery"] = {
+                "kind": "one-time-empty-stage1",
+                "archived_sha256": hashlib.sha256(raw).hexdigest(),
+                "archived_source_commit": old["source_commit"],
+                "new_source_commit": context.identity.source_commit,
+                "windows_absence_rechecked": True,
+                "ansible_syntax_check": "PASS",
+            }
+
+            # Write a permanent intent before moving the old journal. In the
+            # event of a crash this prevents an unsafe ordinary --start.
+            fd = os.open(intent, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(json.dumps(new_state["recovery"], sort_keys=True).encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(journal, archived)  # retain intact original evidence
+            checkpoint(journal, new_state)
+            print("[ARCHIVED] Original blocked stage1 journal; recovery lineage retained")
+            print("[STARTING] One explicitly approved fresh stage1 execution on existing VM")
+            return _install_steps(context, new_state, journal, stages)
+    finally:
+        os.close(lock)
+
+
 def install(mode: str) -> str:
     if mode not in ("start", "resume", "status"):
         raise InstallBlocked("Invalid provided installation mode")
@@ -298,6 +399,8 @@ def install(mode: str) -> str:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         stages = _stages(context)
         if mode == "start":
+            if (state_dir / "stage1-recovery-intent.json").exists() or (state_dir / "stage1-recovery-intent.json").is_symlink():
+                raise InstallBlocked("Previous first-stage recovery intent found; normal start prohibited")
             if journal.exists() or journal.is_symlink():
                 raise InstallBlocked("Existing provided installation journal; never replay")
             state = _base_state(context)
