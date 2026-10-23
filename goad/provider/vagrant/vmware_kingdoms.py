@@ -991,6 +991,38 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
                     )
                     return False
 
+            # The mayfly/windows10 WS01 box can be a TIMEBASED_EVAL image
+            # whose exhausted grace triggers recurring WLMS shutdowns.
+            # Run the *existing* Kingdoms settings/eval_rearm role through
+            # the verified Vagrant NAT WinRM mapping immediately after
+            # WS01 is created, BEFORE the long build.yml/AD provisioning.
+            # This also prevents a 30-minute fresh install from passing
+            # VMware bring-up only to lose WS01 during first Ansible.
+            if self.lab_name == 'NORTH' and machine == 'GOAD-WS01':
+                maintenance = self._script('north-ws01-eval-maintenance.py')
+                if maintenance is None:
+                    Log.error('NORTH: WS01 license maintenance helper is missing')
+                    return False
+                try:
+                    repaired = subprocess.run(
+                        ['python3', maintenance, '--provider-dir', self.path],
+                        check=False, timeout=2400,
+                    )
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    Log.error(f'NORTH: WS01 license maintenance failed: {exc}')
+                    return False
+                if repaired.returncode != 0:
+                    Log.error(
+                        'NORTH: WS01 time-based Windows evaluation is not ready; '
+                        'refusing AD provisioning with a shutdown-prone guest'
+                    )
+                    return False
+                # The role may reboot WS01. Re-prove the canonical lab NIC and
+                # authenticated WinRM after its required rearm reboot.
+                if not self._authenticated_guest_install_ready(machine, timeout=180):
+                    Log.error('NORTH: WS01 post-rearm lab WinRM/IP is not ready')
+                    return False
+
         # The host has no vmnet20/vmnet30 adapters, so local Ansible must
         # temporarily reach those protected networks through GOAD-ROUTER after
         # Vagrant has brought the complete instance up.
