@@ -259,8 +259,24 @@ class Course1NativeNetworkApplyTests(unittest.TestCase):
             "answer VNET_99_HOSTONLY_HOSTADDR 10.4.99.254\n", "")
         current += "add_nat_portfwd 8 tcp 55985 192.168.213.244 5985\n"
         self.networking.write_text(current)
-        proofs = self.attest()
+        # A test fixture must NEVER consume a genuine live host receipt under
+        # /etc/vmware. The attestation must be bound to THIS owner directory.
+        import goad.course1_host_network_apply as runtime
+        with patch.object(runtime, "reviewed_nat_retirements",
+                          wraps=runtime.reviewed_nat_retirements) as reviewed:
+            proofs = self.attest()
         self.assertEqual(len(proofs), 2)
+        expected_receipt = self.owner.parent / "kingdoms-course1-retired-nat.json"
+        self.assertEqual(reviewed.call_args.kwargs["source"], expected_receipt)
+        self.assertFalse(expected_receipt.exists())
+
+        # Keeping the receipt local must not soften its root/0600 check.
+        expected_receipt.write_text('{"unreviewed": true}')
+        expected_receipt.chmod(0o644)
+        with self.assertRaisesRegex(NorthSetupError, "root-owned 0600"):
+            self.attest()
+        expected_receipt.unlink()
+        self.assertEqual(len(self.attest()), 2)
         self.assertEqual(self.owner.read_bytes(), before_owner)
         self.assertEqual(inspect_vmnet_journals(self.backups), before_journal)
 
