@@ -282,18 +282,18 @@ class Course1VmnetPlanTests(unittest.TestCase):
             "add_nat_portfwd 8 tcp 2202 192.168.213.249 22",
         )
         original, _, sample = self.vmware_post_vagrant_fixture()
-        baseline = original + ("\\n".join(old) + "\\n").encode()
+        baseline = original + ("\n".join(old) + "\n").encode()
         owned = render_vmnet_config(baseline.decode(), self.layout).encode()
-        runtime = ("\\n".join(
+        runtime = ("\n".join(
             line for line in owned.decode().splitlines()
             if line and not line.startswith("#")
             and not line.startswith("add_nat_portfwd ")
-        ) + "\\n").encode()
+        ) + "\n").encode()
         runtime += (
-            b"add_nat_portfwd 8 tcp 2200 192.168.213.251 22\\n"
-            b"add_nat_portfwd 8 tcp 2201 192.168.213.252 5985\\n"
-            b"add_nat_portfwd 8 tcp 2202 192.168.213.252 5986\\n"
-            b"add_nat_portfwd 8 tcp 2203 192.168.213.252 22\\n"
+            b"add_nat_portfwd 8 tcp 2200 192.168.213.251 22\n"
+            b"add_nat_portfwd 8 tcp 2201 192.168.213.252 5985\n"
+            b"add_nat_portfwd 8 tcp 2202 192.168.213.252 5986\n"
+            b"add_nat_portfwd 8 tcp 2203 192.168.213.252 22\n"
         )
         with self.assertRaises(NetworkPlanError):
             verify_owned_vmnet_runtime(owned, runtime, baseline, self.layout)
@@ -315,7 +315,7 @@ class Course1VmnetPlanTests(unittest.TestCase):
                     )
 
         # Proof does not permit retiring any OTHER original forwarding.
-        foreign = b"add_nat_portfwd 8 tcp 2210 192.168.213.248 22\\n"
+        foreign = b"add_nat_portfwd 8 tcp 2210 192.168.213.248 22\n"
         with self.assertRaises(NetworkPlanError):
             verify_owned_vmnet_runtime(
                 render_vmnet_config((baseline + foreign).decode(), self.layout).encode(),
@@ -327,7 +327,7 @@ class Course1VmnetPlanTests(unittest.TestCase):
             (b"VNET_20_NAT no", b"VNET_20_NAT yes"),
             (b"192.168.213.252 5986", b"10.4.10.11 5986"),
             (b"192.168.213.252 5986", b"192.168.213.252 3389"),
-            (b"add_nat_portfwd 8 tcp 2202 192.168.213.252 5986\\n", b""),
+            (b"add_nat_portfwd 8 tcp 2202 192.168.213.252 5986\n", b""),
         ):
             with self.subTest(tamper=tamper):
                 with self.assertRaises(NetworkPlanError):
