@@ -1,0 +1,263 @@
+"""Fail-closed NORTH fresh-Windows guest recovery over direct VMware NAT WinRM.
+
+Only the exact registered VMware guest may be targeted. This is a fallback
+when Vagrant's configured localhost port forward or guest adapter operation
+fails after a fresh boot. It reuses the existing Vagrant provisioner scripts;
+never changes VMX adapters, other machines, host networks, or lab scenarios.
+"""
+from __future__ import annotations
+
+import base64
+import ipaddress
+import json
+from pathlib import Path
+import re
+import socket
+import subprocess
+import time
+
+from goad.kingdoms_topology import load_course1_topology
+
+ROOT = Path(__file__).resolve().parents[1]
+EXPECTED = {
+    "GOAD-DC01": "00:50:56:20:20:10",
+    "GOAD-DC02": "00:50:56:20:10:11",
+    "GOAD-SRV02": "00:50:56:20:10:22",
+    "GOAD-WS01": "00:50:56:20:10:31",
+}
+
+
+class NorthGuestRecoveryBlocked(RuntimeError):
+    pass
+
+
+def _command(argv, *, timeout=20):
+    try:
+        return subprocess.run(
+            argv, text=True, capture_output=True, check=False, timeout=timeout
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise NorthGuestRecoveryBlocked("VMware inspection failed: " + argv[0]) from exc
+
+
+def _vmx_properties(vmx):
+    settings = {}
+    for line in vmx.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = re.fullmatch(r'\s*(ethernet[01]\.[\w]+)\s*=\s*"([^"]+)"\s*', line, re.I)
+        if m:
+            key = m[1].lower()
+            if key in settings:
+                raise NorthGuestRecoveryBlocked("duplicate VMX setting: " + key)
+            settings[key] = m[2].lower()
+    return settings
+
+
+def owned_guest(provider, machine):
+    provider = Path(provider)
+    if (machine not in EXPECTED or not provider.is_absolute() or
+            provider.is_symlink() or not provider.is_dir() or
+            provider.resolve() != provider or
+            not re.fullmatch(r"[a-f0-9]{6}-north-vmware", provider.parent.name) or
+            provider.name != "provider"):
+        raise NorthGuestRecoveryBlocked("Exact installed NORTH instance required")
+
+    ident = provider / ".vagrant" / "machines" / machine / "vmware_desktop" / "id"
+    if not ident.is_file() or ident.is_symlink():
+        raise NorthGuestRecoveryBlocked("Original Vagrant guest registration missing")
+    vmx = Path(ident.read_text(encoding="utf-8").strip())
+    root = ident.parent.resolve()
+    if (not vmx.is_absolute() or not vmx.is_file() or vmx.is_symlink()
+            or not vmx.resolve().is_relative_to(root)):
+        raise NorthGuestRecoveryBlocked("Guest VMX does not belong to this instance")
+    layout = load_course1_topology()
+    guest = layout["windows"][machine]
+    values = _vmx_properties(vmx)
+    required = {
+        "ethernet0.connectiontype": "nat",
+        "ethernet0.present": "true",
+        "ethernet1.connectiontype": "custom",
+        "ethernet1.present": "true",
+        "ethernet1.vnet": guest["vmnet"].lower(),
+        "ethernet1.address": EXPECTED[machine].lower(),
+    }
+    for key, val in required.items():
+        if values.get(key) != val:
+            raise NorthGuestRecoveryBlocked("Guest VMX contract differs: " + key)
+    if _command(["vmrun", "-T", "ws", "list"]).stdout.splitlines().count(str(vmx)) != 1:
+        raise NorthGuestRecoveryBlocked("Original guest is not uniquely running")
+    return vmx, guest, values
+
+
+def _nat_network():
+    result = _command(["ip", "-4", "-o", "addr", "show", "dev", "vmnet8"])
+    if result.returncode:
+        raise NorthGuestRecoveryBlocked("VMware vmnet8 host IP missing")
+    interfaces = re.findall(r"\binet\s+(\d+\.\d+\.\d+\.\d+/\d+)", result.stdout)
+    if len(interfaces) != 1:
+        raise NorthGuestRecoveryBlocked("Ambiguous VMware NAT interface")
+    return ipaddress.IPv4Interface(interfaces[0]).network
+
+
+def _vmx_nat_ip(vmx, network, *, timeout=90):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = _command(["vmrun", "-T", "ws", "getGuestIPAddress", str(vmx)], timeout=12)
+        if result.returncode == 0:
+            try:
+                address = ipaddress.IPv4Address(result.stdout.strip())
+            except ipaddress.AddressValueError:
+                pass
+            else:
+                if address in network and not (
+                        address == network.network_address or
+                        address == network.broadcast_address):
+                    route = _command(["ip", "-4", "route", "get", str(address)])
+                    if route.returncode == 0 and re.search(
+                            r"\bdev\s+vmnet8\b", route.stdout):
+                        return str(address)
+        time.sleep(min(5, max(0, deadline-time.monotonic())))
+    raise NorthGuestRecoveryBlocked("Exact guest NAT IP not proven by VMware")
+
+
+def _run(session, script, marker=None):
+    try:
+        result = session.run_ps(script)
+    except Exception as exc:
+        raise NorthGuestRecoveryBlocked(
+            "Authenticated direct WinRM operation unavailable: " + type(exc).__name__
+        ) from exc
+    stdout = result.std_out.decode("utf-8", errors="replace")
+    stderr = result.std_err.decode("utf-8", errors="replace")
+    if result.status_code or (marker is not None and marker not in stdout):
+        raise NorthGuestRecoveryBlocked(
+            "Direct guest operation failed: " + stderr[:500] + " " + stdout[-500:]
+        )
+    return stdout
+
+
+def _identity_script():
+    return r"""
+$ErrorActionPreference = 'Stop'
+$svc = Get-Service VMTools -ErrorAction Stop
+$tools = @(Get-Process vmtoolsd -ErrorAction SilentlyContinue)
+$os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+$adapters = @(Get-NetAdapter -ErrorAction Stop | ForEach-Object {
+    [PSCustomObject]@{ Mac = (($_.MacAddress -replace '[:-]','').ToUpperInvariant());
+                      Index = $_.ifIndex; Name = $_.Name }
+})
+[PSCustomObject]@{
+  Hostname = $env:COMPUTERNAME
+  Windows = ($os.Caption -match 'Windows')
+  Tools = ($svc.Status -eq 'Running' -and $tools.Count -gt 0)
+  PowerShell = $PSVersionTable.PSVersion.Major
+  Adapters = $adapters
+} | ConvertTo-Json -Depth 5 -Compress
+"""
+
+
+def _authenticated_session(address):
+    import winrm
+    return winrm.Session(
+        "http://" + address + ":5985/wsman",
+        auth=("vagrant", "vagrant"), transport="ntlm",
+        operation_timeout_sec=25, read_timeout_sec=40
+    )
+
+
+def prove_guest(provider, machine, *, timeout=90):
+    """Return (session, NAT address, lab config) only with owned VMX and in-guest MAC proof."""
+    vmx, guest, values = owned_guest(provider, machine)
+    address = _vmx_nat_ip(vmx, _nat_network(), timeout=timeout)
+    try:
+        with socket.create_connection((address, 5985), timeout=5):
+            pass
+    except OSError as exc:
+        raise NorthGuestRecoveryBlocked("Direct guest HTTP WinRM is not listening") from exc
+    session = _authenticated_session(address)
+    try:
+        identity = json.loads(_run(session, _identity_script()))
+    except (ValueError, TypeError) as exc:
+        raise NorthGuestRecoveryBlocked("Authenticated Windows identity unreadable") from exc
+    adapters = identity.get("Adapters") or []
+    if isinstance(adapters, dict):
+        adapters = [adapters]
+    known_macs = {a.get("Mac", "").upper() for a in adapters if isinstance(a, dict)}
+    nat_mac = values.get("ethernet0.generatedaddress", "").replace(":", "").upper()
+    if (not identity.get("Windows") or identity.get("PowerShell", 0) < 5
+            or not identity.get("Tools") or
+            EXPECTED[machine].replace(":", "").upper() not in known_macs
+            or not nat_mac or nat_mac not in known_macs):
+        raise NorthGuestRecoveryBlocked("Windows/Tools/MAC identity proof failed")
+    return session, address, guest
+
+
+def _strict_script(guest, machine):
+    return r"""
+$ErrorActionPreference = 'Stop'
+$mac = '""" + EXPECTED[machine].replace(":", "").upper() + r"""'
+$ip = '""" + guest["address"] + r"""'
+$gateway = '""" + guest["gateway"] + r"""'
+$nic = @(Get-NetAdapter | Where-Object { ($_.MacAddress -replace '[:-]','').ToUpperInvariant() -eq $mac })
+$address = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+    Where-Object { $nic.Count -eq 1 -and $_.InterfaceIndex -eq $nic[0].ifIndex -and $_.IPAddress -eq $ip -and $_.PrefixLength -eq 24 })
+$route = @(Get-NetRoute -DestinationPrefix '10.4.0.0/16' -ErrorAction SilentlyContinue |
+    Where-Object { $nic.Count -eq 1 -and $_.InterfaceIndex -eq $nic[0].ifIndex -and $_.NextHop -eq $gateway })
+$https = @(Get-NetTCPConnection -LocalPort 5986 -State Listen -ErrorAction SilentlyContinue)
+$tools = Get-Service VMTools -ErrorAction Stop
+if ($nic.Count -ne 1 -or $address.Count -ne 1 -or $route.Count -lt 1 -or
+    $https.Count -lt 1 -or $tools.Status -ne 'Running') {
+    throw 'NORTH canonical IP / gateway / HTTPS / Tools contract incomplete'
+}
+Write-Output 'NORTH_DIRECT_FIRST_BOOT_READY'
+"""
+
+
+def prove_canonical_guest(provider, machine, *, timeout=90):
+    session, address, guest = prove_guest(provider, machine, timeout=timeout)
+    _run(session, _strict_script(guest, machine), "NORTH_DIRECT_FIRST_BOOT_READY")
+    return address
+
+
+def _execute_source(session, path, args=()):
+    source = Path(path)
+    if not source.is_file() or source.is_symlink() or source.parent != ROOT / "vagrant":
+        raise NorthGuestRecoveryBlocked("Unexpected Vagrant provisioning script")
+    encoded = base64.b64encode(source.read_bytes()).decode("ascii")
+    arguments = " ".join("'" + v.replace("'", "''") + "'" for v in args)
+    # Execute the exact checked-in source; do not copy it to the Windows filesystem.
+    wrapper = (
+        "$ErrorActionPreference = 'Stop'; "
+        "$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
+        encoded + "')); "
+        "$script = [ScriptBlock]::Create($source); "
+        "& $script " + arguments + "; "
+        "if (-not $?) { throw 'Existing Vagrant script failed' }; "
+        "Write-Output 'NORTH_SOURCE_SCRIPT_COMPLETED'"
+    )
+    return _run(session, wrapper, "NORTH_SOURCE_SCRIPT_COMPLETED")
+
+
+def recover_north_first_boot(provider, machine):
+    """Replay only source-owned Windows Vagrant scripts through proved NAT WinRM.
+
+    No implicit retry if a script failed or rebooted unexpectedly. A later
+    fresh install must independently complete the normal AD/WinRM acceptance.
+    """
+    session, address, guest = prove_guest(provider, machine)
+    try:
+        _run(session, _strict_script(guest, machine), "NORTH_DIRECT_FIRST_BOOT_READY")
+        return True  # Vagrant already completed the desired guest provisioning.
+    except NorthGuestRecoveryBlocked:
+        pass
+
+    # WinRM HTTP can exist on the StefanScherer box before the Vagrant shell
+    # provisioners have run. Powershell >=5 already makes WMF3 hotfix a no-op.
+    _execute_source(session, ROOT / "vagrant" / "ConfigureRemotingForAnsible.ps1")
+    session, address, verified_guest = prove_guest(provider, machine, timeout=90)
+    if guest != verified_guest:
+        raise NorthGuestRecoveryBlocked("Guest topology changed during provision")
+    _execute_source(session, ROOT / "vagrant" / "fix_ip.ps1", (
+        guest["address"], guest["gateway"], EXPECTED[machine]
+    ))
+    prove_canonical_guest(provider, machine, timeout=90)
+    return True
