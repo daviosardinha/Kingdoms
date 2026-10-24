@@ -30,6 +30,7 @@ class NorthTimeTransportSourceTests(unittest.TestCase):
             "BPF=",
             "host 10.4.10.22 and host 10.4.10.11",
             "tcpdump -i vmnet10",
+            "tcpdump -i vmnet10 -n -s 0",
             '-w - "$BPF"',
             "NORTH_NTP_PASSIVE_CAPTURE_COMPLETED",
             "Capture completion does not imply NTP synchronization success",
