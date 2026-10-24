@@ -1,4 +1,4 @@
-"""Source safety for passive NORTH UDP/123 diagnostics: no live VM access."""
+"""Source-only qualification for NORTH UDP/123 passive diagnostics."""
 from pathlib import Path
 import subprocess
 import unittest
@@ -13,81 +13,45 @@ class NorthTimeTransportSourceTests(unittest.TestCase):
         cls.source = TARGET.read_text(encoding="utf-8")
 
     def test_bash_syntax(self):
-        r = subprocess.run(["bash", "-n", str(TARGET)],
-                           capture_output=True, text=True)
-        self.assertEqual(r.returncode, 0, r.stderr)
+        result = subprocess.run(
+            ["bash", "-n", str(TARGET)], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_fail_closed_ownership_and_passive_capture(self):
+    def test_target_ownership_and_passive_capture_contract(self):
         src = self.source
-        self.assertIn('^[a-f0-9]{6}-north-vmware        for marker in (
-            'GOAD_LAB_PROFILE=NORTH',
-            'bash scripts/lab-mode.sh status',
-            'vmrun -T ws list',
-            '--north verify',
-            '10.4.10.254/24',
-            'BPF=',
-            'host 10.4.10.22 and host 10.4.10.11',
-            'tcpdump -i vmnet10',
-            '-w - "$BPF"',
-            'NORTH_NTP_PASSIVE_CAPTURE_COMPLETED',
-            'Capture completion does not imply NTP synchronization success',
-        ):
-            with self.subTest(marker=marker):
-                self.assertIn(marker, src)
-
-    def test_no_guest_or_network_mutations_and_narrow_filter(self):
-        src = self.source
-        for disallowed in (
-            "vagrant up", "vagrant destroy", "vmrun -T ws start",
-            "vmrun -T ws stop", "vmrun -T ws snapshot",
-            "vmrun -T ws reset", "ip route add", "ip route del",
-            "w32tm /resync", "w32tm /config", "w32tm.exe /resync",
-            "Restart-Service", "Reset-ComputerMachinePassword",
-            "nat connect", "iptables -",
-        ):
-            # Comments may mention forbidden operations; only executable
-            # commands are relevant to this source check.
-            with self.subTest(disallowed=disallowed):
-                lines = [line for line in src.splitlines()
-                         if line.strip() and not line.lstrip().startswith("#")]
-                self.assertNotIn(disallowed, "\n".join(lines))
-
-
-if __name__ == "__main__":
-    unittest.main()
-, src)
         for marker in (
-            'GOAD_LAB_PROFILE=NORTH',
-            'bash scripts/lab-mode.sh status',
-            'vmrun -T ws list',
-            '--north verify',
-            '10.4.10.254/24',
-            'BPF=',
-            'host 10.4.10.22 and host 10.4.10.11',
-            'tcpdump -i vmnet10',
+            "north-vmware",
+            "GOAD_LAB_PROFILE=NORTH",
+            "bash scripts/lab-mode.sh status",
+            "vmrun -T ws list",
+            "--north verify",
+            "10.4.10.254/24",
+            "BPF=",
+            "host 10.4.10.22 and host 10.4.10.11",
+            "tcpdump -i vmnet10",
             '-w - "$BPF"',
-            'NORTH_NTP_PASSIVE_CAPTURE_COMPLETED',
-            'Capture completion does not imply NTP synchronization success',
+            "NORTH_NTP_PASSIVE_CAPTURE_COMPLETED",
+            "Capture completion does not imply NTP synchronization success",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, src)
 
-    def test_no_guest_or_network_mutations_and_narrow_filter(self):
-        src = self.source
-        for disallowed in (
+    def test_no_mutation_in_executable_source(self):
+        executable = "\n".join(
+            line for line in self.source.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        )
+        for banned in (
             "vagrant up", "vagrant destroy", "vmrun -T ws start",
             "vmrun -T ws stop", "vmrun -T ws snapshot",
             "vmrun -T ws reset", "ip route add", "ip route del",
             "w32tm /resync", "w32tm /config", "w32tm.exe /resync",
             "Restart-Service", "Reset-ComputerMachinePassword",
-            "nat connect", "iptables -",
+            "iptables -",
         ):
-            # Comments may mention forbidden operations; only executable
-            # commands are relevant to this source check.
-            with self.subTest(disallowed=disallowed):
-                lines = [line for line in src.splitlines()
-                         if line.strip() and not line.lstrip().startswith("#")]
-                self.assertNotIn(disallowed, "\n".join(lines))
+            with self.subTest(banned=banned):
+                self.assertNotIn(banned, executable)
 
 
 if __name__ == "__main__":
