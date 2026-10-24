@@ -27,6 +27,8 @@ on:
       - scripts/validate-north-runtime.sh
       - ansible/north-exercise-health-readonly.yml
       - tests/test_north_runtime_validation.py
+      - scripts/north-lifecycle-acceptance.sh
+      - tests/test_north_lifecycle_acceptance.py
       - goad/provider/vagrant/vmware_nomad.py
       - tests/test_course1_network_retire.py
       - tests/test_course1_snapshot_restore.py
@@ -48,7 +50,7 @@ jobs:
           python-version: '3.12'
       - name: Syntax and source qualification
         run: |
-          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py goad/course1_pre_ad_resume.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py tests/test_course1_pre_ad_resume.py scripts/north-ws01-eval-maintenance.py tests/test_course1_ws01_eval_maintenance.py goad/course1_snapshot_restore.py tests/test_course1_snapshot_restore.py goad/course1_network_retire.py tests/test_course1_network_retire.py goad/course1_direct_winrm.py tests/test_course1_direct_winrm.py tests/test_course1_direct_bootstrap_integration.py tests/test_north_provider_canonical_resume.py tests/test_north_one_shot_reset_script.py tests/test_north_runtime_validation.py goad_nomad.py goad/provider/vagrant/vmware_kingdoms.py tests/test_install_noninteractive.py
+          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py goad/course1_pre_ad_resume.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py tests/test_course1_pre_ad_resume.py scripts/north-ws01-eval-maintenance.py tests/test_course1_ws01_eval_maintenance.py goad/course1_snapshot_restore.py tests/test_course1_snapshot_restore.py goad/course1_network_retire.py tests/test_course1_network_retire.py goad/course1_direct_winrm.py tests/test_course1_direct_winrm.py tests/test_course1_direct_bootstrap_integration.py tests/test_north_provider_canonical_resume.py tests/test_north_one_shot_reset_script.py tests/test_north_runtime_validation.py tests/test_north_lifecycle_acceptance.py goad_nomad.py goad/provider/vagrant/vmware_kingdoms.py tests/test_install_noninteractive.py
       - name: Strict NAT and native NORTH install regression
         run: |
           python -m unittest -v \
@@ -63,4 +65,5 @@ jobs:
             tests.test_course1_direct_bootstrap_integration \
             tests.test_north_provider_canonical_resume \
             tests.test_north_one_shot_reset_script \
-            tests.test_north_runtime_validation
+            tests.test_north_runtime_validation \
+            tests.test_north_lifecycle_acceptance
