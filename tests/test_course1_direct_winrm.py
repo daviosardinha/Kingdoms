@@ -41,8 +41,11 @@ class FakeWinRMSession:
                 "Windows": True,
                 "PowerShell": 5,
                 "Tools": True,
-                "Adapters": [{"Mac": mac, "Index": index, "Name": f"Ethernet{index}"}
-                             for index, mac in enumerate(macs)]
+                "Adapters": [
+                    {"Mac": mac, "Index": index, "Name": f"Ethernet{index}",
+                     "IPv4": ["192.168.213.133"] if mac == "000C29285F3A" else []}
+                    for index, mac in enumerate(macs)
+                ]
             })
             return Mock(status_code=0, std_out=result.encode(), std_err=b"")
         if "NORTH_DIRECT_FIRST_BOOT_READY" in script:
@@ -138,8 +141,83 @@ class NorthDirectRecoveryTests(unittest.TestCase):
         self.session.fail_identity = True
         with patch.object(direct, "_authenticated_session", return_value=self.session), \
              patch.object(direct.socket, "create_connection", return_value=MagicMock()):
-            with self.assertRaisesRegex(direct.NorthGuestRecoveryBlocked, "identity proof"):
+            with self.assertRaisesRegex(direct.NorthGuestRecoveryBlocked, "MAC.*proof"):
                 direct.prove_guest(self.provider, "GOAD-DC01")
+
+    def test_forwarded_winrm_seeds_nat_when_vix_ip_fails(self):
+        with patch.object(direct, "_vmx_nat_ip", side_effect=AssertionError(
+                    "VMware VIX must not gate authenticated forwarded bootstrap")), \
+             patch.object(direct, "_authenticated_session", return_value=self.session) as connect, \
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
+            _session, nat_ip, guest = direct.prove_guest(
+                self.provider, "GOAD-DC01", forwarded_port=55985
+            )
+        self.assertEqual(nat_ip, "192.168.213.133")
+        self.assertEqual(guest["address"], "10.4.20.10")
+        self.assertEqual(connect.call_args_list[0].args, ("127.0.0.1",))
+        self.assertEqual(connect.call_args_list[0].kwargs, {"port": 55985})
+        self.assertEqual(connect.call_args_list[1].args, ("192.168.213.133",))
+
+    def test_forwarded_wrong_lab_mac_aborts_without_vix_or_provision(self):
+        self.session.fail_identity = True
+        with patch.object(direct, "_vmx_nat_ip") as vix, \
+             patch.object(direct, "_authenticated_session", return_value=self.session), \
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
+            with self.assertRaisesRegex(
+                direct.NorthGuestIdentityMismatch, "MAC.*proof"
+            ):
+                direct.prove_guest(
+                    self.provider, "GOAD-DC01", forwarded_port=55985
+                )
+        vix.assert_not_called()
+        self.assertEqual(self.session.setup_scripts, [])
+
+    def test_forwarded_nat_ip_must_route_on_vmnet8(self):
+        def wrong_route(args, **kwargs):
+            if args[:4] == ["ip", "-4", "route", "get"]:
+                return Mock(returncode=0, stdout="192.168.213.133 dev wlan0\\n")
+            return self.commands(args, **kwargs)
+        with patch.object(direct, "_command", side_effect=wrong_route), \
+             patch.object(direct, "_vmx_nat_ip",
+                          side_effect=direct.NorthGuestRecoveryBlocked("VIX offline")), \
+             patch.object(direct, "_authenticated_session", return_value=self.session), \
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
+            with self.assertRaisesRegex(
+                direct.NorthGuestRecoveryBlocked, "VIX NAT IP unavailable"
+            ):
+                direct.prove_guest(
+                    self.provider, "GOAD-DC01", forwarded_port=55985
+                )
+        self.assertEqual(self.session.setup_scripts, [])
+
+    def test_unavailable_forwarded_port_falls_back_to_vix(self):
+        # The preceding NORTH guest failed with absent forwarded ports.
+        # Keep direct VIX recovery functional for that opposite combination.
+        with patch.object(direct, "_authenticated_session", return_value=self.session), \
+             patch.object(direct.socket, "create_connection",
+                          side_effect=[OSError("localhost refused"), MagicMock()]):
+            _session, nat_ip, _guest = direct.prove_guest(
+                self.provider, "GOAD-DC01", forwarded_port=55985
+            )
+        self.assertEqual(nat_ip, "192.168.213.133")
+
+    def test_forwarded_winrm_guest_nic_ip_outside_vmnet8(self):
+        original = direct._verified_identity
+        def mutate(session, values, machine):
+            nic = original(session, values, machine)
+            nic["IPv4"] = ["169.254.88.9"]
+            return nic
+        with patch.object(direct, "_verified_identity", side_effect=mutate), \
+             patch.object(direct, "_vmx_nat_ip",
+                          side_effect=direct.NorthGuestRecoveryBlocked("VIX offline")), \
+             patch.object(direct, "_authenticated_session", return_value=self.session), \
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
+            with self.assertRaisesRegex(
+                direct.NorthGuestRecoveryBlocked, "outside owned vmnet8"
+            ):
+                direct.prove_guest(
+                    self.provider, "GOAD-DC01", forwarded_port=55985
+                )
 
     def test_reject_wrong_nat_route(self):
         old_commands = self.commands
