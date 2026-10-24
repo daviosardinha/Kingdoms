@@ -423,6 +423,34 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             return False
         return True
 
+    def _north_direct_first_boot_recovery(self, machine):
+        """Bounded NORTH-only direct WinRM fallback; no Vagrant guest operations.
+
+        Return None if the live exact guest cannot be authenticated and allow
+        existing Vagrant recovery rules. Return False for a proven guest whose
+        source-owned provisioning failed: never silently repeat state changes.
+        """
+        from goad.course1_direct_winrm import (
+            NorthGuestRecoveryBlocked, prove_guest, recover_north_first_boot,
+        )
+        try:
+            prove_guest(self.path, machine, timeout=90)
+        except NorthGuestRecoveryBlocked as exc:
+            Log.warning(
+                f'NORTH: direct guest proof unavailable for {machine}: {exc}'
+            )
+            return None
+        try:
+            if recover_north_first_boot(self.path, machine):
+                Log.success(
+                    f'NORTH: {machine} exact-VMX direct WinRM provisioning and '
+                    'canonical IP/HTTPS readiness verified'
+                )
+                return True
+        except NorthGuestRecoveryBlocked as exc:
+            Log.error(f'NORTH: {machine} direct recovery failed after guest identity proof: {exc}')
+        return False
+
     def _authenticated_guest_install_ready(self, machine, timeout=60):
         """Prove guest health independently of VMware host-side IP telemetry.
 
@@ -442,10 +470,24 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         except Exception:
             return False
 
+        if self.lab_name == 'NORTH' and (
+                not port or not self._wait_winrm_ready(port, min(timeout, 10))):
+            # The generated Vagrant port registry can survive an incomplete
+            # VMware NAT forward transaction. The existing exact VMX, direct
+            # guest identity and strict final lab IP/HTTPS gate are authoritative.
+            from goad.course1_direct_winrm import (
+                NorthGuestRecoveryBlocked, prove_canonical_guest,
+            )
+            try:
+                prove_canonical_guest(self.path, machine, timeout=min(timeout, 90))
+            except NorthGuestRecoveryBlocked:
+                return False
+            return True
+
         if not port:
             return False
 
-        if not self._wait_winrm_ready(port, timeout):
+        if self.lab_name != 'NORTH' and not self._wait_winrm_ready(port, timeout):
             return False
 
         try:
@@ -992,7 +1034,26 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             Log.info(f'GOAD_NOMAD: bringing up {machine}')
             first_up = self.command.run_vagrant(['up', machine], self.path)
 
-            tools_ready = self._ensure_vmware_tools(machine)
+            # A *fresh* NORTH Windows box may be healthy on its vmnet8 NIC
+            # after the VMware Vagrant provider failed inside its guest adapter
+            # operation. Re-running the same Vagrant adapter action for 600s is
+            # circular. Only the exact VMX + in-guest MAC and Tools proof can
+            # authorize replaying existing Windows Vagrant scripts directly.
+            north_direct = None
+            if self.lab_name == 'NORTH' and not first_up:
+                north_direct = self._north_direct_first_boot_recovery(machine)
+                if north_direct is False:
+                    return False
+
+            tools_ready = (north_direct is True or
+                           self._ensure_vmware_tools(machine))
+            if not tools_ready and self.lab_name == 'NORTH':
+                north_direct = self._north_direct_first_boot_recovery(machine)
+                if north_direct is False:
+                    return False
+                if north_direct is True:
+                    tools_ready = True
+
             recovery_ready = False
             if not tools_ready:
                 recovery_ready = self._authenticated_guest_recovery_ready(machine)
@@ -1009,7 +1070,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             # success but strict Kingdoms readiness is still missing. This is the
             # exact interrupted state where the NAT adapter works, the lab NIC is
             # APIPA, and fix_ip.ps1 has not completed.
-            if not first_up or not tools_ready:
+            if (not first_up or not tools_ready) and north_direct is not True:
                 if not self._recover_failed_windows_vagrant_up(machine):
                     Log.error(
                         f'GOAD_NOMAD: {machine} still failed after clean Vagrant recovery'
