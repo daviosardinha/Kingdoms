@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
 
 from goad import course1_direct_winrm as direct
 
@@ -105,7 +105,7 @@ class NorthDirectRecoveryTests(unittest.TestCase):
     def test_reject_wrong_winrm_guest_mac(self):
         self.session.fail_identity = True
         with patch.object(direct, "_authenticated_session", return_value=self.session), \
-             patch.object(direct.socket, "create_connection", return_value=Mock()):
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
             with self.assertRaisesRegex(direct.NorthGuestRecoveryBlocked, "identity proof"):
                 direct.prove_guest(self.provider, "GOAD-DC01")
 
@@ -121,18 +121,18 @@ class NorthDirectRecoveryTests(unittest.TestCase):
 
     def test_sources_are_replayed_only_after_exact_guest_proof(self):
         with patch.object(direct, "_authenticated_session", return_value=self.session), \
-             patch.object(direct.socket, "create_connection", return_value=Mock()):
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
             self.assertTrue(direct.recover_north_first_boot(self.provider, "GOAD-DC01"))
         self.assertTrue(self.session.provisioned)
         self.assertEqual(len(self.session.setup_scripts), 2)
-        self.assertIn("-ip '10.4.20.10' '10.4.20.1' '00:50:56:20:20:10'",
-                      self.session.setup_scripts[-1].replace("& $script ", "-ip "))
+        self.assertIn("& $script '10.4.20.10' '10.4.20.1' '00:50:56:20:20:10'",
+                      self.session.setup_scripts[-1])
         self.assertTrue(direct.prove_canonical_guest)
 
     def test_installed_guest_is_not_reprovisioned(self):
         self.session.provisioned = True
         with patch.object(direct, "_authenticated_session", return_value=self.session), \
-             patch.object(direct.socket, "create_connection", return_value=Mock()):
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
             self.assertTrue(direct.recover_north_first_boot(self.provider, "GOAD-DC01"))
         self.assertEqual(self.session.setup_scripts, [])
 
