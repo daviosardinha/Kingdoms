@@ -76,7 +76,7 @@ class NorthToolsRepairTests(unittest.TestCase):
              patch.object(repair, "run_checked", return_value=""), \
              patch.object(repair, "collect_verified_state",
                           side_effect=repair.RepairBlocked("wrong MAC")), \
-             patch.object(repair, "GoadKingdomsVmwareProvider") as vm:
+             patch.object(repair, "new_runtime") as vm:
             with self.assertRaisesRegex(repair.RepairBlocked, "wrong MAC"):
                 repair.repair_one_guest(diag, Path("/owned/provider"))
             vm.assert_not_called()
@@ -103,7 +103,7 @@ class NorthToolsRepairTests(unittest.TestCase):
              patch.object(repair, "run_checked", return_value=""), \
              patch.object(repair, "collect_verified_state",
                           side_effect=[before, after]) as proof, \
-             patch.object(repair, "GoadKingdomsVmwareProvider",
+             patch.object(repair, "new_runtime",
                           return_value=runtime):
             repair.repair_one_guest(diag, Path("/owned/provider"))
         runtime.set_instance_path.assert_called_once_with("/owned/provider")
@@ -127,7 +127,7 @@ class NorthToolsRepairTests(unittest.TestCase):
         with patch.object(repair, "owned_guest", return_value=original), \
              patch.object(repair, "run_checked", return_value=""), \
              patch.object(repair, "collect_verified_state", return_value=state), \
-             patch.object(repair, "GoadKingdomsVmwareProvider") as vm:
+             patch.object(repair, "new_runtime") as vm:
             with self.assertRaises(repair.RepairBlocked):
                 repair.repair_one_guest(diag, Path("/owned/provider"))
             vm.assert_not_called()
