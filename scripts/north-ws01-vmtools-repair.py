@@ -23,7 +23,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from goad.course1_direct_winrm import _authenticated_session, owned_guest
-from goad.provider.vagrant.vmware_kingdoms import GoadKingdomsVmwareProvider
 
 INSTANCE_ID = "8aafc9-north-vmware"
 MACHINE = "GOAD-WS01"
@@ -142,6 +141,13 @@ def require_uninstalled_tools(payload):
             "VMware Tools state is not fully absent; do not replay the installer")
 
 
+def new_runtime():
+    # Import only after all exact-instance and authenticated guest checks.
+    # The Windows/VMware dependencies are not needed for source-only tests.
+    from goad.provider.vagrant.vmware_kingdoms import GoadKingdomsVmwareProvider
+    return GoadKingdomsVmwareProvider("NORTH")
+
+
 def repair_one_guest(diag, provider_path):
     vmx, guest, values = owned_guest(provider_path, MACHINE)
     require(guest["address"] == "10.4.10.31",
@@ -153,7 +159,7 @@ def repair_one_guest(diag, provider_path):
     print("[PASS] EXACT_WS01_IDENTITY_AND_MISSING_VMTOOLS_PROVEN", flush=True)
     print("[INFO] ORIGINAL_WS01_VMX=" + str(vmx), flush=True)
     print("[INFO] WINRM_FORWARD_PORT=" + str(port), flush=True)
-    runtime = GoadKingdomsVmwareProvider("NORTH")
+    runtime = new_runtime()
     runtime.set_instance_path(str(provider_path))
     # Reuse the original Kingdoms installer, which mounts VMware Tools and
     # handles WinRM interruption/reboot. Invoke once only. Its vmrun IP
