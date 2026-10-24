@@ -55,7 +55,7 @@ echo '[INFO] Passive capture of CASTELBLACK/WINTERFELL UDP/123 for up to 180 sec
 echo '[INFO] Please do not run w32tm, start/reset, or mode transitions during capture.'
 rc=0
 sudo -n timeout --signal=INT --kill-after=5 180 \
-  tcpdump -i vmnet10 -n -s 160 -U -w - "$BPF" \
+  tcpdump -i vmnet10 -n -s 0 -U -w - "$BPF" \
   > "$EVIDENCE/02-ntp.pcap" 2> "$EVIDENCE/02-capture-stderr.txt" || rc=$?
 if (( rc != 0 && rc != 124 && rc != 130 )); then
   echo "[BLOCKED] tcpdump capture failure rc=$rc" >&2
