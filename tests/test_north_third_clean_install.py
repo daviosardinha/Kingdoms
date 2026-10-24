@@ -30,6 +30,7 @@ class NorthThirdFreshInstallSourceTests(unittest.TestCase):
             'EXPECTED_ID="57bbec-north-vmware"',
             'EXPECTED_BRANCH="main"',
             "--confirm-third-install",
+            "Usage: bash scripts/north-third-clean-install.sh --confirm-third-install",
             "bash scripts/verify-test-source.sh",
             "refs/remotes/origin/main",
             'meta.get("status")',
