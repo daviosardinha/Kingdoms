@@ -629,16 +629,18 @@ class GoadNomad(BaseGoad):
         provider = self._nomad_provider(require_instance=True)
         if provider is None:
             Log.error('Load a GOAD/VMware instance before running GOAD_NOMAD validation')
-            return
+            return False
 
         if provider.validate_runtime():
-            # A full runtime validation proves the instance is provisioned and
-            # finishes in exercise mode. Repair stale stock-GOAD metadata from
-            # development-era instances only after that proof succeeds.
+            # Set READY only after the selected lab's complete runtime proof.
+            # NORTH's exercise-only validator never changes the network mode;
+            # full GOAD retains its established runtime validation path.
             self.lab_manager.get_current_instance().set_status(READY)
             Log.success('GOAD_NOMAD runtime validation passed; instance status is installed')
-        else:
-            Log.error('GOAD_NOMAD runtime validation failed')
+            return True
+
+        Log.error('GOAD_NOMAD runtime validation failed')
+        return False
 
     def do_destroy(self, arg=''):
         """Destroy the loaded instance and return the provider result.
@@ -768,7 +770,8 @@ def _dispatch_task(goad, args):
         if not goad.do_reset():
             return 1
     elif args.task == 'validate':
-        goad.do_validate()
+        if not goad.do_validate():
+            return 1
     elif args.task == 'ws01':
         if not goad.do_ws01():
             return 1
