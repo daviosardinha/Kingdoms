@@ -102,8 +102,10 @@ class DirectBootstrapIntegrationTests(unittest.TestCase):
         provider._recover_failed_windows_vagrant_up.assert_not_called()
         provider._enable_provisioning_routes.assert_not_called()
 
-    def test_direct_proof_unavailable_keeps_legacy_recovery(self):
-        provider = self.make(direct=None)
+    def test_direct_proof_unavailable_but_canonical_guest_ready_keeps_legacy_recovery(self):
+        # When the guest is *already* canonically provisioned, no pre-provision
+        # circular dependency exists; keep existing Vagrant recovery behavior.
+        provider = self.make(direct=None, strict=True)
         self.assertTrue(provider.install())
         provider._recover_failed_windows_vagrant_up.assert_called_once_with("GOAD-DC01")
 
