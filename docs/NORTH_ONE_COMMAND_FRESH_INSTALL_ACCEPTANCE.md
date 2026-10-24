@@ -136,3 +136,26 @@ Code fix (NORTH only, leaving full KINGDOMS behavior unchanged):
 - Dedicated NORTH + KINGDOMS alias CI on `0434920` passed. Runtime reset with this new helper has not yet been performed.
 
 **Recovery boundary:** first inspect the five VMX running states, VMware and Vagrant snapshot inventories, current vmnet owner verification, and persistent Windows NAT adapter settings. The failed restore may have changed NAT forwarded-port rules. Do not trigger a second reset until exact host/guest status is recorded and safe; no lossless rollback is guaranteed when snapshots have already changed guest disk state. After recovery, check AD domain identity, RBCD, shadow baseline, LPE fixture count and exercise isolation, then fresh one-command installation release gate.
+
+## 2026-10-24 post-Vagrant-destroy owned VMware network retirement
+
+The operator on the only available Kali host explicitly retired the already-validated NORTH reference guest instance `93fd1b-north-vmware`, including all five VMware VMXs and their ten snapshot disks. `DESTROY_EXIT_CODE=0`, `Total running VMs: 0`, `NORTH_FIVE_GUESTS_AND_SNAPSHOTS_REMOVED=PASS`; evidence `~/north-retire-20261024T111138Z`.
+
+The installed NORTH host owner checker subsequently reported `Reviewed retired host port lacks unique replacement`. This is **not** an owner mismatch: after Vagrant destroy, all previous vmnet8 NAT management forwards were automatically removed. Operator's independently run root-owned backup/journal verification PASSED, confirmed retired prior WSLPE lines 2200→5985, 2201→5986, 2202→22 present only in original baseline, **current NAT forwards = 0**, and 5 NORTH VMware declarations each for `vmnet10/20/99`; no running VMware guests. Re-introducing old forwarding rules or weakening the *installed* verifier would be wrong.
+
+A separate, narrowly scoped `goad.course1_network_retire` CLI now supports read-only `plan` and explicit destructive `apply`. Both require sudo and exact original NORTH provider. Preconditions: exact immutable owner and 0600 root permissions; original backup SHA matches; unique committed journal; live 10/20/99 topology verified; zero NAT forwarding rules; no Vagrant guest IDs; zero running VMware guests and application/VM processes; root-owned host-address helper/service/timer match their source bytes; stale WSLPE retired-NAT attestation (if present) matches old owner and backup. The transaction acquires the stable global VMware network lock, archives live VMware networking/owner/netmap, disables only NORTH timer and service, stops VMware networking, removes only NORTH vmnet declarations while preserving foreign vmnet settings, restarts VMware networking and checks retired interfaces absent, foreign network declarations unchanged and `vmnet2` still alive if present; only then archives NORTH host-address assets, historical retired-NAT attestation, and active owner to the protected `retire-north-*` evidence folder. Historical NORTH transaction backups/journals remain.
+
+The plan is **read only**, while `apply` changes VMware host networking and must be run exclusively while no VMs or VMware GUI are running:
+
+```bash
+cd "$HOME/kingdoms-north-fresh-test"
+git pull --ff-only origin fix/north-one-command-fresh-install-bootstrap
+PROVIDER="$PWD/workspace/93fd1b-north-vmware/provider"
+sudo env PYTHONPATH="$PWD" python3 -m goad.course1_network_retire plan --provider-dir "$PROVIDER"
+# Only after [PASS] NORTH_RETIREMENT_PLAN_READY:
+sudo env PYTHONPATH="$PWD" python3 -m goad.course1_network_retire apply --provider-dir "$PROVIDER"
+```
+
+If apply fails, stop and audit the archived evidence; never manually delete vmnet2, foreign vmnet8 NAT metadata or the old journal. Once post-retirement clean-host collision checks pass, archive the destroyed instance directory *out of* `workspace` with a separate exact instance-id check, preserve original source checkout and test records, and run the **exact original public** `./goad.sh -t install -l NORTH -p vmware` with no manual NAT/license/Ansible recovery.
+
+The destructive apply step has **source + CI qualification** only as of this note. Record the live result separately before claiming an empty host or one-command install acceptance.
