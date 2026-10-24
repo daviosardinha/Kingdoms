@@ -7,6 +7,9 @@ import time
 
 import psutil
 
+from goad.course1_snapshot_restore import (
+    NorthSnapshotRestoreError, restore_north_offline_snapshots,
+)
 from goad.goadpath import GoadPath
 from goad.log import Log
 from goad.provider.vagrant.vmware_nomad import GoadNomadVmwareProvider
@@ -878,16 +881,38 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             return False
 
         mode = self.get_runtime_mode()
-        Log.info(
-            'GOAD Kingdoms: restoring latest snapshot without auto-start; '
-            'segmented lifecycle will normalize restored state afterward'
-        )
-        if not self._run_vagrant_bounded(
-            ['snapshot', 'pop', '--no-delete', '--no-start'],
-            timeout=900,
-        ):
-            Log.error('GOAD Kingdoms: snapshot restore failed')
-            return False
+        if self.lab_name == 'NORTH':
+            # Vagrant pop picks the *oldest* parent push when VMware reports
+            # a nested 'parent/child' snapshot tree, and the provider may
+            # auto-start restored guests despite --no-start. This breaks
+            # exercise isolation before NIC normalization and was observed
+            # during the first NORTH reset acceptance test.
+            #
+            # NORTH only: resolve the newest matching generation across all
+            # five *original* registered VMX, require every guest to be off,
+            # then use the official vmrun offline revert. Full KINGDOMS
+            # retains its existing Vagrant snapshot behavior unchanged.
+            try:
+                restore_north_offline_snapshots(
+                    self.path, self._vmx_path, log=Log.info,
+                )
+            except NorthSnapshotRestoreError as exc:
+                Log.error(
+                    'NORTH snapshot restore refused or partially failed: '
+                    f'{exc}. Do not retry until the guest/snapshot state is audited'
+                )
+                return False
+        else:
+            Log.info(
+                'GOAD Kingdoms: restoring latest snapshot without auto-start; '
+                'segmented lifecycle will normalize restored state afterward'
+            )
+            if not self._run_vagrant_bounded(
+                ['snapshot', 'pop', '--no-delete', '--no-start'],
+                timeout=900,
+            ):
+                Log.error('GOAD Kingdoms: snapshot restore failed')
+                return False
 
         running = self._running_instance_vms()
         if running is None:
