@@ -21,7 +21,7 @@ class NorthOneShotSourceTests(unittest.TestCase):
     def test_bash_parses_and_python_heredocs_compile(self):
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
         bodies = re.findall(r"<<'PY'\n(.*?)\nPY(?:\n|$)", self.source, re.S)
-        self.assertEqual(len(bodies), 5)
+        self.assertEqual(len(bodies), 6)
         for index, body in enumerate(bodies):
             with self.subTest(heredoc=index):
                 ast.parse(body)
