@@ -75,3 +75,8 @@
 
           Write-Output "NORTH_EXERCISE_AD_HEALTH=PASS host=$env:COMPUTERNAME"
       changed_when: false
+      register: north_runtime_probe
+
+    - name: Expose identity proof for host-by-host runtime acceptance
+      ansible.builtin.debug:
+        msg: "{{ north_runtime_probe.output | join(' | ') }}"
