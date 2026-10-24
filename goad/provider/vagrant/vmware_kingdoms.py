@@ -431,7 +431,8 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         source-owned provisioning failed: never silently repeat state changes.
         """
         from goad.course1_direct_winrm import (
-            NorthGuestRecoveryBlocked, prove_guest, recover_north_first_boot,
+            NorthGuestRecoveryBlocked, NorthGuestIdentityMismatch,
+            prove_guest, recover_north_first_boot,
         )
         try:
             forwarded_port = self._winrm_forwarded_port(machine)
@@ -442,6 +443,12 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
                 self.path, machine, timeout=90,
                 forwarded_port=forwarded_port,
             )
+        except NorthGuestIdentityMismatch as exc:
+            Log.error(
+                f'NORTH: {machine} forwarded WinRM identity does not match the '
+                f'exact owned VMware guest; refusing recovery: {exc}'
+            )
+            return False
         except NorthGuestRecoveryBlocked as exc:
             Log.warning(
                 f'NORTH: direct guest proof unavailable for {machine}: {exc}'
