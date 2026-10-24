@@ -22,6 +22,15 @@ if [[ "${1:-}" == "--north" ]]; then
     exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
       python3 -m goad.course1_host_network_apply verify "$@"
   fi
+  if [[ "${1:-}" == "native-bootstrap" ]]; then
+    shift
+    # The explicitly requested fresh NORTH install captures the *current*
+    # networking baseline; the transaction still proves a clean host, binds
+    # the exact new provider and rechecks the checksum under the global lock.
+    [[ ${EUID} -eq 0 ]] || { echo "[BLOCKED] sudo required for NORTH native bootstrap" >&2; exit 1; }
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_host_network_apply native-bootstrap "$@"
+  fi
   if [[ "${1:-}" == "apply" ]]; then
     shift
     # Explicit, reviewed host mutation. Nothing invokes this from the normal

@@ -1,0 +1,41 @@
+---
+# Native NORTH WS01 pre-AD license maintenance.
+# Reuse the existing Kingdoms eval role before slow AD provisioning. Never
+# join a domain, create learners, disable WLMS, or change firewall/Defender.
+- name: Keep the original NORTH Windows evaluation alive during provisioning
+  hosts: ws01
+  gather_facts: false
+  tasks:
+    - name: Verify the target is the original Windows client
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          if ([int]$os.ProductType -ne 1) {
+              throw 'NORTH early eval maintenance must target a Windows client'
+          }
+          Write-Output 'NORTH_WS01_CLIENT=PASS'
+      changed_when: false
+
+    - name: Maintain Windows evaluation through the existing KINGDOMS role
+      ansible.builtin.import_role:
+        name: settings/eval_rearm
+
+    - name: Require usable evaluation grace after role-controlled reboot
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $product = Get-CimInstance SoftwareLicensingProduct -ErrorAction Stop |
+              Where-Object {
+                  $_.Name -like 'Windows*' -and $_.PartialProductKey -and
+                  $_.Description -match 'TIMEBASED_EVAL'
+              } | Select-Object -First 1
+          if ($product) {
+              $minutes = [int64]$product.GracePeriodRemaining
+              if ($minutes -lt 1440) {
+                  throw "NORTH WS01 evaluation grace too short: $minutes minutes"
+              }
+              Write-Output "NORTH_WS01_EVAL_GRACE_MINUTES=$minutes"
+          }
+          Write-Output 'NORTH_WS01_LICENSE_READY=PASS'
+      changed_when: false
