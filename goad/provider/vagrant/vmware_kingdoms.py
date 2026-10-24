@@ -423,6 +423,52 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             return False
         return True
 
+    def _north_existing_canonical_ready(self, machine):
+        """Recognize an already-running, exactly owned NORTH guest on retry.
+
+        After direct first-boot recovery, the original Windows VM can satisfy
+        the complete canonical readiness contract even though Vagrant's guest
+        adapter action failed. In that state, repeating Vagrant up is circular
+        and can spend another ten minutes before doing any useful work.
+
+        This is deliberately read-only: the direct proof checks the registered
+        running VMX, both in-guest NIC MACs, NAT WinRM identity, fixed lab IP,
+        persistent internal route, HTTPS listener and VMware Tools. Never skip
+        Vagrant just because a VMX exists, a DHCP lease exists, or a TCP port is
+        open. None means the regular Vagrant path remains responsible.
+        """
+        if self.lab_name != 'NORTH' or not self._vmx_path(machine):
+            return None
+
+        from goad.course1_direct_winrm import (
+            NorthGuestRecoveryBlocked, NorthGuestIdentityMismatch,
+            prove_canonical_guest,
+        )
+        try:
+            address = prove_canonical_guest(self.path, machine, timeout=30)
+        except NorthGuestIdentityMismatch as exc:
+            # An authenticated foreign guest is not a safe recovery candidate.
+            Log.error(
+                f'NORTH: {machine} existing direct WinRM guest identity differs '
+                f'from its registered VMX; refusing Vagrant resume: {exc}'
+            )
+            return False
+        except NorthGuestRecoveryBlocked as exc:
+            Log.info(
+                f'NORTH: {machine} does not yet pass existing-guest canonical '
+                f'readiness; retaining normal Vagrant bring-up: {exc}'
+            )
+            return None
+
+        if not hasattr(self, '_north_first_boot_nat_addresses'):
+            self._north_first_boot_nat_addresses = {}
+        self._north_first_boot_nat_addresses[machine] = address
+        Log.success(
+            f'NORTH: {machine} already recovered and canonical at NAT {address}; '
+            'skipping redundant Vagrant up/guest adapter operation'
+        )
+        return True
+
     def _north_direct_first_boot_recovery(self, machine):
         """Bounded NORTH-only direct WinRM fallback; no Vagrant guest operations.
 
@@ -1057,14 +1103,25 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         # vagrant up then gets one clean graceful-stop -> up --provision recovery.
         for machine in self.goad_nomad_windows:
             Log.info(f'GOAD_NOMAD: bringing up {machine}')
-            first_up = self.command.run_vagrant(['up', machine], self.path)
+            north_direct = None
+            if self.lab_name == 'NORTH':
+                north_direct = self._north_existing_canonical_ready(machine)
+                if north_direct is False:
+                    return False
+            if north_direct is True:
+                # Only the strict authenticated canonical guest proof permits
+                # skipping Vagrant on the same registered running VM. This
+                # includes the source-provisioned DC01 recovered by the operator
+                # after its original first-up attempt failed.
+                first_up = True
+            else:
+                first_up = self.command.run_vagrant(['up', machine], self.path)
 
             # A *fresh* NORTH Windows box may be healthy on its vmnet8 NIC
             # after the VMware Vagrant provider failed inside its guest adapter
             # operation. Re-running the same Vagrant adapter action for 600s is
             # circular. Only the exact VMX + in-guest MAC and Tools proof can
             # authorize replaying existing Windows Vagrant scripts directly.
-            north_direct = None
             if self.lab_name == 'NORTH' and not first_up:
                 north_direct = self._north_direct_first_boot_recovery(machine)
                 if north_direct is False:
