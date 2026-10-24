@@ -54,7 +54,8 @@
           }
 
           $rbcd = $target.'msDS-AllowedToActOnBehalfOfOtherIdentity'
-          $rbcdPresent = $null -ne $rbcd -and $rbcd.Length -gt 0
+          $rbcdPresent = $null -ne $rbcd
+          if ($rbcd -is [byte[]]) { $rbcdPresent = $rbcd.Length -gt 0 }
           $domain = Get-ADDomain
           $maq = (Get-ADObject -Identity $domain.DistinguishedName -Properties ms-DS-MachineAccountQuota).'ms-DS-MachineAccountQuota'
           $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -ErrorAction SilentlyContinue

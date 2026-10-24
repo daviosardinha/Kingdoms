@@ -2,7 +2,14 @@
 set -Eeuo pipefail
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly CANONICAL_VAGRANTFILE="${ROOT}/ad/GOAD/providers/vmware/Vagrantfile"
+# Keep the original GOAD invocation unchanged. NORTH explicitly selects the
+# reduced Vagrantfile so its deterministic MAC roster comes from Course 1.
+if [[ "${1:-}" == --north ]]; then
+    shift
+    readonly CANONICAL_VAGRANTFILE="${ROOT}/ad/NORTH/providers/vmware/Vagrantfile"
+else
+    readonly CANONICAL_VAGRANTFILE="${ROOT}/ad/GOAD/providers/vmware/Vagrantfile"
+fi
 readonly VMRUN_BIN="${GOAD_KINGDOMS_VMRUN_BIN:-$(command -v vmrun 2>/dev/null || true)}"
 
 fail() {

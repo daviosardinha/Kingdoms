@@ -42,6 +42,11 @@ class FreshInstallBootstrapTests(unittest.TestCase):
         cls = load_provider(BaseProvider)
         provider = cls()
         provider.lab_name = 'GOAD'
+        # The NORTH host-network ownership attestation is independently
+        # tested in test_course1_provider_guard.py. This unit suite verifies
+        # only the pre-AD / installed-mode provisioning decision; the fixture
+        # has no real instance path or privileged VMware owner record.
+        provider._course1_unwired = Mock(return_value=False)
         provider.is_goad_nomad_segmented = Mock(return_value=True)
         provider.get_runtime_mode = Mock(return_value=mode)
         provider._kingdoms_install_profile = {
@@ -63,6 +68,23 @@ class FreshInstallBootstrapTests(unittest.TestCase):
         provider._apply_router_policy.assert_called_once_with('provisioning')
         provider._enable_provisioning_routes.assert_called_once_with()
         provider._validate_management_plane.assert_called_once_with()
+
+    def test_north_fresh_install_uses_existing_pre_ad_management_path(self):
+        provider = self.make_provider()
+        provider.lab_name = 'NORTH'
+        self.assertTrue(provider.prepare_provisioning())
+        self.assertEqual(provider.base_prepare_calls, 0)
+        provider._apply_router_policy.assert_called_once_with('provisioning')
+        provider._enable_provisioning_routes.assert_called_once_with()
+        provider._validate_management_plane.assert_called_once_with()
+
+    def test_north_provisioned_instance_cannot_reenter_pre_ad_path(self):
+        provider = self.make_provider(mode='exercise')
+        provider.lab_name = 'NORTH'
+        self.assertEqual(provider.prepare_provisioning(), 'BASE_AD_AWARE_PATH')
+        self.assertEqual(provider.base_prepare_calls, 1)
+        provider._apply_router_policy.assert_not_called()
+        provider._enable_provisioning_routes.assert_not_called()
 
     def test_installed_instance_keeps_normal_ad_aware_transition(self):
         provider = self.make_provider(mode='exercise')

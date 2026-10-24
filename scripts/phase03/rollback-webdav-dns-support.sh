@@ -15,8 +15,8 @@ KRB5_CONFIG_FILE="$WORK/krb5.conf"
 TGT_CACHE="$WORK/webdav-dns.ccache"
 UPDATE_FILE="$WORK/nsupdate-delete.txt"
 RESET_VERIFY_PLAYBOOK="$ROOT/ansible/phase03-webdav-dns-reset-verify.yml"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+DATA_INVENTORY="${KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 
 find_ansible_playbook() {
   local candidate_file

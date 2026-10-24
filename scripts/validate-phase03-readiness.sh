@@ -32,6 +32,32 @@ mkdir -p "$EVIDENCE"
 cd "$ROOT" || exit 1
 export PATH="$HOME/.goad/.venv/bin:$PATH"
 
+# Full GOAD remains the default. NORTH requires its exact reduced inventory;
+# a GOAD/Essos inventory can produce false Phase 03 readiness results.
+case "${KINGDOMS_PHASE03_PROFILE:-GOAD}" in
+  GOAD)
+    PHASE03_LAB_INVENTORY="$ROOT/ad/GOAD/data/inventory"
+    PHASE03_INSTANCE_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+    ;;
+  NORTH)
+    PHASE03_LAB_INVENTORY="$ROOT/ad/NORTH/data/inventory"
+    PHASE03_INSTANCE_INVENTORY="$(dirname "$PROVIDER")/inventory"
+    [[ -f "$ROOT/ad/NORTH/data/config.json" ]] || {
+      echo '[FAIL] NORTH scenario config missing' >&2; exit 2;
+    }
+    ;;
+  *)
+    echo '[FAIL] KINGDOMS_PHASE03_PROFILE must be GOAD or NORTH' >&2
+    exit 2
+    ;;
+esac
+for required in "$PHASE03_LAB_INVENTORY" "$PHASE03_INSTANCE_INVENTORY"; do
+  [[ -f "$required" ]] || {
+    printf '[FAIL] Phase 03 inventory missing: %s\n' "$required" >&2
+    exit 2
+  }
+done
+
 PASS=0
 WARN=0
 FAIL=0
@@ -243,8 +269,8 @@ YAML
 
   ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg" \
   timeout 600 "$ANSIBLE_PLAYBOOK" \
-    -i "$ROOT/ad/GOAD/data/inventory" \
-    -i "$ROOT/ad/GOAD/providers/vmware/inventory" \
+    -i "$PHASE03_LAB_INVENTORY" \
+    -i "$PHASE03_INSTANCE_INVENTORY" \
     "$PLAYBOOK" 2>&1 | tee "$EVIDENCE/windows-prereqs.log"
   ANSIBLE_RC=${PIPESTATUS[0]}
   [[ $ANSIBLE_RC -eq 0 ]] && pass 'read-only Windows prerequisite collection completed' || fail "Windows prerequisite collection failed rc=$ANSIBLE_RC"

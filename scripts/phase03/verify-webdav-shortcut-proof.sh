@@ -7,8 +7,8 @@ WORK="${WORK:-$HOME/.config/kingdoms/phase03-webdav}"
 HTTP_LOG="$WORK/http.log"
 PCAP="$WORK/webdav-shortcut.pcap"
 PLAYBOOK="$ROOT/ansible/phase03-webdav-shortcut-verify.yml"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+DATA_INVENTORY="${KINGDOMS_PHASE03_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_PHASE03_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 
 find_ansible_playbook() {
   local candidate_file

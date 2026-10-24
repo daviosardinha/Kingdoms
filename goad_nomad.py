@@ -15,6 +15,7 @@ import threading
 import time
 
 from goad.lab_names import canonical_lab_name, public_lab_name
+from goad.course1_pre_ad_resume import assert_pre_ad_north_resume, PreADResumeError
 from goad.log import Log
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
@@ -230,7 +231,55 @@ class GoadNomad(BaseGoad):
             Log.error('Instance creation failed')
             return False
 
-        return self.do_install_instance()
+        # ONLY the explicit new-instance CLI path may bootstrap NORTH's
+        # absent VMware networks. Existing-instance install/resume/start/reset
+        # never gains this privilege and retains the owner's fail-closed guard.
+        self._native_north_bootstrap_requested = (
+            self.lab_manager.get_current_lab_name() == 'NORTH'
+            and self.lab_manager.get_current_provider_name() == 'vmware'
+        )
+        try:
+            return self.do_install_instance()
+        finally:
+            self._native_north_bootstrap_requested = False
+
+    def do_prepare_north(self):
+        """Create the native NORTH instance files only; never start Vagrant.
+
+        The provider remains install-guarded until the separate host networking
+        and lifecycle acceptance gates are proven.
+        """
+        if (self.lab_manager.get_current_lab_name() != 'NORTH'
+                or self.lab_manager.get_current_provider_name() != 'vmware'):
+            Log.error('prepare-north requires the NORTH lab with VMware provider')
+            return False
+        if self.lab_manager.get_current_instance() is not None:
+            Log.error('A lab instance is already selected; refusing to create another')
+            return False
+        # Rerunning --prepare must never accumulate duplicate NORTH instances.
+        existing = [
+            instance_id
+            for instance_id, item in self.lab_manager.lab_instances.instances.items()
+            if item.lab_name == 'NORTH' and item.provider_name == 'vmware'
+        ]
+        if existing:
+            Log.error('NORTH is already registered; use its existing instance: '
+                      + ', '.join(sorted(existing)))
+            return False
+        if not self.lab_manager.create_instance():
+            Log.error('NORTH source-only instance preparation failed')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        if (instance is None or instance.lab_name != 'NORTH'
+                or instance.provider_name != 'vmware'):
+            Log.error('NORTH instance identity was not established')
+            return False
+        Log.success(
+            'NORTH instance files created; no VMware, Vagrant or host networking changed'
+        )
+        Log.info('NORTH provider directory: ' + str(instance.instance_provider_path))
+        return True
+
     def do_install(self, arg=''):
         """Run a full install and return success only for an installed instance."""
         result = self._run_with_install_timer(lambda: self.do_create(arg))
@@ -239,6 +288,65 @@ class GoadNomad(BaseGoad):
 
         instance = self.lab_manager.get_current_instance()
         return instance is not None and instance.get_status() == READY
+
+    def _bootstrap_north_fresh_network(self, provider):
+        """One-command NORTH bootstrap on an empty host, never an owner repair.
+
+        A new instance has already been registered by the explicit CLI install.
+        The canonical vmnet transaction independently checks no running VMs,
+        no overlapping networks/registered MACs, then holds its global lock for
+        backup, restart, ownership record and persistent .254 validation.
+        """
+        instance = self.lab_manager.get_current_instance()
+        if (instance is None
+                or getattr(instance, 'lab_name', None) != 'NORTH'
+                or getattr(instance, 'provider_name', None) != 'vmware'
+                or getattr(provider, 'lab_name', None) != 'NORTH'):
+            Log.error('NORTH bootstrap requires the exact new native instance')
+            return False
+
+        target = Path(str(instance.instance_provider_path))
+        provider_path = getattr(provider, 'path', None)
+        if (not target.is_absolute() or target.is_symlink()
+                or not target.is_dir() or provider_path is None
+                or Path(str(provider_path)).resolve() != target.resolve()):
+            Log.error('NORTH bootstrap provider identity does not match this instance')
+            return False
+
+        owner = Path('/etc/vmware/kingdoms-course1-owner.json')
+        if owner.exists() or owner.is_symlink():
+            Log.error(
+                'NORTH network ownership already exists; new installation '
+                'cannot reassign or repair the existing owner'
+            )
+            return False
+        setup = provider._script('setup-vmware-networks.sh')
+        if not setup:
+            Log.error('NORTH network setup source missing')
+            return False
+
+        self._install_phase = 'NORTH fresh-host network bootstrap'
+        Log.info(
+            'NORTH: preparing owned VMware networking for the exact new '
+            'instance (clean host required, rollback protected)'
+        )
+        try:
+            result = subprocess.run(
+                ['sudo', '-n', 'bash', setup, '--north', 'native-bootstrap',
+                 '--provider-dir', str(target)],
+                check=False, timeout=240,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'NORTH fresh-host network bootstrap failed: {type(exc).__name__}')
+            return False
+        if result.returncode != 0 or provider._course1_unwired():
+            Log.error(
+                'NORTH fresh-host bootstrap or immutable ownership verification '
+                'failed; no VMware guests will be started'
+            )
+            return False
+        Log.success('NORTH fresh-host VMware owner and .254 interfaces verified')
+        return True
 
     def do_provide(self, arg=''):
         """Run the provider and return the result from *this* attempt.
@@ -255,6 +363,10 @@ class GoadNomad(BaseGoad):
         if provider is None:
             Log.error('No provider loaded for the current instance')
             return False
+
+        if getattr(self, '_native_north_bootstrap_requested', False):
+            if not self._bootstrap_north_fresh_network(provider):
+                return False
 
         self._install_phase = 'provider bring-up / VM readiness'
         phase_started = time.monotonic()
@@ -311,6 +423,78 @@ class GoadNomad(BaseGoad):
                 self.do_install_extension(extension_name)
         self.refresh_prompt()
         return provision_result
+
+    def do_resume_north(self, start_playbook):
+        """Resume the existing NORTH playbook sequence without Vagrant up.
+
+        This is deliberately separate from fresh install. The original
+        Ansible.run_from owns AD-aware management preparation and final
+        exercise isolation. Existing Kingdoms provider checks and the sudo
+        keepalive remain active; no stale instance status is trusted.
+        """
+        if (self.lab_manager.get_current_lab_name() != 'NORTH'
+                or self.lab_manager.get_current_provider_name() != 'vmware'):
+            Log.error('NORTH resume requires selected NORTH/VMware profile')
+            return False
+        instance = self.lab_manager.get_current_instance()
+        provider = self.lab_manager.get_current_instance_provider()
+        provisioner = self.lab_manager.get_current_instance_provisioner()
+        if instance is None or provider is None or provisioner is None:
+            Log.error('NORTH resume requires an already-created instance')
+            return False
+        if not isinstance(start_playbook, str) or not start_playbook:
+            Log.error('NORTH resume requires a starting playbook')
+            return False
+        try:
+            manifest = provisioner.get_playbook_list('NORTH')
+        except (OSError, ValueError, KeyError) as exc:
+            Log.error(f'NORTH resume manifest is invalid: {exc}')
+            return False
+        if start_playbook not in manifest:
+            Log.error('NORTH resume starting playbook is not in the configured manifest')
+            return False
+        def resume():
+            # First prime sudo through the established installer keepalive;
+            # then inspect this exact instance's root-owned network journal.
+            if provider._course1_unwired():
+                Log.error('NORTH resume refused by host-network ownership check')
+                return False
+            # Only a failed *first* installation, before even build.yml, may
+            # use pre-AD management preparation. Normal partial/installed
+            # NORTH resumes retain the original AD-aware mode transition.
+            pre_ad = (start_playbook == manifest[0]
+                      and start_playbook == 'build.yml'
+                      and provider.get_runtime_mode() == 'unknown')
+            if pre_ad:
+                try:
+                    for marker in assert_pre_ad_north_resume(
+                            provider, manifest, start_playbook):
+                        Log.success(marker)
+                except (PreADResumeError, OSError, ValueError) as exc:
+                    Log.error(f'NORTH pre-AD resume refused: {exc}')
+                    return False
+
+            self._install_phase = f'NORTH Ansible resume from {start_playbook}'
+            Log.info(f'NORTH: resuming existing instance from {start_playbook}; '
+                     'no Vagrant VM bring-up will be repeated')
+            if pre_ad:
+                provider._north_pre_ad_resume_authorized = True
+            try:
+                # run_from does the exact first/remaining 21-play manifest and
+                # the standard exercise-mode finalization; the special flag
+                # affects only pre-Ansible management prep in this invocation.
+                result = provisioner.run_from(start_playbook)
+            finally:
+                if pre_ad:
+                    provider._north_pre_ad_resume_authorized = False
+            if not result:
+                Log.error('NORTH Ansible resume failed; instance remains incomplete')
+                return False
+            instance.set_status(READY)
+            self.refresh_prompt()
+            return True
+
+        return bool(self._run_with_install_timer(resume))
 
     def do_provision_lab(self, arg=''):
         """Provision through the GOAD_NOMAD lifecycle and set READY only on success.
@@ -445,16 +629,18 @@ class GoadNomad(BaseGoad):
         provider = self._nomad_provider(require_instance=True)
         if provider is None:
             Log.error('Load a GOAD/VMware instance before running GOAD_NOMAD validation')
-            return
+            return False
 
         if provider.validate_runtime():
-            # A full runtime validation proves the instance is provisioned and
-            # finishes in exercise mode. Repair stale stock-GOAD metadata from
-            # development-era instances only after that proof succeeds.
+            # Set READY only after the selected lab's complete runtime proof.
+            # NORTH's exercise-only validator never changes the network mode;
+            # full GOAD retains its established runtime validation path.
             self.lab_manager.get_current_instance().set_status(READY)
             Log.success('GOAD_NOMAD runtime validation passed; instance status is installed')
-        else:
-            Log.error('GOAD_NOMAD runtime validation failed')
+            return True
+
+        Log.error('GOAD_NOMAD runtime validation failed')
+        return False
 
     def do_destroy(self, arg=''):
         """Destroy the loaded instance and return the provider result.
@@ -491,7 +677,7 @@ class GoadNomad(BaseGoad):
 
 
 def parse_args():
-    task_help = 'tasks available: install/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
+    task_help = 'tasks available: prepare-north/install/resume-north/check/start/stop/restart/destroy/status/snapshot/reset/validate/ws01'
     parser = argparse.ArgumentParser(
         prog='goad_nomad.py',
         description='GOAD_NOMAD lab management console.',
@@ -500,6 +686,7 @@ Examples:
  - Launch GOAD_NOMAD interactive console: ./goad.sh
  - Install full Kingdoms on VMware: ./goad.sh -t install -l KINGDOMS -p vmware
  - Legacy GOAD selection remains supported: ./goad.sh -t install -l GOAD -p vmware
+ - Install Fall of the North: ./goad.sh -t install -l NORTH -p vmware
  - Validate an installed instance: ./goad.sh -t validate -i <instance_id>
 ''',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -512,17 +699,23 @@ Examples:
     parser.add_argument('-i', '--instance', help='use a specific instance (use default if not selected)', required=False)
     parser.add_argument('-e', '--extensions', help='extensions to use', action='append', required=False)
     parser.add_argument('-a', '--ansible_only', help='run only provisioning (ansible) on instance (-i) (for task install only)', required=False)
-    parser.add_argument('-r', '--run_playbook', help='run only one ansible playbook on instance (-i) (for task install only)', required=False)
+    parser.add_argument('-r', '--run_playbook', help='run one playbook with install, or resume NORTH from this playbook with resume-north (requires -i)', required=False)
     parser.add_argument('-d', '--disable_dependencies', help='disable_dependencies', action='append', required=False)
     args = parser.parse_args()
-    # Normalize before Config/LabManager/instance creation to preserve all
-    # existing GOAD provider, Vagrant, VMware and persisted-instance paths.
+    # Normalize at CLI boundary, before instance/provider creation.
+    # NORTH remains a distinct lab; only public KINGDOMS resolves to GOAD.
     args.lab = canonical_lab_name(args.lab)
     return args
 
 
 def _dispatch_task(goad, args):
     """Preserve the stock goad.py non-interactive task behaviour."""
+    # Fail before loading any existing instance for the source-only path.
+    if args.task == 'prepare-north' and (
+            args.instance is not None or args.run_playbook is not None
+            or args.ansible_only is not None):
+        Log.error('prepare-north accepts no instance or provisioning override')
+        return 1
     if args.instance is not None:
         goad.do_load(args.instance)
 
@@ -531,6 +724,14 @@ def _dispatch_task(goad, args):
             Log.error('Instance must be selected (-i) to use --run_playbook (-r) or --ansible_only (-a)')
             return 1
 
+    if args.task == 'resume-north':
+        if (args.instance is None or args.run_playbook is None
+                or args.ansible_only is not None):
+            Log.error('resume-north requires -i <existing-instance> -r <starting-playbook>; no -a')
+            return 1
+        return 0 if goad.do_resume_north(args.run_playbook) else 1
+    if args.task == 'prepare-north':
+        return 0 if goad.do_prepare_north() else 1
     if args.task == 'install':
         if args.instance is not None:
             if args.run_playbook is not None:
@@ -569,7 +770,8 @@ def _dispatch_task(goad, args):
         if not goad.do_reset():
             return 1
     elif args.task == 'validate':
-        goad.do_validate()
+        if not goad.do_validate():
+            return 1
     elif args.task == 'ws01':
         if not goad.do_ws01():
             return 1

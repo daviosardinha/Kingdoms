@@ -2,6 +2,8 @@
 - name: Capture NORTH RBCD baseline without changing Active Directory
   hosts: dc02
   gather_facts: false
+  vars:
+    phase03_rbcd_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_RBCD_BASELINE') | default(lookup('env','HOME') ~ '/.config/kingdoms/phase03-rbcd-baseline.json', true) }}"
   tasks:
     - name: Capture WS01 RBCD attribute and candidate-account baseline
       ansible.windows.win_powershell:
@@ -12,12 +14,15 @@
 
           $target = Get-ADComputer -Identity 'WS01' -Properties DistinguishedName,msDS-AllowedToActOnBehalfOfOtherIdentity
           $rbcd = $target.'msDS-AllowedToActOnBehalfOfOtherIdentity'
+          $rbcdPresent = $null -ne $rbcd
+          if ($rbcd -is [byte[]]) { $rbcdPresent = $rbcd.Length -gt 0 }
           $candidate = Get-ADComputer -LDAPFilter '(sAMAccountName=PHASE03RBCD$)' -ErrorAction SilentlyContinue
 
           $baseline = [ordered]@{
               Target = 'WS01$'
+              CapturedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
               TargetDN = $target.DistinguishedName
-              RBCDPresent = [bool]($null -ne $rbcd -and $rbcd.Length -gt 0)
+              RBCDPresent = [bool]$rbcdPresent
               RBCDBase64 = $null
               CandidateName = 'PHASE03RBCD$'
               CandidateExisted = [bool]($null -ne $candidate)
@@ -40,14 +45,14 @@
 
     - name: Ensure local Kingdoms config directory exists
       ansible.builtin.file:
-        path: "{{ lookup('env','HOME') }}/.config/kingdoms"
+        path: "{{ phase03_rbcd_baseline_path | dirname }}"
         state: directory
         mode: '0700'
       delegate_to: localhost
 
     - name: Save exact RBCD baseline locally
       ansible.builtin.copy:
-        dest: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-rbcd-baseline.json"
+        dest: "{{ phase03_rbcd_baseline_path }}"
         content: "{{ rbcd_baseline.result | to_nice_json }}\n"
         mode: '0600'
       delegate_to: localhost
@@ -55,7 +60,7 @@
     - name: Emit baseline markers
       ansible.builtin.debug:
         msg:
-          - "PHASE03_RBCD_BASELINE_FILE={{ lookup('env','HOME') }}/.config/kingdoms/phase03-rbcd-baseline.json"
+          - "PHASE03_RBCD_BASELINE_FILE={{ phase03_rbcd_baseline_path }}"
           - "PHASE03_RBCD_BASELINE_TARGET={{ rbcd_baseline.result.Target }}"
           - "PHASE03_RBCD_BASELINE_EXISTING={{ rbcd_baseline.result.RBCDPresent }}"
           - "PHASE03_RBCD_BASELINE_CANDIDATE_EXISTS={{ rbcd_baseline.result.CandidateExisted }}"

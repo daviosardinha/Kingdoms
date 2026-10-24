@@ -1,5 +1,7 @@
 - name: Copy a single file
   ansible.windows.win_copy:
-    src: "../ad/{{domain_name}}/files/{{item.value.src}}"
+    # NORTH retains Kingdoms DC02/SRV02 fixtures without duplicating binaries.
+    # GOAD and all other scenarios keep their existing native file sources.
+    src: "{{ ('../ad/GOAD/files' if domain_name == 'NORTH' else '../ad/' ~ domain_name ~ '/files') ~ '/' ~ item.value.src }}"
     dest: "{{item.value.dest}}"
   with_dict: "{{ vulns_vars }}"

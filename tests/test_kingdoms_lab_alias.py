@@ -98,7 +98,9 @@ class KingdomsLabAliasTests(unittest.TestCase):
     def test_provider_still_uses_original_machine_identity(self):
         path = ROOT / 'goad/provider/vagrant/vmware_nomad.py'
         source = path.read_text(encoding='utf-8')
-        self.assertIn("return self.lab_name == 'GOAD'", source)
+        # NORTH extends the original segmented provider without renaming its
+        # GOAD guest identities. Verify both selectors survive integration.
+        self.assertIn("return self.lab_name in ('GOAD', 'NORTH')", source)
         self.assertIn("'GOAD-ROUTER'", source)
         self.assertIn("'GOAD-WS01': '10.4.10.31'", source)
 

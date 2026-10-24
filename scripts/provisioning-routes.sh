@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# NORTH's reduced Kingdoms topology has exactly one protected parent route.
+# Dispatch explicitly to the same script's instance-owned controller; when
+# --north is absent, the full six-machine Kingdoms logic below is unchanged.
+if [[ "${1:-}" == "--north" ]]; then
+  readonly KINGDOMS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  shift
+  exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    python3 -m goad.course1_routes "$@"
+fi
+
 # Temporary host routes used only while provisioning the segmented VMware lab.
 #
 # The Kali/host machine intentionally has no VMware adapters on vmnet20 or

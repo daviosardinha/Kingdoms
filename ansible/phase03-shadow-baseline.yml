@@ -2,6 +2,8 @@
 - name: Capture exact NORTH Shadow Credentials baseline without changing Active Directory
   hosts: dc02
   gather_facts: false
+  vars:
+    phase03_shadow_baseline_path: "{{ lookup('env','KINGDOMS_PHASE03_SHADOW_BASELINE') | default(lookup('env','HOME') ~ '/.config/kingdoms/phase03-shadow-baseline.json', true) }}"
   tasks:
     - name: Capture exact WS01 KeyCredentialLink state
       ansible.windows.win_powershell:
@@ -32,14 +34,14 @@
 
     - name: Ensure local Kingdoms config directory exists
       ansible.builtin.file:
-        path: "{{ lookup('env','HOME') }}/.config/kingdoms"
+        path: "{{ phase03_shadow_baseline_path | dirname }}"
         state: directory
         mode: '0700'
       delegate_to: localhost
 
     - name: Save exact Shadow Credentials baseline locally
       ansible.builtin.copy:
-        dest: "{{ lookup('env','HOME') }}/.config/kingdoms/phase03-shadow-baseline.json"
+        dest: "{{ phase03_shadow_baseline_path }}"
         content: "{{ shadow_baseline.result | to_nice_json }}\n"
         mode: '0600'
       delegate_to: localhost
@@ -52,5 +54,5 @@
           - "PHASE03_SHADOW_BASELINE_SID={{ shadow_baseline.result.TargetSID }}"
           - "PHASE03_SHADOW_BASELINE_KCL_PRESENT={{ shadow_baseline.result.KCLPresent }}"
           - "PHASE03_SHADOW_BASELINE_KCL_COUNT={{ shadow_baseline.result.KCLCount }}"
-          - "PHASE03_SHADOW_BASELINE_FILE={{ lookup('env','HOME') }}/.config/kingdoms/phase03-shadow-baseline.json"
+          - "PHASE03_SHADOW_BASELINE_FILE={{ phase03_shadow_baseline_path }}"
       changed_when: false

@@ -37,6 +37,22 @@ cd "$ROOT" || exit 1
 export PATH="$HOME/.goad/.venv/bin:$PATH"
 export KINGDOMS_RDP_LOG_DIR="$EVIDENCE/rdp-contract"
 
+# The legacy GOAD run remains the default. For the reduced NORTH course,
+# bind the RDP policy audit to this instance's exact inventory and scenario;
+# GOAD/Essos inventory data must not masquerade as NORTH release evidence.
+case "${KINGDOMS_PHASE02_PROFILE:-GOAD}" in
+  GOAD) ;;
+  NORTH)
+    export KINGDOMS_RDP_DATA_INVENTORY="$ROOT/ad/NORTH/data/inventory"
+    export KINGDOMS_RDP_INVENTORY="$(dirname "$PROVIDER")/inventory"
+    export KINGDOMS_RDP_SCENARIO_CONFIG="$ROOT/ad/NORTH/data/config.json"
+    for required in "$KINGDOMS_RDP_DATA_INVENTORY" "$KINGDOMS_RDP_INVENTORY" "$KINGDOMS_RDP_SCENARIO_CONFIG"; do
+      [[ -f "$required" ]] || { printf '[FAIL] NORTH RDP input missing: %s\n' "$required" >&2; exit 2; }
+    done
+    ;;
+  *) echo '[FAIL] KINGDOMS_PHASE02_PROFILE must be GOAD or NORTH' >&2; exit 2 ;;
+esac
+
 PASS=0
 FAIL=0
 WARN=0

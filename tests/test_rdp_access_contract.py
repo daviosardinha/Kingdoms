@@ -130,6 +130,24 @@ class RdpAccessContractTests(unittest.TestCase):
             self.assertIn(token, text)
         self.assertIn('tokenGroups', self.text('scripts/rdp-directory-evidence.ps1'))
 
+    def test_north_phase02_selects_exact_reduced_instance_inventory(self):
+        phase02 = self.text('scripts/validate-phase02-readiness.sh')
+        rdp = self.text('scripts/validate-rdp-runtime.sh')
+        self.assertIn('KINGDOMS_PHASE02_PROFILE:-GOAD', phase02)
+        self.assertIn('KINGDOMS_RDP_DATA_INVENTORY="$ROOT/ad/NORTH/data/inventory"', phase02)
+        self.assertIn('KINGDOMS_RDP_INVENTORY="$(dirname "$PROVIDER")/inventory"', phase02)
+        self.assertIn('KINGDOMS_RDP_SCENARIO_CONFIG="$ROOT/ad/NORTH/data/config.json"', phase02)
+        self.assertIn('KINGDOMS_RDP_DATA_INVENTORY', rdp)
+        self.assertIn('KINGDOMS_RDP_SCENARIO_CONFIG', rdp)
+        self.assertIn('SCENARIO_EXTRA=(-e "@${SCENARIO_CONFIG}")', rdp)
+        self.assertIn('"${SCENARIO_EXTRA[@]}"', rdp)
+
+    def test_legacy_goad_rdp_defaults_remain_available(self):
+        rdp = self.text('scripts/validate-rdp-runtime.sh')
+        self.assertIn('KINGDOMS_RDP_DATA_INVENTORY:-${ROOT}/ad/GOAD/data/inventory', rdp)
+        self.assertIn('KINGDOMS_RDP_INVENTORY:-${ROOT}/ad/GOAD/providers/vmware/inventory', rdp)
+        self.assertIn('SCENARIO_CONFIG="${KINGDOMS_RDP_SCENARIO_CONFIG:-}"', rdp)
+
     def test_runtime_does_not_modify_windows_state(self):
         for path in ('scripts/rdp-host-evidence.ps1', 'scripts/rdp-directory-evidence.ps1'):
             text = self.text(path)

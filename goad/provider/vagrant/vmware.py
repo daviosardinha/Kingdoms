@@ -339,6 +339,19 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         with open(vagrantfile, 'r', encoding='utf-8') as handle:
             text = handle.read()
 
+        if self.lab_name == 'NORTH':
+            # The instance renderer already emits the reduced four-guest
+            # Vagrantfile. Never import WS01 or MAC/network assumptions from
+            # the six-guest GOAD compatibility migration.
+            expected = ('GOAD-DC01', 'GOAD-DC02', 'GOAD-SRV02', 'GOAD-WS01', 'GOAD-ROUTER')
+            if 'GOAD-DC03' in text or 'GOAD-SRV03' in text:
+                Log.error('Course 1 Vagrantfile includes a retired Essos machine')
+                return False
+            if any(text.count(name) == 0 for name in expected):
+                Log.error('Course 1 Vagrantfile is missing a required machine')
+                return False
+            return True
+
         # Also migrate existing generated workspaces: template edits alone do
         # not disable their Vagrant Cloud metadata checks.
         if 'config.vm.box_check_update = false' not in text:
@@ -444,6 +457,30 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         those generated files without asking the operator to edit the test
         checkout or workspace manually.
         """
+        if self.lab_name == 'NORTH':
+            # Do not overwrite the four-host NORTH inventory with the six-host
+            # GOAD/M2 compatibility inventory. Both canonical NORTH files
+            # already include WS01 and have no Essos account or address.
+            instance_path = os.path.dirname(str(self.path))
+            sources = (
+                (os.path.join(GoadPath.get_lab_provider_path('NORTH', 'vmware'), 'inventory'),
+                 os.path.join(instance_path, 'inventory')),
+                (os.path.join(GoadPath.get_lab_data_path('NORTH'), 'inventory_disable_vagrant'),
+                 os.path.join(instance_path, 'inventory_disable_vagrant')),
+            )
+            for origin, target in sources:
+                if not os.path.isfile(origin) or not os.path.isfile(target):
+                    Log.error('Course 1 generated inventory or canonical source is missing')
+                    return False
+                with open(origin, 'r', encoding='utf-8') as handle:
+                    original = handle.read()
+                if any(name in original.lower() for name in ('essos.local', 'dc03 ', 'srv03 ')):
+                    Log.error('Course 1 inventory unexpectedly references Essos')
+                    return False
+                shutil.copyfile(origin, target)
+            Log.success('Course 1: four-host generated inventories synchronized')
+            return True
+
         instance_path = os.path.dirname(str(self.path))
         provider_source = (
             GoadPath.get_lab_provider_path('GOAD', 'vmware')

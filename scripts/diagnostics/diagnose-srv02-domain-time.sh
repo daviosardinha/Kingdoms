@@ -4,8 +4,10 @@ set -uo pipefail
 
 ROOT="${ROOT:-$HOME/Documents/GOAD_NOMAD}"
 ANSIBLE_PLAYBOOK="${ANSIBLE_PLAYBOOK:-$HOME/.goad/.venv/bin/ansible-playbook}"
-DATA_INVENTORY="$ROOT/ad/GOAD/data/inventory"
-PROVIDER_INVENTORY="$ROOT/ad/GOAD/providers/vmware/inventory"
+# Override both inventory paths when diagnosing an installed NORTH instance.
+# Defaults intentionally preserve the established full GOAD diagnostic.
+DATA_INVENTORY="${KINGDOMS_DIAG_DATA_INVENTORY:-$ROOT/ad/GOAD/data/inventory}"
+PROVIDER_INVENTORY="${KINGDOMS_DIAG_PROVIDER_INVENTORY:-$ROOT/ad/GOAD/providers/vmware/inventory}"
 TMP="$(mktemp /tmp/kingdoms-srv02-time.XXXXXX.yml)"
 trap 'rm -f "$TMP"' EXIT
 
