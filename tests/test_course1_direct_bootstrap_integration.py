@@ -25,6 +25,9 @@ class DirectBootstrapIntegrationTests(unittest.TestCase):
         provider.goad_nomad_windows = ["GOAD-DC01"]
         provider._last_bounded_vagrant_reaped = True
         provider.path = "/tmp/fake-instance/provider"
+        # These tests exercise the legacy failed-first-up path: unlike a real
+        # recovered VM, there is no registered existing VMX to prove upfront.
+        provider._vmx_path = Mock(return_value=None)
         provider._course1_unwired = Mock(return_value=False)
         provider.prepare_install = Mock(return_value=True)
         provider._sync_goad_nomad_inventories = Mock(return_value=True)
