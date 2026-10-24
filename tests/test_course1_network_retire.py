@@ -96,6 +96,37 @@ class RetiredNorthFixtures(unittest.TestCase):
         self.assertTrue(self.owner.exists())
         self.assertEqual((self.savedir / "journal.json").stat().st_size > 0, True)
 
+    def test_root_owned_retired_nat_receipt_is_selected_for_archive(self):
+        receipt = self.root / "kingdoms-course1-retired-nat.json"
+        receipt.write_text(json.dumps({
+            "schema": "kingdoms.north.retired-nat.v1",
+            "provider": str(self.provider),
+            "baseline_sha256": hashlib.sha256(BASELINE.encode()).hexdigest(),
+            "removed_rules": [
+                line for line in BASELINE.splitlines()
+                if line.startswith("add_nat_portfwd ")
+            ],
+            "reviewed_prior_owner": "d986ad-wslpe-vmware",
+        }))
+        receipt.chmod(0o600)
+        self.assertEqual(self.preview()["retired_nat_receipt"], receipt)
+
+    def test_foreign_retirement_receipt_is_refused(self):
+        receipt = self.root / "kingdoms-course1-retired-nat.json"
+        receipt.write_text(json.dumps({
+            "schema": "kingdoms.north.retired-nat.v1",
+            "provider": "/tmp/foreign",
+            "baseline_sha256": hashlib.sha256(BASELINE.encode()).hexdigest(),
+            "removed_rules": [
+                line for line in BASELINE.splitlines()
+                if line.startswith("add_nat_portfwd ")
+            ],
+            "reviewed_prior_owner": "d986ad-wslpe-vmware",
+        }))
+        receipt.chmod(0o600)
+        with self.assertRaises((RetirementBlocked, RuntimeError)):
+            self.preview()
+
     def test_existing_foreign_nat_forward_blocks_retirement(self):
         with self.networking.open("a") as f:
             f.write("add_nat_portfwd 8 tcp 3456 192.168.213.61 22\n")
