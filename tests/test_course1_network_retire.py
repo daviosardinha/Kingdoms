@@ -111,6 +111,57 @@ class RetiredNorthFixtures(unittest.TestCase):
         receipt.chmod(0o600)
         self.assertEqual(self.preview()["retired_nat_receipt"], receipt)
 
+    def test_retired_nat_receipt_matches_whitespace_normalized_baseline(self):
+        # The host's original VMware networking backup can have differently
+        # indented port-forward lines even though the attestation is canonical.
+        baseline = self.backup.read_text()
+        baseline = baseline.replace(
+            "add_nat_portfwd 8 tcp 2200 192.168.213.249 5985",
+            "  add_nat_portfwd  8   tcp 2200 192.168.213.249 5985   "
+        )
+        self.backup.write_text(baseline)
+        digest = hashlib.sha256(baseline.encode()).hexdigest()
+        owner = json.loads(self.owner.read_text())
+        owner["baseline_sha256"] = digest
+        # The immutable installed commit belongs to the same altered original.
+        owner["installed_sha256"] = hashlib.sha256(
+            render_vmnet_config(baseline, load_course1_topology()).encode()
+        ).hexdigest()
+        self.owner.write_text(json.dumps(owner))
+        journal = self.savedir / "journal.json"
+        proof = json.loads(journal.read_text())
+        proof["baseline_sha256"] = digest
+        proof["proposed_sha256"] = owner["installed_sha256"]
+        journal.write_text(json.dumps(proof))
+        receipt = self.root / "kingdoms-course1-retired-nat.json"
+        receipt.write_text(json.dumps({
+            "schema": "kingdoms.north.retired-nat.v1",
+            "provider": str(self.provider),
+            "baseline_sha256": digest,
+            "removed_rules": [
+                line for line in BASELINE.splitlines()
+                if line.startswith("add_nat_portfwd ")
+            ],
+            "reviewed_prior_owner": "d986ad-wslpe-vmware",
+        }))
+        receipt.chmod(0o600)
+        self.assertEqual(self.preview()["retired_nat_receipt"], receipt)
+
+    def test_retired_nat_receipt_refuses_wrong_baseline_rule(self):
+        receipt = self.root / "kingdoms-course1-retired-nat.json"
+        receipt.write_text(json.dumps({
+            "schema": "kingdoms.north.retired-nat.v1",
+            "provider": str(self.provider),
+            "baseline_sha256": hashlib.sha256(BASELINE.encode()).hexdigest(),
+            "removed_rules": [
+                "add_nat_portfwd 8 tcp 2219 192.168.213.249 5985"
+            ],
+            "reviewed_prior_owner": "d986ad-wslpe-vmware",
+        }))
+        receipt.chmod(0o600)
+        with self.assertRaisesRegex(RetirementBlocked, "exact unique original"):
+            self.preview()
+
     def test_foreign_retirement_receipt_is_refused(self):
         receipt = self.root / "kingdoms-course1-retired-nat.json"
         receipt.write_text(json.dumps({
