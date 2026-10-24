@@ -225,6 +225,74 @@ def _validated_nat_address(value, network):
     return str(ip)
 
 
+_NAT_DHCP_LEASE_FILES = (
+    Path("/etc/vmware/vmnet8/dhcpd/dhcpd.leases"),
+    Path("/etc/vmware/vmnet8/dhcp/dhcp.leases"),
+)
+_MAX_LEASE_FILE_BYTES = 4 * 1024 * 1024
+
+
+def _vmware_nat_lease_ip(values, network):
+    """Only a DHCP lease for the VMX's exact NAT MAC may suggest an IP.
+
+    VMware Workstation/Linux records vmnet8 DHCP grants in dhcpd.leases.
+    A lease is *not* authentication; callers must still establish direct
+    Windows WinRM and prove both VMX NIC MACs before any script runs.
+    No scanning, DHCP modification, root escalation or foreign vmnet reads.
+    """
+    mac = values.get("ethernet0.generatedaddress", "").lower()
+    if not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
+        raise NorthGuestRecoveryBlocked("Original VMX NAT MAC unavailable")
+    for path in _NAT_DHCP_LEASE_FILES:
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > _MAX_LEASE_FILE_BYTES:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except (OSError, UnicodeError):
+            continue
+        if len(text) > _MAX_LEASE_FILE_BYTES:
+            continue
+        # ISC DHCP lease journal: newest entries appear last. Ignore expired
+        # and released/bad addresses; never assume an old lease is a live VM.
+        entries = list(re.finditer(
+            r"(?m)^\s*lease\s+(\d{1,3}(?:\.\d{1,3}){3})\s*\{([^{}]*)\}",
+            text, re.S
+        ))
+        for entry in reversed(entries):
+            block = entry.group(2)
+            found = re.search(
+                r"(?mi)^\s*hardware\s+ethernet\s+"
+                r"((?:[0-9a-f]{2}:){5}[0-9a-f]{2})\s*;",
+                block
+            )
+            if not found or found.group(1).lower() != mac:
+                continue
+            state = re.search(r"(?mi)^\s*binding\s+state\s+(\w+)\s*;", block)
+            if state and state.group(1).lower() != "active":
+                continue
+            expiry = re.search(
+                r"(?mi)^\s*ends\s+\d+\s+"
+                r"(\d{4}/\d{2}/\d{2})\s+(\d{2}:\d{2}:\d{2})\s*;",
+                block,
+            )
+            if expiry:
+                from datetime import datetime, timezone
+                try:
+                    expiry_dt = datetime.strptime(
+                        expiry.group(1) + " " + expiry.group(2),
+                        "%Y/%m/%d %H:%M:%S",
+                    ).replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
+                if expiry_dt < datetime.now(timezone.utc):
+                    continue
+            try:
+                return _validated_nat_address(entry.group(1), network)
+            except NorthGuestRecoveryBlocked:
+                continue
+    return None
+
+
 def _forwarded_nat_ip(port, values, machine, network):
     """Seed NAT IP from an *authenticated* forwarded WinRM and exact guest MAC."""
     if not isinstance(port, int) or port <= 0 or port > 65535:
@@ -267,16 +335,21 @@ def prove_guest(provider, machine, *, timeout=90, address_hint=None,
                 raise
             except NorthGuestRecoveryBlocked as exc:
                 forwarded_failure = exc
+        # Vagrant may advertise a WinRM port without an actual listener, and
+        # vmrun may fail to report a multi-NIC guest's NAT IP. The vmnet8
+        # lease journal provides an independent MAC-bound address candidate.
+        # A live authenticated in-guest double-MAC check below is mandatory.
+        if address is None:
+            address = _vmware_nat_lease_ip(values, network)
         if address is None:
             try:
                 address = _vmx_nat_ip(vmx, network, timeout=timeout)
             except NorthGuestRecoveryBlocked as exc:
-                if forwarded_failure is not None:
-                    raise NorthGuestRecoveryBlocked(
-                        f"VIX NAT IP unavailable ({exc}); authenticated "
-                        f"forwarded bootstrap unavailable ({forwarded_failure})"
-                    ) from exc
-                raise
+                raise NorthGuestRecoveryBlocked(
+                    f"Neither VMware vmnet8 DHCP lease nor VIX NAT IP could "
+                    f"identify {machine}: {exc}; forwarded WinRM status: "
+                    f"{forwarded_failure or 'not provided'}"
+                ) from exc
             address = _validated_nat_address(address, network)
 
     try:
