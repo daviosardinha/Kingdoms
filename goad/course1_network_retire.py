@@ -22,7 +22,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import time
 
 from goad.course1_host_network_apply import (
     NETWORKING, NETMAP, BACKUPS, OWNER, VMWARE_NETWORKS, asset_paths,
@@ -142,8 +141,6 @@ def _read_plan(provider, *, networking=NETWORKING, owner=OWNER,
     removed = []
     for line in text.splitlines(keepends=True):
         clean = line.rstrip("\r\n")
-        m = DECLARATION.fullmatch(clean)  # no content past key is valid
-        # Use explicit prefix-match because declarations include values.
         m = re.match(r"^answer VNET_(10|20|99)_([A-Z0-9_]+) (\S+)$", clean)
         if m:
             index, key = int(m.group(1)), m.group(2)
@@ -207,6 +204,21 @@ def _ensure_host_offline():
             raise RetirementBlocked(f"VMware process active or cannot be inspected: {process}")
 
 
+def _foreign_network_manifest(raw):
+    """VMware may rotate DHCP hashes and order, but not foreign vmnet settings."""
+    items = Counter()
+    for line in raw.decode("utf-8").splitlines():
+        words = line.split()
+        if len(words) != 3 or words[0] != "answer":
+            continue
+        m = re.fullmatch(r"VNET_(\\d+)_([A-Z0-9_]+)", words[1])
+        if m and int(m.group(1)) not in (10, 20, 99):
+            if m.group(2) == "DHCP_CFG_HASH":
+                continue
+            items[" ".join(words)] += 1
+    return items
+
+
 def _verify_interfaces_removed():
     for vmnet in ("vmnet10", "vmnet20", "vmnet99"):
         proc = _host_command("ip", "link", "show", "dev", vmnet, check=False)
@@ -257,13 +269,33 @@ def apply(provider):
                 f.flush()
                 os.fsync(f.fileno())
         old = data["old_config"]
+        expected_foreign = _foreign_network_manifest(old)
+        netmap = Path(NETMAP)
+        if netmap.is_symlink():
+            raise RetirementBlocked("Unsafe VMware netmap symlink")
+        old_netmap = netmap.read_bytes() if netmap.exists() else None
+        if old_netmap is not None:
+            _safe_regular(netmap, 0)
+            dest = folder / "netmap.before"
+            with dest.open("xb") as f:
+                os.fchmod(f.fileno(), 0o600)
+                f.write(old_netmap)
+                f.flush()
+                os.fsync(f.fileno())
+        had_vmnet2 = _host_command(
+            "ip", "link", "show", "dev", "vmnet2", check=False
+        ).returncode == 0
         archived = []
+        owner_retired = False
         changed = False
         timer_disabled = False
         try:
             _host_command("systemctl", "disable", "--now", TIMER)
             timer_disabled = True
             _host_command("systemctl", "stop", SERVICE, check=False)
+            for unit in (TIMER, SERVICE):
+                if _host_command("systemctl", "is-active", unit, check=False).stdout.strip() == "active":
+                    raise RetirementBlocked("NORTH address service remained active: " + unit)
             _host_command(str(VMWARE_NETWORKS), "--stop")
             if data["networking"].read_bytes() != old:
                 raise RetirementBlocked("VMware rewrote network settings during stop")
@@ -271,6 +303,12 @@ def apply(provider):
             changed = True
             _host_command(str(VMWARE_NETWORKS), "--start")
             _verify_interfaces_removed()
+            if _foreign_network_manifest(data["networking"].read_bytes()) != expected_foreign:
+                raise RetirementBlocked("VMware altered foreign vmnet declarations")
+            if had_vmnet2 and _host_command(
+                    "ip", "link", "show", "dev", "vmnet2", check=False
+            ).returncode != 0:
+                raise RetirementBlocked("Foreign vmnet2 disappeared during retirement")
 
             # Preserve original assets in the protected historical evidence
             # folder rather than unlinking them irreversibly.
@@ -284,6 +322,7 @@ def apply(provider):
             if data["owner"].read_bytes() != (folder / "owner.original.json").read_bytes():
                 raise RetirementBlocked("NORTH owner changed during retirement")
             data["owner"].rename(folder / "owner.retired.json")
+            owner_retired = True
             print("[PASS] NORTH_OWNED_NETWORKS_RETIRED")
             print("[PASS] NORTH_HOST_ASSETS_ARCHIVED")
             print("[PASS] NORTH_OWNER_ARCHIVED")
@@ -291,6 +330,11 @@ def apply(provider):
             return
         except Exception as exc:
             errors = []
+            if owner_retired:
+                try:
+                    (folder / "owner.retired.json").rename(data["owner"])
+                except OSError as e:
+                    errors.append(f"owner rollback: {e}")
             for dest, archived_path in reversed(archived):
                 try:
                     archived_path.rename(dest)
