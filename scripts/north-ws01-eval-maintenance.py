@@ -89,18 +89,23 @@ def main(argv=None):
 
     ports = checked(["vagrant", "port", "GOAD-WS01"], cwd=provider,
                     capture_output=True, text=True).stdout
-    port = forwarded_winrm_port(ports)
+    try:
+        port = forwarded_winrm_port(ports)
+    except ValueError:
+        port = None
     host = "127.0.0.1"
 
-    # Prefer the usual Vagrant transport, but a fresh VMware Windows guest can
-    # boot with no actual localhost NAT-forward listener despite Vagrant's
-    # cached port entry. Use the *same* exact-VMX/MAC-authenticated NORTH direct
-    # guest proof as the first-boot fallback. This does not change license
-    # logic or NAT rules, only the Ansible management destination.
-    try:
-        with socket.create_connection((host, port), timeout=3):
+    # The Vagrant port registry may lack a valid entry or report a stale port.
+    # Neither should force another Vagrant provisioner run on a healthy guest.
+    forwarded_ok = False
+    if port is not None:
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                forwarded_ok = True
+        except OSError:
             pass
-    except OSError:
+
+    if not forwarded_ok:
         from goad.course1_direct_winrm import prove_guest
         _session, host, guest = prove_guest(provider, "GOAD-WS01", timeout=90)
         if guest["address"] != "10.4.10.31":
