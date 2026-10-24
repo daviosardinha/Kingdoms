@@ -175,7 +175,7 @@ class NorthDirectRecoveryTests(unittest.TestCase):
     def test_forwarded_nat_ip_must_route_on_vmnet8(self):
         def wrong_route(args, **kwargs):
             if args[:4] == ["ip", "-4", "route", "get"]:
-                return Mock(returncode=0, stdout="192.168.213.133 dev wlan0\\n")
+                return Mock(returncode=0, stdout="192.168.213.133 dev wlan0\n")
             return self.commands(args, **kwargs)
         with patch.object(direct, "_command", side_effect=wrong_route), \
              patch.object(direct, "_vmx_nat_ip",
@@ -183,7 +183,7 @@ class NorthDirectRecoveryTests(unittest.TestCase):
              patch.object(direct, "_authenticated_session", return_value=self.session), \
              patch.object(direct.socket, "create_connection", return_value=MagicMock()):
             with self.assertRaisesRegex(
-                direct.NorthGuestRecoveryBlocked, "VIX NAT IP unavailable"
+                direct.NorthGuestRecoveryBlocked, "Neither VMware vmnet8 DHCP lease nor VIX NAT IP"
             ):
                 direct.prove_guest(
                     self.provider, "GOAD-DC01", forwarded_port=55985
@@ -195,12 +195,12 @@ class NorthDirectRecoveryTests(unittest.TestCase):
                    state="active"):
         path = self.root / "vmnet8-dhcp.leases"
         path.write_text(
-            "lease " + ip + " {\\n"
-            " starts 6 2026/10/24 13:00:00;\\n"
-            " ends 3 " + ends + ";\\n"
-            " hardware ethernet " + mac + ";\\n"
-            " binding state " + state + ";\\n"
-            "}\\n",
+            "lease " + ip + " {\n"
+            " starts 6 2026/10/24 13:00:00;\n"
+            " ends 3 " + ends + ";\n"
+            " hardware ethernet " + mac + ";\n"
+            " binding state " + state + ";\n"
+            "}\n",
             encoding="utf-8",
         )
         return path
