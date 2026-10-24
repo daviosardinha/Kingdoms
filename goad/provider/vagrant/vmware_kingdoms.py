@@ -581,6 +581,8 @@ if (
 ) {{
     Write-Output 'GOAD_KINGDOMS_GUEST_READY'
 }}
+# Emit evidence without relaxing the original all-conditions-ready gate.
+Write-Output "GOAD_KINGDOMS_GUEST_DIAG|tools_service=$($svc.Status)|tools_file=$([bool]$file)|tools_process=$([bool]$proc)|canonical_ip=$([bool]$ip)"
 """)
         except Exception as exc:
             Log.warning(
@@ -589,10 +591,65 @@ if (
             )
             return False
 
-        return (
+        ready = (
             result.status_code == 0
             and b'GOAD_KINGDOMS_GUEST_READY' in result.std_out
         )
+        if self.lab_name == 'NORTH' and not ready:
+            # Authenticated forwarded WinRM can return before Windows restores
+            # its VMware Tools process or static exercise NIC after a reboot.
+            # Expose exactly which existing readiness gate is absent.
+            output = result.std_out.decode('utf-8', errors='replace')
+            details = next((
+                line for line in output.splitlines()
+                if line.startswith('GOAD_KINGDOMS_GUEST_DIAG|')
+            ), 'guest-readiness-details-unavailable')
+            Log.warning(
+                f'NORTH: {machine} WinRM responded but authenticated readiness '
+                f'has not converged: {details}; status={result.status_code}'
+            )
+        return ready
+
+    def _north_post_rearm_guest_ready(self, machine, timeout=180):
+        """Re-prove NORTH WS01 after evaluation reboot using bounded polling.
+
+        The Ansible role proves Windows evaluation grace and WinRM return, not
+        necessarily the VMware Tools service/process + canonical exercise IP.
+        This read-only gate preserves _authenticated_guest_install_ready's
+        conditions and its exact-VMX direct fallback when forwarded NAT WinRM
+        is missing. It never re-runs licensing, changes NICs or starts VMs.
+        """
+        if self.lab_name != 'NORTH' or machine != 'GOAD-WS01':
+            Log.error('NORTH WS01 post-rearm readiness called outside its scope')
+            return False
+        deadline = time.monotonic() + timeout
+        checks = 0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            checks += 1
+            if self._authenticated_guest_install_ready(
+                    machine, timeout=max(1, min(10, int(remaining)))):
+                Log.success(
+                    f'NORTH: {machine} post-rearm authenticated VMware Tools/'
+                    f'WinRM/canonical IP ready after {checks} check(s)'
+                )
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            if checks == 1 or checks % 3 == 0:
+                Log.info(
+                    f'NORTH: {machine} post-rearm guest readiness not yet '
+                    f'converged; checks={checks}; retry_window_s={int(remaining)}'
+                )
+            time.sleep(min(5, remaining))
+        Log.error(
+            f'NORTH: {machine} post-rearm guest health not proven after '
+            f'{checks} checks; no AD provisioning attempted'
+        )
+        return False
 
     def _authenticated_guest_recovery_ready(self, machine, timeout=60):
         """Prove enough pre-provision guest health for one recovery cycle.
@@ -1198,7 +1255,7 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
                     return False
                 # The role may reboot WS01. Re-prove the canonical lab NIC and
                 # authenticated WinRM after its required rearm reboot.
-                if not self._authenticated_guest_install_ready(machine, timeout=180):
+                if not self._north_post_rearm_guest_ready(machine, timeout=180):
                     Log.error('NORTH: WS01 post-rearm lab WinRM/IP is not ready')
                     return False
 
