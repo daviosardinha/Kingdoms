@@ -1,6 +1,6 @@
 # NORTH — one-command fresh-install acceptance gate
 
-**Scope:** KINGDOMS Course 1 `NORTH`, not the full KINGDOMS lab or standalone WSLPE. **Status: SOURCE CANDIDATE — NO FRESH RUNTIME ACCEPTANCE YET.**
+**Scope:** KINGDOMS Course 1 `NORTH`, not the full KINGDOMS lab or standalone WSLPE. **Installation accepted on a fresh NORTH instance (2026-10-24); post-install lifecycle reliability remains NOT CERTIFIED.** Historical entries below retain their original point-in-time status.
 
 ## Release contract
 
@@ -159,3 +159,28 @@ sudo env PYTHONPATH="$PWD" python3 -m goad.course1_network_retire apply --provid
 If apply fails, stop and audit the archived evidence; never manually delete vmnet2, foreign vmnet8 NAT metadata or the old journal. Once post-retirement clean-host collision checks pass, archive the destroyed instance directory *out of* `workspace` with a separate exact instance-id check, preserve original source checkout and test records, and run the **exact original public** `./goad.sh -t install -l NORTH -p vmware` with no manual NAT/license/Ansible recovery.
 
 The destructive apply step has **source + CI qualification** only as of this note. Record the live result separately before claiming an empty host or one-command install acceptance.
+
+
+## 2026-10-24 — fresh-install integration accepted; lifecycle follow-up required
+
+**Operator release decision:** merge the verified NORTH installation and runtime-validation integration into `main`, while continuing lifecycle, Phase 04 and three-lab coexistence acceptance separately. This is not a claim of full NORTH course/lifecycle certification.
+
+### Proven on a fresh installer-created instance
+
+- Clean one-shot reset and `./goad.sh -t install -l NORTH -p vmware` succeeded without the earlier manual DC01 WinRM repair, creating **`57bbec-north-vmware`** with five running VMware VMs.
+- Measured installation: **1h 54m 19s** (VMware provider **23m 16s**; Ansible + final isolation **1h 31m 03s**); all 21 NORTH Ansible plays completed.
+- Parent/child DC identity and domain membership health established, exercise-mode router policy applied, host provisioning route removed, all four Windows NAT NICs persistent OFF and runtime disconnected.
+- NORTH-specific authenticated read-only runtime gate passed: `NORTH_AD_IDENTITY_TIME_TRUST_READY`, `NORTH_EXERCISE_MODE_PRESERVED`, `NORTH_RUNTIME_ACCEPTANCE=PASS`; instance recorded `installed` / `exercise`.
+
+### Known unresolved limitation — do not conflate with installation
+
+- Guarded lifecycle test `scripts/north-lifecycle-acceptance.sh`: initial health PASS; first stop/start PASS; second stop PASS; **second cold start FAILED** after about 9m 51s.
+- CASTELBLACK (`GOAD-SRV02`, `10.4.10.22`) briefly stayed on `Local CMOS Clock` despite successful Netlogon and WINTERFELL discovery; bounded `w32tm /resync /rediscover /nowait` attempts returned `resync_rc=0` but never converged in the readiness window. Exercise isolation restoration then failed; WS01 was left off. **Do not assume a complete, usable exercise runtime immediately after this failure.**
+- Subsequent read-only diagnostics and a passive authenticated NTPv3 `10.4.10.22:123` ↔ `10.4.10.11:123` capture showed bidirectional traffic and CASTELBLACK eventually returned to a synchronized source of `winterfell.north.sevenkingdoms.local`. That is evidence of intermittent convergence, not proof of the root cause or a permanent fix.
+- Snapshot creation/restore was **not reached**. `NORTH_REPEATED_COLD_START=NOT_CERTIFIED`, `NORTH_SNAPSHOT_RESTORE=NOT_TESTED`, `RESTART_RESTORE_RELIABILITY=NOT_CERTIFIED`.
+- Follow-up engineering must diagnose time-source acceptance **during** startup, fix W32Time readiness without weakening checks or adding blind waits, restore failed-instance isolation, and re-run two cold starts plus snapshot create/restore with independent authenticated runtime validation.
+- Phase 04 live vulnerable-state/manual teaching validation and KINGDOMS/NORTH/WSLPE coexistence remain **DEFERRED** and must not be advertised as verified.
+
+**Evidence location (local/operator-owned, not repository secrets):** `~/Kingdoms-evidence/north-lifecycle-H73tfcMF`, `north-domain-time-20261024-202555`, and follow-up transport/time logs. Install timing receipt under `workspace/57bbec-north-vmware/install-timings`.
+
+**Release boundary:** merged code may be called *installation validated*; do not label NORTH *cold-start reliable*, *snapshot-restorable*, *Phase 04 validated* or *three-lab coexistence verified* until each acceptance gate has independent live evidence.
