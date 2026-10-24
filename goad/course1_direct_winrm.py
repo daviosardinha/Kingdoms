@@ -164,10 +164,23 @@ def _authenticated_session(address):
     )
 
 
-def prove_guest(provider, machine, *, timeout=90):
+def prove_guest(provider, machine, *, timeout=90, address_hint=None):
     """Return (session, NAT address, lab config) only with owned VMX and in-guest MAC proof."""
     vmx, guest, values = owned_guest(provider, machine)
-    address = _vmx_nat_ip(vmx, _nat_network(), timeout=timeout)
+    network = _nat_network()
+    if address_hint is None:
+        address = _vmx_nat_ip(vmx, network, timeout=timeout)
+    else:
+        try:
+            hint = ipaddress.IPv4Address(address_hint)
+        except ipaddress.AddressValueError as exc:
+            raise NorthGuestRecoveryBlocked("Invalid cached NAT guest address") from exc
+        route = _command(["ip", "-4", "route", "get", str(hint)])
+        if (hint not in network or hint in
+                (network.network_address, network.broadcast_address)
+                or route.returncode != 0 or not re.search(r"\bdev\s+vmnet8\b", route.stdout)):
+            raise NorthGuestRecoveryBlocked("Cached NAT guest address fails VMware route check")
+        address = str(hint)
     try:
         with socket.create_connection((address, 5985), timeout=5):
             pass
@@ -212,8 +225,10 @@ Write-Output 'NORTH_DIRECT_FIRST_BOOT_READY'
 """
 
 
-def prove_canonical_guest(provider, machine, *, timeout=90):
-    session, address, guest = prove_guest(provider, machine, timeout=timeout)
+def prove_canonical_guest(provider, machine, *, timeout=90, address_hint=None):
+    session, address, guest = prove_guest(
+        provider, machine, timeout=timeout, address_hint=address_hint
+    )
     _run(session, _strict_script(guest, machine), "NORTH_DIRECT_FIRST_BOOT_READY")
     return address
 
@@ -253,11 +268,13 @@ def recover_north_first_boot(provider, machine):
     # WinRM HTTP can exist on the StefanScherer box before the Vagrant shell
     # provisioners have run. Powershell >=5 already makes WMF3 hotfix a no-op.
     _execute_source(session, ROOT / "vagrant" / "ConfigureRemotingForAnsible.ps1")
-    session, address, verified_guest = prove_guest(provider, machine, timeout=90)
+    session, address, verified_guest = prove_guest(
+        provider, machine, timeout=90, address_hint=address
+    )
     if guest != verified_guest:
         raise NorthGuestRecoveryBlocked("Guest topology changed during provision")
     _execute_source(session, ROOT / "vagrant" / "fix_ip.ps1", (
         guest["address"], guest["gateway"], EXPECTED[machine]
     ))
-    prove_canonical_guest(provider, machine, timeout=90)
+    prove_canonical_guest(provider, machine, timeout=90, address_hint=address)
     return True
