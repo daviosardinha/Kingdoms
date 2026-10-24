@@ -18,6 +18,9 @@ import time
 
 
 REPO = Path(__file__).resolve().parents[1]
+# Script entrypoints may run with scripts/ (not the repo root) on sys.path.
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 PLAYBOOK = REPO / "ansible" / "north-ws01-eval-maintenance.yml"
 VERIFY = REPO / "scripts" / "setup-vmware-networks.sh"
 WS01_MAC = "00:50:56:20:10:31"
