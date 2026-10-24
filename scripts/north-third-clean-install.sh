@@ -27,7 +27,7 @@ on_error() {
 trap on_error ERR
 
 [[ "${1:-}" == "--confirm-third-install" && "$#" -eq 1 ]] ||
-  die "Usage: bash scripts/north-one-shot-clean-reinstall.sh --confirm-third-install"
+  die "Usage: bash scripts/north-third-clean-install.sh --confirm-third-install"
 [[ "${EUID}" -ne 0 ]] || die "Run as desktop user, not root"
 [[ "$PWD" == "$ROOT" ]] || die "Run from repository root: $ROOT"
 [[ -d "$ROOT/.git" || -f "$ROOT/.git" ]] || die "Not a Git checkout"
