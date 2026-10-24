@@ -190,6 +190,78 @@ class NorthDirectRecoveryTests(unittest.TestCase):
                 )
         self.assertEqual(self.session.setup_scripts, [])
 
+    def _nat_lease(self, *, mac="00:0c:29:28:5f:3a",
+                   ip="192.168.213.133", ends="2035/10/24 20:00:00",
+                   state="active"):
+        path = self.root / "vmnet8-dhcp.leases"
+        path.write_text(
+            "lease " + ip + " {\\n"
+            " starts 6 2026/10/24 13:00:00;\\n"
+            " ends 3 " + ends + ";\\n"
+            " hardware ethernet " + mac + ";\\n"
+            " binding state " + state + ";\\n"
+            "}\\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_dhcp_lease_recovers_when_forward_and_vix_both_down(self):
+        lease = self._nat_lease()
+        with patch.object(direct, "_NAT_DHCP_LEASE_FILES", (lease,)), \
+             patch.object(direct, "_vmx_nat_ip") as vix, \
+             patch.object(direct, "_authenticated_session", return_value=self.session), \
+             patch.object(direct.socket, "create_connection",
+                          side_effect=[OSError("forward refused"), MagicMock()]):
+            _session, nat_ip, guest = direct.prove_guest(
+                self.provider, "GOAD-DC01", forwarded_port=55985,
+            )
+        self.assertEqual(nat_ip, "192.168.213.133")
+        self.assertEqual(guest["address"], "10.4.20.10")
+        vix.assert_not_called()
+        self.assertTrue(any("ConvertTo-Json" in c for c in self.session.commands))
+
+    def test_dhcp_lease_rejects_foreign_mac_without_guest_connection(self):
+        lease = self._nat_lease(mac="00:0c:29:99:99:99")
+        with patch.object(direct, "_NAT_DHCP_LEASE_FILES", (lease,)):
+            self.assertIsNone(direct._vmware_nat_lease_ip(
+                {"ethernet0.generatedaddress": "00:0c:29:28:5f:3a"},
+                IPv4Network("192.168.213.0/24")
+            ))
+
+    def test_dhcp_lease_rejects_expired_and_released(self):
+        from datetime import datetime, timezone
+        last_year = str(datetime.now(timezone.utc).year - 1)
+        lease = self._nat_lease(ends=last_year + "/01/01 00:00:00")
+        with patch.object(direct, "_NAT_DHCP_LEASE_FILES", (lease,)):
+            self.assertIsNone(direct._vmware_nat_lease_ip(
+                {"ethernet0.generatedaddress": "00:0c:29:28:5f:3a"},
+                IPv4Network("192.168.213.0/24")
+            ))
+        lease = self._nat_lease(state="free")
+        with patch.object(direct, "_NAT_DHCP_LEASE_FILES", (lease,)):
+            self.assertIsNone(direct._vmware_nat_lease_ip(
+                {"ethernet0.generatedaddress": "00:0c:29:28:5f:3a"},
+                IPv4Network("192.168.213.0/24")
+            ))
+
+    def test_dhcp_lease_rejects_address_outside_nat_vmnet(self):
+        lease = self._nat_lease(ip="192.168.214.40")
+        with patch.object(direct, "_NAT_DHCP_LEASE_FILES", (lease,)):
+            self.assertIsNone(direct._vmware_nat_lease_ip(
+                {"ethernet0.generatedaddress": "00:0c:29:28:5f:3a"},
+                IPv4Network("192.168.213.0/24")
+            ))
+
+    def test_dhcp_lease_refuses_symlinked_journal(self):
+        original = self._nat_lease()
+        alias = self.root / "alias.leases"
+        alias.symlink_to(original)
+        with patch.object(direct, "_NAT_DHCP_LEASE_FILES", (alias,)):
+            self.assertIsNone(direct._vmware_nat_lease_ip(
+                {"ethernet0.generatedaddress": "00:0c:29:28:5f:3a"},
+                IPv4Network("192.168.213.0/24")
+            ))
+
     def test_unavailable_forwarded_port_falls_back_to_vix(self):
         # The preceding NORTH guest failed with absent forwarded ports.
         # Keep direct VIX recovery functional for that opposite combination.
