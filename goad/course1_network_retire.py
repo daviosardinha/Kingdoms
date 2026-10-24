@@ -25,7 +25,7 @@ import tempfile
 
 from goad.course1_host_network_apply import (
     NETWORKING, NETMAP, BACKUPS, OWNER, VMWARE_NETWORKS, asset_paths,
-    _reconstruct_committed_vmnet,
+    _reconstruct_committed_vmnet, reviewed_nat_retirements, RETIRED_NAT,
 )
 from goad.course1_hostaddrs import SERVICE, TIMER, render_hostaddr_assets
 from goad.course1_vmnet_config import verify_vmnet_config
@@ -112,6 +112,18 @@ def _read_plan(provider, *, networking=NETWORKING, owner=OWNER,
     if len(commits) != 1:
         raise RetirementBlocked("No unique committed journal for this NORTH owner")
     _reconstruct_committed_vmnet(record, original, layout)
+    receipt = Path(owner).parent / RETIRED_NAT.name
+    if receipt.exists() or receipt.is_symlink():
+        retired = reviewed_nat_retirements(
+            str(provider), original, source=receipt, owner_uid=owner_uid
+        )
+        if not retired:
+            raise RetirementBlocked("Retired NAT receipt is not valid")
+        for declaration in retired:
+            if original.decode("utf-8").splitlines().count(declaration) != 1:
+                raise RetirementBlocked("Retired NAT receipt lacks an exact original rule")
+    else:
+        retired = frozenset()
 
     netpath = Path(networking)
     meta = _safe_regular(netpath, owner_uid)
@@ -190,7 +202,7 @@ def _read_plan(provider, *, networking=NETWORKING, owner=OWNER,
         "owner": Path(owner), "provider": provider, "networking": netpath,
         "backup_root": backups, "old_config": current, "new_config": clean_config,
         "network_meta": meta, "files": {name: Path(p) for name, p in files.items()},
-        "removed": removed, "layout": layout
+        "removed": removed, "layout": layout, "retired_nat_receipt": receipt if retired else None
     }
 
 
@@ -319,6 +331,15 @@ def apply(provider):
                 source.rename(destination)
                 archived.append((source, destination))
             _host_command("systemctl", "daemon-reload")
+            if data["retired_nat_receipt"] is not None:
+                receipt = data["retired_nat_receipt"]
+                reviewed_nat_retirements(
+                    str(data["provider"]), Path(json.loads(data["owner"].read_text())["backup"]).read_bytes(),
+                    source=receipt, owner_uid=0,
+                )
+                retired_archive = folder / "retired-nat-receipt.json"
+                receipt.rename(retired_archive)
+                archived.append((receipt, retired_archive))
             if data["owner"].read_bytes() != (folder / "owner.original.json").read_bytes():
                 raise RetirementBlocked("NORTH owner changed during retirement")
             data["owner"].rename(folder / "owner.retired.json")
