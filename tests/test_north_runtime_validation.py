@@ -37,7 +37,7 @@ class NorthRuntimeSourceTests(unittest.TestCase):
     def test_bash_syntax_and_inline_python_compile(self):
         subprocess.run(["bash", "-n", str(NORTH)], check=True)
         fragments = re.findall(r"<<'PY'\n(.*?)\nPY(?:\n|$)", self.north, re.S)
-        self.assertEqual(len(fragments), 2)
+        self.assertEqual(len(fragments), 3)
         for i, fragment in enumerate(fragments):
             with self.subTest(fragment=i):
                 ast.parse(fragment)
