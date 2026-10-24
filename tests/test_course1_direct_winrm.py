@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from ipaddress import IPv4Network
+import base64
+import hashlib
+import re
 import json
 from pathlib import Path
 import tempfile
@@ -13,12 +16,22 @@ from goad import course1_direct_winrm as direct
 
 class FakeWinRMSession:
     def __init__(self):
-        self.steps = 0
         self.setup_scripts = []
         self.provisioned = False
         self.fail_identity = False
+        self.fail_at_chunk = 0
+        self.chunks_seen = 0
+        self.staged_bytes = bytearray()
+        self.stage_removed = False
+        self.commands = []
 
     def run_ps(self, script):
+        self.commands.append(script)
+        # The real pywinrm wraps all powershell commands as -EncodedCommand.
+        # Enforce the small-command contract so a regression cannot recreate
+        # the actual HTTP 500 "filename or extension is too long" failure.
+        if len(script) > 3300:
+            raise RuntimeError("Windows remoting command too large")
         if "ConvertTo-Json -Depth 5 -Compress" in script:
             macs = ["005056202010", "000C29285F3A"]
             if self.fail_identity:
@@ -39,14 +52,33 @@ class FakeWinRMSession:
                 std_out=b"NORTH_DIRECT_FIRST_BOOT_READY" if ok else b"",
                 std_err=b"not yet configured" if not ok else b""
             )
+        if "NORTH_STAGE_BEGIN" in script:
+            self.staged_bytes = bytearray()
+            self.stage_removed = False
+            return Mock(status_code=0, std_out=b"NORTH_STAGE_BEGIN", std_err=b"")
+        if "NORTH_STAGE_CHUNK" in script:
+            self.chunks_seen += 1
+            if self.chunks_seen == self.fail_at_chunk:
+                return Mock(status_code=1, std_out=b"", std_err=b"chunk failed")
+            match = re.search(r"FromBase64String\('([A-Za-z0-9+/=]+)'\)", script)
+            assert match is not None
+            self.staged_bytes.extend(base64.b64decode(match.group(1)))
+            return Mock(status_code=0, std_out=b"NORTH_STAGE_CHUNK", std_err=b"")
+        if "NORTH_STAGE_REMOVED" in script:
+            self.stage_removed = True
+            self.staged_bytes.clear()
+            return Mock(status_code=0, std_out=b"NORTH_STAGE_REMOVED", std_err=b"")
         if "NORTH_SOURCE_SCRIPT_COMPLETED" in script:
-            self.setup_scripts.append(script)
+            assert "Get-FileHash" in script
+            digest = hashlib.sha256(self.staged_bytes).hexdigest().upper()
+            assert digest in script
+            assert f"$file.Length -ne {len(self.staged_bytes)}" in script
+            self.setup_scripts.append((script, bytes(self.staged_bytes)))
             if len(self.setup_scripts) == 2:
                 self.provisioned = True
             return Mock(status_code=0, std_out=b"NORTH_SOURCE_SCRIPT_COMPLETED",
                         std_err=b"")
         return Mock(status_code=1, std_out=b"", std_err=b"unknown script")
-
 
 class NorthDirectRecoveryTests(unittest.TestCase):
     def setUp(self):
@@ -125,9 +157,58 @@ class NorthDirectRecoveryTests(unittest.TestCase):
             self.assertTrue(direct.recover_north_first_boot(self.provider, "GOAD-DC01"))
         self.assertTrue(self.session.provisioned)
         self.assertEqual(len(self.session.setup_scripts), 2)
-        self.assertIn("& $script '10.4.20.10' '10.4.20.1' '00:50:56:20:20:10'",
-                      self.session.setup_scripts[-1])
+        self.assertIn("-File $p '10.4.20.10' '10.4.20.1' '00:50:56:20:20:10'",
+                      self.session.setup_scripts[-1][0])
+        self.assertEqual(
+            self.session.setup_scripts[0][1],
+            (direct.ROOT / "vagrant/ConfigureRemotingForAnsible.ps1").read_bytes()
+        )
+        self.assertEqual(
+            self.session.setup_scripts[1][1],
+            (direct.ROOT / "vagrant/fix_ip.ps1").read_bytes()
+        )
+        self.assertTrue(self.session.stage_removed)
+        self.assertGreater(self.session.chunks_seen, 2)
+
         self.assertTrue(direct.prove_canonical_guest)
+
+    def test_partial_transfer_is_cleaned_without_running_script(self):
+        self.session.fail_at_chunk = 2
+        with patch.object(direct, "_authenticated_session", return_value=self.session), \
+             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
+            with self.assertRaisesRegex(
+                direct.NorthGuestRecoveryBlocked, "Direct guest operation failed"
+            ):
+                direct.recover_north_first_boot(self.provider, "GOAD-DC01")
+        self.assertTrue(self.session.stage_removed)
+        self.assertEqual(self.session.setup_scripts, [])
+
+    def test_wrong_source_path_refused_before_winrm(self):
+        with self.assertRaisesRegex(
+            direct.NorthGuestRecoveryBlocked, "Unexpected Vagrant provisioning script"
+        ):
+            direct._execute_source(self.session, self.root / "unexpected.ps1")
+        self.assertEqual(self.session.commands, [])
+
+    def test_unexpected_script_arguments_refused(self):
+        with self.assertRaisesRegex(
+            direct.NorthGuestRecoveryBlocked, "argument count"
+        ):
+            direct._execute_source(
+                self.session, direct.ROOT / "vagrant/fix_ip.ps1", ()
+            )
+        self.assertEqual(self.session.commands, [])
+
+    def test_large_script_is_chunked_and_exact_hash_verified(self):
+        original = (direct.ROOT / "vagrant/ConfigureRemotingForAnsible.ps1").read_bytes()
+        assert len(original) > 4096
+        direct._execute_source(
+            self.session, direct.ROOT / "vagrant/ConfigureRemotingForAnsible.ps1"
+        )
+        self.assertEqual(self.session.setup_scripts[0][1], original)
+        self.assertTrue(self.session.stage_removed)
+        self.assertGreater(self.session.chunks_seen, len(original)//2048)
+        self.assertLessEqual(max(map(len, self.session.commands)), 3300)
 
     def test_installed_guest_is_not_reprovisioned(self):
         self.session.provisioned = True
