@@ -33,6 +33,11 @@ class NorthGuestRecoveryBlocked(RuntimeError):
     pass
 
 
+class NorthGuestIdentityMismatch(NorthGuestRecoveryBlocked):
+    """Authenticated WinRM endpoint contradicts the exact owned guest."""
+    pass
+
+
 def _command(argv, *, timeout=20):
     try:
         return subprocess.run(
@@ -145,7 +150,9 @@ $tools = @(Get-Process vmtoolsd -ErrorAction SilentlyContinue)
 $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
 $adapters = @(Get-NetAdapter -ErrorAction Stop | ForEach-Object {
     [PSCustomObject]@{ Mac = (($_.MacAddress -replace '[:-]','').ToUpperInvariant());
-                      Index = $_.ifIndex; Name = $_.Name }
+                      Index = $_.ifIndex; Name = $_.Name;
+                      IPv4 = @(Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                               Select-Object -ExpandProperty IPAddress) }
 })
 [PSCustomObject]@{
   Hostname = $env:COMPUTERNAME
@@ -157,52 +164,128 @@ $adapters = @(Get-NetAdapter -ErrorAction Stop | ForEach-Object {
 """
 
 
-def _authenticated_session(address):
+def _authenticated_session(address, port=5985):
     import winrm
+    if not isinstance(port, int) or not (1 <= port <= 65535):
+        raise NorthGuestRecoveryBlocked("Invalid Windows WinRM port")
     return winrm.Session(
-        "http://" + address + ":5985/wsman",
+        "http://" + address + ":" + str(port) + "/wsman",
         auth=("vagrant", "vagrant"), transport="ntlm",
         operation_timeout_sec=25, read_timeout_sec=40
     )
 
 
-def prove_guest(provider, machine, *, timeout=90, address_hint=None):
-    """Return (session, NAT address, lab config) only with owned VMX and in-guest MAC proof."""
+def _verified_identity(session, values, machine):
+    """Prove the *authenticated Windows endpoint* has both owned NIC MACs."""
+    try:
+        identity = json.loads(_run(session, _identity_script()))
+    except (ValueError, TypeError) as exc:
+        raise NorthGuestRecoveryBlocked("Authenticated Windows identity unreadable") from exc
+    if not isinstance(identity, dict):
+        raise NorthGuestRecoveryBlocked("Authenticated Windows identity invalid")
+    adapters = identity.get("Adapters") or []
+    if isinstance(adapters, dict):
+        adapters = [adapters]
+    if not isinstance(adapters, list):
+        raise NorthGuestRecoveryBlocked("Authenticated Windows NIC list invalid")
+    macs = []
+    for item in adapters:
+        if not isinstance(item, dict):
+            raise NorthGuestRecoveryBlocked("Authenticated Windows NIC list malformed")
+        mac = item.get("Mac")
+        if not isinstance(mac, str):
+            raise NorthGuestRecoveryBlocked("Authenticated Windows NIC MAC missing")
+        macs.append(mac.upper())
+    nat_mac = values.get("ethernet0.generatedaddress", "").replace(":", "").upper()
+    lab_mac = EXPECTED[machine].replace(":", "").upper()
+    if (not identity.get("Windows") or not identity.get("Hostname") or
+            not isinstance(identity.get("PowerShell"), int) or
+            identity["PowerShell"] < 5 or not identity.get("Tools") or
+            not re.fullmatch(r"[0-9A-F]{12}", nat_mac) or
+            macs.count(nat_mac) != 1 or macs.count(lab_mac) != 1 or
+            nat_mac == lab_mac):
+        raise NorthGuestIdentityMismatch(
+            "Authenticated endpoint failed exact Windows/Tools/NAT-MAC/lab-MAC proof"
+        )
+    return next(item for item in adapters if item["Mac"].upper() == nat_mac)
+
+
+def _validated_nat_address(value, network):
+    try:
+        ip = ipaddress.IPv4Address(value)
+    except (ipaddress.AddressValueError, TypeError) as exc:
+        raise NorthGuestRecoveryBlocked("Invalid NAT guest IPv4 address") from exc
+    if (ip not in network or ip in (
+            network.network_address, network.broadcast_address)
+            or ip.is_loopback or ip.is_link_local or ip.is_multicast):
+        raise NorthGuestRecoveryBlocked("Guest NAT address is outside owned vmnet8")
+    route = _command(["ip", "-4", "route", "get", str(ip)])
+    if route.returncode != 0 or not re.search(r"\bdev\s+vmnet8\b", route.stdout):
+        raise NorthGuestRecoveryBlocked("Guest NAT IPv4 is not routed via vmnet8")
+    return str(ip)
+
+
+def _forwarded_nat_ip(port, values, machine, network):
+    """Seed NAT IP from an *authenticated* forwarded WinRM and exact guest MAC."""
+    if not isinstance(port, int) or port <= 0 or port > 65535:
+        raise NorthGuestRecoveryBlocked("Forwarded WinRM port unavailable")
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=4):
+            pass
+    except OSError as exc:
+        raise NorthGuestRecoveryBlocked("Forwarded WinRM port is not listening") from exc
+    session = _authenticated_session("127.0.0.1", port=port)
+    nat_adapter = _verified_identity(session, values, machine)
+    ips = nat_adapter.get("IPv4") or []
+    if isinstance(ips, str):
+        ips = [ips]
+    if not isinstance(ips, list) or len(ips) != 1:
+        raise NorthGuestRecoveryBlocked("Guest NAT NIC does not have one IPv4 address")
+    return _validated_nat_address(ips[0], network)
+
+
+def prove_guest(provider, machine, *, timeout=90, address_hint=None,
+                forwarded_port=None):
+    """Prove exact registered VMX, guest NICs and direct authenticated WinRM.
+
+    Guest VIX IP reporting is advisory. A verified forwarded WinRM connection
+    may seed the NAT IP when VIX reporting is stale or unavailable; the
+    resulting direct endpoint must independently pass the same identity proof.
+    """
     vmx, guest, values = owned_guest(provider, machine)
     network = _nat_network()
-    if address_hint is None:
-        address = _vmx_nat_ip(vmx, network, timeout=timeout)
+    if address_hint is not None:
+        address = _validated_nat_address(address_hint, network)
     else:
-        try:
-            hint = ipaddress.IPv4Address(address_hint)
-        except ipaddress.AddressValueError as exc:
-            raise NorthGuestRecoveryBlocked("Invalid cached NAT guest address") from exc
-        route = _command(["ip", "-4", "route", "get", str(hint)])
-        if (hint not in network or hint in
-                (network.network_address, network.broadcast_address)
-                or route.returncode != 0 or not re.search(r"\bdev\s+vmnet8\b", route.stdout)):
-            raise NorthGuestRecoveryBlocked("Cached NAT guest address fails VMware route check")
-        address = str(hint)
+        address = None
+        forwarded_failure = None
+        if forwarded_port is not None:
+            try:
+                address = _forwarded_nat_ip(forwarded_port, values, machine, network)
+            except NorthGuestIdentityMismatch:
+                # An authenticated *different* Windows guest is never a hint.
+                raise
+            except NorthGuestRecoveryBlocked as exc:
+                forwarded_failure = exc
+        if address is None:
+            try:
+                address = _vmx_nat_ip(vmx, network, timeout=timeout)
+            except NorthGuestRecoveryBlocked as exc:
+                if forwarded_failure is not None:
+                    raise NorthGuestRecoveryBlocked(
+                        f"VIX NAT IP unavailable ({exc}); authenticated "
+                        f"forwarded bootstrap unavailable ({forwarded_failure})"
+                    ) from exc
+                raise
+            address = _validated_nat_address(address, network)
+
     try:
         with socket.create_connection((address, 5985), timeout=5):
             pass
     except OSError as exc:
         raise NorthGuestRecoveryBlocked("Direct guest HTTP WinRM is not listening") from exc
     session = _authenticated_session(address)
-    try:
-        identity = json.loads(_run(session, _identity_script()))
-    except (ValueError, TypeError) as exc:
-        raise NorthGuestRecoveryBlocked("Authenticated Windows identity unreadable") from exc
-    adapters = identity.get("Adapters") or []
-    if isinstance(adapters, dict):
-        adapters = [adapters]
-    known_macs = {a.get("Mac", "").upper() for a in adapters if isinstance(a, dict)}
-    nat_mac = values.get("ethernet0.generatedaddress", "").replace(":", "").upper()
-    if (not identity.get("Windows") or identity.get("PowerShell", 0) < 5
-            or not identity.get("Tools") or
-            EXPECTED[machine].replace(":", "").upper() not in known_macs
-            or not nat_mac or nat_mac not in known_macs):
-        raise NorthGuestRecoveryBlocked("Windows/Tools/MAC identity proof failed")
+    _verified_identity(session, values, machine)
     return session, address, guest
 
 
