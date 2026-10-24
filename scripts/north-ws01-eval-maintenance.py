@@ -87,12 +87,30 @@ def main(argv=None):
     ports = checked(["vagrant", "port", "GOAD-WS01"], cwd=provider,
                     capture_output=True, text=True).stdout
     port = forwarded_winrm_port(ports)
+    host = "127.0.0.1"
+
+    # Prefer the usual Vagrant transport, but a fresh VMware Windows guest can
+    # boot with no actual localhost NAT-forward listener despite Vagrant's
+    # cached port entry. Use the *same* exact-VMX/MAC-authenticated NORTH direct
+    # guest proof as the first-boot fallback. This does not change license
+    # logic or NAT rules, only the Ansible management destination.
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            pass
+    except OSError:
+        from goad.course1_direct_winrm import prove_guest
+        _session, host, guest = prove_guest(provider, "GOAD-WS01", timeout=90)
+        if guest["address"] != "10.4.10.31":
+            raise ValueError("WS01 lab network contract changed")
+        port = 5985
+        print("[INFO] NORTH WS01 maintenance using owned direct VMware NAT WinRM",
+              flush=True)
 
     # A powered-on Windows guest is not necessarily listening on WinRM yet.
     deadline = time.monotonic() + 180
     while True:
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=3):
+            with socket.create_connection((host, port), timeout=3):
                 break
         except OSError:
             if time.monotonic() >= deadline:
@@ -107,7 +125,7 @@ def main(argv=None):
         inventory = Path(temp) / "ws01.ini"
         inventory.write_text(
             "[ws01]\n"
-            f"ws01 ansible_host=127.0.0.1 ansible_port={port} "
+            f"ws01 ansible_host={host} ansible_port={port} "
             "ansible_connection=winrm ansible_user=vagrant "
             "ansible_password=vagrant ansible_winrm_transport=ntlm "
             "ansible_winrm_scheme=http\n",
@@ -125,7 +143,7 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except (OSError, ValueError, subprocess.CalledProcessError,
+    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError,
             subprocess.TimeoutExpired) as exc:
         print(f"[BLOCKED] NORTH WS01 evaluation maintenance: {exc}", file=sys.stderr)
         sys.exit(1)
