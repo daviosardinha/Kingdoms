@@ -105,7 +105,7 @@ class RetiredNorthFixtures(unittest.TestCase):
     def test_new_or_duplicated_owned_vmnet_line_is_refused(self):
         with self.networking.open("a") as f:
             f.write("answer VNET_20_DHCP no\n")
-        with self.assertRaisesRegex((RetirementBlocked, ValueError), "duplicate|Duplicate"):
+        with self.assertRaisesRegex(RetirementBlocked, "inconsistent"):
             self.preview()
 
     def test_foreign_owner_provider_refused(self):
