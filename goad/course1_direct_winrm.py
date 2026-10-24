@@ -425,13 +425,15 @@ def _execute_source(session, path, args=()):
     return output
 
 
-def recover_north_first_boot(provider, machine):
+def recover_north_first_boot(provider, machine, *, address_hint=None):
     """Replay only source-owned Windows Vagrant scripts through proved NAT WinRM.
 
     No implicit retry if a script failed or rebooted unexpectedly. A later
     fresh install must independently complete the normal AD/WinRM acceptance.
     """
-    session, address, guest = prove_guest(provider, machine)
+    session, address, guest = prove_guest(
+        provider, machine, address_hint=address_hint
+    )
     try:
         _run(session, _strict_script(guest, machine), "NORTH_DIRECT_FIRST_BOOT_READY")
         return True  # Vagrant already completed the desired guest provisioning.
