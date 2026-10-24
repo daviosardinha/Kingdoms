@@ -36,6 +36,8 @@ on:
       - scripts/north-fourth-clean-install.sh
       - tests/test_north_fourth_clean_install.py
       - tests/test_north_ws01_post_rearm_readiness.py
+      - scripts/diagnostics/diagnose-north-ws01-vmtools.py
+      - tests/test_north_ws01_vmtools_diagnostics.py
       - goad/provider/vagrant/vmware_nomad.py
       - tests/test_course1_network_retire.py
       - tests/test_course1_snapshot_restore.py
@@ -57,7 +59,7 @@ jobs:
           python-version: '3.12'
       - name: Syntax and source qualification
         run: |
-          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py goad/course1_pre_ad_resume.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py tests/test_course1_pre_ad_resume.py scripts/north-ws01-eval-maintenance.py tests/test_course1_ws01_eval_maintenance.py goad/course1_snapshot_restore.py tests/test_course1_snapshot_restore.py goad/course1_network_retire.py tests/test_course1_network_retire.py goad/course1_direct_winrm.py tests/test_course1_direct_winrm.py tests/test_course1_direct_bootstrap_integration.py tests/test_north_provider_canonical_resume.py tests/test_north_one_shot_reset_script.py tests/test_north_runtime_validation.py tests/test_north_lifecycle_acceptance.py tests/test_north_time_transport_evidence.py tests/test_north_third_clean_install.py tests/test_north_fourth_clean_install.py tests/test_north_ws01_post_rearm_readiness.py goad_nomad.py goad/provider/vagrant/vmware_kingdoms.py tests/test_install_noninteractive.py
+          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py goad/course1_pre_ad_resume.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py tests/test_course1_pre_ad_resume.py scripts/north-ws01-eval-maintenance.py tests/test_course1_ws01_eval_maintenance.py goad/course1_snapshot_restore.py tests/test_course1_snapshot_restore.py goad/course1_network_retire.py tests/test_course1_network_retire.py goad/course1_direct_winrm.py tests/test_course1_direct_winrm.py tests/test_course1_direct_bootstrap_integration.py tests/test_north_provider_canonical_resume.py tests/test_north_one_shot_reset_script.py tests/test_north_runtime_validation.py tests/test_north_lifecycle_acceptance.py tests/test_north_time_transport_evidence.py tests/test_north_third_clean_install.py tests/test_north_fourth_clean_install.py tests/test_north_ws01_post_rearm_readiness.py scripts/diagnostics/diagnose-north-ws01-vmtools.py tests/test_north_ws01_vmtools_diagnostics.py goad_nomad.py goad/provider/vagrant/vmware_kingdoms.py tests/test_install_noninteractive.py
       - name: Strict NAT and native NORTH install regression
         run: |
           python -m unittest -v \
@@ -77,4 +79,5 @@ jobs:
             tests.test_north_time_transport_evidence \
             tests.test_north_third_clean_install \
             tests.test_north_fourth_clean_install \
-            tests.test_north_ws01_post_rearm_readiness
+            tests.test_north_ws01_post_rearm_readiness \
+            tests.test_north_ws01_vmtools_diagnostics
