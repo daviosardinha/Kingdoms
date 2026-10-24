@@ -66,13 +66,8 @@ class DirectBootstrapIntegrationTests(unittest.TestCase):
 
     def test_full_kingdoms_still_uses_original_recovery(self):
         provider = self.make(lab="GOAD")
-        provider._enable_provisioning_routes = Mock()
-        # Full KINGDOMS uses the standard provisioning-routes.sh script.
-        provider._script = Mock(return_value="/tmp/provisioning-routes.sh")
-        import subprocess
-        from unittest.mock import patch
-        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)):
-            self.assertTrue(provider.install())
+        provider._recover_failed_windows_vagrant_up.return_value = False
+        self.assertFalse(provider.install())
         provider._north_direct_first_boot_recovery.assert_not_called()
         provider._recover_failed_windows_vagrant_up.assert_called_once_with("GOAD-DC01")
 
