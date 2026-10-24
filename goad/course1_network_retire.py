@@ -119,9 +119,26 @@ def _read_plan(provider, *, networking=NETWORKING, owner=OWNER,
         )
         if not retired:
             raise RetirementBlocked("Retired NAT receipt is not valid")
+        # VMware may preserve whitespace/indentation differently in the
+        # original networking file. Retired NAT receipts use canonical
+        # single-spaced lines, so compare token-exact canonical declarations,
+        # not raw formatting. A mismatch, malformed declaration or duplicate
+        # baseline occurrence still fails closed.
+        baseline_rules = Counter()
+        for raw in original.decode("utf-8").splitlines():
+            line = raw.strip()
+            if not line.startswith("add_nat_portfwd"):
+                continue
+            tokens = line.split()
+            if (len(tokens) != 6 or tokens[:3] !=
+                    ["add_nat_portfwd", "8", "tcp"]):
+                continue
+            baseline_rules[" ".join(tokens)] += 1
         for declaration in retired:
-            if original.decode("utf-8").splitlines().count(declaration) != 1:
-                raise RetirementBlocked("Retired NAT receipt lacks an exact original rule")
+            if baseline_rules[declaration] != 1:
+                raise RetirementBlocked(
+                    "Retired NAT receipt lacks an exact unique original rule"
+                )
     else:
         retired = frozenset()
 
