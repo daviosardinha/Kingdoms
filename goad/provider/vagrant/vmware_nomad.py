@@ -415,12 +415,23 @@ class GoadNomadVmwareProvider(VmwareProvider):
             Log.error('GOAD_NOMAD runtime validation is only available for GOAD/VMware')
             return False
 
-        validator = self._script('validate-network-segmentation.sh')
+        # NORTH has four Windows guests and no Essos. The legacy six-VM
+        # GOAD validator enters provisioning mode and tests Essos/linked SQL,
+        # so it must never be used on an installed NORTH exercise instance.
+        # Keep the original GOAD validation path byte-for-byte for GOAD.
+        validator_name = (
+            'validate-north-runtime.sh' if self.lab_name == 'NORTH'
+            else 'validate-network-segmentation.sh'
+        )
+        validator = self._script(validator_name)
         if validator is None:
             return False
 
         root = self._project_root_from_script(validator)
-        Log.info('GOAD_NOMAD: launching clean network-segmentation runtime validation')
+        if self.lab_name == 'NORTH':
+            Log.info('NORTH: validating owned five-VM exercise state without mode changes')
+        else:
+            Log.info('GOAD_NOMAD: launching clean network-segmentation runtime validation')
         result = subprocess.run(
             ['bash', validator],
             cwd=root,
