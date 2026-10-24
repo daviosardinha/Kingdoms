@@ -1,0 +1,77 @@
+---
+# NORTH exercise-mode health acceptance. No repair, restart, host route, NAT
+# reconnection, or AD writes. Protected parent DC is proven via child DC.
+- name: Verify NORTH identity health from accessible exercise-zone guests
+  hosts: dc02:srv02:ws01
+  gather_facts: false
+  tasks:
+    - name: Assert Active Directory, time, and secure-channel readiness
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+
+          $expected = if ($env:COMPUTERNAME -eq 'WINTERFELL') {
+              'north.sevenkingdoms.local'
+          } elseif ($env:COMPUTERNAME -in @('CASTELBLACK', 'WS01')) {
+              'north.sevenkingdoms.local'
+          } else {
+              throw "Unexpected NORTH exercise guest: $env:COMPUTERNAME"
+          }
+
+          $computer = Get-CimInstance Win32_ComputerSystem
+          if (-not $computer.PartOfDomain -or $computer.Domain -ine $expected) {
+              throw "Wrong domain: $($computer.Domain), expected $expected"
+          }
+
+          $required = if ($env:COMPUTERNAME -eq 'WINTERFELL') {
+              @('NTDS', 'DNS', 'ADWS', 'Netlogon', 'Kdc', 'W32Time')
+          } else {
+              @('Netlogon', 'W32Time')
+          }
+          foreach ($service in $required) {
+              $status = (Get-Service -Name $service -ErrorAction Stop).Status
+              if ($status -ne 'Running') {
+                  throw "$service is $status on $env:COMPUTERNAME"
+              }
+          }
+
+          $dns = Resolve-DnsName '_ldap._tcp.dc._msdcs.north.sevenkingdoms.local' -Type SRV -ErrorAction Stop
+          if (-not $dns) { throw 'NORTH DC SRV lookup returned no records' }
+          $locator = & nltest.exe '/dsgetdc:north.sevenkingdoms.local' 2>&1
+          if ($LASTEXITCODE -ne 0) {
+              throw "NORTH DC Locator failed: $($locator -join ' ')"
+          }
+
+          if ($env:COMPUTERNAME -eq 'WINTERFELL') {
+              foreach ($share in @('SYSVOL', 'NETLOGON')) {
+                  if (-not (Get-SmbShare -Name $share -ErrorAction SilentlyContinue)) {
+                      throw "Missing share: $share"
+                  }
+              }
+              Import-Module ActiveDirectory -ErrorAction Stop
+              Get-ADRootDSE -Server 'winterfell.north.sevenkingdoms.local' -ErrorAction Stop | Out-Null
+              $parent = & nltest.exe '/dsgetdc:sevenkingdoms.local' 2>&1
+              if ($LASTEXITCODE -ne 0 -or ($parent -join ' ') -notmatch '10\.4\.20\.10') {
+                  throw "Parent-domain DC discovery failed: $($parent -join ' ')"
+              }
+              $timeSource = (& w32tm.exe /query /source 2>&1 | Out-String).Trim().TrimEnd('.')
+              if ($LASTEXITCODE -ne 0 -or $timeSource -ine 'kingslanding.sevenkingdoms.local') {
+                  throw "Child PDC time hierarchy unhealthy: $timeSource"
+              }
+          } else {
+              if (-not (Test-ComputerSecureChannel -Server 'winterfell.north.sevenkingdoms.local' -ErrorAction Stop)) {
+                  throw 'NORTH domain secure channel is unhealthy'
+              }
+              $sc = & nltest.exe '/sc_query:north.sevenkingdoms.local' 2>&1
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Netlogon secure-channel query failed: $($sc -join ' ')"
+              }
+              $timeSource = (& w32tm.exe /query /source 2>&1 | Out-String).Trim().TrimEnd('.')
+              if ($LASTEXITCODE -ne 0 -or $timeSource -ine 'winterfell.north.sevenkingdoms.local') {
+                  throw "NORTH member time hierarchy unhealthy: $timeSource"
+              }
+          }
+
+          Write-Output "NORTH_EXERCISE_AD_HEALTH=PASS host=$env:COMPUTERNAME"
+      changed_when: false
