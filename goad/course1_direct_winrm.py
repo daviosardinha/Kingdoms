@@ -8,6 +8,8 @@ never changes VMX adapters, other machines, host networks, or lab scenarios.
 from __future__ import annotations
 
 import base64
+import hashlib
+import uuid
 import ipaddress
 import json
 from pathlib import Path
@@ -233,23 +235,111 @@ def prove_canonical_guest(provider, machine, *, timeout=90, address_hint=None):
     return address
 
 
+# Keep each PowerShell command small enough for Windows' process argument limit.
+# pywinrm.run_ps encodes its entire command as UTF-16LE Base64 and passes it as
+# a PowerShell process argument, so sending the entire script in one call fails.
+_WINRM_CHUNK_BYTES = 1024
+_MAX_SOURCE_BYTES = 262144
+_ALLOWED_SOURCE_NAMES = frozenset({
+    "ConfigureRemotingForAnsible.ps1", "fix_ip.ps1",
+})
+
+
 def _execute_source(session, path, args=()):
+    """Transfer a pinned repository script in bounded WinRM calls and execute it.
+
+    This is an internal source-transfer path, NOT an arbitrary command upload
+    API. Never run a script that has not been byte-for-byte checked on Windows.
+    It uses a unique guest TEMP file and cleans it in both success/failure
+    cases; a failed source run is never automatically replayed.
+    """
     source = Path(path)
-    if not source.is_file() or source.is_symlink() or source.parent != ROOT / "vagrant":
+    if (not source.is_file() or source.is_symlink()
+            or source.parent != ROOT / "vagrant"
+            or source.name not in _ALLOWED_SOURCE_NAMES):
         raise NorthGuestRecoveryBlocked("Unexpected Vagrant provisioning script")
-    encoded = base64.b64encode(source.read_bytes()).decode("ascii")
-    arguments = " ".join("'" + v.replace("'", "''") + "'" for v in args)
-    # Execute the exact checked-in source; do not copy it to the Windows filesystem.
-    wrapper = (
-        "$ErrorActionPreference = 'Stop'; "
-        "$source = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" +
-        encoded + "')); "
-        "$script = [ScriptBlock]::Create($source); "
-        "& $script " + arguments + "; "
-        "if (-not $?) { throw 'Existing Vagrant script failed' }; "
-        "Write-Output 'NORTH_SOURCE_SCRIPT_COMPLETED'"
+    payload = source.read_bytes()
+    if not payload or len(payload) > _MAX_SOURCE_BYTES:
+        raise NorthGuestRecoveryBlocked("Invalid original Vagrant script size")
+    if any(not re.fullmatch(r"[A-Za-z0-9.:-]{1,64}", str(a)) for a in args):
+        raise NorthGuestRecoveryBlocked("Unexpected direct guest script argument")
+    if (source.name == "ConfigureRemotingForAnsible.ps1" and args or
+            source.name == "fix_ip.ps1" and len(args) != 3):
+        raise NorthGuestRecoveryBlocked("Unexpected source script argument count")
+
+    digest = hashlib.sha256(payload).hexdigest().upper()
+    token = uuid.uuid4().hex
+    name = "kingdoms-north-" + token + ".ps1"
+    path_expr = "Join-Path $env:TEMP '" + name + "'"
+    beginning = (
+        "$ErrorActionPreference='Stop';$p=" + path_expr + ";"
+        "$s=[IO.File]::Open($p,[IO.FileMode]::CreateNew,"
+        "[IO.FileAccess]::Write,[IO.FileShare]::None);"
+        "try{}finally{$s.Dispose()};"
+        "Write-Output 'NORTH_STAGE_BEGIN'"
     )
-    return _run(session, wrapper, "NORTH_SOURCE_SCRIPT_COMPLETED")
+    cleanup = (
+        "$ErrorActionPreference='Stop';$p=" + path_expr + ";"
+        "if(Test-Path -LiteralPath $p -PathType Leaf){"
+        "Remove-Item -LiteralPath $p -Force -ErrorAction Stop};"
+        "if(Test-Path -LiteralPath $p){throw 'NORTH temp script not removed'};"
+        "Write-Output 'NORTH_STAGE_REMOVED'"
+    )
+    # Cleanup after any *confirmed* CreateNew, including a chunking or
+    # checksum failure. If CreateNew itself fails, do not delete an unknown
+    # file on the guest.
+    _run(session, beginning, "NORTH_STAGE_BEGIN")
+    error = None
+    output = None
+    try:
+        for offset in range(0, len(payload), _WINRM_CHUNK_BYTES):
+            chunk = base64.b64encode(
+                payload[offset:offset + _WINRM_CHUNK_BYTES]
+            ).decode("ascii")
+            cmd = (
+                "$ErrorActionPreference='Stop';$p=" + path_expr + ";"
+                "$b=[Convert]::FromBase64String('" + chunk + "');"
+                "$s=[IO.File]::Open($p,[IO.FileMode]::Append,"
+                "[IO.FileAccess]::Write,[IO.FileShare]::None);"
+                "try{$s.Write($b,0,$b.Length)}finally{$s.Dispose()};"
+                "Write-Output 'NORTH_STAGE_CHUNK'"
+            )
+            _run(session, cmd, "NORTH_STAGE_CHUNK")
+
+        quoted_args = " ".join(
+            "'" + str(arg).replace("'", "''") + "'" for arg in args
+        )
+        execute = (
+            "$ErrorActionPreference='Stop';$p=" + path_expr + ";"
+            "$file=Get-Item -LiteralPath $p -ErrorAction Stop;"
+            "if($file.Length -ne " + str(len(payload)) +
+            "){throw 'NORTH staged script length mismatch'};"
+            "$digest=(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash;"
+            "if($digest -ne '" + digest +
+            "'){throw 'NORTH staged script hash mismatch'};"
+            # Execute as a file, as the original Vagrant PowerShell provisioner
+            # does, including its own MyInvocation context and exit behavior.
+            "$exe=Join-Path $env:SystemRoot "
+            "'System32\\WindowsPowerShell\\v1.0\\powershell.exe';"
+            "& $exe -NoProfile -NonInteractive -ExecutionPolicy Bypass "
+            "-File $p " + quoted_args + ";"
+            "if($LASTEXITCODE -ne 0){throw "
+            "('NORTH source script exited '+$LASTEXITCODE)};"
+            "Write-Output 'NORTH_SOURCE_SCRIPT_COMPLETED'"
+        )
+        output = _run(session, execute, "NORTH_SOURCE_SCRIPT_COMPLETED")
+    except Exception as exc:
+        error = exc
+    try:
+        _run(session, cleanup, "NORTH_STAGE_REMOVED")
+    except NorthGuestRecoveryBlocked as cleanup_error:
+        raise NorthGuestRecoveryBlocked(
+            "NORTH source script guest-temp cleanup not confirmed; "
+            "do not repeat execution automatically"
+        ) from (error or cleanup_error)
+    if error is not None:
+        raise error
+    return output
 
 
 def recover_north_first_boot(provider, machine):
