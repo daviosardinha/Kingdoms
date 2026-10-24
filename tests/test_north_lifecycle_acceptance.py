@@ -18,7 +18,7 @@ class NorthLifecycleAcceptanceTests(unittest.TestCase):
         run = subprocess.run(["bash","-n",str(TARGET)],capture_output=True,text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         scripts = re.findall(r"<<'PY'\n(.*?)\nPY(?:\n|$)", self.script, re.S)
-        self.assertEqual(len(scripts),2)
+        self.assertEqual(len(scripts),1)
         for body in scripts:
             ast.parse(body)
 
@@ -44,7 +44,7 @@ class NorthLifecycleAcceptanceTests(unittest.TestCase):
             "validate 02-initial-health",
             'for cycle in 1 2;',
             'native stop "cold-$cycle-stop"',
-            'stopped',
+            '  stopped\n',
             'native start "cold-$cycle-start"',
             'validate "cold-$cycle-health"',
             "native snapshot 03-snapshot-create",
