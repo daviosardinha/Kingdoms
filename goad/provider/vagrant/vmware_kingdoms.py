@@ -434,7 +434,7 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             NorthGuestRecoveryBlocked, prove_guest, recover_north_first_boot,
         )
         try:
-            prove_guest(self.path, machine, timeout=90)
+            _session, nat_ip, _guest = prove_guest(self.path, machine, timeout=90)
         except NorthGuestRecoveryBlocked as exc:
             Log.warning(
                 f'NORTH: direct guest proof unavailable for {machine}: {exc}'
@@ -442,6 +442,9 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             return None
         try:
             if recover_north_first_boot(self.path, machine):
+                if not hasattr(self, '_north_first_boot_nat_addresses'):
+                    self._north_first_boot_nat_addresses = {}
+                self._north_first_boot_nat_addresses[machine] = nat_ip
                 Log.success(
                     f'NORTH: {machine} exact-VMX direct WinRM provisioning and '
                     'canonical IP/HTTPS readiness verified'
@@ -468,7 +471,9 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         try:
             port = self._winrm_forwarded_port(machine)
         except Exception:
-            return False
+            if self.lab_name != 'NORTH':
+                return False
+            port = None
 
         if self.lab_name == 'NORTH' and (
                 not port or not self._wait_winrm_ready(port, min(timeout, 10))):
@@ -479,7 +484,12 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
                 NorthGuestRecoveryBlocked, prove_canonical_guest,
             )
             try:
-                prove_canonical_guest(self.path, machine, timeout=min(timeout, 90))
+                prove_canonical_guest(
+                    self.path, machine, timeout=min(timeout, 90),
+                    address_hint=getattr(
+                        self, '_north_first_boot_nat_addresses', {}
+                    ).get(machine),
+                )
             except NorthGuestRecoveryBlocked:
                 return False
             return True
