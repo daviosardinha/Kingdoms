@@ -434,14 +434,22 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             NorthGuestRecoveryBlocked, prove_guest, recover_north_first_boot,
         )
         try:
-            _session, nat_ip, _guest = prove_guest(self.path, machine, timeout=90)
+            forwarded_port = self._winrm_forwarded_port(machine)
+        except Exception:
+            forwarded_port = None
+        try:
+            _session, nat_ip, _guest = prove_guest(
+                self.path, machine, timeout=90,
+                forwarded_port=forwarded_port,
+            )
         except NorthGuestRecoveryBlocked as exc:
             Log.warning(
                 f'NORTH: direct guest proof unavailable for {machine}: {exc}'
             )
             return None
         try:
-            if recover_north_first_boot(self.path, machine):
+            if recover_north_first_boot(
+                    self.path, machine, address_hint=nat_ip):
                 if not hasattr(self, '_north_first_boot_nat_addresses'):
                     self._north_first_boot_nat_addresses = {}
                 self._north_first_boot_nat_addresses[machine] = nat_ip
@@ -1081,6 +1089,17 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             # exact interrupted state where the NAT adapter works, the lab NIC is
             # APIPA, and fix_ip.ps1 has not completed.
             if (not first_up or not tools_ready) and north_direct is not True:
+                # A *verified* forwarded WinRM/Tools guest must not re-enter a
+                # second Vagrant guest adapter operation merely because VIX
+                # telemetry could not identify its NAT IP. Fail with a precise
+                # identity/bootstrap error instead of spending another 600s.
+                if self.lab_name == 'NORTH' and recovery_ready:
+                    Log.error(
+                        f'NORTH: {machine} has authenticated forwarded WinRM '
+                        'but no verified direct recovery; refusing circular '
+                        'Vagrant guest adapter retry'
+                    )
+                    return False
                 if not self._recover_failed_windows_vagrant_up(machine):
                     Log.error(
                         f'GOAD_NOMAD: {machine} still failed after clean Vagrant recovery'
