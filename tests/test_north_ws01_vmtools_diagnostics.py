@@ -52,6 +52,48 @@ class Ws01ToolsIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(diag.DiagnosticBlocked, "not the exact"):
             diag.verify_identity(data, values)
 
+    def test_orphaned_binary_fingerprint_is_evidence_not_repair_approval(self):
+        base = {
+            "ToolsService": [],
+            "ToolsExecutableExists": True,
+            "ToolsProcessCount": 0,
+            "InstalledVmwareTools": [],
+        }
+        self.assertEqual(diag.classify_tools_state(base), "ORPHANED_TOOLS_EXECUTABLE")
+        self.assertEqual(diag.classify_tools_state(
+            {**base, "ToolsExecutableExists": False}), "FULLY_MISSING_TOOLS")
+        self.assertEqual(diag.classify_tools_state(
+            {**base, "ToolsService": [{"Name": "VMTools", "State": "Running"}],
+             "ToolsProcessCount": 1}), "HEALTHY")
+        self.assertEqual(diag.classify_tools_state(
+            {**base, "InstalledVmwareTools": ["VMware Tools"]}),
+            "PARTIAL_OR_AMBIGUOUS_TOOLS")
+        with self.assertRaises(diag.DiagnosticBlocked):
+            diag.classify_tools_state({**base, "ToolsProcessCount": None})
+
+    def test_orphaned_tools_forensics_reads_installer_signatures_only(self):
+        src = diag.SCRIPT
+        for required in (
+            "Get-AuthenticodeSignature", "Get-FileHash",
+            "VMToolsServiceRegistryKeyPresent",
+            "VGAuthServiceRegistryKeyPresent",
+            "MsiInstallerInProgressRegistryKeyPresent",
+            "MsiExecProcessCount",
+            "RecentVmwareInstallerEvents",
+            "ToolsBinaryMetadata",
+            "MsiInstaller",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, src)
+        for mutating in (
+            "Start-Service", "Stop-Service", "New-Service",
+            "Remove-Item", "Set-Item", "Set-Service",
+            "Invoke-Expression", "Start-Process",
+            "msiexec.exe /", "Win32_Product",
+        ):
+            with self.subTest(mutating=mutating):
+                self.assertNotIn(mutating, src)
+
     def test_source_does_not_run_guest_repairs(self):
         src = SCRIPT.read_text()
         for marker in ("owned_guest(provider, \"GOAD-WS01\")",
