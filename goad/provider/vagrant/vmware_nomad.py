@@ -380,7 +380,7 @@ class GoadNomadVmwareProvider(VmwareProvider):
             value = handle.read().strip()
         return value if value else 'unknown'
 
-    def set_runtime_mode(self, mode):
+    def set_runtime_mode(self, mode, *, allow_stopped_members=False):
         if not self.is_goad_nomad_segmented():
             Log.error('Runtime modes are only available for GOAD_NOMAD GOAD/VMware instances')
             return False
@@ -393,9 +393,22 @@ class GoadNomadVmwareProvider(VmwareProvider):
         if mode_script is None:
             return False
 
+        args = ['bash', mode_script, mode]
+        if allow_stopped_members:
+            # Never expose the partial-range exemption to normal transitions,
+            # full GOAD, new provisioning or a previously unrecorded mode.
+            if (self.lab_name != 'NORTH' or mode != 'exercise'
+                    or self.get_runtime_mode() != 'exercise'):
+                Log.error(
+                    'GOAD_NOMAD: offline-member isolation restoration is '
+                    'permitted only for already-recorded NORTH exercise mode'
+                )
+                return False
+            args.append('--allow-stopped-members')
+
         Log.info(f'GOAD_NOMAD: switching to {mode} mode')
         result = subprocess.run(
-            ['bash', mode_script, mode],
+            args,
             env=self._provider_env(),
             check=False,
         )
