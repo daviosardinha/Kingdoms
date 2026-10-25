@@ -401,13 +401,15 @@ _ALLOWED_SOURCE_NAMES = frozenset({
 })
 
 
-def _execute_source(session, path, args=()):
+def _execute_source(session, path, args=(), *, _pre_execution_retry=1):
     """Transfer a pinned repository script in bounded WinRM calls and execute it.
 
     This is an internal source-transfer path, NOT an arbitrary command upload
     API. Never run a script that has not been byte-for-byte checked on Windows.
     It uses a unique guest TEMP file and cleans it in both success/failure
-    cases; a failed source run is never automatically replayed.
+    cases. Only an upload that failed before execution may be transferred
+    again, and only after exact temp cleanup succeeds. Any ambiguous
+    execution remains fail-closed without automatic retries.
     """
     source = Path(path)
     if (not source.is_file() or source.is_symlink()
@@ -447,6 +449,7 @@ def _execute_source(session, path, args=()):
     _run(session, beginning, "NORTH_STAGE_BEGIN")
     error = None
     output = None
+    execution_started = False
     try:
         for offset in range(0, len(payload), _WINRM_CHUNK_BYTES):
             chunk = base64.b64encode(
@@ -483,17 +486,39 @@ def _execute_source(session, path, args=()):
             "('NORTH source script exited '+$LASTEXITCODE)};"
             "Write-Output 'NORTH_SOURCE_SCRIPT_COMPLETED'"
         )
+        # Windows code may execute before a WinRM response is lost. Never retry
+        # a source execution that was even attempted.
+        execution_started = True
         output = _run(session, execute, "NORTH_SOURCE_SCRIPT_COMPLETED")
     except Exception as exc:
         error = exc
-    try:
-        _run(session, cleanup, "NORTH_STAGE_REMOVED")
-    except NorthGuestRecoveryBlocked as cleanup_error:
+    # First Windows boot may restart WinRM during chunk transfer. A failed
+    # cleanup RPC may have deleted the file before its response was lost.
+    # Cleanup is idempotent for THIS uniquely generated staging path only.
+    cleanup_error = None
+    for cleanup_attempt in range(6):
+        try:
+            _run(session, cleanup, "NORTH_STAGE_REMOVED")
+            cleanup_error = None
+            break
+        except NorthGuestRecoveryBlocked as exc:
+            cleanup_error = exc
+            if cleanup_attempt < 5:
+                time.sleep(5)
+    if cleanup_error is not None:
         raise NorthGuestRecoveryBlocked(
-            "NORTH source script guest-temp cleanup not confirmed; "
-            "do not repeat execution automatically"
+            "NORTH source script guest-temp cleanup not confirmed after bounded "
+            "WinRM recovery; do not repeat execution automatically"
         ) from (error or cleanup_error)
     if error is not None:
+        # The execute call has NOT occurred. Cleanup is now confirmed, so
+        # one new transfer can be attempted without replaying guest changes.
+        if (not execution_started and isinstance(error, NorthGuestRecoveryBlocked)
+                and _pre_execution_retry > 0):
+            time.sleep(5)
+            return _execute_source(
+                session, path, args, _pre_execution_retry=_pre_execution_retry - 1
+            )
         raise error
     return output
 
