@@ -62,15 +62,15 @@ class FullOfflineBackupTests(unittest.TestCase):
             ui = home / ".vmware"
             ui.mkdir()
             guest = home / "other-range.vmx"
-            guest.write_text('ethernet1.vnet = "vmnet10"\\n')
+            guest.write_text('ethernet1.vnet = "vmnet10"\n')
             (ui / "inventory.vmls").write_text(
-                'vmlist4.config = "' + str(guest) + '"\\n'
+                'vmlist4.config = "' + str(guest) + '"\n'
             )
             with patch.object(Path, "home", return_value=home), \
                  patch.object(backup, "running_vms", return_value=set(vmxs.values())), \
                  self.assertRaises(backup.BackupBlocked):
                 backup.preflight(root)
-            guest.write_text('ethernet1.vnet = "vmnet2"\\n')
+            guest.write_text('ethernet1.vnet = "vmnet2"\n')
             with patch.object(Path, "home", return_value=home), \
                  patch.object(backup, "running_vms", return_value=set(vmxs.values())):
                 backup.preflight(root)
