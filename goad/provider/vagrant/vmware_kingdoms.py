@@ -821,9 +821,32 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             return super().finalize_install()
         if self._course1_unwired():
             return False
-        if self.get_runtime_mode() != 'provisioning':
-            Log.error('NORTH: refusing final isolation without recorded provisioning mode')
-            return False
+        mode = self.get_runtime_mode()
+        if mode != 'provisioning':
+            # A genuine first install deliberately skips the AD-aware mode
+            # controller before build.yml creates Active Directory. At this
+            # point the full Ansible run has succeeded, so the *same* controller
+            # can establish and validate the recorded provisioning state before
+            # entering exercise mode. Never synthesize the marker ourselves.
+            if mode != 'unknown' or not self._fresh_install_bootstrap_pending():
+                Log.error('NORTH: refusing final isolation without recorded provisioning mode')
+                return False
+            Log.info(
+                'NORTH: completed fresh Ansible provisioning; establishing '
+                'recorded provisioning mode through the AD-aware controller'
+            )
+            if not self.set_runtime_mode('provisioning'):
+                Log.error(
+                    'NORTH: post-AD provisioning mode transition failed; '
+                    'exercise isolation not started'
+                )
+                return False
+            if self.get_runtime_mode() != 'provisioning':
+                Log.error(
+                    'NORTH: mode controller did not persist provisioning state; '
+                    'exercise isolation not started'
+                )
+                return False
         # Ensure a missing Tools service cannot make the first soft shutdown
         # fail after the complete and expensive 21-play Ansible provisioning.
         for machine in ('GOAD-SRV02', 'GOAD-WS01', 'GOAD-DC02', 'GOAD-DC01'):
