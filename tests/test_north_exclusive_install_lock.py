@@ -32,6 +32,7 @@ class NorthExclusiveInstallTests(unittest.TestCase):
     def console(self, path, lab="NORTH"):
         obj = SimpleNamespace(lab_manager=Mock())
         obj.lab_manager.get_current_lab_name.return_value = lab
+        obj._nomad_provider = Mock(return_value=object())
         obj._north_install_lock_path = lambda: path
         obj._acquire_north_install_lock = MethodType(
             isolated("_acquire_north_install_lock"), obj)
