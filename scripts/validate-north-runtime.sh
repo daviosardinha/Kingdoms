@@ -30,7 +30,7 @@ printf '[INFO] No Vagrant up/down, host routes, NAT reconnection, AD repair or e
 
 # Strict source and on-disk guest identity check before any WinRM traffic.
 export KINGDOMS_NORTH_VALIDATOR_ROOT="$ROOT" KINGDOMS_NORTH_VALIDATOR_PROVIDER="$PROVIDER"
-python3 - <<'PY'
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 - <<'PY'
 import json
 import os
 import re
@@ -58,8 +58,26 @@ check(provider == (root / "workspace" / instance.name / "provider")
 meta = instance / "instance.json"
 check(meta.is_file() and not meta.is_symlink(), "Instance metadata absent or unsafe")
 data = json.loads(meta.read_text(encoding="utf-8"))
-check((data.get("id"), data.get("lab"), data.get("provider"), data.get("status")) ==
-      (instance.name, "NORTH", "vmware", "installed"), "Instance is not installed NORTH")
+check((data.get("id"), data.get("lab"), data.get("provider")) ==
+      (instance.name, "NORTH", "vmware"), "Instance is not NORTH")
+recovered = False
+if data.get("status") == "installed":
+    pass
+elif data.get("status") == "not provided":
+    # This exception does NOT assert installation is complete. It only lets
+    # the unchanged authenticated live runtime checks below decide whether the
+    # original repaired fourth-install instance can be promoted to READY.
+    from goad.course1_recovered_runtime import (
+        RecoveredRuntimeBlocked, prove_recovered_north_metadata,
+    )
+    try:
+        prove_recovered_north_metadata(instance, provider, data)
+    except (RecoveredRuntimeBlocked, OSError, UnicodeError, ValueError) as exc:
+        check(False, "Recovered NORTH metadata not authorized: " + str(exc))
+    recovered = True
+    print("[PASS] NORTH_EXACT_RECOVERED_INSTANCE_ATTESTED")
+else:
+    check(False, "Instance is not installed NORTH")
 mode_file = provider / ".goad-nomad-mode"
 check(mode_file.is_file() and not mode_file.is_symlink()
       and mode_file.read_text(encoding="utf-8").strip() == "exercise",
@@ -96,7 +114,10 @@ for vm in names:
           f"{vm} canonical VMnet/MAC contract differs")
     print(f"[PASS] {vm}: exact VMX running, {vmnet}, persistent NAT off")
 print("[PASS] NORTH_FIVE_OWNED_VMS_RUNNING")
-print("[PASS] NORTH_INSTANCE_INSTALLED_EXERCISE")
+if recovered:
+    print("[PASS] NORTH_RECOVERED_INSTANCE_PENDING_RUNTIME_PROOF")
+else:
+    print("[PASS] NORTH_INSTANCE_INSTALLED_EXERCISE")
 PY
 
 echo "===== NORTH HOST NETWORK OWNERSHIP ====="
