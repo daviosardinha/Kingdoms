@@ -115,7 +115,7 @@ class NorthPostBootRepairTests(unittest.TestCase):
 
     def test_healthy_guest_never_installs_or_writes_marker(self):
         with TemporaryDirectory() as tmp:
-            provider = Path(tmp)/"instance"/"provider"
+            provider = Path(tmp)/"abc123-north-vmware"/"provider"
             provider.mkdir(parents=True)
             guest = self.guest(provider)
             with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
@@ -126,7 +126,7 @@ class NorthPostBootRepairTests(unittest.TestCase):
 
     def test_missing_tools_repaired_even_if_vmware_ip_telemetry_fails(self):
         with TemporaryDirectory() as tmp:
-            provider = Path(tmp)/"instance"/"provider"
+            provider = Path(tmp)/"abc123-north-vmware"/"provider"
             provider.mkdir(parents=True)
             guest = self.guest(provider)
             with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
@@ -148,7 +148,7 @@ class NorthPostBootRepairTests(unittest.TestCase):
             def monotonic(self): self.now += 250; return self.now
             def sleep(self, _): pass
         with TemporaryDirectory() as tmp:
-            provider = Path(tmp)/"instance"/"provider"
+            provider = Path(tmp)/"abc123-north-vmware"/"provider"
             provider.mkdir(parents=True)
             guest = self.guest(provider)
             guest._authenticated_guest_install_ready.return_value = False
@@ -162,12 +162,14 @@ class NorthPostBootRepairTests(unittest.TestCase):
 
     def test_partial_or_foreign_guest_refuses_any_install(self):
         with TemporaryDirectory() as tmp:
-            provider = Path(tmp)/"instance"/"provider"
+            provider = Path(tmp)/"abc123-north-vmware"/"provider"
             provider.mkdir(parents=True)
             guest = self.guest(provider)
             with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
-                       return_value=("/owned/guest.vmx", "partial")):
+                       return_value=("/owned/guest.vmx", "partial")), \
+                 patch("time.sleep") as sleeper:
                 self.assertFalse(self.gate(guest, "GOAD-SRV02", "pre-exercise-isolation"))
+            sleeper.assert_not_called()
             with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
                        side_effect=NorthGuestRecoveryBlocked("wrong VMX")):
                 self.assertFalse(self.gate(guest, "GOAD-SRV02", "pre-exercise-isolation"))
