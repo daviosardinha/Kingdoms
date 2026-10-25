@@ -212,3 +212,37 @@ def assert_repaired_provider_north_resume(provider, manifest, start_playbook):
         "All five original VMX guests running; four Windows endpoints strictly canonical",
         "No Vagrant replay or previous Ansible playbook execution authorized",
     )
+
+
+def consume_repaired_provider_resume(provider):
+    """Atomically consume the one authorized recovery attempt before Ansible.
+
+    Do not remove the marker on failure: later attempts must be independently
+    reviewed rather than replaying the first build.yml and AD promotion steps.
+    """
+    root = Path(str(getattr(provider, "path", "")))
+    if (root.name != "provider" or root.parent.name != REPAIRED_PROVIDER_INSTANCE
+            or not root.is_dir() or root.is_symlink() or
+            root.resolve(strict=True) != root):
+        raise PreADResumeError("Not the exact repaired NORTH provider")
+    marker = root.parent / REPAIRED_PROVIDER_RESUME_MARKER
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(marker, flags, 0o600)
+    except FileExistsError as exc:
+        raise PreADResumeError("The repaired provider resume has already been consumed") from exc
+    except OSError as exc:
+        raise PreADResumeError("Cannot establish exclusive one-shot resume marker") from exc
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(
+                "NORTH repaired provider resume for "
+                + REPAIRED_PROVIDER_INSTANCE
+                + "\nAttempt "
+                + REPAIRED_PROVIDER_ATTEMPT
+                + "\nAuthorized first playbook: build.yml\n"
+            )
+    except OSError as exc:
+        # Preserve a partially written marker: fail-closed/no repeat.
+        raise PreADResumeError("Resume marker write failed; do not replay") from exc
+    return "NORTH repaired provider one-shot authorization consumed"
