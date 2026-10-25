@@ -64,6 +64,23 @@ These findings from the full-project audit have priority over every new platform
 - [ ] Pin and validate the Debian router box.
 - [ ] Monitor availability of all pinned Windows boxes.
 
+### Linux distro portability (P1/P2; distinct from adding providers)
+
+**Required:** All three existing VMware-based labs (KINGDOMS, NORTH and WSLPE)
+must work across supported Linux host distributions, **not only Kali**.
+This is a cross-distro host compatibility and prerequisite-isolation requirement,
+not a claim of support for hosts where VMware Workstation or its plugin is
+unsupported. See [Linux distribution portability contract](docs/kingdoms-linux-distribution-portability.md).
+
+- [ ] Centralize invocation of the project-managed Python/Ansible environment;
+  never depend on host system Python importing project packages such as `winrm`.
+- [ ] Replace distro-specific paths/commands in installation, start/stop,
+  diagnostics, VMnet setup and recovery with preflighted host capabilities.
+- [ ] Test missing-dependency and conflicting-network fail-closed behaviors.
+- [ ] Publish a Linux distro/version compatibility matrix backed by source/CI
+  and actual provider runtime evidence for NORTH, KINGDOMS and WSLPE.
+- [ ] Validate three-lab co-host coexistence on each supported combination.
+
 ## P2 — Automated validation and release gates
 
 - [ ] Fix the malformed trailing comma in `ad/DRACARYS/data/config.json`.
