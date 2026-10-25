@@ -95,6 +95,10 @@ def capture(instance_id):
     encoded_length = len(base64.b64encode(POWERSHELL.encode("utf-16le")))
     if encoded_length > 6500:
         raise ValueError(f"Diagnostic encoded command too large: {encoded_length}")
+    # Scripts executed by path set sys.path[0] to scripts/diagnostics.
+    # Resolve imports from this repository instead of assuming a shell PYTHONPATH.
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
     from goad.provider.vagrant.vmware_nomad import GoadNomadVmwareProvider
 
     parent = Path.home() / "Kingdoms-evidence"
