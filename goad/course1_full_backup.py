@@ -76,6 +76,25 @@ def preflight(root):
     inst, paths = valid_instance(root)
     require(running_vms() == set(paths.values()),
             "Exactly the five original NORTH VMs must be running; foreign VM present or VM missing")
+    # Reuse the existing VMware inventory evidence to guard powered-off
+    # unrelated VMs before any host network retirement.
+    inventory = Path.home() / ".vmware" / "inventory.vmls"
+    if inventory.exists():
+        require(inventory.is_file() and not inventory.is_symlink(),
+                "Unsafe VMware user inventory")
+        for line in inventory.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = re.fullmatch(r'\\s*vmlist\\d+\\.config\\s*=\\s*"([^"]+)"\\s*', line)
+            if not m:
+                continue
+            vmx = Path(m.group(1))
+            require(not vmx.is_symlink(), "Foreign VMware inventory has a symlink")
+            if not vmx.is_file() or str(vmx.resolve()) in set(paths.values()):
+                continue
+            contents = vmx.read_text(encoding="utf-8", errors="replace")
+            for nic in ("vmnet10", "vmnet20", "vmnet99"):
+                require(not re.search(r'^\\s*ethernet\\d+\\.vnet\\s*=\\s*"' + nic + r'"',
+                                      contents, re.I | re.M),
+                        "An unrelated registered VM uses a NORTH network")
     require(not (Path(root) / "workspace" / OLD).is_symlink(), "Instance symlink")
     print("[PASS] NORTH_ORIGINAL_FIVE_RUNNING_VMS_AND_INSTALLED_MODE")
     return inst, paths
