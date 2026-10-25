@@ -1,10 +1,13 @@
 """Safe installed-VMware NT5DS recovery: source-only, no WinRM or guest effects."""
 import ast
+import base64
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from unittest.mock import Mock
 
+from goad import installed_member_time_recovery as time_recovery
 from goad.installed_member_time_recovery import (
     TIME_PENDING, TIME_REPAIRED, TIME_REPAIR_FAILED,
     build_time_recovery_script, is_authenticated_repair,
@@ -72,8 +75,8 @@ class ScriptContract(unittest.TestCase):
         script = build_time_recovery_script(
             "essos.local", "meereen.essos.local", budget=75
         )
-        self.assertIn("$budget = 75", script)
-        self.assertIn("$dc = 'meereen.essos.local'", script)
+        self.assertIn("$budget=75", script)
+        self.assertIn("$dc='meereen.essos.local'", script)
 
     def test_unknown_and_unbounded_recovery_rejected(self):
         for domain, dc in (
@@ -86,6 +89,27 @@ class ScriptContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build_time_recovery_script(
                     "north.sevenkingdoms.local", self.DC, budget
+                )
+
+    def test_windows_winrm_encoded_command_fits_cmdline_limit(self):
+        # Regression: prior recovery was ~10k characters after UTF-16LE
+        # encoding; Windows rejected it with "The command line is too long."
+        for domain, dc in sorted(time_recovery.DOMAINS):
+            for budget in (30, 60, 90):
+                with self.subTest(domain=domain, budget=budget):
+                    script = build_time_recovery_script(domain, dc, budget)
+                    encoded = base64.b64encode(script.encode("utf-16le"))
+                    self.assertLessEqual(len(encoded), 6500)
+                    # Leave safe headroom for pywinrm's powershell prefix.
+                    self.assertLess(len(encoded) + 250, 8191)
+
+    def test_encoded_command_size_guard_rejects_script_regression(self):
+        with patch.object(time_recovery, "_SCRIPT",
+                          time_recovery._SCRIPT + "\n" + ("#" * 1800)):
+            with self.assertRaisesRegex(ValueError,
+                                        "WinRM recovery command exceeds safe size"):
+                build_time_recovery_script(
+                    "north.sevenkingdoms.local", self.DC
                 )
 
     def test_time_only_pending_marker_is_exact(self):
