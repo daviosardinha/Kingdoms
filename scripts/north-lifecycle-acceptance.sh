@@ -6,11 +6,19 @@ umask 077
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 if [[ $# -ne 3 || ! "$1" =~ ^[a-f0-9]{6}-north-vmware$ ||
-      "$2" != "--run" || "$3" != "--confirm-restore-data-loss" ]]; then
-  echo "Usage: bash scripts/north-lifecycle-acceptance.sh <NORTH-ID> --run --confirm-restore-data-loss" >&2
+      ( "$2" != "--run" && "$2" != "--snapshot-only" ) ||
+      "$3" != "--confirm-restore-data-loss" ]]; then
+  echo "Usage: bash scripts/north-lifecycle-acceptance.sh <NORTH-ID> {--run|--snapshot-only} --confirm-restore-data-loss" >&2
   exit 2
 fi
 INSTANCE="$1"
+SNAPSHOT_ONLY=false
+if [[ "$2" == "--snapshot-only" ]]; then
+  SNAPSHOT_ONLY=true
+  [[ "$INSTANCE" == "8aafc9-north-vmware" ]] || {
+    echo "[BLOCKED] Snapshot-only recovery qualification is scoped to the validated 8aafc9 NORTH instance" >&2; exit 2;
+  }
+fi
 PROVIDER="$ROOT/workspace/$INSTANCE/provider"
 MODE="$PROVIDER/.goad-nomad-mode"
 [[ -d "$PROVIDER" && ! -L "$PROVIDER" && -f "$MODE" && ! -L "$MODE" &&
@@ -29,7 +37,7 @@ mkdir -p -m 700 "$HOME/Kingdoms-evidence"
 EVIDENCE="$(mktemp -d "$HOME/Kingdoms-evidence/north-lifecycle-XXXXXXXX")"
 chmod 700 "$EVIDENCE"
 SUMMARY="$EVIDENCE/summary.txt"
-printf 'instance=%s\nsource_sha=%s\n' "$INSTANCE" "$(git rev-parse HEAD)" > "$SUMMARY"
+printf 'instance=%s\nsource_sha=%s\nmode=%s\n' "$INSTANCE" "$(git rev-parse HEAD)" "$2" > "$SUMMARY"
 echo "[EVIDENCE] $EVIDENCE"
 
 fail() {
@@ -105,15 +113,20 @@ sudo -v || fail "sudo authentication failed"
 stage 01-owner sudo -n bash scripts/setup-vmware-networks.sh --north verify --provider-dir "$PROVIDER"
 validate 02-initial-health
 
-echo "===== TWO COLD-START CYCLES ====="
-for cycle in 1 2; do
+if [[ "$SNAPSHOT_ONLY" != true ]]; then
+  echo "===== TWO COLD-START CYCLES ====="
+  for cycle in 1 2; do
   native stop "cold-$cycle-stop"
   stopped
   echo "PASS | cold-$cycle-offline" | tee -a "$SUMMARY"
   native start "cold-$cycle-start"
   validate "cold-$cycle-health"
-done
-echo 'NORTH_REPEATED_COLD_START=PASS' | tee -a "$SUMMARY"
+  done
+  echo 'NORTH_REPEATED_COLD_START=PASS' | tee -a "$SUMMARY"
+else
+  echo "===== SNAPSHOT-ONLY: PREVIOUS TWO COLD-STARTS ALREADY CERTIFIED ====="
+  echo 'NORTH_REPEATED_COLD_START=NOT_RERUN' | tee -a "$SUMMARY"
+fi
 
 echo "===== CREATE EXERCISE-MODE SNAPSHOT ====="
 snapshots "$EVIDENCE/snapshots-before.json" || fail "Cannot inventory original snapshots"
@@ -143,6 +156,11 @@ echo 'NORTH_SNAPSHOT_RESTORE=PASS' | tee -a "$SUMMARY"
 
 [[ "$(cat "$MODE")" == exercise ]] || fail "Exercise mode not preserved"
 stage 07-owner-final sudo -n bash scripts/setup-vmware-networks.sh --north verify --provider-dir "$PROVIDER"
-echo 'RESTART_RESTORE_RELIABILITY=PASS' | tee -a "$SUMMARY"
-echo '[PASS] NORTH_LIFECYCLE_RELIABILITY=PASS'
+if [[ "$SNAPSHOT_ONLY" == true ]]; then
+  echo 'NORTH_SNAPSHOT_ACCEPTANCE=PASS' | tee -a "$SUMMARY"
+  echo '[PASS] NORTH_SNAPSHOT_ONLY_ACCEPTANCE=PASS'
+else
+  echo 'RESTART_RESTORE_RELIABILITY=PASS' | tee -a "$SUMMARY"
+  echo '[PASS] NORTH_LIFECYCLE_RELIABILITY=PASS'
+fi
 echo "[EVIDENCE] $EVIDENCE"

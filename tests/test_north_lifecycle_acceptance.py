@@ -61,6 +61,35 @@ class NorthLifecycleAcceptanceTests(unittest.TestCase):
         self.assertIn('len(new)!=len(old)+1',self.script)
         self.assertIn('not vmx.resolve().is_relative_to(vm_dir.resolve())',self.script)
 
+    def test_snapshot_only_recovers_validated_instance_without_new_cold_starts(self):
+        src = self.script
+        self.assertIn('"$2" != "--snapshot-only"', src)
+        self.assertIn('SNAPSHOT_ONLY=false', src)
+        self.assertIn('if [[ "$2" == "--snapshot-only" ]]; then', src)
+        self.assertIn('"$INSTANCE" == "8aafc9-north-vmware"', src)
+        self.assertIn('if [[ "$SNAPSHOT_ONLY" != true ]]; then', src)
+        self.assertIn('NORTH_REPEATED_COLD_START=NOT_RERUN', src)
+        self.assertIn('NORTH_SNAPSHOT_ACCEPTANCE=PASS', src)
+        self.assertIn('NORTH_SNAPSHOT_ONLY_ACCEPTANCE=PASS', src)
+        self.assertIn('native snapshot 03-snapshot-create', src)
+        self.assertIn('native reset 05-snapshot-restore', src)
+        self.assertIn('validate 04-post-snapshot-health', src)
+        self.assertIn('validate 06-post-restore-health', src)
+        self.assertIn('len(new)!=len(old)+1', src)
+
+    def test_snapshot_only_refuses_wrong_instance_or_missing_confirmation(self):
+        cases = (
+            ["57bbec-north-vmware", "--snapshot-only", "--confirm-restore-data-loss"],
+            ["8aafc9-north-vmware", "--snapshot-only"],
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    ["bash", str(TARGET), *args], text=True, capture_output=True
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("[BLOCKED]" if len(args) == 3 else "Usage:", result.stderr)
+
     def test_help_refuses_implicit_lifecycle_actions(self):
         for args in ([], ["57bbec-north-vmware"], ["57bbec-north-vmware","--run"]):
             r=subprocess.run(["bash",str(TARGET),*args],capture_output=True,text=True)
