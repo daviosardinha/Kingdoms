@@ -98,8 +98,10 @@ def parse_winrm_port(output: str) -> int:
     return port
 
 
-def verify_identity(payload: dict, vmx_values: dict) -> None:
-    """Never trust a live forwarded Windows endpoint without both guest NIC MACs."""
+def verify_identity(payload: dict, vmx_values: dict, machine="GOAD-WS01") -> None:
+    """Never trust a live forwarded Windows endpoint without both owned NIC MACs."""
+    if machine not in EXPECTED:
+        raise DiagnosticBlocked("Not a known NORTH Windows guest")
     adapters = payload.get("Adapters") or []
     if isinstance(adapters, dict):
         adapters = [adapters]
@@ -107,7 +109,7 @@ def verify_identity(payload: dict, vmx_values: dict) -> None:
         raise DiagnosticBlocked("Guest adapter inventory is malformed")
     observed = [x.get("Mac") for x in adapters if isinstance(x, dict)]
     expected_nat = vmx_values.get("ethernet0.generatedaddress", "").replace(":", "").upper()
-    expected_lab = EXPECTED["GOAD-WS01"].replace(":", "").upper()
+    expected_lab = EXPECTED[machine].replace(":", "").upper()
     if not (payload.get("Hostname") and
             "Windows" in str(payload.get("OsCaption", "")) and
             re.fullmatch(r"[0-9A-F]{12}", expected_nat) and
@@ -116,8 +118,8 @@ def verify_identity(payload: dict, vmx_values: dict) -> None:
             observed.count(expected_lab) == 1 and
             expected_nat != expected_lab):
         raise DiagnosticBlocked(
-            "Authenticated forwarded endpoint is not the exact original WS01 "
-            "with both VMX-owned NAT and lab NIC MACs"
+            "Authenticated forwarded endpoint is not the exact original " + machine +
+            " with both VMX-owned NAT and lab NIC MACs"
         )
 
 
