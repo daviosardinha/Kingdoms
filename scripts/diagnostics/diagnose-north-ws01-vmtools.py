@@ -60,41 +60,6 @@ $events = @(Get-WinEvent -FilterHashtable @{
             Message = ([string]$_.Message -replace '[\r\n]+', ' ').Trim()
         }
     })
-# Distinguish an orphaned binary from a registered but stopped service,
-# an active MSI transaction, and a genuine Windows Installer failure.
-# Every operation below is read-only and errors from optional evidence are
-# deliberately represented as 'unavailable', never used to authorize repair.
-$exe = 'C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'
-$binaryEvidence = $null
-if (Test-Path -LiteralPath $exe -PathType Leaf) {
-    $bin = Get-Item -LiteralPath $exe -ErrorAction Stop
-    $sig = Get-AuthenticodeSignature -LiteralPath $exe -ErrorAction SilentlyContinue
-    $binaryEvidence = [PSCustomObject]@{
-        Length = $bin.Length
-        Version = $bin.VersionInfo.FileVersion
-        Sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256 -ErrorAction Stop).Hash
-        SignatureStatus = if ($null -ne $sig) { [string]$sig.Status } else { 'Unavailable' }
-    }
-}
-$vmtoolsServiceKey = Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\VMTools'
-$vgauthServiceKey = Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\VGAuthService'
-$msiInProgress = Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\InProgress'
-$msiProcesses = @(Get-Process msiexec -ErrorAction SilentlyContinue).Count
-$installerEvents = @(Get-WinEvent -FilterHashtable @{
-    LogName = 'Application'
-    ProviderName = 'MsiInstaller'
-    StartTime = (Get-Date).AddHours(-24)
-} -MaxEvents 100 -ErrorAction SilentlyContinue |
-    Where-Object { $_.Message -match '(?i)vmware|vmtools|vm tools' } |
-    Select-Object -First 12 TimeCreated,Id,Message |
-    ForEach-Object {
-        $message = ([string]$_.Message -replace '[\r\n]+', ' ').Trim()
-        [PSCustomObject]@{
-            Time = $_.TimeCreated.ToString('o')
-            Id = $_.Id
-            Message = $message.Substring(0, [Math]::Min(600, $message.Length))
-        }
-    })
 [PSCustomObject]@{
     Hostname = $env:COMPUTERNAME
     OsCaption = $os.Caption
@@ -112,18 +77,83 @@ $installerEvents = @(Get-WinEvent -FilterHashtable @{
     ToolsProcessCount = $processes.Count
     InstalledVmwareTools = @($installed)
     RecentServiceEvents = $events
-    ToolsBinaryMetadata = $binaryEvidence
-    VMToolsServiceRegistryKeyPresent = [bool]$vmtoolsServiceKey
-    VGAuthServiceRegistryKeyPresent = [bool]$vgauthServiceKey
-    MsiInstallerInProgressRegistryKeyPresent = [bool]$msiInProgress
-    MsiExecProcessCount = $msiProcesses
-    RecentVmwareInstallerEvents = @($installerEvents)
 } | ConvertTo-Json -Depth 7 -Compress
+"""
+
+
+# Keep Windows PowerShell -EncodedCommand below the WinRM/CMD.exe length limit.
+# pywinrm encodes UTF-16LE to base64, inflating even compact PowerShell by ~2.67x.
+# The previously combined 4.4k-character SCRIPT failed before execution with
+# "The command line is too long". Do not stage a guest script to work around this:
+# all three authenticated calls are read-only and leave no artifacts.
+TOOLS_METADATA_SCRIPT = r"""
+$ErrorActionPreference='Stop'
+$e='C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'
+$b=$null
+if(Test-Path -LiteralPath $e -PathType Leaf){
+$f=Get-Item -LiteralPath $e -ErrorAction Stop
+$s=Get-AuthenticodeSignature -LiteralPath $e -ErrorAction SilentlyContinue
+$b=[PSCustomObject]@{
+Length=$f.Length
+Version=$f.VersionInfo.FileVersion
+Sha256=(Get-FileHash -LiteralPath $e -Algorithm SHA256 -ErrorAction Stop).Hash
+SignatureStatus=if($null -ne $s){[string]$s.Status}else{'Unavailable'}
+}
+}
+[PSCustomObject]@{
+ToolsBinaryMetadata=$b
+VMToolsServiceRegistryKeyPresent=[bool](Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\VMTools')
+VGAuthServiceRegistryKeyPresent=[bool](Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\VGAuthService')
+MsiInstallerInProgressRegistryKeyPresent=[bool](Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\InProgress')
+MsiExecProcessCount=@(Get-Process msiexec -ErrorAction SilentlyContinue).Count
+}|ConvertTo-Json -Depth 4 -Compress
+"""
+
+MSI_EVENTS_SCRIPT = r"""
+$ErrorActionPreference='Stop'
+$items=@(Get-WinEvent -FilterHashtable @{
+LogName='Application'
+ProviderName='MsiInstaller'
+StartTime=(Get-Date).AddHours(-24)
+} -MaxEvents 100 -ErrorAction SilentlyContinue |
+Where-Object {$_.Message -match '(?i)vmware|vmtools|vm tools'} |
+Select-Object -First 12 | ForEach-Object {
+$m=([string]$_.Message -replace '[\r\n]+',' ').Trim()
+[PSCustomObject]@{
+Time=$_.TimeCreated.ToString('o')
+Id=$_.Id
+Message=$m.Substring(0,[Math]::Min(600,$m.Length))
+}
+})
+[PSCustomObject]@{RecentVmwareInstallerEvents=@($items)} |
+ConvertTo-Json -Depth 5 -Compress
 """
 
 
 class DiagnosticBlocked(RuntimeError):
     pass
+
+
+def _read_json_winrm(session, script: str, label: str) -> dict:
+    """Read-only query: fail closed on WinRM transport errors or invalid JSON."""
+    try:
+        reply = session.run_ps(script)
+    except Exception as exc:
+        raise DiagnosticBlocked(
+            label + " WinRM transport failed: " + type(exc).__name__
+        ) from exc
+    if reply.status_code:
+        raise DiagnosticBlocked(
+            label + " Windows diagnostics failed: " +
+            reply.std_err.decode("utf-8", errors="replace")[:300]
+        )
+    try:
+        result = json.loads(reply.std_out.decode("utf-8"))
+    except (ValueError, UnicodeError) as exc:
+        raise DiagnosticBlocked(label + " diagnostics returned invalid JSON") from exc
+    if not isinstance(result, dict):
+        raise DiagnosticBlocked(label + " diagnostics returned non-object JSON")
+    return result
 
 
 def parse_winrm_port(output: str) -> int:
@@ -201,19 +231,22 @@ def main(argv=None):
         raise DiagnosticBlocked("Cannot read original WS01 Vagrant port mapping")
     port = parse_winrm_port(result.stdout)
     session = _authenticated_session("127.0.0.1", port=port)
-    reply = session.run_ps(SCRIPT)
-    if reply.status_code:
-        raise DiagnosticBlocked(
-            "Read-only WS01 WinRM diagnostics failed: "
-            + reply.std_err.decode(errors="replace")[:300]
-        )
-    try:
-        payload = json.loads(reply.std_out.decode("utf-8"))
-    except (ValueError, UnicodeError) as exc:
-        raise DiagnosticBlocked("Authenticated Windows diagnostics are not valid JSON") from exc
-    if not isinstance(payload, dict):
-        raise DiagnosticBlocked("Authenticated Windows diagnostics are not an object")
+    payload = _read_json_winrm(session, SCRIPT, "Original WS01 identity")
     verify_identity(payload, values)
+    # Original VMX plus two authenticated guest MAC addresses are proven
+    # before querying additional MSI state. No repair permissions are implied.
+    metadata = _read_json_winrm(session, TOOLS_METADATA_SCRIPT, "Tools metadata")
+    events = _read_json_winrm(session, MSI_EVENTS_SCRIPT, "Windows Installer events")
+    if set(metadata) != {
+        "ToolsBinaryMetadata", "VMToolsServiceRegistryKeyPresent",
+        "VGAuthServiceRegistryKeyPresent",
+        "MsiInstallerInProgressRegistryKeyPresent", "MsiExecProcessCount",
+    } or set(events) != {"RecentVmwareInstallerEvents"}:
+        raise DiagnosticBlocked("Forensic WinRM inventory is incomplete")
+    if not isinstance(events["RecentVmwareInstallerEvents"], list):
+        raise DiagnosticBlocked("Windows Installer event inventory is malformed")
+    payload.update(metadata)
+    payload.update(events)
     print("[PASS] NORTH_WS01_REGISTERED_RUNNING_VMX=" + str(vmx))
     print("[PASS] NORTH_WS01_BOTH_AUTHENTICATED_NIC_MACS_MATCH")
     print(json.dumps(payload, indent=2, sort_keys=True))
