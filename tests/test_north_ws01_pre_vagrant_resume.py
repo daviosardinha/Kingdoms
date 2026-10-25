@@ -45,10 +45,36 @@ class Ws01PreVagrantRecoveryTests(unittest.TestCase):
         inspect.assert_not_called()
         self.runtime._north_tools_transition_gate.assert_not_called()
 
-    def test_running_guest_with_healthy_tools_still_requires_normal_canonical_gate(self):
+    def test_running_guest_with_healthy_tools_and_failed_canonical_blocks_vagrant(self):
         with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
                    return_value=("/owned/ws01.vmx", "healthy")):
-            self.assertIsNone(self.probe(self.runtime, "GOAD-WS01"))
+            self.assertIs(self.probe(self.runtime, "GOAD-WS01"), False)
+        self.runtime._north_tools_transition_gate.assert_not_called()
+
+    def test_running_guest_with_completely_missing_tools_enters_one_shot_gate(self):
+        # The live retry skipped recovery because a missing Tools state was
+        # treated as permission for another generic Vagrant install.
+        with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
+                   return_value=("/owned/ws01.vmx", "missing")):
+            self.assertIs(self.probe(self.runtime, "GOAD-WS01"), True)
+        self.runtime._north_tools_transition_gate.assert_called_once_with(
+            "GOAD-WS01", "pre-vagrant-ws01-resume"
+        )
+        self.runtime._north_existing_canonical_ready.assert_called_once_with(
+            "GOAD-WS01"
+        )
+
+    def test_running_guest_missing_tools_with_blocked_repair_cannot_run_vagrant(self):
+        self.runtime._north_tools_transition_gate.return_value = False
+        with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
+                   return_value=("/owned/ws01.vmx", "missing")):
+            self.assertIs(self.probe(self.runtime, "GOAD-WS01"), False)
+        self.runtime._north_existing_canonical_ready.assert_not_called()
+
+    def test_running_guest_invalid_tools_classification_blocks_vagrant(self):
+        with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
+                   return_value=("/owned/ws01.vmx", "unknown")):
+            self.assertIs(self.probe(self.runtime, "GOAD-WS01"), False)
         self.runtime._north_tools_transition_gate.assert_not_called()
 
     def test_foreign_or_unverified_guest_blocks_before_repair(self):
@@ -137,6 +163,34 @@ class EarlyVagrantGateTests(unittest.TestCase):
                        return_value=True), patch("time.sleep"):
                 self.assertFalse(gate(runtime,"GOAD-WS01","post-ws01-eval"))
             runtime._install_vmware_tools.assert_called_once()
+
+    def test_original_ws01_all_missing_repair_uses_shared_once_marker(self):
+        with TemporaryDirectory() as temp:
+            provider = Path(temp) / "bc34de-north-vmware" / "provider"
+            provider.mkdir(parents=True)
+            runtime = Mock()
+            runtime.lab_name = "NORTH"
+            runtime.path = str(provider)
+            runtime._winrm_forwarded_port.return_value = 2204
+            runtime._wait_winrm_ready.return_value = True
+            runtime._authenticated_guest_install_ready.return_value = True
+            runtime._install_vmware_tools.return_value = True
+            gate = isolated_gate("_north_tools_transition_gate", logger=Mock())
+            with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
+                       side_effect=[("/owned/ws01.vmx", "missing"),
+                                    ("/owned/ws01.vmx", "healthy")]):
+                self.assertTrue(gate(runtime, "GOAD-WS01", "pre-vagrant-ws01-resume"))
+            marker = provider.parent / ".north-vmtools-GOAD-WS01-post-ws01-eval.attempted"
+            self.assertTrue(marker.is_file())
+            runtime._install_vmware_tools.assert_called_once()
+            with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
+                       return_value=("/owned/ws01.vmx", "missing")):
+                self.assertFalse(gate(runtime, "GOAD-WS01", "pre-vagrant-ws01-resume"))
+            runtime._install_vmware_tools.assert_called_once()
+            events = [json.loads(x) for x in
+                      (provider.parent / ".north-install-recovery.jsonl").read_text().splitlines()]
+            self.assertIn("VMTOOLS_MISSING", [event["signature"] for event in events])
+            self.assertIn("VMTOOLS_REPAIR_VERIFIED", [event["signature"] for event in events])
 
     def test_provider_checks_early_orphan_before_vagrant(self):
         source = (Path(__file__).resolve().parents[1] /
