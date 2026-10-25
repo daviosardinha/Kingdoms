@@ -1,21 +1,44 @@
 """NORTH installs must serialize before sudo and provider/VM changes."""
+import ast
+import fcntl
 import os
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import threading
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from unittest.mock import Mock, patch
 import unittest
 
-from goad_nomad import GoadNomad
+# Compile only the installer-lock methods: CI intentionally runs without rich,
+# prompt_toolkit, pywinrm or any other runtime-only console dependencies.
+SOURCE = Path(__file__).resolve().parents[1] / "goad_nomad.py"
+
+
+def isolated(name):
+    tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
+    owner = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+                 and node.name == "GoadNomad")
+    method = next(node for node in owner.body if isinstance(node, ast.FunctionDef)
+                  and node.name == name)
+    ns = {"os": os, "fcntl": fcntl, "Path": Path, "subprocess": subprocess,
+          "threading": threading, "Log": Mock()}
+    exec(compile(ast.Module(body=[method], type_ignores=[]),
+                 str(SOURCE), "exec"), ns)
+    return ns[name]
 
 
 class NorthExclusiveInstallTests(unittest.TestCase):
     def console(self, path, lab="NORTH"):
-        obj = GoadNomad.__new__(GoadNomad)
-        obj.lab_manager = Mock()
+        obj = SimpleNamespace(lab_manager=Mock())
         obj.lab_manager.get_current_lab_name.return_value = lab
         obj._north_install_lock_path = lambda: path
+        obj._acquire_north_install_lock = MethodType(
+            isolated("_acquire_north_install_lock"), obj)
+        obj._run_with_install_timer = MethodType(
+            isolated("_run_with_install_timer"), obj)
+        obj._start_install_sudo_keepalive = MethodType(
+            isolated("_start_install_sudo_keepalive"), obj)
         return obj
 
     def test_two_north_installers_cannot_acquire_same_host_lock(self):
@@ -94,7 +117,7 @@ class NorthExclusiveInstallTests(unittest.TestCase):
                     calls.append(list(args))
                     return SimpleNamespace(returncode=initial if len(calls)==1 else 0)
                 stop=threading.Event()
-                with patch("goad_nomad.subprocess.run",side_effect=run):
+                with patch.object(subprocess,"run",side_effect=run):
                     ok,lost,thread=obj._start_install_sudo_keepalive(stop)
                     self.assertTrue(ok)
                     self.assertIsNotNone(lost)
