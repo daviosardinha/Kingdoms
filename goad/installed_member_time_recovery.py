@@ -25,7 +25,7 @@ $dc='__DC__'
 $timer=[Diagnostics.Stopwatch]::StartNew()
 $budget=__BUDGET__
 function Fail-Time([string]$stage) {
-  Write-Output "KINGDOMS_INSTALLED_MEMBER_TIME_REPAIR_FAILED|stage=$stage"
+  Write-Output "KINGDOMS_INSTALLED_MEMBER_TIME_REPAIR_FAILED|stage=$stage|source=$source|resync_rc=$resyncRc"
   exit 0
 }
 try {
@@ -55,6 +55,7 @@ for($attempt=1;$attempt -le 12;$attempt++){
     & nltest.exe "/dsgetdc:$domain" /timeserv /force|Out-Null
     if($LASTEXITCODE){Fail-Time 'timeserv_locator_lost'}
     & w32tm.exe /resync /rediscover /nowait|Out-Null
+    $resyncRc=$LASTEXITCODE
   }
   $remaining=[int]($budget-$timer.Elapsed.TotalSeconds)
   if($remaining -le 0){Fail-Time 'budget'}
