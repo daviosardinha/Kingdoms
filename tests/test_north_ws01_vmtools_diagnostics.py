@@ -109,6 +109,70 @@ class Ws01ToolsIdentityTests(unittest.TestCase):
         self.assertNotIn("Get-WinEvent", diag.TOOLS_METADATA_SCRIPT)
         self.assertNotIn("Get-NetAdapter", diag.MSI_EVENTS_SCRIPT)
 
+    def test_optional_msi1603_diagnostics_are_read_only_and_winrm_bounded(self):
+        for label, script in (
+            ("installer-log-files", diag.MSI_LOG_FILES_SCRIPT),
+            ("installer-log-signatures", diag.MSI_ERROR_SIGNATURES_SCRIPT),
+        ):
+            with self.subTest(label=label):
+                encoded_size = 4 * ((len(script.encode("utf-16le")) + 2) // 3)
+                self.assertLess(encoded_size, 7500)
+                self.assertIn("Get-ChildItem", script)
+                for bad in (
+                    "Start-Process", "Start-Service", "Stop-Service",
+                    "Remove-Item", "Set-Item", "Set-Service",
+                    "icacls", "msiexec /", "Win32_Product",
+                ):
+                    self.assertNotIn(bad, script)
+        self.assertIn("80070020", diag.MSI_ERROR_SIGNATURES_SCRIPT)
+        self.assertIn("logfile.txt.0", diag.MSI_ERROR_SIGNATURES_SCRIPT)
+        self.assertIn("VGAuthService", diag.MSI_LOG_FILES_SCRIPT)
+        self.assertIn("Get-Content", diag.MSI_ERROR_SIGNATURES_SCRIPT)
+
+    def test_msi1603_only_runs_after_original_guest_identity_proof(self):
+        from types import SimpleNamespace
+        identity = {
+            "Hostname": "VAGRANT-10",
+            "OsCaption": "Microsoft Windows 10 Enterprise Evaluation",
+            "Adapters": [
+                {"Mac": "000C29991040", "IPv4": ["192.168.213.136"]},
+                {"Mac": "005056201031", "IPv4": ["10.4.10.31"]},
+            ],
+            "ToolsService": [], "ToolsExecutableExists": False,
+            "ToolsProcessCount": 0, "InstalledVmwareTools": [],
+        }
+        values = {"ethernet0.generatedaddress": "00:0c:29:99:10:40"}
+        metadata = {
+            "ToolsBinaryMetadata": None,
+            "VMToolsServiceRegistryKeyPresent": False,
+            "VGAuthServiceRegistryKeyPresent": True,
+            "MsiInstallerInProgressRegistryKeyPresent": False,
+            "MsiExecProcessCount": 0,
+        }
+        events = {"RecentVmwareInstallerEvents": []}
+        files = {"VGAuthService": [{"Name": "VGAuthService", "State": "Running",
+                                     "ProcessId": 123}],
+                 "VMwareInstallerLogs": [{"Path": "C:\\\\Windows\\\\Temp\\\\vminst.log",
+                                           "Size": 100, "LastModified": "2026-10-25T17:48:00Z"}]}
+        errors = {"InstallerErrorSignatures": [{"File": "vminst.log",
+                                                 "Evidence": "80070020 sharing violation"}]}
+        with patch.object(diag, "owned_guest", return_value=(
+            Path("/original/windows_10.vmx"), {"address": "10.4.10.31"}, values
+        )), patch.object(diag.subprocess, "run", return_value=SimpleNamespace(
+            returncode=0, stdout="5985 (guest) => 2203 (host)"
+        )), patch.object(diag, "_authenticated_session", return_value=object()), \
+             patch.object(diag, "_read_json_winrm", side_effect=[
+                 identity, metadata, events, files, errors
+             ]) as fetch, patch("builtins.print") as printer:
+            self.assertEqual(diag.main([
+                "--instance", "bb3baf-north-vmware", "--msi-1603"
+            ]), 0)
+        self.assertEqual([call.args[1] for call in fetch.call_args_list], [
+            diag.SCRIPT, diag.TOOLS_METADATA_SCRIPT, diag.MSI_EVENTS_SCRIPT,
+            diag.MSI_LOG_FILES_SCRIPT, diag.MSI_ERROR_SIGNATURES_SCRIPT
+        ])
+        self.assertTrue(any("80070020" in str(x) for x in printer.call_args_list))
+
     def test_forensics_queries_run_only_after_exact_identity(self):
         from types import SimpleNamespace
         identity = {
