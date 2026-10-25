@@ -7,6 +7,8 @@ without making future upstream merges unnecessarily invasive.
 """
 
 import argparse
+import fcntl
+import os
 from pathlib import Path
 import runpy
 import subprocess
@@ -62,16 +64,19 @@ class GoadNomad(BaseGoad):
             return True, None, None
 
         Log.info(
-            'GOAD Kingdoms: refreshing sudo credentials once for the unattended install lifecycle'
+            'GOAD Kingdoms: checking sudo credentials once before unattended installation'
         )
         try:
-            subprocess.run(
-                ['sudo', '-k'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
+            # Do not run sudo -k here: it invalidates other terminal sessions
+            # and can leave concurrent (older) processes waiting for passwords.
+            # Reuse an authenticated ticket if present, otherwise request
+            # authentication once in the launch terminal before any mutation.
+            prime = subprocess.run(
+                ['sudo', '-n', '-v'], check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            prime = subprocess.run(['sudo', '-v'], check=False)
+            if prime.returncode != 0:
+                prime = subprocess.run(['sudo', '-v'], check=False)
         except OSError as exc:
             Log.error(f'GOAD Kingdoms: unable to initialize sudo credentials: {exc}')
             return False, None, None
@@ -120,7 +125,63 @@ class GoadNomad(BaseGoad):
         )
         return True, lost_event, keepalive_thread
 
+    def _north_install_lock_path(self):
+        # One operator may use several Kingdoms checkouts on this VMware host.
+        # Keep the lock in the shared, user-owned GOAD runtime directory.
+        return Path.home() / '.goad' / '.north-install-exclusive.lock'
+
+    def _acquire_north_install_lock(self):
+        """Refuse parallel NORTH installs *before* sudo or provider mutations.
+
+        Return an owned fd, None for non-NORTH, or -1 for a blocked attempt.
+        fcntl.flock releases automatically if the installer process exits,
+        even on a crash. This applies to direct goad.sh commands as well as
+        the supervised logging wrapper.
+        """
+        if self.lab_manager.get_current_lab_name() != 'NORTH':
+            return None
+        lock = self._north_install_lock_path()
+        parent = lock.parent
+        if not parent.is_dir() or parent.is_symlink() or lock.is_symlink():
+            Log.error('NORTH: unsafe or unavailable host-wide install lock')
+            return -1
+        fd = None
+        try:
+            fd = os.open(
+                str(lock), os.O_RDWR | os.O_CREAT |
+                getattr(os, 'O_NOFOLLOW', 0), 0o600
+            )
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            os.fchmod(fd, 0o600)
+            os.ftruncate(fd, 0)
+            os.write(fd, (str(os.getpid()) + '\n').encode('ascii'))
+            os.fsync(fd)
+        except (OSError, ValueError) as exc:
+            if fd is not None:
+                os.close(fd)
+            Log.error(
+                'NORTH: another installation is already active, or the '
+                f'exclusive install lock is unavailable: {exc}'
+            )
+            return -1
+        Log.success('NORTH_EXCLUSIVE_INSTALL_LOCK=ACQUIRED')
+        return fd
+
     def _run_with_install_timer(self, operation):
+        if getattr(self, '_install_timer_active', False):
+            return operation()
+        fd = self._acquire_north_install_lock()
+        if fd == -1:
+            return False
+        try:
+            return self._run_with_install_timer_locked(operation)
+        finally:
+            if fd is not None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+                Log.success('NORTH_EXCLUSIVE_INSTALL_LOCK=RELEASED')
+
+    def _run_with_install_timer_locked(self, operation):
         """Run an install operation with visible timer and sudo heartbeats.
 
         Vagrant/WinRM can legitimately spend many minutes booting older Windows
