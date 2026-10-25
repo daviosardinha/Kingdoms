@@ -469,6 +469,69 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         )
         return True
 
+
+    def _north_existing_ws01_orphan_before_vagrant(self, machine):
+        """Return True for strictly recovered WS01, False for blocked, None for fresh.
+
+        On an interrupted NORTH resume, a known signed WS01 Tools orphan is
+        inaccessible to the normal post-rearm gate because Vagrant runs first.
+        Do not run Vagrant's generic guest bootstrap against that partial MSI.
+        This is not a new-guest path, not a licensing/rearm action, and not a
+        shortcut around canonical identity verification.
+        """
+        if (self.lab_name != 'NORTH' or machine != 'GOAD-WS01'
+                or not self._vmx_path(machine)):
+            return None
+
+        from goad.course1_tools_transition import (
+            inspect_owned_guest_tools, NorthToolsTransitionBlocked,
+        )
+        from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+        try:
+            port = self._winrm_forwarded_port(machine)
+            if not port or not self._wait_winrm_ready(port, 10):
+                # Cannot classify a guest without authenticated WinRM.
+                # Let the original Vagrant first-boot behavior decide.
+                return None
+            _vmx, state = inspect_owned_guest_tools(
+                self.path, machine, self._winrm_session(port)
+            )
+        except (NorthToolsTransitionBlocked, NorthGuestRecoveryBlocked,
+                OSError, ValueError) as exc:
+            Log.error(
+                f'NORTH: original WS01 VMware Tools identity at pre-Vagrant '
+                f'resume could not be proven: {exc}'
+            )
+            return False
+
+        if state == 'healthy':
+            return None
+        if state != 'partial':
+            # Existing fully-absent Tools are handled by the established
+            # first-boot process; this new rule approves only a signed orphan.
+            return None
+
+        Log.warning(
+            'NORTH: existing WS01 has partial VMware Tools before Vagrant; '
+            'checking the exact signed post-rearm orphan fingerprint'
+        )
+        if not self._north_tools_transition_gate(
+                machine, 'pre-vagrant-ws01-resume'):
+            return False
+        # The Tools repair can reboot the guest. Full original VMX + both MACs,
+        # canonical IP, internal route and WinRM HTTPS must be proved again
+        # before skipping any Vagrant action.
+        if self._north_existing_canonical_ready(machine) is not True:
+            Log.error(
+                'NORTH: repaired WS01 did not pass original canonical identity; '
+                'refusing Vagrant fallback or another VMware Tools repair'
+            )
+            return False
+        Log.success(
+            'NORTH_WS01_PRE_VAGRANT_SIGNED_ORPHAN_RECOVERED=PASS'
+        )
+        return True
+
     def _north_direct_first_boot_recovery(self, machine):
         """Bounded NORTH-only direct WinRM fallback; no Vagrant guest operations.
 
@@ -526,8 +589,10 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         """
         if (self.lab_name != 'NORTH' or
                 machine not in ('GOAD-DC01', 'GOAD-DC02', 'GOAD-SRV02', 'GOAD-WS01') or
-                phase not in ('post-ws01-eval', 'pre-exercise-isolation') or
-                (phase == 'post-ws01-eval' and machine != 'GOAD-WS01')):
+                phase not in ('post-ws01-eval', 'pre-exercise-isolation',
+                              'pre-vagrant-ws01-resume') or
+                (phase in ('post-ws01-eval', 'pre-vagrant-ws01-resume')
+                 and machine != 'GOAD-WS01')):
             Log.error('NORTH: unexpected VMware Tools transition scope')
             return False
 
@@ -604,7 +669,8 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
                 # interruption, with no current MSI transaction or VMTools
                 # registration, on an unchanged original MAC-bound guest.
                 # All other partial installations remain hard-blocked.
-                if machine == 'GOAD-WS01' and phase == 'post-ws01-eval':
+                if machine == 'GOAD-WS01' and phase in (
+                        'post-ws01-eval', 'pre-vagrant-ws01-resume'):
                     try:
                         approved = prove_idle_signed_original_ws01_orphan(
                             self.path, machine, vmx, self._winrm_session(port)
@@ -637,8 +703,14 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         else:
             record('VMTOOLS_MISSING', 'observed')
         instance = os.path.dirname(os.path.realpath(self.path))
+        # The same guest repair must never be repeated because the resume
+        # encountered it before Vagrant and later after license maintenance.
+        # Share WS01's original post-evaluation one-shot marker across phases.
+        marker_phase = ('post-ws01-eval' if machine == 'GOAD-WS01'
+                        and phase in ('post-ws01-eval', 'pre-vagrant-ws01-resume')
+                        else phase)
         marker = os.path.join(
-            instance, f'.north-vmtools-{machine}-{phase}.attempted'
+            instance, f'.north-vmtools-{machine}-{marker_phase}.attempted'
         )
         # Protect against accidental replay after a failed Tools installation
         # that may already have changed Windows installer or reboot state.
@@ -1355,6 +1427,12 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
                 north_direct = self._north_existing_canonical_ready(machine)
                 if north_direct is False:
                     return False
+                if north_direct is None and machine == 'GOAD-WS01':
+                    north_direct = self._north_existing_ws01_orphan_before_vagrant(
+                        machine
+                    )
+                    if north_direct is False:
+                        return False
             if north_direct is True:
                 # Only the strict authenticated canonical guest proof permits
                 # skipping Vagrant on the same registered running VM. This
