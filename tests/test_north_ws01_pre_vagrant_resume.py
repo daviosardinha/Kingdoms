@@ -23,6 +23,12 @@ class Ws01PreVagrantRecoveryTests(unittest.TestCase):
             _north_tools_transition_gate=Mock(return_value=True),
             _north_existing_canonical_ready=Mock(return_value=True),
         )
+        self.owned = patch(
+            "goad.course1_direct_winrm.owned_guest",
+            return_value=(Path("/owned/ws01.vmx"), {"address": "10.4.10.31"}, {})
+        )
+        self.owned.start()
+        self.addCleanup(self.owned.stop)
 
     def test_signed_orphan_is_recovered_before_any_vagrant_up(self):
         with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
@@ -57,11 +63,36 @@ class Ws01PreVagrantRecoveryTests(unittest.TestCase):
                    return_value=("/owned/ws01.vmx", "partial")):
             self.assertIs(self.probe(self.runtime, "GOAD-WS01"), False)
 
-    def test_unavailable_forwarded_winrm_allows_original_vagrant_path(self):
+    def test_running_guest_without_forwarded_winrm_refuses_unsafe_vagrant_fallback(self):
         self.runtime._winrm_forwarded_port.return_value = None
         with patch("goad.course1_tools_transition.inspect_owned_guest_tools") as inspect:
+            self.assertIs(self.probe(self.runtime, "GOAD-WS01"), False)
+        inspect.assert_not_called()
+        self.runtime._north_tools_transition_gate.assert_not_called()
+
+    def test_running_guest_with_transient_winrm_waits_then_blocks_without_vagrant(self):
+        self.runtime._wait_winrm_ready.return_value = False
+        with patch("goad.course1_tools_transition.inspect_owned_guest_tools") as inspect:
+            self.assertIs(self.probe(self.runtime, "GOAD-WS01"), False)
+        self.runtime._wait_winrm_ready.assert_called_once_with(2204, 60)
+        inspect.assert_not_called()
+
+    def test_registered_but_powered_off_guest_uses_normal_vagrant_first_boot(self):
+        from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+        with patch("goad.course1_direct_winrm.owned_guest",
+                   side_effect=NorthGuestRecoveryBlocked(
+                       "Original guest is not uniquely running"
+                   )), patch("goad.course1_tools_transition.inspect_owned_guest_tools") as inspect:
             self.assertIsNone(self.probe(self.runtime, "GOAD-WS01"))
         inspect.assert_not_called()
+        self.runtime._winrm_forwarded_port.assert_not_called()
+
+    def test_registered_foreign_or_invalid_vmx_blocks_before_vagrant(self):
+        from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+        with patch("goad.course1_direct_winrm.owned_guest",
+                   side_effect=NorthGuestRecoveryBlocked("Guest VMX contract differs: ethernet1.vnet")):
+            self.assertIs(self.probe(self.runtime, "GOAD-WS01"), False)
+        self.runtime._winrm_forwarded_port.assert_not_called()
 
     def test_scope_is_exact_north_ws01(self):
         self.assertIsNone(self.probe(self.runtime, "GOAD-SRV02"))
