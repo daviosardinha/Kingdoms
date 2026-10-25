@@ -38,8 +38,7 @@ class SixthNorthReproTests(unittest.TestCase):
         self.assertIn('"not provided"', src)
         self.assertIn("GOAD-WS01", src)
         self.assertIn("GOAD-ROUTER", src)
-        self.assertIn("No foreign", src.replace("no foreign", "No foreign") if False else
-                      "No foreign" if "No foreign" in src else "Foreign running")
+        self.assertIn("Foreign running VMware VM detected", src)
         self.assertNotIn("scripts/north-fifth-clean-install.sh", src)
         self.assertNotIn("scripts/north-one-shot-clean-reinstall.sh", src)
 
