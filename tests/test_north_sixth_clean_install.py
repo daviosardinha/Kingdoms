@@ -46,7 +46,7 @@ class SixthNorthReproTests(unittest.TestCase):
         src = self.script
         order = [
             'bash scripts/verify-test-source.sh',
-            'EXACT_FIFTH_NORTH_INSTANCE_AND_NO_FOREIGN_GUEST_CONFLICTS',
+            'FAILED_FIFTH_NORTH_INSTANCE_AND_NO_FOREIGN_GUEST_CONFLICTS',
             'EXACT_NORTH_VMNET_OWNER',
             'PRIOR_FAILURE_EVIDENCE_PRESERVED',
             'stage 01-destroy-fifth',
