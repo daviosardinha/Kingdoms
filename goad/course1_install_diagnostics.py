@@ -13,7 +13,8 @@ from pathlib import Path
 import re
 
 GUESTS = frozenset(("GOAD-DC01", "GOAD-DC02", "GOAD-SRV02", "GOAD-WS01"))
-PHASES = frozenset(("post-ws01-eval", "pre-exercise-isolation"))
+PHASES = frozenset(("post-ws01-eval", "pre-exercise-isolation",
+                    "pre-vagrant-ws01-resume"))
 SIGNATURES = frozenset((
     "VMTOOLS_HEALTHY",
     "VMTOOLS_MISSING",
