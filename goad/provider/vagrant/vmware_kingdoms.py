@@ -533,6 +533,7 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
 
         from goad.course1_tools_transition import (
             NorthToolsTransitionBlocked, inspect_owned_guest_tools,
+            prove_idle_signed_original_ws01_orphan,
         )
         from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
         from goad.course1_install_diagnostics import emit
@@ -598,17 +599,43 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
                     return False
 
             if state == 'partial':
-                record('VMTOOLS_PARTIAL_PERSISTENT', 'blocked')
-                Log.error(f'NORTH: {machine} VMware Tools remain partially installed '
-                          f'at {phase}; diagnostic journal saved. No reinstall attempted')
-                return False
+                # One narrowly approved recoverable exception: the exact WS01
+                # signed 13.1.0 binary left by the known post-rearm MSI
+                # interruption, with no current MSI transaction or VMTools
+                # registration, on an unchanged original MAC-bound guest.
+                # All other partial installations remain hard-blocked.
+                if machine == 'GOAD-WS01' and phase == 'post-ws01-eval':
+                    try:
+                        approved = prove_idle_signed_original_ws01_orphan(
+                            self.path, machine, vmx, self._winrm_session(port)
+                        )
+                    except (NorthToolsTransitionBlocked, NorthGuestRecoveryBlocked,
+                            OSError, ValueError) as exc:
+                        record('VMTOOLS_IDENTITY_OR_TRANSPORT_BLOCKED', 'blocked')
+                        Log.error(f'NORTH: WS01 signed orphan proof unavailable: {exc}')
+                        return False
+                    if approved:
+                        state = 'known_idle_orphan'
+                    else:
+                        record('VMTOOLS_PARTIAL_PERSISTENT', 'blocked')
+                        Log.error('NORTH: WS01 VMware Tools partially registered but '
+                                  'not the reviewed signed idle orphan fingerprint')
+                        return False
+                else:
+                    record('VMTOOLS_PARTIAL_PERSISTENT', 'blocked')
+                    Log.error(f'NORTH: {machine} VMware Tools remain partially installed '
+                              f'at {phase}; diagnostic journal saved. No reinstall attempted')
+                    return False
 
-        if state != 'missing':
+        if state not in ('missing', 'known_idle_orphan'):
             record('VMTOOLS_PARTIAL_PERSISTENT', 'blocked')
             Log.error('NORTH: unsupported VMware Tools transition state')
             return False
 
-        record('VMTOOLS_MISSING', 'observed')
+        if state == 'known_idle_orphan':
+            record('VMTOOLS_WS01_SIGNED_IDLE_ORPHAN', 'observed')
+        else:
+            record('VMTOOLS_MISSING', 'observed')
         instance = os.path.dirname(os.path.realpath(self.path))
         marker = os.path.join(
             instance, f'.north-vmtools-{machine}-{phase}.attempted'
@@ -629,8 +656,9 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             stream.write(f'vm={machine}\nphase={phase}\nvmx={vmx}\n')
         record('VMTOOLS_REPAIR_ATTEMPTED', 'observed', attempts=1)
 
-        Log.warning(f'NORTH: {machine} VMware Tools absent after {phase}; '
-                    'reusing original Kingdoms VMware Tools installer once')
+        Log.warning(f'NORTH: {machine} VMware Tools '
+                    f'{"signed idle orphan" if state == "known_idle_orphan" else "absent"} '
+                    f'at {phase}; invoking the original Tools installer once')
         try:
             result = self._install_vmware_tools(machine, vmx, port)
             if not result:

@@ -24,6 +24,7 @@ SIGNATURES = frozenset((
     "VMTOOLS_REPAIR_VERIFIED",
     "VMTOOLS_REPAIR_FAILED",
     "VMTOOLS_PARTIAL_PERSISTENT",
+    "VMTOOLS_WS01_SIGNED_IDLE_ORPHAN",
 ))
 ACTIONS = frozenset((
     "none",
@@ -43,6 +44,7 @@ def recovery_policy(signature):
         "VMTOOLS_MISSING": "one_shot_original_tools_install",
         "VMTOOLS_PARTIAL": "read_only_wait",
         "VMTOOLS_PARTIAL_PERSISTENT": "manual_review",
+        "VMTOOLS_WS01_SIGNED_IDLE_ORPHAN": "one_shot_original_tools_install",
         "VMTOOLS_READINESS_INCOMPLETE": "manual_review",
         "VMTOOLS_IDENTITY_OR_TRANSPORT_BLOCKED": "manual_review",
         "VMTOOLS_REPAIR_ATTEMPTED": "none",
