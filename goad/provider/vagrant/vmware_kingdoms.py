@@ -486,13 +486,43 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         from goad.course1_tools_transition import (
             inspect_owned_guest_tools, NorthToolsTransitionBlocked,
         )
-        from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+        from goad.course1_direct_winrm import (
+            NorthGuestRecoveryBlocked, owned_guest,
+        )
+
+        # Previous runs treated a missing/stale forwarded WinRM port as
+        # permission to fall through to Vagrant's generic Tools bootstrap.
+        # That silently bypassed the signed orphan recovery and repeated the
+        # same VMware Tools failure. Only a VM that is NOT yet running may
+        # retain the normal first-boot Vagrant path.
+        try:
+            owned_guest(self.path, machine)
+        except NorthGuestRecoveryBlocked as exc:
+            if str(exc) == 'Original guest is not uniquely running':
+                Log.info(
+                    'NORTH: WS01 is registered but not running; '
+                    'normal Vagrant first boot remains authoritative'
+                )
+                return None
+            Log.error(f'NORTH: WS01 pre-Vagrant owned VMX proof blocked: {exc}')
+            return False
+
+        Log.info('NORTH: original running WS01 requires authenticated '
+                 'Tools inventory before any Vagrant fallback')
         try:
             port = self._winrm_forwarded_port(machine)
-            if not port or not self._wait_winrm_ready(port, 10):
-                # Cannot classify a guest without authenticated WinRM.
-                # Let the original Vagrant first-boot behavior decide.
-                return None
+            if not port:
+                Log.error(
+                    'NORTH: original running WS01 has no forwarded WinRM port; '
+                    'refusing generic Vagrant VMware Tools bootstrap'
+                )
+                return False
+            if not self._wait_winrm_ready(port, 60):
+                Log.error(
+                    f'NORTH: original running WS01 WinRM port {port} did not '
+                    'become authenticated within 60s; refusing Vagrant fallback'
+                )
+                return False
             _vmx, state = inspect_owned_guest_tools(
                 self.path, machine, self._winrm_session(port)
             )
