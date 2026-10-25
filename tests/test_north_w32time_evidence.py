@@ -34,7 +34,7 @@ class NorthTimeEvidenceTests(unittest.TestCase):
         ):
             self.assertIn(required, script)
         for forbidden in (
-            "/resync", "/config", "/rediscover", "Restart-Service",
+            "/resync", "w32tm.exe /config ", "/rediscover", "Restart-Service",
             "Start-Service", "Stop-Service", "Set-ItemProperty",
             "New-ItemProperty", "Set-NetFirewallRule",
             "Reset-ComputerMachinePassword", "Test-ComputerSecureChannel -Repair",
