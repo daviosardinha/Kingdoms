@@ -153,6 +153,21 @@ class KingdomsCourse1RouteTests(unittest.TestCase):
                 self.assertEqual(routes.execute("disable", tmp), "ALREADY ABSENT")
                 shell.assert_not_called()
 
+    def test_north_mode_status_reads_root_owned_route_evidence_as_root(self):
+        # Production state lives under /run/kingdoms-course1-routes (0700).
+        # Unprivileged status used to mistake EACCES for an absent record.
+        mode = (Path(__file__).resolve().parents[1] / "scripts/lab-mode.sh").read_text()
+        show = mode.split("show_status() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn(
+            'sudo -n bash "${ROUTES}" --north status --provider-dir "${PROVIDER}"',
+            show,
+        )
+        self.assertNotIn(
+            '        bash "${ROUTES}" --north status --provider-dir "${PROVIDER}"',
+            show,
+        )
+        self.assertIn('bash "${ROUTES}" status', show)
+
     def test_bash_script_dispatches_only_for_explicit_north(self):
         file = Path(__file__).resolve().parents[1] / "scripts/provisioning-routes.sh"
         source = file.read_text()

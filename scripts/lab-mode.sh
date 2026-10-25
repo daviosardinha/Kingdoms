@@ -1171,7 +1171,10 @@ show_status() {
     echo
     echo "=== HOST PROVISIONING ROUTES ==="
     if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then
-        bash "${ROUTES}" --north status --provider-dir "${PROVIDER}"
+        # NORTH ownership evidence is private root-owned state under /run.
+        # Use read-only privileged inspection; unprivileged Path.exists()
+        # cannot traverse its 0700 directory and misreports an owned route.
+        sudo -n bash "${ROUTES}" --north status --provider-dir "${PROVIDER}"
     else
         bash "${ROUTES}" status
     fi
