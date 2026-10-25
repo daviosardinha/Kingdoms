@@ -257,14 +257,22 @@ class GoadNomadVmwareProvider(VmwareProvider):
         return True
 
     @staticmethod
-    def _lab_winrm_session(host):
+    def _lab_winrm_session(host, read_timeout_sec=45):
+        """Direct member WinRM with an optional bounded recovery read budget.
+
+        Existing calls retain their 45-second read timeout; only the single
+        conditional installed-member NT5DS repair extends the HTTP read budget.
+        """
+        if (type(read_timeout_sec) is not int
+                or not 45 <= read_timeout_sec <= 125):
+            raise ValueError('WinRM read timeout must be 45..125 seconds')
         return winrm.Session(
             f'https://{host}:5986/wsman',
             auth=('vagrant', 'vagrant'),
             transport='ntlm',
             server_cert_validation='ignore',
             operation_timeout_sec=30,
-            read_timeout_sec=45,
+            read_timeout_sec=read_timeout_sec,
         )
 
     def _wait_lab_winrm_ready(self, machine, host, timeout=300):
