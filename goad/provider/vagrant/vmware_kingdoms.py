@@ -534,19 +534,45 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             )
             return False
 
+        Log.info(f'NORTH_WS01_PRE_VAGRANT_TOOLS_STATE={state}')
+        # Existing RUNNING WS01 is not a first boot. The previous helper
+        # explicitly fell through to Vagrant for a fully missing Tools
+        # inventory. On the fifth-install resume that caused another generic
+        # vmrun installTools attempt outside the one-shot recovery journal.
+        #
+        # A healthy Tools inventory does not imply canonical readiness:
+        # the caller has already failed complete IP/route/HTTPS/Tools proof.
+        # Do not use Vagrant to compensate for that incomplete contract.
         if state == 'healthy':
-            return None
-        if state != 'partial':
-            # Existing fully-absent Tools are handled by the established
-            # first-boot process; this new rule approves only a signed orphan.
-            return None
+            Log.error(
+                'NORTH: running WS01 has healthy Tools but failed canonical '
+                'guest readiness; refusing unreviewed Vagrant fallback'
+            )
+            return False
+        if state not in ('partial', 'missing'):
+            Log.error(
+                f'NORTH: running WS01 returned unexpected Tools state {state!r}; '
+                'refusing Vagrant fallback'
+            )
+            return False
 
-        Log.warning(
-            'NORTH: existing WS01 has partial VMware Tools before Vagrant; '
-            'checking the exact signed post-rearm orphan fingerprint'
-        )
+        if state == 'partial':
+            Log.warning(
+                'NORTH: running WS01 has partial VMware Tools before Vagrant; '
+                'requiring exact signed post-rearm orphan proof'
+            )
+        else:
+            Log.warning(
+                'NORTH: running WS01 has completely absent VMware Tools '
+                'before Vagrant; using existing single-attempt recovery gate'
+            )
+        # This owns both the signed-partial path and the already-approved
+        # all-missing recovery. Both share the exact original VMX/MAC/IP,
+        # atomic WS01 repair marker and authenticated post-install proof.
         if not self._north_tools_transition_gate(
                 machine, 'pre-vagrant-ws01-resume'):
+            Log.error('NORTH: WS01 pre-Vagrant Tools repair refused or failed; '
+                      'no generic Vagrant bootstrap fallback')
             return False
         # The Tools repair can reboot the guest. Full original VMX + both MACs,
         # canonical IP, internal route and WinRM HTTPS must be proved again
@@ -558,7 +584,7 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             )
             return False
         Log.success(
-            'NORTH_WS01_PRE_VAGRANT_SIGNED_ORPHAN_RECOVERED=PASS'
+            'NORTH_WS01_PRE_VAGRANT_TOOLS_RECOVERED=PASS'
         )
         return True
 
