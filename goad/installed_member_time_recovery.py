@@ -15,98 +15,62 @@ DOMAINS = {
     ("essos.local", "meereen.essos.local"),
 }
 
+# Keep this script compact: pywinrm sends it via a UTF-16LE Base64
+# powershell.exe -EncodedCommand argument, subject to Windows cmdline limits.
+# Long explanatory comments belong in Python, never inside this payload.
 _SCRIPT = r"""
-$ErrorActionPreference = 'Continue'
-$domain = '__DOMAIN__'
-$dc = '__DC__'
-$deadline = [Diagnostics.Stopwatch]::StartNew()
-$budget = __BUDGET__
-
-function Fail-Time([string]$stage, [string]$detail) {
-    $safe = (($detail -replace '[|\r\n]', ' ').Trim())
-    Write-Output ("KINGDOMS_INSTALLED_MEMBER_TIME_REPAIR_FAILED|stage={0}|detail={1}" -f $stage,$safe)
-    exit 0
+$ErrorActionPreference='Continue'
+$domain='__DOMAIN__'
+$dc='__DC__'
+$timer=[Diagnostics.Stopwatch]::StartNew()
+$budget=__BUDGET__
+function Fail-Time([string]$stage) {
+  Write-Output "KINGDOMS_INSTALLED_MEMBER_TIME_REPAIR_FAILED|stage=$stage"
+  exit 0
 }
-
-# A readiness probe has already passed DNS, machine trust and the Netlogon
-# secure session. Recheck them immediately; do not touch time otherwise.
 try {
-    Resolve-DnsName $dc -ErrorAction Stop | Out-Null
-    if (-not (Test-ComputerSecureChannel -Server $dc -ErrorAction Stop)) {
-        Fail-Time 'secure_channel' 'unhealthy'
-    }
-} catch {
-    Fail-Time 'identity' $_.Exception.Message
-}
-& nltest.exe ("/sc_query:" + $domain) | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail-Time 'netlogon_session' "$LASTEXITCODE" }
-
-& nltest.exe ("/dsgetdc:" + $domain) /timeserv /force | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail-Time 'timeserv_locator' "$LASTEXITCODE" }
-
-# A positive unauthenticated UDP test establishes the path but cannot be
-# treated as success. The final source must be domain-authenticated NT5DS.
-$strip = @(& w32tm.exe /stripchart ("/computer:" + $dc) /samples:2 /dataonly 2>&1)
-if ($LASTEXITCODE -ne 0) {
-    Fail-Time 'ntp_path' (($strip | Out-String).Trim())
-}
-if ($deadline.Elapsed.TotalSeconds -ge $budget) {
-    Fail-Time 'budget' 'expired during preflight'
-}
-
-& w32tm.exe /config /syncfromflags:domhier /update | Out-Null
-if ($LASTEXITCODE -ne 0) { Fail-Time 'config' "$LASTEXITCODE" }
-
+  Resolve-DnsName $dc -ErrorAction Stop|Out-Null
+  if(-not (Test-ComputerSecureChannel -Server $dc -ErrorAction Stop)){Fail-Time 'secure_channel'}
+} catch {Fail-Time 'identity'}
+& nltest.exe "/sc_query:$domain"|Out-Null
+if($LASTEXITCODE){Fail-Time 'netlogon_session'}
+& nltest.exe "/dsgetdc:$domain" /timeserv /force|Out-Null
+if($LASTEXITCODE){Fail-Time 'timeserv_locator'}
+& w32tm.exe /stripchart "/computer:$dc" /samples:2 /dataonly|Out-Null
+if($LASTEXITCODE){Fail-Time 'ntp_path'}
+if($timer.Elapsed.TotalSeconds -ge $budget){Fail-Time 'budget'}
+& w32tm.exe /config /syncfromflags:domhier /update|Out-Null
+if($LASTEXITCODE){Fail-Time 'config'}
 try {
-    Restart-Service W32Time -Force -ErrorAction Stop
-    (Get-Service W32Time -ErrorAction Stop).WaitForStatus(
-        [System.ServiceProcess.ServiceControllerStatus]::Running,
-        [TimeSpan]::FromSeconds(10)
-    )
-} catch {
-    Fail-Time 'service' $_.Exception.Message
-}
-
-# The controller permits one recovery attempt per member/start. Inside it,
-# re-prime the domain session and request bounded rediscovery as in lab-mode.sh.
-for ($attempt = 1; $attempt -le 12; $attempt++) {
-    if ($deadline.Elapsed.TotalSeconds -ge $budget) {
-        Fail-Time 'budget' 'expired during rediscovery'
-    }
-    if ($attempt -eq 1 -or (($attempt - 1) % 3) -eq 0) {
-        & nltest.exe ("/sc_query:" + $domain) | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Fail-Time 'netlogon_session_lost' "$LASTEXITCODE"
-        }
-        & nltest.exe ("/dsgetdc:" + $domain) /timeserv /force | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Fail-Time 'timeserv_locator_lost' "$LASTEXITCODE"
-        }
-        & w32tm.exe /resync /rediscover /nowait | Out-Null
-        # A nonzero nowait result isn't a successful sync. Observe verified
-        # source and signed time status below before accepting anything.
-    }
-
-    $remaining = [Math]::Floor($budget - $deadline.Elapsed.TotalSeconds)
-    if ($remaining -le 0) { Fail-Time 'budget' 'expired before time probe' }
-    Start-Sleep -Seconds ([Math]::Min(5, $remaining))
-
-    $source = (& w32tm.exe /query /source 2>$null | Out-String).Trim().TrimEnd('.')
-    $sourceRc = $LASTEXITCODE
-    if ($sourceRc -ne 0 -or $source -ine $dc) { continue }
-
-    $status = (& w32tm.exe /query /status /verbose 2>&1 | Out-String)
-    $statusRc = $LASTEXITCODE
-    if ($statusRc -ne 0) { continue }
-    if ($status -notmatch 'SignatureAuthenticated' -or
-        $status -notmatch 'Last Sync Error:\s*0\s*\(' -or
-        $status -notmatch 'Leap Indicator:\s*0\s*\(') {
-        continue
-    }
-    Write-Output ("KINGDOMS_INSTALLED_MEMBER_TIME_REPAIRED|source={0}|attempt={1}|authenticated=true" -f $source,$attempt)
+  Restart-Service W32Time -Force -ErrorAction Stop
+  (Get-Service W32Time -ErrorAction Stop).WaitForStatus(
+    [System.ServiceProcess.ServiceControllerStatus]::Running,
+    [TimeSpan]::FromSeconds(10))
+} catch {Fail-Time 'service'}
+for($attempt=1;$attempt -le 12;$attempt++){
+  if($timer.Elapsed.TotalSeconds -ge $budget){Fail-Time 'budget'}
+  if($attempt -eq 1 -or (($attempt-1)%3) -eq 0){
+    & nltest.exe "/sc_query:$domain"|Out-Null
+    if($LASTEXITCODE){Fail-Time 'netlogon_session_lost'}
+    & nltest.exe "/dsgetdc:$domain" /timeserv /force|Out-Null
+    if($LASTEXITCODE){Fail-Time 'timeserv_locator_lost'}
+    & w32tm.exe /resync /rediscover /nowait|Out-Null
+  }
+  $remaining=[int]($budget-$timer.Elapsed.TotalSeconds)
+  if($remaining -le 0){Fail-Time 'budget'}
+  Start-Sleep -Seconds ([Math]::Min(5,$remaining))
+  $source=(& w32tm.exe /query /source 2>$null|Out-String).Trim().TrimEnd('.')
+  if($LASTEXITCODE -ne 0 -or $source -ine $dc){continue}
+  $status=(& w32tm.exe /query /status /verbose 2>&1|Out-String)
+  if($LASTEXITCODE -ne 0){continue}
+  if($status -match 'SignatureAuthenticated' -and
+     $status -match 'Last Sync Error:\s*0\s*\(' -and
+     $status -match 'Leap Indicator:\s*0\s*\('){
+    Write-Output "KINGDOMS_INSTALLED_MEMBER_TIME_REPAIRED|source=$source|attempt=$attempt|authenticated=true"
     exit 0
+  }
 }
-Fail-Time 'rediscover' 'authenticated domain time did not converge'
+Fail-Time 'rediscover'
 """
 
 
@@ -116,9 +80,17 @@ def build_time_recovery_script(domain: str, dc: str, budget: int = 90) -> str:
         raise ValueError("Unknown installed member time hierarchy")
     if type(budget) is not int or not 30 <= budget <= 90:
         raise ValueError("Recovery budget must be between 30 and 90 seconds")
-    return (_SCRIPT.replace("__DOMAIN__", domain)
-                   .replace("__DC__", dc)
-                   .replace("__BUDGET__", str(budget)))
+    script = (_SCRIPT.replace("__DOMAIN__", domain)
+                     .replace("__DC__", dc)
+                     .replace("__BUDGET__", str(budget)))
+    # powershell -EncodedCommand uses Base64 of UTF-16LE. Windows' command
+    # launcher rejects commands around 8191 chars. Leave ample headroom for
+    # the pywinrm command prefix and defend against a future bloated script.
+    import base64
+    encoded_size = len(base64.b64encode(script.encode("utf-16le")))
+    if encoded_size > 6500:
+        raise ValueError(f"WinRM recovery command exceeds safe size: {encoded_size}")
+    return script
 
 
 def is_time_only_pending(status_code: int, output: bytes,
