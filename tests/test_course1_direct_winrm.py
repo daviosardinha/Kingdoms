@@ -23,6 +23,8 @@ class FakeWinRMSession:
         self.chunks_seen = 0
         self.staged_bytes = bytearray()
         self.stage_removed = False
+        self.cleanup_failures_remaining = 0
+        self.fail_execution_transport = False
         self.commands = []
 
     def run_ps(self, script):
@@ -68,10 +70,15 @@ class FakeWinRMSession:
             self.staged_bytes.extend(base64.b64decode(match.group(1)))
             return Mock(status_code=0, std_out=b"NORTH_STAGE_CHUNK", std_err=b"")
         if "NORTH_STAGE_REMOVED" in script:
+            if self.cleanup_failures_remaining:
+                self.cleanup_failures_remaining -= 1
+                raise OSError("temporary WinRM cleanup transport failure")
             self.stage_removed = True
             self.staged_bytes.clear()
             return Mock(status_code=0, std_out=b"NORTH_STAGE_REMOVED", std_err=b"")
         if "NORTH_SOURCE_SCRIPT_COMPLETED" in script:
+            if self.fail_execution_transport:
+                raise OSError("WinRM lost while guest script may be executing")
             assert "Get-FileHash" in script
             digest = hashlib.sha256(self.staged_bytes).hexdigest().upper()
             assert digest in script
@@ -324,13 +331,66 @@ class NorthDirectRecoveryTests(unittest.TestCase):
 
     def test_partial_transfer_is_cleaned_without_running_script(self):
         self.session.fail_at_chunk = 2
-        with patch.object(direct, "_authenticated_session", return_value=self.session), \
-             patch.object(direct.socket, "create_connection", return_value=MagicMock()):
+        with patch.object(direct.time, "sleep") as delay:
             with self.assertRaisesRegex(
                 direct.NorthGuestRecoveryBlocked, "Direct guest operation failed"
             ):
-                direct.recover_north_first_boot(self.provider, "GOAD-DC01")
+                direct._execute_source(
+                    self.session,
+                    direct.ROOT / "vagrant/ConfigureRemotingForAnsible.ps1",
+                    _pre_execution_retry=0,
+                )
+        delay.assert_not_called()
         self.assertTrue(self.session.stage_removed)
+        self.assertEqual(self.session.setup_scripts, [])
+
+    def test_first_boot_recovers_a_failed_fifth_chunk_only_after_cleanup(self):
+        # Reproduces original fifth-install DC02: 5 * 1024 bytes transferred,
+        # then WinRM failed; no source execution has even been attempted.
+        self.session.fail_at_chunk = 6
+        self.session.cleanup_failures_remaining = 2
+        with patch.object(direct.time, "sleep") as delay:
+            direct._execute_source(
+                self.session,
+                direct.ROOT / "vagrant/ConfigureRemotingForAnsible.ps1"
+            )
+        self.assertEqual(len(self.session.setup_scripts), 1)
+        self.assertTrue(self.session.stage_removed)
+        self.assertEqual(delay.call_count, 3)
+        self.assertEqual(
+            self.session.setup_scripts[0][1],
+            (direct.ROOT / "vagrant/ConfigureRemotingForAnsible.ps1").read_bytes()
+        )
+
+    def test_execution_transport_failure_is_never_replayed(self):
+        self.session.fail_execution_transport = True
+        with self.assertRaisesRegex(
+            direct.NorthGuestRecoveryBlocked, "Authenticated direct WinRM operation unavailable"
+        ):
+            direct._execute_source(
+                self.session, direct.ROOT / "vagrant/fix_ip.ps1",
+                ("10.4.20.10", "10.4.20.1", "00:50:56:20:20:10")
+            )
+        self.assertEqual(
+            sum("NORTH_STAGE_BEGIN" in x for x in self.session.commands), 1
+        )
+        self.assertTrue(self.session.stage_removed)
+
+    def test_failed_cleanup_never_causes_script_replay(self):
+        self.session.fail_at_chunk = 6
+        self.session.cleanup_failures_remaining = 6
+        with patch.object(direct.time, "sleep") as delay:
+            with self.assertRaisesRegex(
+                direct.NorthGuestRecoveryBlocked,
+                "guest-temp cleanup not confirmed"
+            ):
+                direct._execute_source(
+                    self.session, direct.ROOT / "vagrant/ConfigureRemotingForAnsible.ps1"
+                )
+        self.assertEqual(delay.call_count, 5)
+        self.assertEqual(
+            sum("NORTH_STAGE_BEGIN" in x for x in self.session.commands), 1
+        )
         self.assertEqual(self.session.setup_scripts, [])
 
     def test_wrong_source_path_refused_before_winrm(self):
