@@ -133,20 +133,15 @@ snapshots "$EVIDENCE/snapshots-before.json" || fail "Cannot inventory original s
 native snapshot 03-snapshot-create
 validate 04-post-snapshot-health
 snapshots "$EVIDENCE/snapshots-after.json" || fail "Cannot inventory new snapshots"
-"$HOME/.goad/.venv/bin/python" - "$EVIDENCE/snapshots-before.json" "$EVIDENCE/snapshots-after.json" <<'PY' ||
-  fail "Not all five VMs received exactly one new snapshot generation"
-import json,sys
-from pathlib import Path
-before=json.loads(Path(sys.argv[1]).read_text())
-after=json.loads(Path(sys.argv[2]).read_text())
-if before.keys()!=after.keys() or len(after)!=5:
-    raise SystemExit("[BLOCKED] Snapshot roster changed")
-for name in after:
-    old,new=before[name],after[name]
-    if len(new)!=len(old)+1 or not set(old).issubset(set(new)):
-        raise SystemExit("[BLOCKED] Snapshot generation missing/ambiguous: "+name)
-    print("[PASS] SNAPSHOT_GENERATION="+name)
-PY
+# The verifier must complete successfully before snapshot restore is possible.
+# The previous heredoc accidentally swallowed the Bash fail() fallback as
+# Python source, so Bash continued after an IndentationError. Using stage()
+# here also preserves stderr and treats any nonzero exit as an immediate stop.
+stage 05-generation-verify "$HOME/.goad/.venv/bin/python" -m \
+  goad.course1_snapshot_evidence --generation-only \
+  "$EVIDENCE/snapshots-before.json" "$EVIDENCE/snapshots-after.json"
+grep -Fq '[PASS] NORTH_FIVE_VM_SNAPSHOT_GENERATION=PASS' \
+  "$EVIDENCE/05-generation-verify.log" || fail "Snapshot generation proof marker missing"
 echo 'NORTH_SNAPSHOT_CREATE=PASS' | tee -a "$SUMMARY"
 
 echo "===== RESTORE SNAPSHOT AND VERIFY ====="
@@ -156,6 +151,12 @@ echo 'NORTH_SNAPSHOT_RESTORE=PASS' | tee -a "$SUMMARY"
 
 [[ "$(cat "$MODE")" == exercise ]] || fail "Exercise mode not preserved"
 stage 07-owner-final sudo -n bash scripts/setup-vmware-networks.sh --north verify --provider-dir "$PROVIDER"
+# Retrospective audit compares exact newly created snapshots against the five
+# offline restore target/completion markers and the authenticated final state.
+stage 08-evidence-audit "$HOME/.goad/.venv/bin/python" -m \
+  goad.course1_snapshot_evidence "$EVIDENCE"
+grep -Fq '[PASS] NORTH_SNAPSHOT_EVIDENCE_AUDIT=PASS' \
+  "$EVIDENCE/08-evidence-audit.log" || fail "Post-restore evidence audit marker missing"
 if [[ "$SNAPSHOT_ONLY" == true ]]; then
   echo 'NORTH_SNAPSHOT_ACCEPTANCE=PASS' | tee -a "$SUMMARY"
   echo '[PASS] NORTH_SNAPSHOT_ONLY_ACCEPTANCE=PASS'
