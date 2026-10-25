@@ -23,8 +23,15 @@ SUMMARY="$DIR/summary.txt"
 printf "source_sha=%s\nstarted_utc=%s\n" "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$SUMMARY"
 echo "[INFO] NORTH private installer log may include sensitive AD provisioning output"
 echo "[EVIDENCE] $DIR"
-RC=0
-"${CMD[@]}" 2>&1 | tee "$LOG" || RC="${PIPESTATUS[0]}"
+set +e
+"${CMD[@]}" 2>&1 | tee "$LOG"
+STATUSES=("${PIPESTATUS[@]}")
+set -e
+RC="${STATUSES[0]}"
+if (( STATUSES[1] != 0 )); then
+  echo "[FAILED] Installer log could not be written completely" >&2
+  RC=1
+fi
 printf "installer_exit=%s\nfinished_utc=%s\n" "$RC" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$SUMMARY"
 if (( RC != 0 )); then
   {
