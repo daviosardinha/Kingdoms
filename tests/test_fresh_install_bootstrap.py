@@ -35,6 +35,10 @@ class BaseProvider:
         self.base_prepare_calls += 1
         return 'BASE_AD_AWARE_PATH'
 
+    def finalize_install(self):
+        self.base_finalize_calls = getattr(self, 'base_finalize_calls', 0) + 1
+        return 'BASE_EXERCISE_PATH'
+
 
 class FreshInstallBootstrapTests(unittest.TestCase):
     def make_provider(self, mode='unknown', status='ansible_running',
@@ -58,6 +62,78 @@ class FreshInstallBootstrapTests(unittest.TestCase):
         provider._enable_provisioning_routes = Mock(return_value=True)
         provider._validate_management_plane = Mock(return_value=True)
         return provider
+
+    def make_finalization_provider(self, mode='unknown', status='ansible_running',
+                                   provider_success=True):
+        provider = self.make_provider(mode, status, provider_success)
+        provider.lab_name = 'NORTH'
+        current = {'mode': mode}
+        provider.get_runtime_mode = Mock(side_effect=lambda: current['mode'])
+
+        def set_mode(value):
+            current['mode'] = value
+            return True
+
+        provider.set_runtime_mode = Mock(side_effect=set_mode)
+        provider._north_tools_transition_gate = Mock(return_value=True)
+        return provider, current
+
+    def test_fresh_north_finalization_persists_provisioning_before_isolation(self):
+        provider, current = self.make_finalization_provider()
+        self.assertEqual(provider.finalize_install(), 'BASE_EXERCISE_PATH')
+        self.assertEqual(current['mode'], 'provisioning')
+        provider.set_runtime_mode.assert_called_once_with('provisioning')
+        self.assertEqual(provider._north_tools_transition_gate.call_count, 4)
+        self.assertEqual(provider.base_finalize_calls, 1)
+
+    def test_existing_provisioning_mode_requires_no_mode_replay(self):
+        provider, _ = self.make_finalization_provider(mode='provisioning', status='failed')
+        self.assertEqual(provider.finalize_install(), 'BASE_EXERCISE_PATH')
+        provider.set_runtime_mode.assert_not_called()
+        self.assertEqual(provider.base_finalize_calls, 1)
+
+    def test_unknown_mode_without_successful_fresh_install_remains_blocked(self):
+        for status, success in [('failed', True), ('ansible_running', False)]:
+            with self.subTest(status=status, success=success):
+                provider, _ = self.make_finalization_provider(
+                    status=status, provider_success=success
+                )
+                self.assertFalse(provider.finalize_install())
+                provider.set_runtime_mode.assert_not_called()
+                provider._north_tools_transition_gate.assert_not_called()
+                self.assertEqual(getattr(provider, 'base_finalize_calls', 0), 0)
+
+    def test_exercise_mode_cannot_reenter_install_finalization(self):
+        provider, _ = self.make_finalization_provider(mode='exercise')
+        self.assertFalse(provider.finalize_install())
+        provider.set_runtime_mode.assert_not_called()
+
+    def test_failed_mode_transition_blocks_isolation(self):
+        provider, _ = self.make_finalization_provider()
+        provider.set_runtime_mode = Mock(return_value=False)
+        self.assertFalse(provider.finalize_install())
+        provider._north_tools_transition_gate.assert_not_called()
+        self.assertEqual(getattr(provider, 'base_finalize_calls', 0), 0)
+
+    def test_unpersisted_mode_transition_blocks_isolation(self):
+        provider, _ = self.make_finalization_provider()
+        provider.set_runtime_mode = Mock(return_value=True)
+        self.assertFalse(provider.finalize_install())
+        provider._north_tools_transition_gate.assert_not_called()
+
+    def test_failed_tools_gate_prevents_final_isolation(self):
+        provider, _ = self.make_finalization_provider()
+        provider._north_tools_transition_gate = Mock(return_value=False)
+        self.assertFalse(provider.finalize_install())
+        provider.set_runtime_mode.assert_called_once_with('provisioning')
+        self.assertEqual(getattr(provider, 'base_finalize_calls', 0), 0)
+
+    def test_goad_finalization_keeps_inherited_behavior(self):
+        provider, _ = self.make_finalization_provider()
+        provider.lab_name = 'GOAD'
+        self.assertEqual(provider.finalize_install(), 'BASE_EXERCISE_PATH')
+        provider.set_runtime_mode.assert_not_called()
+        provider._north_tools_transition_gate.assert_not_called()
 
     def test_zero_state_ansible_bootstrap_uses_pre_ad_management_only(self):
         provider = self.make_provider()
