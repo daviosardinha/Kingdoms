@@ -63,9 +63,9 @@ class NorthExclusiveInstallTests(unittest.TestCase):
         with TemporaryDirectory() as d:
             lock = Path(d) / "lock"
             a,b = self.console(lock),self.console(lock)
-            def observe():
+            def observe(operation):
                 self.assertEqual(b._acquire_north_install_lock(), -1)
-                return True
+                return operation()
             a._run_with_install_timer_locked = Mock(side_effect=observe)
             self.assertTrue(a._run_with_install_timer(lambda: True))
             fd = b._acquire_north_install_lock()
