@@ -58,7 +58,7 @@ class NorthLifecycleAcceptanceTests(unittest.TestCase):
         positions=[self.script.index(marker) for marker in stages]
         self.assertEqual(positions,sorted(positions))
         self.assertIn('set -Eeuo pipefail',self.script)
-        self.assertIn('len(new)!=len(old)+1',self.script)
+        self.assertIn('NORTH_FIVE_VM_SNAPSHOT_GENERATION=PASS',self.script)
         self.assertIn('not vmx.resolve().is_relative_to(vm_dir.resolve())',self.script)
 
     def test_snapshot_only_recovers_validated_instance_without_new_cold_starts(self):
@@ -75,7 +75,20 @@ class NorthLifecycleAcceptanceTests(unittest.TestCase):
         self.assertIn('native reset 05-snapshot-restore', src)
         self.assertIn('validate 04-post-snapshot-health', src)
         self.assertIn('validate 06-post-restore-health', src)
-        self.assertIn('len(new)!=len(old)+1', src)
+        self.assertIn('NORTH_FIVE_VM_SNAPSHOT_GENERATION=PASS', src)
+
+    def test_generation_verification_is_mandatory_before_restore(self):
+        src = self.script
+        self.assertIn('stage 05-generation-verify', src)
+        self.assertIn('go ad.course1_snapshot_evidence'.replace(' ', ''), src)
+        self.assertIn('stage 08-evidence-audit', src)
+        self.assertIn('NORTH_SNAPSHOT_EVIDENCE_AUDIT=PASS', src)
+        self.assertLess(src.index('stage 05-generation-verify'),
+                        src.index('native reset 05-snapshot-restore'))
+        self.assertLess(src.index('native reset 05-snapshot-restore'),
+                        src.index('stage 08-evidence-audit'))
+        self.assertNotIn("<<'PY' ||", src)
+        self.assertEqual(src.count("<<'PY'"), 1)
 
     def test_snapshot_only_refuses_wrong_instance_or_missing_confirmation(self):
         cases = (
