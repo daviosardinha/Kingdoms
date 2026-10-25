@@ -32,6 +32,7 @@ class NorthDiagnosticPolicyTests(unittest.TestCase):
         self.assertEqual(recovery_policy("VMTOOLS_MISSING"),"one_shot_original_tools_install")
         self.assertEqual(recovery_policy("VMTOOLS_PARTIAL"),"read_only_wait")
         self.assertEqual(recovery_policy("VMTOOLS_PARTIAL_PERSISTENT"),"manual_review")
+        self.assertEqual(recovery_policy("VMTOOLS_WS01_SIGNED_IDLE_ORPHAN"),"one_shot_original_tools_install")
         with self.assertRaises(KeyError):
             recovery_policy("unknown")
 
@@ -58,7 +59,9 @@ class NorthDiagnosticPolicyTests(unittest.TestCase):
             guest._wait_winrm_ready.return_value=True
             gate=isolated_method("_north_tools_transition_gate",logger=Mock())
             with patch("goad.course1_tools_transition.inspect_owned_guest_tools",
-                       return_value=("/owned/guest.vmx","partial")) as inventory, patch("time.sleep") as pause:
+                       return_value=("/owned/guest.vmx","partial")) as inventory, \
+                 patch("goad.course1_tools_transition.prove_idle_signed_original_ws01_orphan", return_value=False), \
+                 patch("time.sleep") as pause:
                 self.assertFalse(gate(guest,"GOAD-WS01","post-ws01-eval"))
             self.assertEqual(inventory.call_count,4)
             self.assertEqual(pause.call_count,3)
