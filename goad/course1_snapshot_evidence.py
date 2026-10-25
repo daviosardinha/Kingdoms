@@ -9,7 +9,7 @@ import re
 GUESTS = frozenset((
     "GOAD-ROUTER", "GOAD-DC01", "GOAD-DC02", "GOAD-SRV02", "GOAD-WS01"
 ))
-NAME = re.compile(r"push_([0-9]{10,})_([0-9]+)\\Z")
+NAME = re.compile(r"push_([0-9]{10,})_([0-9]+)\Z")
 
 
 class SnapshotEvidenceError(ValueError):
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     try:
         selection = audit_evidence(args.evidence_directory)
     except (SnapshotEvidenceError, OSError, ValueError) as error:
-        parser.exit(1, "[FAIL] NORTH_SNAPSHOT_EVIDENCE_AUDIT: " + str(error) + "\\n")
+        parser.exit(1, "[FAIL] NORTH_SNAPSHOT_EVIDENCE_AUDIT: " + str(error) + "\n")
     for machine, snapshot in sorted(selection.items()):
         print("[PASS] NORTH_SNAPSHOT_GENERATION=" + machine + " " + snapshot)
     print("[PASS] NORTH_SNAPSHOT_EVIDENCE_AUDIT=PASS")
