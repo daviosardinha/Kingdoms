@@ -64,16 +64,19 @@ class GoadNomad(BaseGoad):
             return True, None, None
 
         Log.info(
-            'GOAD Kingdoms: refreshing sudo credentials once for the unattended install lifecycle'
+            'GOAD Kingdoms: checking sudo credentials once before unattended installation'
         )
         try:
-            subprocess.run(
-                ['sudo', '-k'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
+            # Do not run sudo -k here: it invalidates other terminal sessions
+            # and can leave concurrent (older) processes waiting for passwords.
+            # Reuse an authenticated ticket if present, otherwise request
+            # authentication once in the launch terminal before any mutation.
+            prime = subprocess.run(
+                ['sudo', '-n', '-v'], check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-            prime = subprocess.run(['sudo', '-v'], check=False)
+            if prime.returncode != 0:
+                prime = subprocess.run(['sudo', '-v'], check=False)
         except OSError as exc:
             Log.error(f'GOAD Kingdoms: unable to initialize sudo credentials: {exc}')
             return False, None, None
