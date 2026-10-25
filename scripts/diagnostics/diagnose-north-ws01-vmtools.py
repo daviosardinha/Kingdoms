@@ -138,13 +138,14 @@ ConvertTo-Json -Depth 5 -Compress
 MSI_LOG_FILES_SCRIPT = r"""
 $ErrorActionPreference='Stop'
 $dirs=@("$env:windir\Temp","$env:TEMP","$env:windir\Temp\vmware-SYSTEM","$env:ProgramData\VMware\logs")|Select-Object -Unique
-$logs=@(foreach($d in $dirs){
+$found=@(foreach($d in $dirs){
 if(Test-Path -LiteralPath $d -PathType Container){
 foreach($n in @('vminst*.log','vmmsi*.log','vmupgrader_msi*.log')){
 Get-ChildItem -LiteralPath $d -Filter $n -File -ErrorAction SilentlyContinue
 }
 }
-}|Sort-Object FullName -Unique|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 12)
+})
+$logs=@($found|Sort-Object FullName -Unique|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 12)
 $vga=@(Get-CimInstance Win32_Service -Filter "Name='VGAuthService'" -ErrorAction Stop)
 [PSCustomObject]@{
 VGAuthService=@($vga|Select-Object Name,State,ProcessId)
@@ -157,15 +158,16 @@ VMwareInstallerLogs=@($logs|ForEach-Object{
 MSI_ERROR_SIGNATURES_SCRIPT = r"""
 $ErrorActionPreference='Stop'
 $dirs=@("$env:windir\Temp","$env:TEMP","$env:windir\Temp\vmware-SYSTEM","$env:ProgramData\VMware\logs")|Select-Object -Unique
-$logs=@(foreach($d in $dirs){
+$found=@(foreach($d in $dirs){
 if(Test-Path -LiteralPath $d -PathType Container){
 foreach($n in @('vminst*.log','vmmsi*.log','vmupgrader_msi*.log')){
 Get-ChildItem -LiteralPath $d -Filter $n -File -ErrorAction SilentlyContinue
 }
 }
-}|Sort-Object FullName -Unique|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 6)
+})
+$logs=@($found|Sort-Object FullName -Unique|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 6)
 $pattern='(?i)80070020|sharing violation|access is denied|return value 3|error 1603|error 1723|VGAuthService|logfile.txt.0|failed to|fatal error|could not|msi.*rollback'
-$hits=@(foreach($f in $logs){
+$foundHits=@(foreach($f in $logs){
 if($f.Length -gt 20971520){continue}
 $lines=@(Get-Content -LiteralPath $f.FullName -Tail 2500 -ErrorAction SilentlyContinue)
 foreach($line in $lines){
@@ -174,7 +176,8 @@ $s=([string]$line -replace '[\r\n]+',' ').Trim()
 [PSCustomObject]@{File=$f.Name;Evidence=$s.Substring(0,[Math]::Min(360,$s.Length))}
 }
 }
-}|Select-Object -Last 32)
+})
+$hits=@($foundHits|Select-Object -Last 32)
 [PSCustomObject]@{InstallerErrorSignatures=@($hits)}|ConvertTo-Json -Depth 6 -Compress
 """
 
