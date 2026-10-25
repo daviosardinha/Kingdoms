@@ -141,6 +141,7 @@ class VagrantProvider(Provider):
                 # providers retain their existing install/bring-up behavior.
                 start_existing = getattr(self, '_start_existing_instance', None)
                 restored = True
+                ready = False
                 try:
                     if callable(start_existing):
                         ready = start_existing(vm_name) if vm_name is not None else start_existing()
@@ -150,7 +151,17 @@ class VagrantProvider(Provider):
                     # Close temporary management routing even when startup or
                     # readiness fails, or the operator interrupts the wait.
                     if original_mode == 'exercise':
-                        restored = callable(set_mode) and set_mode('exercise')
+                        # NORTH's dependency-ordered cold start can fail before
+                        # powering on WS01. Restore router/routes/NAT isolation
+                        # without pretending an offline member passed WinRM.
+                        # The limited option is only for a failed NORTH start
+                        # whose recorded mode was already exercise.
+                        if self.lab_name == 'NORTH' and not ready:
+                            restored = callable(set_mode) and set_mode(
+                                'exercise', allow_stopped_members=True
+                            )
+                        else:
+                            restored = callable(set_mode) and set_mode('exercise')
                         if not restored:
                             Log.error('GOAD_NOMAD: exercise isolation restoration failed; inspect router policy and host routes')
 
