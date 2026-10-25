@@ -535,6 +535,11 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             NorthToolsTransitionBlocked, inspect_owned_guest_tools,
         )
         from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+        from goad.course1_install_diagnostics import emit
+
+        def record(signature, outcome, attempts=0):
+            emit(self.path, machine=machine, phase=phase,
+                 signature=signature, result=outcome, attempts=attempts)
 
         try:
             # Never install against a forged forwarded endpoint or a foreign VM.
@@ -547,21 +552,63 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             )
         except (NorthToolsTransitionBlocked, NorthGuestRecoveryBlocked,
                 OSError, ValueError) as exc:
+            record('VMTOOLS_IDENTITY_OR_TRANSPORT_BLOCKED', 'blocked')
             Log.error(f'NORTH: {machine} original guest/Tools preflight blocked at {phase}: {exc}')
             return False
 
         if state == 'healthy':
             if self._authenticated_guest_install_ready(machine, timeout=20):
+                record('VMTOOLS_HEALTHY', 'pass')
                 Log.success(f'NORTH: {machine} VMware Tools healthy at {phase}')
                 return True
+            record('VMTOOLS_READINESS_INCOMPLETE', 'blocked')
             Log.error(f'NORTH: {machine} Tools exist but canonical guest readiness incomplete at {phase}')
             return False
 
+        if state == 'partial':
+            record('VMTOOLS_PARTIAL', 'observed')
+            # Post-rearm Windows services may still be converging. Only
+            # OBSERVE the exact original guest three more times. No Tools
+            # reinstall or service mutation while registration is ambiguous.
+            if phase == 'post-ws01-eval':
+                for check in range(3):
+                    time.sleep(5)
+                    try:
+                        new_vmx, new_state = inspect_owned_guest_tools(
+                            self.path, machine, self._winrm_session(port)
+                        )
+                    except (NorthToolsTransitionBlocked, NorthGuestRecoveryBlocked,
+                            OSError, ValueError) as exc:
+                        record('VMTOOLS_IDENTITY_OR_TRANSPORT_BLOCKED', 'blocked')
+                        Log.error(f'NORTH: {machine} post-evaluation Tools observation failed: {exc}')
+                        return False
+                    if new_vmx != vmx:
+                        record('VMTOOLS_IDENTITY_OR_TRANSPORT_BLOCKED', 'blocked')
+                        Log.error('NORTH: refusing changed guest identity during Tools convergence')
+                        return False
+                    state = new_state
+                    if state != 'partial':
+                        break
+                if state == 'healthy':
+                    if self._authenticated_guest_install_ready(machine, timeout=20):
+                        record('VMTOOLS_HEALTHY', 'pass')
+                        Log.success(f'NORTH: {machine} Tools converged without installer replay')
+                        return True
+                    record('VMTOOLS_READINESS_INCOMPLETE', 'blocked')
+                    return False
+
+            if state == 'partial':
+                record('VMTOOLS_PARTIAL_PERSISTENT', 'blocked')
+                Log.error(f'NORTH: {machine} VMware Tools remain partially installed '
+                          f'at {phase}; diagnostic journal saved. No reinstall attempted')
+                return False
+
         if state != 'missing':
-            Log.error(f'NORTH: {machine} VMware Tools partially installed at {phase}; '
-                      'refusing an unreviewed reinstall')
+            record('VMTOOLS_PARTIAL_PERSISTENT', 'blocked')
+            Log.error('NORTH: unsupported VMware Tools transition state')
             return False
 
+        record('VMTOOLS_MISSING', 'observed')
         instance = os.path.dirname(os.path.realpath(self.path))
         marker = os.path.join(
             instance, f'.north-vmtools-{machine}-{phase}.attempted'
@@ -574,11 +621,13 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
                 getattr(os, 'O_NOFOLLOW', 0), 0o600,
             )
         except OSError as exc:
+            record('VMTOOLS_REPAIR_FAILED', 'blocked')
             Log.error(f'NORTH: {machine} Tools repair previously attempted or marker '
                       f'unavailable at {phase}: {exc}')
             return False
         with os.fdopen(fd, 'w', encoding='utf-8') as stream:
             stream.write(f'vm={machine}\nphase={phase}\nvmx={vmx}\n')
+        record('VMTOOLS_REPAIR_ATTEMPTED', 'observed', attempts=1)
 
         Log.warning(f'NORTH: {machine} VMware Tools absent after {phase}; '
                     'reusing original Kingdoms VMware Tools installer once')
@@ -597,6 +646,7 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
                         self.path, machine, self._winrm_session(port)
                     )
                     if final_vmx == vmx and final_state == 'healthy':
+                        record('VMTOOLS_REPAIR_VERIFIED', 'pass', attempts=1)
                         Log.success(f'NORTH: {machine} exact guest VMware Tools '
                                     f'recovered after {phase}')
                         return True
@@ -604,6 +654,7 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
         except (NorthToolsTransitionBlocked, NorthGuestRecoveryBlocked,
                 OSError, ValueError) as exc:
             Log.error(f'NORTH: {machine} VMware Tools recovery failed at {phase}: {exc}')
+        record('VMTOOLS_REPAIR_FAILED', 'failed', attempts=1)
         Log.error(f'NORTH: {machine} VMware Tools not verified after repair at {phase}; '
                   'repair marker retained; do not replay automatically')
         return False
