@@ -18,6 +18,8 @@ on:
       - ansible/roles/settings/eval_rearm/tasks/main.yml
       - tests/test_course1_ws01_eval_maintenance.py
       - goad/course1_snapshot_restore.py
+      - goad/course1_snapshot_evidence.py
+      - tests/test_north_snapshot_evidence.py
       - goad/course1_network_retire.py
       - goad/course1_direct_winrm.py
       - tests/test_course1_direct_winrm.py
@@ -68,7 +70,7 @@ jobs:
           python-version: '3.12'
       - name: Syntax and source qualification
         run: |
-          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py goad/course1_pre_ad_resume.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py tests/test_course1_pre_ad_resume.py tests/test_north_repaired_provider_resume.py scripts/north-ws01-eval-maintenance.py tests/test_course1_ws01_eval_maintenance.py goad/course1_snapshot_restore.py tests/test_course1_snapshot_restore.py goad/course1_network_retire.py tests/test_course1_network_retire.py goad/course1_direct_winrm.py tests/test_course1_direct_winrm.py tests/test_course1_direct_bootstrap_integration.py tests/test_north_provider_canonical_resume.py tests/test_north_one_shot_reset_script.py tests/test_north_runtime_validation.py goad/course1_recovered_runtime.py tests/test_north_recovered_runtime_metadata.py tests/test_north_lifecycle_acceptance.py tests/test_north_two_cold_starts.py tests/test_north_time_transport_evidence.py tests/test_north_third_clean_install.py tests/test_north_fourth_clean_install.py tests/test_north_ws01_post_rearm_readiness.py scripts/diagnostics/diagnose-north-ws01-vmtools.py tests/test_north_ws01_vmtools_diagnostics.py scripts/north-ws01-vmtools-repair.py tests/test_north_ws01_vmtools_repair.py scripts/north-srv02-vmtools-repair.py tests/test_north_srv02_vmtools_repair.py goad_nomad.py goad/provider/vagrant/vmware_kingdoms.py tests/test_install_noninteractive.py
+          python -m py_compile goad/course1_vmnet_config.py goad/course1_host_network_apply.py goad/course1_pre_ad_resume.py tests/test_course1_vmnet_config.py tests/test_course1_retired_nat_attestation.py tests/test_course1_pre_ad_resume.py tests/test_north_repaired_provider_resume.py scripts/north-ws01-eval-maintenance.py tests/test_course1_ws01_eval_maintenance.py goad/course1_snapshot_restore.py goad/course1_snapshot_evidence.py tests/test_course1_snapshot_restore.py tests/test_north_snapshot_evidence.py goad/course1_network_retire.py tests/test_course1_network_retire.py goad/course1_direct_winrm.py tests/test_course1_direct_winrm.py tests/test_course1_direct_bootstrap_integration.py tests/test_north_provider_canonical_resume.py tests/test_north_one_shot_reset_script.py tests/test_north_runtime_validation.py goad/course1_recovered_runtime.py tests/test_north_recovered_runtime_metadata.py tests/test_north_lifecycle_acceptance.py tests/test_north_two_cold_starts.py tests/test_north_time_transport_evidence.py tests/test_north_third_clean_install.py tests/test_north_fourth_clean_install.py tests/test_north_ws01_post_rearm_readiness.py scripts/diagnostics/diagnose-north-ws01-vmtools.py tests/test_north_ws01_vmtools_diagnostics.py scripts/north-ws01-vmtools-repair.py tests/test_north_ws01_vmtools_repair.py scripts/north-srv02-vmtools-repair.py tests/test_north_srv02_vmtools_repair.py goad_nomad.py goad/provider/vagrant/vmware_kingdoms.py tests/test_install_noninteractive.py
       - name: Strict NAT and native NORTH install regression
         run: |
           python -m unittest -v \
@@ -79,6 +81,7 @@ jobs:
             tests.test_north_repaired_provider_resume \
             tests.test_course1_ws01_eval_maintenance \
             tests.test_course1_snapshot_restore \
+            tests.test_north_snapshot_evidence \
             tests.test_course1_network_retire \
             tests.test_course1_direct_winrm \
             tests.test_course1_direct_bootstrap_integration \
