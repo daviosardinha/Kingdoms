@@ -60,6 +60,40 @@ $events = @(Get-WinEvent -FilterHashtable @{
             Message = ([string]$_.Message -replace '[\r\n]+', ' ').Trim()
         }
     })
+# Distinguish an orphaned binary from a registered but stopped service,
+# an active MSI transaction, and a genuine Windows Installer failure.
+# Every operation below is read-only and errors from optional evidence are
+# deliberately represented as 'unavailable', never used to authorize repair.
+$exe = 'C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'
+$binaryEvidence = $null
+if (Test-Path -LiteralPath $exe -PathType Leaf) {
+    $bin = Get-Item -LiteralPath $exe -ErrorAction Stop
+    $sig = Get-AuthenticodeSignature -LiteralPath $exe -ErrorAction SilentlyContinue
+    $binaryEvidence = [PSCustomObject]@{
+        Length = $bin.Length
+        Version = $bin.VersionInfo.FileVersion
+        Sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256 -ErrorAction Stop).Hash
+        SignatureStatus = if ($null -ne $sig) { [string]$sig.Status } else { 'Unavailable' }
+    }
+}
+$vmtoolsServiceKey = Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\VMTools'
+$vgauthServiceKey = Test-Path -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\VGAuthService'
+$msiInProgress = Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\InProgress'
+$msiProcesses = @(Get-Process msiexec -ErrorAction SilentlyContinue).Count
+$installerEvents = @(Get-WinEvent -FilterHashtable @{
+    LogName = 'Application'
+    ProviderName = 'MsiInstaller'
+    StartTime = (Get-Date).AddHours(-24)
+} -MaxEvents 100 -ErrorAction SilentlyContinue |
+    Where-Object { $_.Message -match '(?i)vmware|vmtools|vm tools' } |
+    Select-Object -First 12 TimeCreated,Id,Message |
+    ForEach-Object {
+        [PSCustomObject]@{
+            Time = $_.TimeCreated.ToString('o')
+            Id = $_.Id
+            Message = ([string]$_.Message -replace '[\r\n]+', ' ').Trim().Substring(0, [Math]::Min(600, ([string]$_.Message).Length))
+        }
+    })
 [PSCustomObject]@{
     Hostname = $env:COMPUTERNAME
     OsCaption = $os.Caption
@@ -77,6 +111,12 @@ $events = @(Get-WinEvent -FilterHashtable @{
     ToolsProcessCount = $processes.Count
     InstalledVmwareTools = @($installed)
     RecentServiceEvents = $events
+    ToolsBinaryMetadata = $binaryEvidence
+    VMToolsServiceRegistryKeyPresent = [bool]$vmtoolsServiceKey
+    VGAuthServiceRegistryKeyPresent = [bool]$vgauthServiceKey
+    MsiInstallerInProgressRegistryKeyPresent = [bool]$msiInProgress
+    MsiExecProcessCount = $msiProcesses
+    RecentVmwareInstallerEvents = @($installerEvents)
 } | ConvertTo-Json -Depth 7 -Compress
 """
 
@@ -121,6 +161,26 @@ def verify_identity(payload: dict, vmx_values: dict) -> None:
         )
 
 
+def classify_tools_state(payload: dict) -> str:
+    """Classification is evidence only, not approval to repair Windows."""
+    service = payload.get("ToolsService")
+    binary = payload.get("ToolsExecutableExists")
+    process = payload.get("ToolsProcessCount")
+    products = payload.get("InstalledVmwareTools")
+    if (not isinstance(service, list) or type(binary) is not bool
+            or type(process) is not int or not isinstance(products, list)):
+        raise DiagnosticBlocked("Incomplete authenticated Tools inventory")
+    if (not service and binary and process == 0 and not products):
+        return "ORPHANED_TOOLS_EXECUTABLE"
+    if (not service and not binary and process == 0 and not products):
+        return "FULLY_MISSING_TOOLS"
+    if (len(service) == 1 and isinstance(service[0], dict)
+            and service[0].get("Name") == "VMTools"
+            and service[0].get("State") == "Running" and binary and process > 0):
+        return "HEALTHY"
+    return "PARTIAL_OR_AMBIGUOUS_TOOLS"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--instance", required=True,
@@ -156,6 +216,7 @@ def main(argv=None):
     print("[PASS] NORTH_WS01_REGISTERED_RUNNING_VMX=" + str(vmx))
     print("[PASS] NORTH_WS01_BOTH_AUTHENTICATED_NIC_MACS_MATCH")
     print(json.dumps(payload, indent=2, sort_keys=True))
+    print("[INFO] NORTH_WS01_TOOLS_SIGNATURE=" + classify_tools_state(payload))
     service = payload.get("ToolsService") or []
     if not service:
         print("[FAIL] NORTH_WS01_VMTOOLS_SERVICE=ABSENT")
