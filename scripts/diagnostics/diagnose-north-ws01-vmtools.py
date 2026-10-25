@@ -88,10 +88,11 @@ $installerEvents = @(Get-WinEvent -FilterHashtable @{
     Where-Object { $_.Message -match '(?i)vmware|vmtools|vm tools' } |
     Select-Object -First 12 TimeCreated,Id,Message |
     ForEach-Object {
+        $message = ([string]$_.Message -replace '[\r\n]+', ' ').Trim()
         [PSCustomObject]@{
             Time = $_.TimeCreated.ToString('o')
             Id = $_.Id
-            Message = ([string]$_.Message -replace '[\r\n]+', ' ').Trim().Substring(0, [Math]::Min(600, ([string]$_.Message).Length))
+            Message = $message.Substring(0, [Math]::Min(600, $message.Length))
         }
     })
 [PSCustomObject]@{
