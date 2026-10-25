@@ -1725,6 +1725,61 @@ Write-Output ("KINGDOMS_NT5DS_BACKOFF_READY|changed={0}|reload={1}|minutes=1|max
         Log.error(f'GOAD Kingdoms: NT5DS backoff policy failed for {machine}: {detail}')
         return False
 
+    def _recover_installed_member_time(self, machine, host, contract, budget):
+        """One bounded authenticated NT5DS recovery after proven member identity.
+
+        The caller authorizes this ONLY after repeated time-only readiness
+        results; unrelated DNS, trust, Netlogon or WinRM failures cannot
+        trigger W32Time mutations. No Vagrant/NAT/network or trust fallback.
+        """
+        from goad.installed_member_time_recovery import (
+            build_time_recovery_script, is_authenticated_repair,
+            TIME_REPAIR_FAILED,
+        )
+        if (contract.get('kind') != 'member'
+                or machine not in ('GOAD-SRV02', 'GOAD-SRV03', 'GOAD-WS01')
+                or not 30 <= budget <= 90):
+            Log.error(f'GOAD Kingdoms: invalid member time recovery scope for {machine}')
+            return False
+        try:
+            script = build_time_recovery_script(
+                contract['domain'], contract['dc'], budget=budget
+            )
+            # pywinrm normally uses a 45s HTTP read budget; a W32Time
+            # rediscovery/repair can legitimately run longer. Bound this
+            # recovery's own transport, without changing normal WinRM probes.
+            result = self._lab_winrm_session(
+                host, read_timeout_sec=budget + 35
+            ).run_ps(script)
+        except Exception as exc:
+            Log.error(
+                f'GOAD Kingdoms: {machine} signed domain-time recovery '
+                f'transport failed: {type(exc).__name__}: {exc}'
+            )
+            return False
+
+        if is_authenticated_repair(
+                result.status_code, result.std_out, contract['dc']):
+            Log.success(
+                f'GOAD Kingdoms: {machine} authenticated domain-time recovery '
+                'completed; normal AD readiness must still pass'
+            )
+            return True
+
+        # Never accept an unqualified marker, unauthenticated source,
+        # unsuccessful command or a different DC as a repaired member.
+        output = result.std_out.decode(errors='replace')
+        failures = [
+            line.strip() for line in output.splitlines()
+            if line.strip().startswith(TIME_REPAIR_FAILED)
+        ]
+        detail = failures[-1] if failures else (
+            result.std_err.decode(errors='replace').strip()
+            or f'PowerShell status {result.status_code}; no authenticated success'
+        )
+        Log.error(f'GOAD Kingdoms: {machine} domain-time recovery failed: {detail}')
+        return False
+
     def _wait_installed_ad_ready(self, machine, host, timeout=300):
         """Wait for the AD dependency contract required by a cold start.
 
@@ -1732,8 +1787,11 @@ Write-Output ("KINGDOMS_NT5DS_BACKOFF_READY|changed={0}|reload={1}|minutes=1|max
         controllers must be advertising before dependent guests are allowed to
         boot, and members must establish their secure Netlogon session and
         authenticated domain-time source before startup is considered complete.
-        This is validation only: no trust, machine-password or W32Time state is
-        rewritten here.
+        A healthy member requires validation only. If identity checks
+        repeatedly pass but domain time alone remains unselected for at least
+        30 seconds, a separate scoped controller may attempt exactly one
+        bounded NT5DS recovery, then the original readiness must pass again.
+        No trust reset, machine-password rewrite or manual NTP peer.
         """
         contracts = {
             'GOAD-DC01': {
@@ -1830,7 +1888,14 @@ if ($LASTEXITCODE -ne 0) {{
 
 $source = (& w32tm.exe /query /source 2>$null | Out-String).Trim().TrimEnd('.')
 if ($LASTEXITCODE -ne 0 -or $source -ine '{contract['dc']}') {{
-    throw "W32Time source is '$source', expected {contract['dc']}"
+    # Only mark time-only failure when the domain's time server is also
+    # discoverable. DNS, trust and Netlogon passed immediately above.
+    $locator = @(& nltest.exe '/dsgetdc:{contract['domain']}' /timeserv /force 2>&1)
+    if ($LASTEXITCODE -ne 0) {{
+        throw "TIMESERV discovery is not ready: $($locator -join ' ')"
+    }}
+    Write-Output 'KINGDOMS_INSTALLED_MEMBER_TIME_PENDING|expected={contract['dc']}'
+    exit 0
 }}
 
 Write-Output 'KINGDOMS_INSTALLED_AD_READY'
@@ -1838,7 +1903,13 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
 
         deadline = time.monotonic() + timeout
         last_error = None
+        time_pending_since = None
+        time_repair_attempted = False
+        if contract['kind'] == 'member':
+            from goad.installed_member_time_recovery import is_time_only_pending
+
         while time.monotonic() < deadline:
+            time_only = False
             try:
                 result = self._lab_winrm_session(host).run_ps(script)
                 if (
@@ -1849,6 +1920,10 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
                         f'GOAD Kingdoms: {machine} AD dependency readiness proven'
                     )
                     return True
+                if contract['kind'] == 'member':
+                    time_only = is_time_only_pending(
+                        result.status_code, result.std_out, contract['dc']
+                    )
                 last_error = (
                     result.std_err.decode(errors='replace').strip()
                     or result.std_out.decode(errors='replace').strip()
@@ -1856,12 +1931,43 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
                 )
             except Exception as exc:
                 last_error = exc
-            time.sleep(5)
+
+            if time_only:
+                if time_pending_since is None:
+                    time_pending_since = time.monotonic()
+                if (not time_repair_attempted
+                        and time.monotonic() - time_pending_since >= 30):
+                    # Exactly one attempt after a sustained *identity-healthy*
+                    # time-only failure. Preserve the same parent AD budget.
+                    time_repair_attempted = True
+                    remaining = int(deadline - time.monotonic())
+                    if remaining < 30:
+                        break
+                    Log.warning(
+                        f'GOAD Kingdoms: {machine} secure domain identity is ready '
+                        'but authenticated time has not converged for 30s; '
+                        'attempting one bounded NT5DS recovery'
+                    )
+                    if not self._recover_installed_member_time(
+                            machine, host, contract, budget=min(90, remaining)):
+                        Log.error(
+                            f'GOAD Kingdoms: {machine} cold-start time recovery '
+                            'failed; no trust, NAT or provisioning fallback'
+                        )
+                        return False
+                    # The repair result is NOT readiness: the ordinary strict
+                    # domain/Netlogon/time probe still has to succeed.
+                    time_pending_since = None
+            else:
+                # Any transport, DNS, trust, TIMESERV or Netlogon regression
+                # cancels the qualification window (never repair that case).
+                time_pending_since = None
+            time.sleep(max(0, min(5, deadline - time.monotonic())))
 
         suffix = f': {last_error}' if last_error else ''
         Log.error(
             f'GOAD Kingdoms: {machine} AD dependency readiness did not converge '
-            f'within {timeout}s{suffix}'
+            f'within {timeout}s{suffix}; time_repair_attempted={time_repair_attempted}'
         )
         return False
 
