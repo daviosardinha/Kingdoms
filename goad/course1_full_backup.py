@@ -181,7 +181,17 @@ def verify_copy(root, backup):
 
 
 def post_destroy(root):
-    inst, _ = valid_instance(root)
+    # Vagrant destroy intentionally removes guest registrations and VMX files.
+    # Validate exact installed owner and provider path without requiring guests
+    # that should no longer exist at this post-destruction checkpoint.
+    inst = Path(root).resolve(strict=True) / "workspace" / OLD
+    provider = inst / "provider"
+    require(inst.is_dir() and not inst.is_symlink() and
+            provider.is_dir() and not provider.is_symlink(),
+            "Exact installed original NORTH workspace no longer exists")
+    meta = json.loads((inst / "instance.json").read_text())
+    require((meta.get("id"), meta.get("lab"), meta.get("provider")) ==
+            (OLD, "NORTH", "vmware"), "Wrong post-destroy workspace metadata")
     require(not running_vms(), "VMware guests still running after destroy")
     provider = inst / "provider"
     for machine in GUESTS:
@@ -196,7 +206,7 @@ def post_destroy(root):
 
 
 def delete_old_workspace(root, backup):
-    inst, _ = valid_instance(root)
+    inst = Path(root).resolve(strict=True) / "workspace" / OLD
     post_destroy(root)
     path = Path(backup) / "instance" / "instance.json"
     require(path.is_file() and not path.is_symlink(),
