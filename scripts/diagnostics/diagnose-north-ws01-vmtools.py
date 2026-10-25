@@ -130,6 +130,55 @@ ConvertTo-Json -Depth 5 -Compress
 """
 
 
+
+# Read-only VMware Tools 1603 evidence. Broadcom documents Windows installer
+# logs in Windows TEMP, user TEMP, and VMware-specific temp/cache folders.
+# These scripts read metadata and bounded error signatures only; they never
+# install MSI, unlock files, stop VGAuth or restart the guest.
+MSI_LOG_FILES_SCRIPT = r"""
+$ErrorActionPreference='Stop'
+$dirs=@("$env:windir\Temp","$env:TEMP","$env:windir\Temp\vmware-SYSTEM","$env:ProgramData\VMware\logs")|Select-Object -Unique
+$logs=@(foreach($d in $dirs){
+if(Test-Path -LiteralPath $d -PathType Container){
+foreach($n in @('vminst*.log','vmmsi*.log','vmupgrader_msi*.log')){
+Get-ChildItem -LiteralPath $d -Filter $n -File -ErrorAction SilentlyContinue
+}
+}
+}|Sort-Object FullName -Unique|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 12)
+$vga=@(Get-CimInstance Win32_Service -Filter "Name='VGAuthService'" -ErrorAction Stop)
+[PSCustomObject]@{
+VGAuthService=@($vga|Select-Object Name,State,ProcessId)
+VMwareInstallerLogs=@($logs|ForEach-Object{
+[PSCustomObject]@{Path=$_.FullName;Size=$_.Length;LastModified=$_.LastWriteTimeUtc.ToString('o')}
+})
+}|ConvertTo-Json -Depth 5 -Compress
+"""
+
+MSI_ERROR_SIGNATURES_SCRIPT = r"""
+$ErrorActionPreference='Stop'
+$dirs=@("$env:windir\Temp","$env:TEMP","$env:windir\Temp\vmware-SYSTEM","$env:ProgramData\VMware\logs")|Select-Object -Unique
+$logs=@(foreach($d in $dirs){
+if(Test-Path -LiteralPath $d -PathType Container){
+foreach($n in @('vminst*.log','vmmsi*.log','vmupgrader_msi*.log')){
+Get-ChildItem -LiteralPath $d -Filter $n -File -ErrorAction SilentlyContinue
+}
+}
+}|Sort-Object FullName -Unique|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 6)
+$pattern='(?i)80070020|sharing violation|access is denied|return value 3|error 1603|error 1723|VGAuthService|logfile.txt.0|failed to|fatal error|could not|msi.*rollback'
+$hits=@(foreach($f in $logs){
+if($f.Length -gt 20971520){continue}
+$lines=@(Get-Content -LiteralPath $f.FullName -Tail 2500 -ErrorAction SilentlyContinue)
+foreach($line in $lines){
+if($line -match $pattern){
+$s=([string]$line -replace '[\r\n]+',' ').Trim()
+[PSCustomObject]@{File=$f.Name;Evidence=$s.Substring(0,[Math]::Min(360,$s.Length))}
+}
+}
+}|Select-Object -Last 32)
+[PSCustomObject]@{InstallerErrorSignatures=@($hits)}|ConvertTo-Json -Depth 6 -Compress
+"""
+
+
 class DiagnosticBlocked(RuntimeError):
     pass
 
@@ -216,6 +265,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--instance", required=True,
                         help="Exact pre-Ansible NORTH instance, e.g. 8aafc9-north-vmware")
+    parser.add_argument("--msi-1603", action="store_true",
+                        help="Read existing VMware Tools MSI logs and VGAuth service without changes")
     args = parser.parse_args(argv)
     if not re.fullmatch(r"[a-f0-9]{6}-north-vmware", args.instance):
         raise DiagnosticBlocked("Not an exact NORTH instance ID")
@@ -247,6 +298,21 @@ def main(argv=None):
         raise DiagnosticBlocked("Windows Installer event inventory is malformed")
     payload.update(metadata)
     payload.update(events)
+    if args.msi_1603:
+        installer_files = _read_json_winrm(
+            session, MSI_LOG_FILES_SCRIPT, "VMware Tools installer log inventory"
+        )
+        installer_errors = _read_json_winrm(
+            session, MSI_ERROR_SIGNATURES_SCRIPT, "VMware Tools MSI failure signatures"
+        )
+        if (set(installer_files) != {"VGAuthService", "VMwareInstallerLogs"}
+                or set(installer_errors) != {"InstallerErrorSignatures"}
+                or not isinstance(installer_files["VGAuthService"], list)
+                or not isinstance(installer_files["VMwareInstallerLogs"], list)
+                or not isinstance(installer_errors["InstallerErrorSignatures"], list)):
+            raise DiagnosticBlocked("VMware Tools installer log evidence is malformed")
+        payload.update(installer_files)
+        payload.update(installer_errors)
     print("[PASS] NORTH_WS01_REGISTERED_RUNNING_VMX=" + str(vmx))
     print("[PASS] NORTH_WS01_BOTH_AUTHENTICATED_NIC_MACS_MATCH")
     print(json.dumps(payload, indent=2, sort_keys=True))
