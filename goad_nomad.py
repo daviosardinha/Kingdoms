@@ -15,7 +15,11 @@ import threading
 import time
 
 from goad.lab_names import canonical_lab_name, public_lab_name
-from goad.course1_pre_ad_resume import assert_pre_ad_north_resume, PreADResumeError
+from goad.course1_pre_ad_resume import (
+    PreADResumeError, REPAIRED_PROVIDER_INSTANCE,
+    assert_pre_ad_north_resume, assert_repaired_provider_north_resume,
+    consume_repaired_provider_resume,
+)
 from goad.log import Log
 from goad.menu import print_menu_entry, print_menu_title
 from goad.utils import PROVIDED, READY
@@ -465,13 +469,34 @@ class GoadNomad(BaseGoad):
             pre_ad = (start_playbook == manifest[0]
                       and start_playbook == 'build.yml'
                       and provider.get_runtime_mode() == 'unknown')
+            repaired_provider = (
+                pre_ad and Path(str(provider.path)).parent.name
+                == REPAIRED_PROVIDER_INSTANCE
+            )
             if pre_ad:
                 try:
-                    for marker in assert_pre_ad_north_resume(
-                            provider, manifest, start_playbook):
+                    if repaired_provider:
+                        evidence = assert_repaired_provider_north_resume(
+                            provider, manifest, start_playbook
+                        )
+                    else:
+                        evidence = assert_pre_ad_north_resume(
+                            provider, manifest, start_playbook
+                        )
+                    for marker in evidence:
                         Log.success(marker)
                 except (PreADResumeError, OSError, ValueError) as exc:
                     Log.error(f'NORTH pre-AD resume refused: {exc}')
+                    return False
+
+            # The failed-before-Ansible provider state can be resumed only
+            # ONCE. Consume its marker after all live, read-only attestation
+            # and BEFORE the very first management/AD provisioning change.
+            if repaired_provider:
+                try:
+                    Log.success(consume_repaired_provider_resume(provider))
+                except (PreADResumeError, OSError, ValueError) as exc:
+                    Log.error(f'NORTH one-shot pre-AD resume refused: {exc}')
                     return False
 
             self._install_phase = f'NORTH Ansible resume from {start_playbook}'
