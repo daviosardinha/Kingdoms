@@ -76,6 +76,21 @@ elif data.get("status") == "not provided":
         check(False, "Recovered NORTH metadata not authorized: " + str(exc))
     recovered = True
     print("[PASS] NORTH_EXACT_RECOVERED_INSTANCE_ATTESTED")
+elif data.get("status") == "ready for provisioning":
+    # Exact sixth clean NORTH install: every playbook passed, but final
+    # isolation refused because fresh pre-AD bootstrap left no mode marker.
+    # Operator has now completed the original mode controller transitions.
+    # This receipt-bound gate ONLY permits normal read-only runtime acceptance;
+    # the controller sets installed only after the entire validator succeeds.
+    from goad.course1_finalization_recovery import (
+        NorthFinalizationRecoveryBlocked, prove_north_finalization_recovery,
+    )
+    try:
+        prove_north_finalization_recovery(instance, provider, data)
+    except (NorthFinalizationRecoveryBlocked, OSError, UnicodeError, ValueError) as exc:
+        check(False, "NORTH finalization recovery not authorized: " + str(exc))
+    recovered = True
+    print("[PASS] NORTH_EXACT_FINALIZATION_RECOVERY_ATTESTED")
 else:
     check(False, "Instance is not installed NORTH")
 mode_file = provider / ".goad-nomad-mode"
