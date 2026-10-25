@@ -515,6 +515,117 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             Log.error(f'NORTH: {machine} direct recovery failed after guest identity proof: {exc}')
         return False
 
+    def _north_tools_transition_gate(self, machine, phase):
+        """Prove or repair one exact NORTH Windows guest at a reboot boundary.
+
+        The inherited VMTools bootstrap may return False ONLY because VMware
+        host-side guest IP telemetry failed. Its exit code is not authoritative;
+        exact post-reboot guest identity + Tools + WinRM + canonical IP is.
+        A fully absent Tools package gets ONE guarded install. Partial Tools
+        registration is a hard stop, never an automatic overwrite.
+        """
+        if (self.lab_name != 'NORTH' or
+                machine not in ('GOAD-DC01', 'GOAD-DC02', 'GOAD-SRV02', 'GOAD-WS01') or
+                phase not in ('post-ws01-eval', 'pre-exercise-isolation') or
+                (phase == 'post-ws01-eval' and machine != 'GOAD-WS01')):
+            Log.error('NORTH: unexpected VMware Tools transition scope')
+            return False
+
+        from goad.course1_tools_transition import (
+            NorthToolsTransitionBlocked, inspect_owned_guest_tools,
+        )
+        from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+
+        try:
+            # Never install against a forged forwarded endpoint or a foreign VM.
+            port = self._winrm_forwarded_port(machine)
+            if not port or not self._wait_winrm_ready(port, 60):
+                Log.error(f'NORTH: {machine} WinRM unavailable at {phase}')
+                return False
+            vmx, state = inspect_owned_guest_tools(
+                self.path, machine, self._winrm_session(port)
+            )
+        except (NorthToolsTransitionBlocked, NorthGuestRecoveryBlocked,
+                OSError, ValueError) as exc:
+            Log.error(f'NORTH: {machine} original guest/Tools preflight blocked at {phase}: {exc}')
+            return False
+
+        if state == 'healthy':
+            if self._authenticated_guest_install_ready(machine, timeout=20):
+                Log.success(f'NORTH: {machine} VMware Tools healthy at {phase}')
+                return True
+            Log.error(f'NORTH: {machine} Tools exist but canonical guest readiness incomplete at {phase}')
+            return False
+
+        if state != 'missing':
+            Log.error(f'NORTH: {machine} VMware Tools partially installed at {phase}; '
+                      'refusing an unreviewed reinstall')
+            return False
+
+        instance = os.path.dirname(os.path.realpath(self.path))
+        marker = os.path.join(
+            instance, f'.north-vmtools-{machine}-{phase}.attempted'
+        )
+        # Protect against accidental replay after a failed Tools installation
+        # that may already have changed Windows installer or reboot state.
+        try:
+            fd = os.open(
+                marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                getattr(os, 'O_NOFOLLOW', 0), 0o600,
+            )
+        except OSError as exc:
+            Log.error(f'NORTH: {machine} Tools repair previously attempted or marker '
+                      f'unavailable at {phase}: {exc}')
+            return False
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(f'vm={machine}\nphase={phase}\nvmx={vmx}\n')
+
+        Log.warning(f'NORTH: {machine} VMware Tools absent after {phase}; '
+                    'reusing original Kingdoms VMware Tools installer once')
+        try:
+            result = self._install_vmware_tools(machine, vmx, port)
+            if not result:
+                Log.warning(
+                    f'NORTH: {machine} installer returned failure; checking '
+                    'authenticated guest state because VMware IP telemetry is advisory'
+                )
+            deadline = time.monotonic() + 240
+            while time.monotonic() < deadline:
+                if self._authenticated_guest_install_ready(machine, timeout=12):
+                    # Reaffirm both MACs and VMware Tools after any install reboot.
+                    final_vmx, final_state = inspect_owned_guest_tools(
+                        self.path, machine, self._winrm_session(port)
+                    )
+                    if final_vmx == vmx and final_state == 'healthy':
+                        Log.success(f'NORTH: {machine} exact guest VMware Tools '
+                                    f'recovered after {phase}')
+                        return True
+                time.sleep(5)
+        except (NorthToolsTransitionBlocked, NorthGuestRecoveryBlocked,
+                OSError, ValueError) as exc:
+            Log.error(f'NORTH: {machine} VMware Tools recovery failed at {phase}: {exc}')
+        Log.error(f'NORTH: {machine} VMware Tools not verified after repair at {phase}; '
+                  'repair marker retained; do not replay automatically')
+        return False
+
+    def finalize_install(self):
+        """Keep NORTH pre-isolation guest-control health strict and recoverable."""
+        if self.lab_name != 'NORTH':
+            return super().finalize_install()
+        if self._course1_unwired():
+            return False
+        if self.get_runtime_mode() != 'provisioning':
+            Log.error('NORTH: refusing final isolation without recorded provisioning mode')
+            return False
+        # Ensure a missing Tools service cannot make the first soft shutdown
+        # fail after the complete and expensive 21-play Ansible provisioning.
+        for machine in ('GOAD-SRV02', 'GOAD-WS01', 'GOAD-DC02', 'GOAD-DC01'):
+            if not self._north_tools_transition_gate(machine, 'pre-exercise-isolation'):
+                Log.error(f'NORTH: {machine} failed pre-isolation guest-control gate; '
+                          'AD was not replayed and isolation not started')
+                return False
+        return super().finalize_install()
+
     def _authenticated_guest_install_ready(self, machine, timeout=60):
         """Prove guest health independently of VMware host-side IP telemetry.
 
@@ -1253,8 +1364,12 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
                         'refusing AD provisioning with a shutdown-prone guest'
                     )
                     return False
-                # The role may reboot WS01. Re-prove the canonical lab NIC and
-                # authenticated WinRM after its required rearm reboot.
+                # WS01 evaluation rearm can remove or interrupt VMware Tools.
+                # Prove exact VMX and both NIC MACs before any bounded repair,
+                # then retain the existing strict post-rearm readiness gate.
+                if not self._north_tools_transition_gate(machine, 'post-ws01-eval'):
+                    Log.error('NORTH: WS01 post-evaluation VMware Tools recovery blocked')
+                    return False
                 if not self._north_post_rearm_guest_ready(machine, timeout=180):
                     Log.error('NORTH: WS01 post-rearm lab WinRM/IP is not ready')
                     return False
