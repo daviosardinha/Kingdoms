@@ -110,12 +110,21 @@ def audit_evidence(evidence_dir):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("evidence_directory")
+    parser.add_argument("paths", nargs="+", help="Evidence folder, or before/after JSON for --generation-only")
+    parser.add_argument("--generation-only", action="store_true")
     args = parser.parse_args()
     try:
-        selection = audit_evidence(args.evidence_directory)
+        if args.generation_only:
+            require(len(args.paths) == 2, "Generation check requires before and after inventory")
+            selection = prove_generation(read_json(args.paths[0]), read_json(args.paths[1]))
+        else:
+            require(len(args.paths) == 1, "Evidence audit requires one evidence folder")
+            selection = audit_evidence(args.paths[0])
     except (SnapshotEvidenceError, OSError, ValueError) as error:
         parser.exit(1, "[FAIL] NORTH_SNAPSHOT_EVIDENCE_AUDIT: " + str(error) + "\n")
     for machine, snapshot in sorted(selection.items()):
         print("[PASS] NORTH_SNAPSHOT_GENERATION=" + machine + " " + snapshot)
-    print("[PASS] NORTH_SNAPSHOT_EVIDENCE_AUDIT=PASS")
+    if args.generation_only:
+        print("[PASS] NORTH_FIVE_VM_SNAPSHOT_GENERATION=PASS")
+    else:
+        print("[PASS] NORTH_SNAPSHOT_EVIDENCE_AUDIT=PASS")
