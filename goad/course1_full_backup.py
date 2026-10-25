@@ -83,7 +83,7 @@ def preflight(root):
         require(inventory.is_file() and not inventory.is_symlink(),
                 "Unsafe VMware user inventory")
         for line in inventory.read_text(encoding="utf-8", errors="replace").splitlines():
-            m = re.fullmatch(r'\\s*vmlist\\d+\\.config\\s*=\\s*"([^"]+)"\\s*', line)
+            m = re.fullmatch(r'\s*vmlist\d+\.config\s*=\s*"([^"]+)"\s*', line)
             if not m:
                 continue
             vmx = Path(m.group(1))
@@ -92,7 +92,7 @@ def preflight(root):
                 continue
             contents = vmx.read_text(encoding="utf-8", errors="replace")
             for nic in ("vmnet10", "vmnet20", "vmnet99"):
-                require(not re.search(r'^\\s*ethernet\\d+\\.vnet\\s*=\\s*"' + nic + r'"',
+                require(not re.search(r'^\s*ethernet\d+\.vnet\s*=\s*"' + nic + r'"',
                                       contents, re.I | re.M),
                         "An unrelated registered VM uses a NORTH network")
     require(not (Path(root) / "workspace" / OLD).is_symlink(), "Instance symlink")
