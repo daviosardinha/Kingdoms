@@ -110,3 +110,78 @@ def inspect_owned_guest_tools(provider_path, machine, session):
             and binary and process_count > 0):
         return str(vmx), "healthy"
     return str(vmx), "partial"
+
+
+# Exact binary from authenticated NORTH WS01 2026-10-25 forensic evidence.
+# No broad "partial Tools" repair: new image versions require explicit review.
+WS01_ORPHAN_SHA256 = "33F934D107F430452EED263EB8266C75C2DE68EA8AD310EBF09B245ACD1CEEE7"
+WS01_ORPHAN_LENGTH = 110512
+WS01_ORPHAN_VERSION = "13.1.0.0"
+
+WS01_ORPHAN_PROOF = r"""
+$ErrorActionPreference='Stop'
+$e='C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'
+if(-not(Test-Path -LiteralPath $e -PathType Leaf)){throw 'No VMware binary'}
+$f=Get-Item -LiteralPath $e -ErrorAction Stop
+$s=Get-AuthenticodeSignature -LiteralPath $e -ErrorAction Stop
+[PSCustomObject]@{
+Length=$f.Length
+Version=$f.VersionInfo.FileVersion
+Sha256=(Get-FileHash -LiteralPath $e -Algorithm SHA256 -ErrorAction Stop).Hash
+SignatureStatus=[string]$s.Status
+VMToolsServiceRegistryKeyPresent=[bool](Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\VMTools')
+VGAuthServiceRegistryKeyPresent=[bool](Test-Path 'HKLM:\SYSTEM\CurrentControlSet\Services\VGAuthService')
+MsiInstallerInProgressRegistryKeyPresent=[bool](Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\InProgress')
+MsiExecProcessCount=@(Get-Process msiexec -ErrorAction SilentlyContinue).Count
+}|ConvertTo-Json -Depth 4 -Compress
+"""
+
+
+def _is_known_idle_signed_ws01_orphan(record):
+    """Strict, literal fingerprint. The return value does not mutate Windows."""
+    return (
+        isinstance(record, dict)
+        and set(record) == {
+            "Length", "Version", "Sha256", "SignatureStatus",
+            "VMToolsServiceRegistryKeyPresent", "VGAuthServiceRegistryKeyPresent",
+            "MsiInstallerInProgressRegistryKeyPresent", "MsiExecProcessCount",
+        }
+        and type(record["Length"]) is int and record["Length"] == WS01_ORPHAN_LENGTH
+        and record["Version"] == WS01_ORPHAN_VERSION
+        and record["Sha256"] == WS01_ORPHAN_SHA256
+        and record["SignatureStatus"] == "Valid"
+        and record["VMToolsServiceRegistryKeyPresent"] is False
+        and record["VGAuthServiceRegistryKeyPresent"] is True
+        and record["MsiInstallerInProgressRegistryKeyPresent"] is False
+        and type(record["MsiExecProcessCount"]) is int
+        and record["MsiExecProcessCount"] == 0
+    )
+
+
+def prove_idle_signed_original_ws01_orphan(provider_path, machine, original_vmx, session):
+    """Prove exact WS01 is an idle, *known* interrupted Tools install.
+
+    Caller must have separately proven canonical WinRM, both NIC MACs,
+    empty Tools service/process/product registration, and rechecked partial
+    convergence. This repeats original registered/running VMX verification
+    before accepting any installer-recovery authorization.
+    """
+    if machine != "GOAD-WS01":
+        raise NorthToolsTransitionBlocked("Orphaned Tools rule is WS01-only")
+    vmx, topology, settings = owned_guest(provider_path, machine)
+    if str(vmx) != original_vmx or topology.get("address") != "10.4.10.31":
+        raise NorthToolsTransitionBlocked("Original WS01 VMX or topology changed")
+    try:
+        result = session.run_ps(WS01_ORPHAN_PROOF)
+    except Exception as exc:
+        raise NorthToolsTransitionBlocked("Orphan Tools WinRM proof unavailable") from exc
+    if result.status_code != 0:
+        raise NorthToolsTransitionBlocked(
+            "Orphan Tools read-only proof failed: " +
+            result.std_err.decode("utf-8", errors="replace")[-200:]
+        )
+    try:
+        record = json.loads(result.std_out.decode("utf-8"))
+    except (UnicodeError, ValueError) as exc:
+        raise NorthToolsTransitionBlocked("Orphan Tools evidence is not JSON") from exc
+    return _is_known_idle_signed_ws01_orphan(record)
