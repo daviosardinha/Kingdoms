@@ -1,29 +1,29 @@
 # Purple Team four-machine baseline. Custom lab-facing vmnet is mandatory.
 # VMware's Vagrant NAT adapter remains temporarily available for provisioning.
 # Do not install until scripts/purple-vmware-preflight.sh passes on the host.
-raise "PURPLE requires -ip 192.168.240; refusing a mismatched network" unless "{{ip_range}}" == "192.168.240"
+raise "PURPLE requires -ip 172.28.233; refusing a mismatched network" unless "{{ip_range}}" == "172.28.233"
 
 boxes = [
   { :name => "PURPLE-DC01", :ip => "{{ip_range}}.30",
     :box => "StefanScherer/windows_2019", :box_version => "2021.05.15",
     :os => "windows", :cpus => 2, :mem => 4096,
-    :lab_mac => "00:50:56:10:40:30", :skip_private_network => true,
+    :lab_mac => "00:50:56:10:04:30", :skip_private_network => true,
     :vmware_network_adapters => [
-      { :slot => 1, :vnet => "vmnet40", :mac => "00:50:56:10:40:30" }
+      { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:30" }
     ] },
   { :name => "PURPLE-WS01", :ip => "{{ip_range}}.31",
     :box => "mayfly/windows10", :box_version => "2024.01.06",
     :os => "windows", :cpus => 2, :mem => 4096,
-    :lab_mac => "00:50:56:10:40:31", :skip_private_network => true,
+    :lab_mac => "00:50:56:10:04:31", :skip_private_network => true,
     :vmware_network_adapters => [
-      { :slot => 1, :vnet => "vmnet40", :mac => "00:50:56:10:40:31" }
+      { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:31" }
     ] },
   { :name => "PURPLE-LX01", :ip => "{{ip_range}}.32",
     :box => "bento/ubuntu-22.04", :box_version => "202510.26.0",
     :os => "linux", :cpus => 2, :mem => 4096,
-    :lab_mac => "00:50:56:10:40:32", :skip_private_network => true,
+    :lab_mac => "00:50:56:10:04:32", :skip_private_network => true,
     :vmware_network_adapters => [
-      { :slot => 1, :vnet => "vmnet40", :mac => "00:50:56:10:40:32" }
+      { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:32" }
     ],
     :lab_linux_config_script => "../../../ad/PURPLE/providers/vmware/configure-linux-interface.sh",
     :provision_scripts => [
@@ -32,9 +32,9 @@ boxes = [
   { :name => "PURPLE-WAZUH", :ip => "{{ip_range}}.51",
     :box => "bento/debian-12", :box_version => "202510.26.0",
     :os => "linux", :cpus => 2, :mem => 8192,
-    :lab_mac => "00:50:56:10:40:51", :skip_private_network => true,
+    :lab_mac => "00:50:56:10:04:51", :skip_private_network => true,
     :vmware_network_adapters => [
-      { :slot => 1, :vnet => "vmnet40", :mac => "00:50:56:10:40:51" }
+      { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:51" }
     ],
     :lab_linux_config_script => "../../../ad/PURPLE/providers/vmware/configure-linux-interface.sh" }
 ]

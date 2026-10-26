@@ -1,122 +1,70 @@
-"""Offline-only checks for Purple Team additive VMware networking.
-
-These tests NEVER edit /etc/vmware, restart networking, or launch a VM.
-"""
-import hashlib
-import json
-import os
-from pathlib import Path
-import tempfile
+"""No host changes: validate PURPLE uses one existing, unused vmnet4."""
 import unittest
-from unittest.mock import patch
-
 from goad import purple_vmware_network as purple
 
 
-BASE = (
-    "answer VNET_8_DHCP yes\n"
-    "answer VNET_8_NAT yes\n"
-    "answer VNET_8_HOSTONLY_SUBNET 192.168.213.0\n"
-    "answer VNET_8_HOSTONLY_NETMASK 255.255.255.0\n"
-)
+def config(dhcp="no", nat="no", subnet="172.28.233.0"):
+    return (
+        f"answer VNET_4_HOSTONLY_SUBNET {subnet}\n"
+        "answer VNET_4_HOSTONLY_NETMASK 255.255.255.0\n"
+        f"answer VNET_4_DHCP {dhcp}\n"
+        f"answer VNET_4_NAT {nat}\n"
+        "answer VNET_4_VIRTUAL_ADAPTER yes\n"
+    )
 
 
-class PurpleVmwareNetworkTests(unittest.TestCase):
-    def test_render_is_additive(self):
-        output = purple.append_vmnet(BASE)
-        self.assertTrue(output.startswith(BASE))
-        self.assertEqual(output.count("answer VNET_40_DHCP no"), 1)
-        self.assertIn("answer VNET_40_VIRTUAL_ADAPTER yes", output)
-        self.assertIn("answer VNET_40_HOSTONLY_SUBNET 192.168.240.0", output)
+class PurpleNetworkTests(unittest.TestCase):
+    def test_valid_unmodified_existing_vmnet4(self):
+        purple.validate_config(config())
 
-    def test_reject_existing_vmnet(self):
+    def test_no_vmnet4_fails(self):
         with self.assertRaises(purple.PurpleNetworkError):
-            purple.append_vmnet(BASE + "answer VNET_40_NAT no\n")
+            purple.validate_config("answer VNET_10_NAT no\n")
 
-    def test_reject_overlapping_vmware_subnet(self):
+    def test_wrong_subnet_fails(self):
         with self.assertRaises(purple.PurpleNetworkError):
-            purple.append_vmnet(
-                BASE + "answer VNET_3_HOSTONLY_SUBNET 192.168.240.0\n"
-                + "answer VNET_3_HOSTONLY_NETMASK 255.255.255.0\n"
+            purple.validate_config(config(subnet="10.4.10.0"))
+
+    def test_nat_enabled_fails(self):
+        with self.assertRaises(purple.PurpleNetworkError):
+            purple.validate_config(config(nat="yes"))
+
+    def test_dhcp_enabled_fails(self):
+        with self.assertRaises(purple.PurpleNetworkError):
+            purple.validate_config(config(dhcp="yes"))
+
+    def test_duplicate_settings_fail(self):
+        with self.assertRaises(purple.PurpleNetworkError):
+            purple.validate_config(config() + "answer VNET_4_NAT no\n")
+
+    def test_registered_vmnet_collision(self):
+        registry='vmlist0.config = "/lab/guest.vmx"\n'
+        vmx='/lab/guest.vmx'
+        with self.assertRaises(purple.PurpleNetworkError):
+            purple.validate_vmx(
+                registry, {vmx: 'ethernet1.vnet = "vmnet4"\n'}
             )
 
-    def test_reject_extra_vmnet40_directive(self):
-        proposal = purple.append_vmnet(BASE).encode()
+    def test_registered_mac_collision(self):
+        registry='vmlist0.config = "/lab/guest.vmx"\n'
+        vmx='/lab/guest.vmx'
         with self.assertRaises(purple.PurpleNetworkError):
-            purple.strip_checked_overlay(proposal + b"answer VNET_40_BRIDGE yes\n")
-
-    def test_reject_duplicate_vmnet40_setting(self):
-        proposal = purple.append_vmnet(BASE).encode()
-        with self.assertRaises(purple.PurpleNetworkError):
-            purple.strip_checked_overlay(proposal + b"answer VNET_40_NAT no\n")
-
-    def test_allow_only_known_optional_hostaddr_removal(self):
-        proposal = purple.append_vmnet(BASE).encode()
-        self.assertIn(BASE, purple.strip_checked_overlay(proposal).decode())
-        normalized = proposal.replace(
-            b"answer VNET_40_HOSTONLY_HOSTADDR 192.168.240.1\n", b""
-        )
-        purple.strip_checked_overlay(normalized)
-        with self.assertRaises(purple.PurpleNetworkError):
-            purple.strip_checked_overlay(
-                proposal.replace(b"HOSTONLY_HOSTADDR 192.168.240.1",
-                                 b"HOSTONLY_HOSTADDR 192.168.240.7")
+            purple.validate_vmx(
+                registry, {vmx: 'ethernet1.address = "00:50:56:10:04:30"\n'}
             )
 
-    def test_attestation_is_bound_to_north_and_purple_owner(self):
-        north_owner = b'{"profile":"NORTH"}'
-        config = purple.append_vmnet(BASE).encode()
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            backup = root / "purple-test" / "networking.original"
-            backup.parent.mkdir()
-            backup.write_bytes(BASE.encode())
-            backup.chmod(0o600)
-            receipt = root / "kingdoms-purple-owner.json"
-            record = {
-                "schema": "kingdoms.purple.vmnet.v1",
-                "provider": "/test/north",
-                "purple_provider": "/test/purple",
-                "north_owner_sha256": hashlib.sha256(north_owner).hexdigest(),
-                "network_before_sha256": hashlib.sha256(BASE.encode()).hexdigest(),
-                "network_after_sha256": hashlib.sha256(config).hexdigest(),
-                "vmnet": "vmnet40",
-                "subnet": "192.168.240.0/24",
-                "backup": str(backup),
-            }
-            receipt.write_text(json.dumps(record))
-            receipt.chmod(0o600)
-            with patch.object(purple, "BACKUPS", root):
-                result = purple.authorized_strip(
-                    config, north_owner, receipt=receipt,
-                    north_provider="/test/north",
-                    purple_provider="/test/purple", uid=os.geteuid()
-                )
-                self.assertIn(BASE, result.decode())
-                with self.assertRaises(purple.PurpleNetworkError):
-                    purple.authorized_strip(
-                        config, b"changed North owner", receipt=receipt,
-                        north_provider="/test/north", uid=os.geteuid()
-                    )
-                with self.assertRaises(purple.PurpleNetworkError):
-                    purple.authorized_strip(
-                        config, north_owner, receipt=receipt,
-                        purple_provider="/test/foreign", uid=os.geteuid()
-                    )
-                with self.assertRaises(purple.PurpleNetworkError):
-                    purple.authorized_strip(
-                        config + b"answer VNET_40_DHCP yes\n",
-                        north_owner, receipt=receipt, uid=os.geteuid()
-                    )
+    def test_unreadable_registered_vm_fails(self):
+        with self.assertRaises(purple.PurpleNetworkError):
+            purple.validate_vmx('vmlist0.config = "/missing.vmx"\n', {})
 
-    def test_provider_hook_is_purple_only(self):
-        root = Path(__file__).resolve().parents[1]
-        vmware = (root / "goad" / "provider" / "vagrant" / "vmware.py").read_text()
-        self.assertIn("if self.lab_name == 'PURPLE':", vmware)
-        self.assertIn("'goad.purple_vmware_network', 'ensure'", vmware)
-        north = (root / "goad" / "course1_host_network_apply.py").read_text()
-        self.assertIn("authorized_strip(", north)
-        self.assertIn("if purple_receipt.exists() or purple_receipt.is_symlink()", north)
+    def test_no_host_mutation_code(self):
+        import pathlib
+        path = pathlib.Path(__file__).resolve().parents[1] / "goad/purple_vmware_network.py"
+        source = path.read_text()
+        self.assertNotIn("vmware-networks", source)
+        self.assertNotIn("course1_host_network_apply", source)
+        self.assertNotIn("authorized_strip", source)
+        self.assertNotIn("kingdoms-course1-owner.json", source)
 
 
 if __name__ == "__main__":

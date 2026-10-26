@@ -540,7 +540,7 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
     def install(self):
         """Bring up VMware guests and prepare GOAD_NOMAD local provisioning reachability."""
         if self.lab_name == 'PURPLE':
-            # Run the guarded, idempotent vmnet40 bootstrap BEFORE Vagrant
+            # Run the guarded, idempotent vmnet4 preflight BEFORE Vagrant
             # creates any guest. Never fall back to a generic shared vmnet.
             # sudo -n avoids hanging an unattended provisioner on a password.
             if self.path is None:
@@ -557,15 +557,15 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
                                         check=False, timeout=180,
                                         capture_output=True, text=True)
             except (OSError, subprocess.TimeoutExpired) as exc:
-                Log.error(f'PURPLE: vmnet40 bootstrap unavailable: {exc}')
+                Log.error(f'PURPLE: vmnet4 preflight unavailable: {exc}')
                 return False
             if result.returncode != 0:
-                Log.error('PURPLE: vmnet40 ownership/bootstrap blocked; '
+                Log.error('PURPLE: vmnet4 preflight blocked; '
                           + (result.stderr.strip() or result.stdout.strip())[-850:])
                 Log.info('PURPLE: use sudo -v and inspect source/host networking; '
                          'no guests have been started')
                 return False
-            Log.success('PURPLE: dedicated vmnet40 bootstrap/owner validated')
+            Log.success('PURPLE: dedicated vmnet4 preflight/owner validated')
             return super().install()
         if self.lab_name != 'GOAD':
             return super().install()

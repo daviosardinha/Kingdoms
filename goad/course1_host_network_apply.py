@@ -374,19 +374,7 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
         raise NorthSetupError("No unique committed NORTH network transaction matches this instance")
 
     committed = _reconstruct_committed_vmnet(record, saved.read_bytes(), layout)
-
-    # Purple Team may add exactly vmnet40 after NORTH was installed. The
-    # standalone root-owned receipt ties the additive overlay to THIS
-    # immutable NORTH owner; never accept other foreign network edits.
-    purple_receipt = record_path.parent / "kingdoms-purple-owner.json"
-    north_observed = installed
-    if purple_receipt.exists() or purple_receipt.is_symlink():
-        from goad.purple_vmware_network import authorized_strip
-        north_observed = authorized_strip(
-            installed, record_path.read_bytes(), receipt=purple_receipt,
-            north_provider=identity, uid=owner_uid
-        )
-    if north_observed != committed:
+    if installed != committed:
         # Full Kingdoms already checks runtime vmnet policy rather than
         # treating the mutable VMware configuration file as immutable.
         # NORTH additionally proves *all* observed changes are explicitly
@@ -402,7 +390,7 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
             owner_uid=owner_uid
         )
         verify_owned_vmnet_runtime(
-            committed, north_observed, saved.read_bytes(), layout,
+            committed, installed, saved.read_bytes(), layout,
             reviewed_nat_retirements=retirement
         )
 

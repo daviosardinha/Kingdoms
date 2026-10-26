@@ -5,8 +5,8 @@ set -euo pipefail
 ipaddr="${1:?expected IPv4 address}"
 mac="${2:?expected VMware NIC MAC}"
 case "$ipaddr" in
-  192.168.240.*) ;;
-  *) echo "PURPLE: refusing address outside 192.168.240.0/24: $ipaddr" >&2; exit 1 ;;
+  172.28.233.*) ;;
+  *) echo "PURPLE: refusing address outside 172.28.233.0/24: $ipaddr" >&2; exit 1 ;;
 esac
 if ! [[ "$mac" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
   echo "PURPLE: bad MAC format" >&2
