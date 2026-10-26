@@ -1839,6 +1839,20 @@ $source = (& w32tm.exe /query /source 2>$null | Out-String).Trim().TrimEnd('.')
 if ($LASTEXITCODE -ne 0 -or $source -ine '{expected_source}') {{
     throw "W32Time source is '$source', expected {expected_source}"
 }}
+# DC Locator /timeserv and the selected source can become visible before
+# W32Time actually synchronizes and advertises NTP service after reboot.
+# WINTERFELL must be a CURRENT authenticated time server before any NORTH
+# members are powered on. This is intentionally read-only and retries using
+# the existing bounded DC startup readiness loop.
+$timeStatus = (& w32tm.exe /query /status /verbose 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0 -or
+    $timeStatus -notmatch 'State Machine:\\s*2\\s*\\(Sync\\)' -or
+    $timeStatus -notmatch 'Time Source Flags:\\s*8\\s*\\(SignatureAuthenticated' -or
+    $timeStatus -notmatch 'Server Role:\\s*64\\s*\\(Time Service\\)' -or
+    $timeStatus -notmatch 'Last Sync Error:\\s*0\\s*\\(' -or
+    $timeStatus -notmatch 'Leap Indicator:\\s*0\\s*\\(') {{
+    throw 'W32Time child-domain time server is not yet signed, synchronized and advertising'
+}}
 """
             script = f"""
 $ErrorActionPreference = 'Stop'
@@ -1950,11 +1964,16 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
                     )
                     if not self._recover_installed_member_time(
                             machine, host, contract, budget=min(90, remaining)):
-                        Log.error(
-                            f'GOAD Kingdoms: {machine} cold-start time recovery '
-                            'failed; no trust, NAT or provisioning fallback'
+                        # A bounded resync attempt can fail while the member
+                        # naturally converges a minute later. It must NEVER
+                        # shorten the original 300-second readiness window.
+                        # Continue read-only AD+time probing until the original
+                        # deadline, without repeating the mutating repair.
+                        Log.warning(
+                            f'GOAD Kingdoms: {machine} one bounded NT5DS '
+                            'recovery did not converge; continuing strict '
+                            'readiness checks until the original deadline'
                         )
-                        return False
                     # The repair result is NOT readiness: the ordinary strict
                     # domain/Netlogon/time probe still has to succeed.
                     time_pending_since = None
