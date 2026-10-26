@@ -66,7 +66,7 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn('/sys/class/net/', script)
         gate = (ROOT / "scripts" / "purple-vmware-preflight.sh").read_text()
         self.assertIn('VNET_40_', gate)
-        self.assertIn('192.168.240.254/24', gate)
+        self.assertIn('192.168.240.0/24', gate)
         self.assertIn('NAT no', gate)
         self.assertIn('DHCP no', gate)
 
