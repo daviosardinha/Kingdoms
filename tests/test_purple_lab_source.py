@@ -31,6 +31,23 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertNotIn("wazuh", domain_part)
         self.assertIn("domain_name=PURPLE", inventory)
 
+    def test_no_stale_minilab_domain_references(self):
+        for path in (
+            PURPLE / "data" / "inventory_disable_vagrant",
+            PURPLE / "files" / "bot.ps1",
+        ):
+            self.assertNotIn("mini.lab", path.read_text())
+
+    def test_pinned_cached_windows_boxes(self):
+        vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
+        for ref in (
+            '"StefanScherer/windows_2019"',
+            '"mayfly/windows10"',
+            '"bento/debian-12"',
+            '"bento/ubuntu-22.04"',
+        ):
+            self.assertIn(ref, vm)
+
     def test_monitoring_is_next_phase(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
