@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import warnings
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGETS = {
@@ -37,16 +38,16 @@ w32tm.exe /query /configuration
 Write-Output '==== LOCAL UDP 123 ENDPOINTS ===='
 Get-NetUDPEndpoint -LocalPort 123 -ErrorAction SilentlyContinue |
   Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize
-Write-Output '==== SYSTEM TIME-SERVICE EVENTS (6H) ===='
+Write-Output '==== SYSTEM TIME-SERVICE EVENTS (24H) ===='
 Get-WinEvent -FilterHashtable @{
  LogName='System'
  ProviderName='Microsoft-Windows-Time-Service'
- StartTime=(Get-Date).AddHours(-6)
-} -MaxEvents 25 -ErrorAction SilentlyContinue |
+ StartTime=(Get-Date).AddHours(-24)
+} -MaxEvents 100 -ErrorAction SilentlyContinue |
   Select-Object TimeCreated,Id,LevelDisplayName,Message | Format-List
-Write-Output '==== OPERATIONAL TIME-SERVICE EVENTS (6H) ===='
-Get-WinEvent -LogName 'Microsoft-Windows-Time-Service/Operational' -MaxEvents 40 -ErrorAction SilentlyContinue |
- Where-Object { $_.TimeCreated -ge (Get-Date).AddHours(-6) } |
+Write-Output '==== OPERATIONAL TIME-SERVICE EVENTS (24H) ===='
+Get-WinEvent -LogName 'Microsoft-Windows-Time-Service/Operational' -MaxEvents 200 -ErrorAction SilentlyContinue |
+ Where-Object { $_.TimeCreated -ge (Get-Date).AddHours(-24) } |
  Select-Object TimeCreated,Id,LevelDisplayName,Message | Format-List
 """
 
@@ -89,6 +90,47 @@ def assert_instance(instance_id):
             raise ValueError(f"{name} is powered off; no auto-start attempted")
 
 
+# A WinRM request may exit zero while individual non-terminating PowerShell
+# errors remain in stderr or pywinrm's XML-decoding warnings. Such evidence is
+# valuable but cannot be labeled a complete diagnostic.
+REQUIRED_SECTIONS = (
+    "==== CLOCK ====",
+    "==== DOMAIN SECURE CHANNEL ====",
+    "==== WINDOWS TIME SERVICE ====",
+    "==== SOURCE ====",
+    "==== PEERS ====",
+    "==== STATUS ====",
+    "==== EFFECTIVE CONFIGURATION ====",
+    "==== SYSTEM TIME-SERVICE EVENTS (24H) ====",
+    "==== OPERATIONAL TIME-SERVICE EVENTS (24H) ====",
+)
+
+
+def evidence_problems(status_code, stdout, stderr, warning_messages):
+    problems = []
+    if status_code != 0:
+        problems.append(f"PowerShell exit={status_code}")
+    if stderr.strip():
+        problems.append("PowerShell stderr is nonempty")
+    if warning_messages:
+        problems.append("pywinrm emitted parsing/runtime warnings")
+    for heading in REQUIRED_SECTIONS:
+        if heading not in stdout:
+            problems.append(f"Missing diagnostic section: {heading}")
+    # The source, peers and status sections must contain actual observations,
+    # not merely the section labels generated before a failing command.
+    for heading, next_heading in (
+        ("==== SOURCE ====", "==== PEERS ===="),
+        ("==== PEERS ====", "==== STATUS ===="),
+        ("==== STATUS ====", "==== EFFECTIVE CONFIGURATION ===="),
+    ):
+        if heading in stdout and next_heading in stdout:
+            section = stdout.split(heading, 1)[1].split(next_heading, 1)[0]
+            if not section.strip():
+                problems.append(f"Empty diagnostic section: {heading}")
+    return problems
+
+
 def capture(instance_id):
     assert_instance(instance_id)
     # Avoid a second Windows command-line length failure in diagnostics.
@@ -116,18 +158,27 @@ def capture(instance_id):
         target = dest / f"{name}.txt"
         try:
             session = GoadNomadVmwareProvider._lab_winrm_session(ip)
-            result = session.run_ps(POWERSHELL)
+            with warnings.catch_warnings(record=True) as raised:
+                warnings.simplefilter("always")
+                result = session.run_ps(POWERSHELL)
+            stdout = result.std_out.decode(errors="replace")
+            stderr = result.std_err.decode(errors="replace")
+            warning_messages = [str(item.message) for item in raised]
+            problems = evidence_problems(
+                result.status_code, stdout, stderr, warning_messages
+            )
             target.write_text(
                 f"host={name} ip={ip} exit={result.status_code}\n" +
-                result.std_out.decode(errors="replace") +
-                "\nSTDERR:\n" + result.std_err.decode(errors="replace"),
+                stdout + "\nSTDERR:\n" + stderr +
+                "\nPYWINRM_WARNINGS:\n" + "\n".join(warning_messages) +
+                "\nDIAGNOSTIC_LIMITATIONS:\n" + "\n".join(problems) + "\n",
                 encoding="utf-8",
             )
-            if result.status_code:
+            if problems:
                 failed = True
-                print(f"[FAIL] {name} WinRM exit={result.status_code}: {target}")
+                print(f"[PARTIAL] {name}: {', '.join(problems)}: {target}")
             else:
-                print(f"[PASS] {name} evidence: {target}")
+                print(f"[PASS] {name} complete read-only evidence: {target}")
         except Exception as exc:
             failed = True
             target.write_text(
