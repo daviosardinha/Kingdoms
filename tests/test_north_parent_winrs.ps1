@@ -21,13 +21,18 @@ $wasRunning = (Get-Service WinRM).Status -eq 'Running'
 $listenerCreated = $false; $cert = $null; $userCreated = $false
 try {
     Start-Service WinRM
-    if (@(Get-ChildItem WSMan:\localhost\Listener | Where-Object {
+    $listeners = @(Get-ChildItem WSMan:\localhost\Listener | Where-Object {
         $_.Keys -contains 'Transport=HTTPS'
-    }).Count) { throw 'CI HTTPS listener already exists; preserve it' }
-    $cert = New-SelfSignedCertificate -DnsName localhost -CertStoreLocation Cert:\LocalMachine\My
-    $null = New-WSManInstance winrm/config/Listener -SelectorSet @{Address='*';Transport='HTTPS'} `
-        -ValueSet @{Hostname='localhost';CertificateThumbprint=$cert.Thumbprint}
-    $listenerCreated = $true
+    })
+    if ($listeners.Count -gt 1) { throw 'Ambiguous CI HTTPS listeners' }
+    if ($listeners.Count -eq 0) {
+        $cert = New-SelfSignedCertificate -DnsName localhost -CertStoreLocation Cert:\LocalMachine\My
+        $null = New-WSManInstance winrm/config/Listener -SelectorSet @{Address='*';Transport='HTTPS'} `
+            -ValueSet @{Hostname='localhost';CertificateThumbprint=$cert.Thumbprint}
+        $listenerCreated = $true
+    } elseif ((Get-Item ($listeners[0].PSPath + '\Port')).Value -ne '5986') {
+        throw 'Existing CI HTTPS listener does not use 5986'
+    }
     $null = New-LocalUser -Name $name -Password $secret
     $userCreated = $true
     Add-LocalGroupMember -Group (Get-LocalGroup -SID S-1-5-32-544).Name -Member $name
