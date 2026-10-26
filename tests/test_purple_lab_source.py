@@ -48,6 +48,28 @@ class PurpleLabSourceTests(unittest.TestCase):
         ):
             self.assertIn(ref, vm)
 
+    def test_explicit_isolated_lab_nics(self):
+        vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
+        self.assertEqual(vm.count(':skip_private_network => true'), 4)
+        self.assertEqual(vm.count(':vnet => "vmnet40"'), 4)
+        self.assertEqual(vm.count(':slot => 1'), 4)
+        self.assertIn('192.168.240', vm)
+        for last in ("30", "31", "32", "51"):
+            self.assertIn("00:50:56:10:40:" + last, vm)
+        self.assertEqual(vm.count(':lab_linux_config_script =>'), 2)
+        self.assertNotIn(":lab_gateway =>", vm)
+
+    def test_linux_static_nic_and_preflight_gate(self):
+        script = (PURPLE / "providers" / "vmware" / "configure-linux-interface.sh").read_text()
+        self.assertIn('ip -4 address replace', script)
+        self.assertIn('purple-lab-interface.service', script)
+        self.assertIn('/sys/class/net/', script)
+        gate = (ROOT / "scripts" / "purple-vmware-preflight.sh").read_text()
+        self.assertIn('VNET_40_', gate)
+        self.assertIn('192.168.240.254/24', gate)
+        self.assertIn('NAT no', gate)
+        self.assertIn('DHCP no', gate)
+
     def test_monitoring_is_next_phase(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
