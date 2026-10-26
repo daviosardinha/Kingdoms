@@ -21,7 +21,7 @@ require_field NAT no
 require_field DHCP no
 
 host_cidr="$(ip -o -4 address show dev "$vmnet" | awk '$3 == "inet" {print $4; exit}')"
-[[ "$host_cidr" =~ ^192\\.168\\.240\\.[0-9]{1,3}/24$ ]] ||
+[[ "$host_cidr" =~ ^192[.]168[.]240[.][0-9]{1,3}/24$ ]] ||
   fail "Expected a host adapter address on 192.168.240.0/24, found: $host_cidr"
 case "$host_cidr" in
   192.168.240.30/24|192.168.240.31/24|192.168.240.32/24|192.168.240.51/24)
