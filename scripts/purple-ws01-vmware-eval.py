@@ -74,7 +74,17 @@ def guest_command(vmx: Path, *args: str, timeout=120) -> str:
                    timeout=timeout)
 
 
-def runner(verify: bool, probe: bool = False) -> str:
+def runner(verify: bool, probe: bool = False, fresh_install: bool = False) -> str:
+    ip_gate = (r"""
+if ($ips.Count -ne 1) {
+    if ($ips.Count -ne 0) { throw 'Unexpected PURPLE WS01 address state' }
+    $active = @(Get-NetAdapter -ErrorAction Stop | Where-Object Status -eq 'Up')
+    if ($active.Count -lt 2) { throw 'Fresh WS01 does not yet have both VMware interfaces' }
+    Add-Content -LiteralPath $log -Value 'PURPLE_WS01_IP=PENDING_VAGRANT_SETUP'
+}
+""" if fresh_install else r"""
+if ($ips.Count -ne 1) { throw 'Selected guest does not own expected PURPLE WS01 address' }
+""")
     if probe:
         return r"""
 $ErrorActionPreference = 'Stop'
@@ -83,9 +93,9 @@ $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
 if ([int]$os.ProductType -ne 1) { throw 'Expected Windows client' }
 $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
     Where-Object IPAddress -eq '172.28.233.31')
-if ($ips.Count -ne 1) { throw 'WS01 lab address missing' }
 'PURPLE_VMWARE_BOOT=' + $os.LastBootUpTime.ToUniversalTime().ToString('o') |
     Out-File -LiteralPath $log -Encoding ascii
+""" + ip_gate + r"""
 Add-Content -LiteralPath $log -Value 'PURPLE_VMWARE_GUEST_OPERATION=PASS'
 """
     arg = "-Verify" if verify else ""
@@ -100,7 +110,7 @@ try {
     Add-Content -LiteralPath $log -Value ("PURPLE_VMWARE_BOOT=" + $bootTime)
     $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
         Where-Object IPAddress -eq '172.28.233.31')
-    if ($ips.Count -ne 1) { throw 'Selected guest does not own the expected PURPLE WS01 address' }
+""" + ip_gate + r"""
     & 'C:\Windows\Temp\purple-ws01-eval-rearm.ps1' """ + arg + r""" 2>&1 |
         Out-File -LiteralPath $log -Encoding ascii -Append
     if (-not $?) { throw 'Windows evaluation script returned an error' }
@@ -112,8 +122,10 @@ try {
 """).lstrip()
 
 
-def vmrun_phase(vmx: Path, source: Path, runner_path: Path, output_path: Path, verify: bool, probe: bool = False):
-    runner_path.write_text(runner(verify, probe=probe), encoding="utf-8")
+def vmrun_phase(vmx: Path, source: Path, runner_path: Path, output_path: Path, verify: bool, probe: bool = False,
+                fresh_install: bool = False):
+    runner_path.write_text(runner(verify, probe=probe,
+                                  fresh_install=fresh_install), encoding="utf-8")
     guest_command(vmx, "copyFileFromHostToGuest", str(source), GUEST_SCRIPT)
     guest_command(vmx, "copyFileFromHostToGuest", str(runner_path), GUEST_RUNNER)
     # A shell command is fully executed in the guest, independent of WinRM.
@@ -143,6 +155,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider-dir", required=True)
     parser.add_argument(
+        "--fresh-install", action="store_true",
+        help="Permit the lab IP to be pending during first boot, before Vagrant fix_ip.ps1",
+    )
+    parser.add_argument(
         "--resume-pending-rearm", action="store_true",
         help="Reboot and verify an already successful WS01 /rearm without running /rearm again",
     )
@@ -171,11 +187,13 @@ def main():
             print("[INFO] Previously successful /rearm confirmed from guest log", flush=True)
             result.unlink()
             before = vmrun_phase(vmx, SOURCE, runner_path, result,
-                                 verify=False, probe=True)
+                                 verify=False, probe=True,
+                                 fresh_install=args.fresh_install)
             prior = re.search(r"(?m)^PURPLE_VMWARE_BOOT=(.+)$", before)
         else:
             print("[INFO] Evaluating Windows grace period through VMware Tools", flush=True)
-            output = vmrun_phase(vmx, SOURCE, runner_path, result, verify=False)
+            output = vmrun_phase(vmx, SOURCE, runner_path, result, verify=False,
+                                 fresh_install=args.fresh_install)
             prior = re.search(r"(?m)^PURPLE_VMWARE_BOOT=(.+)$", output)
         if args.resume_pending_rearm or "PURPLE_WS01_EVAL=REARMED" in output:
             if not prior:
@@ -192,7 +210,8 @@ def main():
                         continue
                     guest_command(vmx, "listProcessesInGuest", timeout=20)
                     result.unlink(missing_ok=True)
-                    verified = vmrun_phase(vmx, SOURCE, runner_path, result, verify=True)
+                    verified = vmrun_phase(vmx, SOURCE, runner_path, result, verify=True,
+                                           fresh_install=args.fresh_install)
                     current = re.search(r"(?m)^PURPLE_VMWARE_BOOT=(.+)$", verified)
                     if current and current.group(1).strip() != prior.group(1).strip():
                         break
