@@ -104,6 +104,22 @@ python3 scripts/purple-ws01-vmware-eval.py \
   --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"
 ```
 
+If a previous helper run printed `PURPLE_WS01_EVAL=REARMED` but stopped
+before reboot (for example, an old boot-timestamp output bug), **do not
+invoke the normal recovery again**. Its prior `slmgr /rearm` has already
+succeeded. Instead resume the outstanding reboot and verification only:
+
+```bash
+python3 scripts/purple-ws01-vmware-eval.py \
+  --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" \
+  --resume-pending-rearm
+```
+
+The resume mode requires `REARMED` and `PASS` markers from the selected
+guest's preserved result file before changing anything. It does not repeat
+the licensing command. It probes the current boot, reboots only WS01,
+then requires a **different boot timestamp** and nonexpired evaluation.
+
 The helper requires the original Mayfly `vagrant/vagrant` local test account
 to retain working VMware Tools guest access, as verified on this instance.
 It is deliberately scoped to PURPLE-WS01 and never reconfigures VMware
