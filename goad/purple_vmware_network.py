@@ -167,6 +167,35 @@ def authorized_strip(
     return strip_checked_overlay(observed)
 
 
+def _guard_north_checkout(north_provider: str):
+    """Prevent changing VMware for a NORTH instance using an older checkout.
+
+    PURPLE runs from a separate source tree. The installed NORTH launcher
+    must use the same owner-check compatibility before vmnet40 exists.
+    """
+    directory = Path(north_provider)
+    if (not directory.is_absolute() or directory.name != "provider"
+            or directory.parent.parent.name != "workspace"):
+        raise PurpleNetworkError("NORTH owner has unexpected provider layout")
+    source = directory.parent.parent.parent / "goad" / "course1_host_network_apply.py"
+    purple = directory.parent.parent.parent / "goad" / "purple_vmware_network.py"
+    for file, required in (
+        (source, ("kingdoms-purple-owner.json", "authorized_strip(")),
+        (purple, ("def authorized_strip(", "kingdoms.purple.vmnet.v1")),
+    ):
+        if file.is_symlink() or not file.is_file():
+            raise PurpleNetworkError(
+                "Installed NORTH checkout lacks Purple network compatibility: "
+                + str(file)
+            )
+        contents = file.read_text(encoding="utf-8")
+        if not all(marker in contents for marker in required):
+            raise PurpleNetworkError(
+                "Installed NORTH checkout is not vmnet40-overlay aware; "
+                "update and test NORTH's owner verifier before changing VMware"
+            )
+
+
 def _guard_host():
     if _command("vmrun", "-T", "ws", "list").strip() != "Total running VMs: 0":
         raise PurpleNetworkError("VMware guests still running")
@@ -257,6 +286,7 @@ def install(provider_dir: str):
         north, north_bytes = _owner_record(NORTH_OWNER)
         north_provider = north.get("provider")
         inspect_installed_north(north_provider)
+        _guard_north_checkout(north_provider)
         _guard_host()
         _safe_directory(NETWORKING.parent)
         meta = _plain_regular(NETWORKING)
@@ -363,6 +393,7 @@ def plan():
     from goad.course1_host_network_apply import inspect_installed_north
     north, _ = _owner_record(NORTH_OWNER)
     inspect_installed_north(north.get("provider"))
+    _guard_north_checkout(north.get("provider"))
     _guard_host()
     before = NETWORKING.read_text(encoding="utf-8")
     after = append_vmnet(before)
