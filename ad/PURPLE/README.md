@@ -1,118 +1,111 @@
-# Purple Team (PURPLE) — four-VM VMware baseline
+# Purple Team (PURPLE) — four-VM VMware lab
 
-A **separate** lab definition in Kingdoms, based on `ad/MINILAB`.
-The domain remains a MINILAB-style simple AD environment, renamed to
-`purple.lab`, and retains the original MINILAB vulnerability/demo fixtures.
-Nothing in NORTH, KINGDOMS, or WSLPE is modified.
+Purple Team is an independent lab recipe based on KINGDOMS' existing
+`ad/MINILAB`, not an edit of NORTH, KINGDOMS, or WSLPE.
+The pilot AD domain is `purple.lab`.
 
-| Vagrant VM | Guest | IP suffix | RAM | Provisioned |
-| --- | --- | --- | --- | --- |
-| PURPLE-DC01 | Windows Server 2019 (AD DC) | .30 | 4 GB | Standard MINILAB/GOAD Ansible |
-| PURPLE-WS01 | Windows 10 (domain workstation) | .31 | 4 GB | Standard MINILAB/GOAD Ansible |
-| PURPLE-LX01 | Ubuntu 22.04 Desktop | .32 | 4 GB | Bento base + GNOME desktop install |
-| PURPLE-WAZUH | Debian 12 (Wazuh target host) | .51 | 8 GB | OS only; Wazuh not installed yet |
+| Guest | OS | Address | RAM |
+| --- | --- | --- | --- |
+| PURPLE-DC01 | Windows Server 2019 / AD | 192.168.240.30 | 4 GB |
+| PURPLE-WS01 | Windows 10 domain workstation | 192.168.240.31 | 4 GB |
+| PURPLE-LX01 | Ubuntu 22.04 Desktop | 192.168.240.32 | 4 GB |
+| PURPLE-WAZUH | Debian 12, clean host for Wazuh | 192.168.240.51 | 8 GB |
 
-**RAM: 20 GB guests** plus the host. All four VMs are defined in the same
-Vagrantfile and brought up with a single command.
+All four are declared in one Vagrantfile. Windows uses the existing GOAD
+Ansible MINILAB provisioning; Ubuntu Server is automatically converted to
+Desktop via a Vagrant shell provisioner. Debian is an OS-only guest for now:
+**Wazuh software, agents and Sysmon are NOT installed in this phase**.
 
-## Source-only preflight
+## Box dependencies
 
-The first four-machine source tests passed on 2026-10-26. This is not
-a runtime or VM networking acceptance test.
+Pinned/cached VMware Desktop images on the test laptop:
 
-Create a **separate checkout** from `main`. The existing NORTH instance
-must remain untouched. Before any install, check `vmrun list`,
-`ip -br -4 addr`, `ip route`, and VMware Virtual Network Editor to select
-a subnet free of conflict with existing VM networks, VPNs and host routes.
-For example, `192.168.240` is only a candidate, not pre-approved.
+- `StefanScherer/windows_2019` 2021.05.15
+- `mayfly/windows10` 2024.01.06
+- `bento/ubuntu-22.04` 202510.26.0
+- `bento/debian-12` 202510.26.0
 
-For a reliable local pilot, PURPLE pins the **locally cached VMware boxes**
-`StefanScherer/windows_2019` (2021.05.15) and `mayfly/windows10`
-(2024.01.06). The AD scenario is copied from MINILAB; the server box
-source is intentionally changed because the StefanScherer version is
-already installed and proven in the NORTH test environment.
-Linux boxes come from the same Vagrant Cloud registry:
-`bento/debian-12` and `bento/ubuntu-22.04` (both pinned to
-202510.26.0). Debian is already cached locally; Ubuntu 22.04 must be
-added to the cache before installing. The latter is a server
-base transformed into **Ubuntu Desktop** by the guest provisioning script;
-the desktop installation adds significant download time and takes effect
-on the next graphical boot.
+Ubuntu Desktop package installation still requires the guest's temporary NAT
+access; a desktop reboot may be required. Wazuh disk space must be checked
+before installing its manager/indexer/dashboard on Debian.
 
-### Dedicated VMware network (must be configured before installation)
+## Host-network ownership and automation
 
-Purple Team uses a new **host-only vmnet40**, with no VMware DHCP or NAT
-service on that segment. **Do not repurpose** any existing vmnet or modify
-NORTH's vmnet10/20/99. All four guests have a VMware custom NIC pinned
-to vmnet40, with these static IPs:
-- DC01 192.168.240.30
-- WS01 192.168.240.31
-- LX01 192.168.240.32
-- WAZUH 192.168.240.51
-- VMware host adapter: its own unused `192.168.240.x/24` (usually assigned by VMware)
+**Do not use the VMware Virtual Network Editor to create vmnet40 manually.**
+The automated bootstrap uses a root-owned additive ownership record, backed
+up under NORTH's existing global VMware transaction lock. The immutable
+NORTH owner is left unchanged.
 
-**Host network creation is not automated in this PR.** Only add vmnet40
-after scheduling a maintenance window and stopping NORTH/all other VMware
-VMs: applying VMware virtual network configuration can interrupt live
-guests. In VMware Workstation Virtual Network Editor (Linux:
-`sudo vmware-netcfg`, if installed), add `vmnet40`, choose **Host-only**,
-set subnet `192.168.240.0` with mask `255.255.255.0`, disable VMware
-DHCP and NAT for this segment, and keep the **host virtual adapter enabled** on vmnet40. VMware can choose
-an unused host IP automatically; the preflight validates the subnet and
-ensures it does not overlap guest IPs. Do not change any existing VMware
-networks.
+- PURPLE network: `vmnet40`, `192.168.240.0/24`, host-only, no VMware
+  DHCP or NAT on that network; host adapter `192.168.240.1`
+- Fixed MAC-bound VMware lab adapters for all four guests
+- Existing Vagrant management NAT remains during provisioning
+- Existing NORTH owner, protected routes, IPs, vmnets and MACs are preserved
+- Unexpected preexisting vmnet40, occupied subnets, running guests, unsafe
+  owner files, or an interrupted transaction block the installation
+- On the first successful transaction, only explicitly attested vmnet40
+  declarations may be normalized out for NORTH's regular strict verifier
+- An unexpected network mutation or unsafe rollback blocks rather than
+  erasing somebody else's configuration
 
-After configuring vmnet40, verify it without mutating anything:
+**This first pilot requires an already-installed, fully verified NORTH
+network owner on the SAME VMware host.** That is a coexistence guard, not
+an AD or dependency relationship between PURPLE and NORTH guests. General
+standalone Purple Team host bootstrap is a later development task.
+
+**Running VMs must be stopped** before the VMware service restart. Use
+the existing NORTH `./goad.sh` console `stop` command and check
+`vmrun list` reports zero running VMs. Leave `vmware-netcfg` closed and
+do not have another host-network editor applying changes concurrently.
+
+### Dry run: no VMware network edits
 
 ```bash
-bash scripts/purple-vmware-preflight.sh
-python3 -m unittest tests.test_purple_lab_source -v
+cd ~/labs/purple-team/Kingdoms
+git pull --ff-only
+python3 -m unittest tests.test_purple_lab_source tests.test_purple_vmware_network -v
+sudo -v
+sudo -n python3 -m goad.purple_vmware_network plan
 ```
 
-The preflight script fails if vmnet40 is missing or mismatched.
-Linux guest IPs are configured through a MAC-bound Vagrant shell provisioner
-with a reboot-persistent oneshot service. Windows lab IPs use the existing
-`fix_ip.ps1` helper with the MAC and **no GOAD/NORTH route**.
+The plan validates installed NORTH ownership and checks for conflicting
+networks, routes, VMs and registered VMX/MACs. It does not write anything.
+If it reports `[BLOCKED]`, do not run the install or manually fabricate
+owner receipts.
 
-**Provisioning caveat:** Windows and Linux guests retain their default
-Vagrant NAT adapter for downloading packages and running Ansible. This is a
-transitional lab build, not an egress-isolated attack range. Don't execute
-untrusted malware or assume NORTH-style fail-closed exercise isolation.
-Keep this installation disconnected from corporate networks and use benign
-telemetry generation for the demonstration.
-
-Once network preflight is complete, **installation command**:
+### Single-command installation (runtime NOT YET ACCEPTED)
 
 ```bash
 ./goad.sh -t install -l PURPLE -p vmware -ip 192.168.240
 ```
 
-This command is a target for runtime acceptance, **not yet validated in
-a live VMware deployment**. A plain `vagrant up` from the generated
-instance provider folder will create all four VM definitions; the GOAD
-launcher additionally runs AD provisioning.
+The PURPLE VMware provider invokes the guarded bootstrap **before Vagrant
+creates guests**, then the normal GOAD provisioner handles MINILAB-style
+Active Directory. Only invoke this on a disposable/approved test host after
+a successful dry run and a reviewed backup. This branch has **passed
+offline source CI**, but the full VMware network transaction and all four
+guest installs have not yet been validated on real hardware.
 
-## Deliberately postponed
+To inspect a previously committed vmnet40 after bootstrap:
 
-- Install Wazuh on **Debian 12** and enroll DC01/WS01/LX01.
-- Add Sysmon configuration and detection smoke tests.
-- Verify/expand the Debian system disk before Wazuh installation;
-  official all-in-one sizing commonly requires ~50 GB for a small lab.
-- Add snapshots, fail-closed health checks and fresh-install acceptance.
-- Replace default MINILAB credentials and vulnerabilities with a
-  controlled demo fixture before any non-isolated use.
-- Build a long-term box-mirror strategy. HashiCorp has announced
-  retirement of the HCP Vagrant registry on **31 December 2026**.
+```bash
+sudo -n python3 -m goad.purple_vmware_network verify
+bash scripts/purple-vmware-preflight.sh
+```
 
-**Important:** The existing `wazuh` extension creates its own **Ubuntu**
-Wazuh VM. Do not enable it with this lab, or you will create an unwanted
-fifth machine. We will adapt its installation roles for PURPLE-WAZUH.
+The shell preflight is for **post-install verification**: it must fail when
+vmnet40 does not yet exist.
 
-## Isolation
+## Monitoring and isolation caveats
 
-The source uses the original MINILAB VMware private-network mechanism.
-This is **not** the NORTH segmented lifecycle or its fail-closed network
-ownership system. Do not assume it can coexist safely with a running
-NORTH lab until explicit route/vmnet/VMX preflight and a first installation
-in a disposable environment have passed. Do not bridge vulnerable guests
-onto a company network.
+- Wazuh manager, indexer, dashboard, Wazuh agents and Sysmon are phase 2.
+- The Linux VM is a normal guest; it does not auto-enroll into AD.
+- The copied MINILAB includes intentionally weak/demo credentials. Do not
+  bridge it to a company network or use real company data.
+- Vagrant's provisioning NAT is still connected. This is **not yet**
+  NORTH-style deny-by-default exercise isolation and is unsuitable for
+  untrusted payloads or malware detonation.
+- Do not enable the existing `wazuh` extension: it would create an unwanted
+  *fifth* Wazuh VM based on Ubuntu, not provision PURPLE-WAZUH Debian.
+- Do not merge this PR until a clean host setup and failure-path restoration
+  have been proven, along with four-guest and AD runtime checks.
