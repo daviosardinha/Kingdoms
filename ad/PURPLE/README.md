@@ -68,44 +68,46 @@ installation until the read-only preflight and generated Vagrantfile review
 pass. Never create vmnet40 through the editor on the currently NORTH-owned
 host, since NORTH's immutable verifier would reject it.
 
-## Windows 10 workstation activation during fresh installs
+## Windows 10 Enterprise Evaluation maintenance
 
-The original MINILAB Windows boxes and network configuration are unchanged.
-PURPLE adds **one** Windows-specific Vagrant shell provisioner to WS01:
-after WinRM/network setup, apply a valid Windows product key, confirm activation,
-then reboot and wait for WinRM to recover **before** AD Ansible provisioning.
-DC01 and the Linux guests are unaffected.
+PURPLE-WS01 uses the **same evaluation rearm strategy as KINGDOMS and NORTH**:
+`ansible/roles/settings/eval_rearm/tasks/main.yml`. The Mayfly Windows 10
+box is a time-based evaluation image. This is **not** a purchased-product-key
+activation flow. No key or environment variable is needed.
 
-The key is **never stored in Git or generated Vagrantfile**. Provide it to the
-installation process as a temporary environment variable (do not type the
-literal key into a command or commit it to a file):
+During a new PURPLE installation, Vagrant checks the WS01 evaluation grace
+period immediately after Windows network/WinRM setup, before AD Ansible.
+If grace remains, no rearm is consumed. If expired, it runs
+`cscript.exe //NoLogo slmgr.vbs /rearm`, reboots through Vagrant, waits for
+WinRM, then checks that grace was restored. If the allowed rearm count is
+exhausted, installation stops with an explicit error; it does not disable
+Windows licensing services.
+
+Fresh install:
+
+```bash
+./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233
+```
+
+**Recovery of the already installed ef5c0b instance:** Its generated
+Vagrantfile was created before the correction and still names the hook
+`purple-ws01-activation`, but points to the same updated script path.
+After `git pull --ff-only`, start only WS01 without reprovisioning, then
+invoke that one hook. Do not rebuild the lab:
 
 ```bash
 cd ~/labs/purple-team/Kingdoms
-read -rs -p 'PURPLE-WS01 Windows product key: ' PURPLE_WS01_PRODUCT_KEY
-echo
-export PURPLE_WS01_PRODUCT_KEY
-sudo -v
-./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233
-unset PURPLE_WS01_PRODUCT_KEY
+git pull --ff-only
+cd workspace/ef5c0b-purple-vmware/provider
+vagrant up PURPLE-WS01 --provider=vmware_desktop --no-provision
+vagrant provision PURPLE-WS01 --provision-with purple-ws01-activation
+vagrant status PURPLE-WS01
+ping -c 3 172.28.233.31
 ```
 
-A missing key causes the WS01 activation provisioner to fail clearly rather
-than proceeding silently. A key that does not match the installed Windows
-edition or cannot activate will also block WS01 provisioning. Use a legitimate
-license for the **actual edition** in the Mayfly Windows 10 image; Windows
-Enterprise Evaluation editions may require an appropriate non-evaluation image
-or supported edition conversion, not just a product key.
-
-The key passes transiently through Vagrant's sensitive environment-variable
-mechanism and WinRM; it is not a hardware-backed secret store. Keep debug
-logging disabled and protect the operator account. Vagrant's `sensitive: true`
-masks provisioner environment values in normal output.
-
-This hook applies to **newly generated PURPLE instances**. The already installed
-`ef5c0b-purple-vmware` has a generated Vagrantfile from before the hook; do
-not rebuild or automatically reprovision it. Activate that existing WS01
-manually with a valid key if needed.
+The old generated hook's name is cosmetic; the updated PowerShell script
+no longer needs `PURPLE_WS01_PRODUCT_KEY`. New instances use
+`purple-ws01-eval-rearm` and `purple-ws01-eval-verify`.
 
 ## Next phase
 
