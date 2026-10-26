@@ -234,13 +234,62 @@ class ControllerTests(unittest.TestCase):
         self.assertTrue(self.call_wait())
         self.provider._recover_installed_member_time.assert_not_called()
 
-    def test_repair_failure_halts_before_retry_or_fallback(self):
+    def test_repair_failure_preserves_full_readiness_budget_no_retry(self):
         pending = result(TIME_PENDING + "expected=" + self.DC)
         self.session.run_ps.return_value = pending
         self.provider._recover_installed_member_time.return_value = False
-        self.assertFalse(self.call_wait())
+        self.assertFalse(self.call_wait(timeout=120))
         self.provider._recover_installed_member_time.assert_called_once()
-        self.assertLess(self.clock.now, 90)
+        self.assertGreaterEqual(self.clock.now, 120)
+        self.assertGreater(self.session.run_ps.call_count, 8)
+        self.provider.command.run_vagrant.assert_not_called()
+
+    def test_natural_time_recovery_after_bounded_repair_failure_succeeds(self):
+        # Seen on real NORTH cold starts: W32Time can converge naturally
+        # AFTER /resync /nowait did not converge within its 90s repair budget.
+        pending = result(TIME_PENDING + "expected=" + self.DC)
+        self.provider._recover_installed_member_time.return_value = False
+        self.session.run_ps.side_effect = (
+            [pending for _ in range(10)] +
+            [result("KINGDOMS_INSTALLED_AD_READY")]
+        )
+        self.assertTrue(self.call_wait(timeout=120))
+        self.provider._recover_installed_member_time.assert_called_once()
+        self.assertGreaterEqual(self.clock.now, 45)
+
+    def test_child_dc_requires_signed_sync_and_active_time_service(self):
+        self.session.run_ps.return_value = result("KINGDOMS_INSTALLED_AD_READY")
+        self.assertTrue(self.call_wait(machine="GOAD-DC02", timeout=35))
+        script = self.session.run_ps.call_args.args[0]
+        for required in (
+            "kingslanding.sevenkingdoms.local",
+            "w32tm.exe /query /source",
+            "w32tm.exe /query /status /verbose",
+            "State Machine:",
+            "Time Source Flags:",
+            "SignatureAuthenticated",
+            "Server Role:",
+            "Time Service",
+            "Last Sync Error:",
+            "Leap Indicator:",
+        ):
+            self.assertIn(required, script)
+        self.assertLess(
+            script.index("TIMESERV advertising is not ready"),
+            script.index("$timeStatus = "),
+        )
+        for forbidden in ("Restart-Service W32Time", "w32tm.exe /resync",
+                          "w32tm.exe /config", "netdom resetpwd"):
+            self.assertNotIn(forbidden, script)
+        self.provider._recover_installed_member_time.assert_not_called()
+
+    def test_forest_root_dc_does_not_gain_child_time_source_requirement(self):
+        self.session.run_ps.return_value = result("KINGDOMS_INSTALLED_AD_READY")
+        self.assertTrue(self.call_wait(machine="GOAD-DC01", timeout=35))
+        script = self.session.run_ps.call_args.args[0]
+        self.assertNotIn("kingslanding.sevenkingdoms.local", script)
+        self.assertNotIn("SignatureAuthenticated", script)
+        self.provider._recover_installed_member_time.assert_not_called()
 
     def test_repaired_marker_alone_never_counts_as_ad_readiness(self):
         pending = result(TIME_PENDING + "expected=" + self.DC)
