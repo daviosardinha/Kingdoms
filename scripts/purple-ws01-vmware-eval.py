@@ -104,12 +104,23 @@ def vmrun_phase(vmx: Path, source: Path, runner_path: Path, output_path: Path, v
     guest_command(vmx, "copyFileFromHostToGuest", str(source), GUEST_SCRIPT)
     guest_command(vmx, "copyFileFromHostToGuest", str(runner_path), GUEST_RUNNER)
     # A shell command is fully executed in the guest, independent of WinRM.
-    guest_command(vmx, "runProgramInGuest", POWERSHELL,
-                  "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                  "-File", GUEST_RUNNER, timeout=180)
-    guest_command(vmx, "copyFileFromGuestToHost", GUEST_OUTPUT, str(output_path))
-    output = output_path.read_text(encoding="utf-8", errors="replace")
+    command_error = None
+    try:
+        guest_command(vmx, "runProgramInGuest", POWERSHELL,
+                      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                      "-File", GUEST_RUNNER, timeout=180)
+    except PurpleEvaluationError as exc:
+        command_error = exc
+    try:
+        guest_command(vmx, "copyFileFromGuestToHost", GUEST_OUTPUT, str(output_path))
+        output = output_path.read_text(encoding="utf-8", errors="replace")
+    except (OSError, PurpleEvaluationError) as exc:
+        if command_error is not None:
+            raise command_error from exc
+        raise PurpleEvaluationError("Cannot retrieve in-guest evaluation output") from exc
     print(output.strip(), flush=True)
+    if command_error is not None:
+        raise PurpleEvaluationError("Guest PowerShell failed: " + output[-500:]) from command_error
     if "PURPLE_VMWARE_GUEST_OPERATION=PASS" not in output:
         raise PurpleEvaluationError("In-guest evaluation phase did not report success")
     return output
