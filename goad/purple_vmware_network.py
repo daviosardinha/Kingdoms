@@ -135,11 +135,12 @@ def _owner_record(path: Path, uid: int = 0) -> tuple[dict, bytes]:
 
 def authorized_strip(
     observed: bytes, north_owner_bytes: bytes, *, receipt: Path = OWNER,
-    north_provider: str | None = None, uid: int = 0,
+    north_provider: str | None = None, purple_provider: str | None = None,
+    uid: int = 0,
 ) -> bytes:
     """Allow only attested additive Purple VMnet, never generic foreign drift."""
     record, _ = _owner_record(Path(receipt), uid)
-    if (set(record) != {"schema", "provider", "north_owner_sha256",
+    if (set(record) != {"schema", "provider", "purple_provider", "north_owner_sha256",
                         "network_before_sha256", "network_after_sha256",
                         "vmnet", "subnet", "backup"}
             or record["schema"] != "kingdoms.purple.vmnet.v1"
@@ -147,6 +148,9 @@ def authorized_strip(
             or record["vmnet"] != VMNET
             or record["subnet"] != str(SUBNET)
             or (north_provider is not None and record["provider"] != north_provider)
+            or (purple_provider is not None and record["purple_provider"] != purple_provider)
+            or not isinstance(record["purple_provider"], str)
+            or not record["purple_provider"].startswith("/")
             or not isinstance(record["network_before_sha256"], str)
             or not isinstance(record["network_after_sha256"], str)
             or not re.fullmatch(r"[0-9a-f]{64}", record["network_before_sha256"])
@@ -258,6 +262,8 @@ def install(provider_dir: str):
         before = NETWORKING.read_bytes()
         proposal = append_vmnet(before.decode("utf-8")).encode("utf-8")
         prior_netmap, netmap_metadata = snapshot_netmap(NETMAP)
+        if prior_netmap and b"vmnet40" in prior_netmap.lower():
+            raise PurpleNetworkError("Unattributed vmnet40 netmap entry")
         backup_folder = Path(tempfile.mkdtemp(prefix="purple-", dir=BACKUPS))
         backup_folder.chmod(0o700)
         backup = backup_folder / "networking.original"
@@ -286,11 +292,17 @@ def install(provider_dir: str):
             record_journal(backup_folder, journal)
             after = NETWORKING.read_bytes()
             _verify_live_overlay(after, before)
+            from goad.course1_hostaddrs import inspect_live_hostaddrs, inspect_live_hostaddr_assets
+            from goad.kingdoms_topology import load_course1_topology
+            topology = load_course1_topology()
+            inspect_live_hostaddrs(topology)
+            inspect_live_hostaddr_assets(topology)
             if NORTH_OWNER.read_bytes() != north_bytes:
                 raise PurpleNetworkError("NORTH owner changed during Purple bootstrap")
             receipt = {
                 "schema": "kingdoms.purple.vmnet.v1",
                 "provider": north_provider,
+                "purple_provider": str(provider.resolve()),
                 "north_owner_sha256": _sha(north_bytes),
                 "network_before_sha256": _sha(before),
                 "network_after_sha256": _sha(after),
@@ -334,12 +346,13 @@ def install(provider_dir: str):
             raise PurpleNetworkError(f"Purple bootstrap failed; original restored: {backup}") from error
 
 
-def check():
+def check(provider_dir: str | None = None):
     north, raw = _owner_record(NORTH_OWNER)
     from goad.course1_host_network_apply import inspect_installed_north
     inspect_installed_north(north.get("provider"))
     authorized_strip(NETWORKING.read_bytes(), raw,
-                     north_provider=north["provider"])
+                     north_provider=north["provider"],
+                     purple_provider=(str(Path(provider_dir).resolve()) if provider_dir else None))
     print("[PASS] Purple vmnet40 ownership verified through NORTH")
 
 
@@ -353,11 +366,11 @@ def main():
             if not args.provider_dir:
                 parser.error("apply/ensure requires --provider-dir")
             if args.action == "ensure" and (OWNER.exists() or OWNER.is_symlink()):
-                check()
+                check(args.provider_dir)
             else:
                 install(args.provider_dir)
         else:
-            check()
+            check(args.provider_dir)
     except (OSError, ValueError, PurpleNetworkError) as exc:
         parser.exit(1, f"[BLOCKED] Purple VMware networking: {exc}\n")
 
