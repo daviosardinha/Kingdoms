@@ -71,11 +71,12 @@ class PurpleWs01InstallGateTests(unittest.TestCase):
         sequence = [x[0] for x in events if x[0] in ("vagrant", "bounded", "eval")]
         self.assertEqual(sequence, ["vagrant", "bounded", "eval",
                                     "bounded", "vagrant", "vagrant"])
-        self.assertEqual(events[1][1], ["up", "PURPLE-WS01", "--no-provision"])
+        actions = [e for e in events if e[0] in ("vagrant", "bounded", "eval")]
+        self.assertEqual(actions[1][1], ["up", "PURPLE-WS01", "--no-provision"])
         self.assertIn("--fresh-install", runner.call_args.args[0])
-        self.assertEqual(events[-3][1], ["up", "PURPLE-WS01", "--provision"])
-        self.assertEqual(events[-2][1], ["up", "PURPLE-LX01"])
-        self.assertEqual(events[-1][1], ["up", "PURPLE-WAZUH"])
+        self.assertEqual(actions[3][1], ["up", "PURPLE-WS01", "--provision"])
+        self.assertEqual(actions[4][1], ["up", "PURPLE-LX01"])
+        self.assertEqual(actions[5][1], ["up", "PURPLE-WAZUH"])
 
     def test_healthy_guest_still_checks_eval_before_provision(self):
         gate, runner, events = method_under_test()
