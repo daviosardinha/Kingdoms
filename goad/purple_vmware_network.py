@@ -243,6 +243,7 @@ def install(provider_dir: str):
         raise PurpleNetworkError("NORTH backup/lock directory unavailable")
     from goad.course1_host_network_apply import (
         inspect_installed_north, VMwareNetworkRestart, snapshot_netmap, NETMAP,
+        run_command,
     )
     with exclusive_vmnet_lock(BACKUPS):
         require_reconciled(BACKUPS)
@@ -288,6 +289,11 @@ def install(provider_dir: str):
             journal["state"] = "WRITTEN"
             record_journal(backup_folder, journal)
             restart()
+            # A VMware network service restart may replace NORTH's protected
+            # .254 host addresses with .1. Reassert the existing owned helper
+            # before verifying NORTH's full host-level isolation contract.
+            from goad.course1_hostaddrs import SERVICE as NORTH_ADDR_SERVICE
+            run_command("systemctl", "restart", NORTH_ADDR_SERVICE)
             journal["state"] = "VERIFYING"
             record_journal(backup_folder, journal)
             after = NETWORKING.read_bytes()
@@ -335,6 +341,8 @@ def install(provider_dir: str):
                 _atomic_bytes(NETWORKING, before, meta)
                 try:
                     restart()
+                    from goad.course1_hostaddrs import SERVICE as NORTH_ADDR_SERVICE
+                    run_command("systemctl", "restart", NORTH_ADDR_SERVICE)
                 except Exception as restart_error:
                     journal["state"] = "MANUAL_RECONCILIATION"
                     record_journal(backup_folder, journal)
@@ -344,6 +352,28 @@ def install(provider_dir: str):
             journal["state"] = "ROLLED_BACK"
             record_journal(backup_folder, journal)
             raise PurpleNetworkError(f"Purple bootstrap failed; original restored: {backup}") from error
+
+
+def plan():
+    """Read-only dry-run under root; prove NORTH ownership and vmnet availability."""
+    if os.geteuid() != 0:
+        raise PurpleNetworkError("Root privileges required for owner attestation")
+    if OWNER.exists() or OWNER.is_symlink():
+        raise PurpleNetworkError("vmnet40 has already been installed; use verify")
+    from goad.course1_host_network_apply import inspect_installed_north
+    north, _ = _owner_record(NORTH_OWNER)
+    inspect_installed_north(north.get("provider"))
+    _guard_host()
+    before = NETWORKING.read_text(encoding="utf-8")
+    after = append_vmnet(before)
+    if not after.startswith(before.rstrip("\n")):
+        raise PurpleNetworkError("Additive configuration invariant failed")
+    print("[PASS] NORTH immutable owner and running-VM preflight")
+    print("[PASS] vmnet40 and 192.168.240.0/24 are unallocated")
+    print("[PLAN] Add host-only vmnet40, no DHCP/NAT, static lab NICs")
+    for key, value in FIELDS.items():
+        print(f"[PLAN] VNET_40_{key}={value}")
+    print("[PLAN] No host networking was changed")
 
 
 def check(provider_dir: str | None = None):
@@ -358,11 +388,13 @@ def check(provider_dir: str | None = None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("apply", "verify", "ensure"))
+    parser.add_argument("action", choices=("plan", "apply", "verify", "ensure"))
     parser.add_argument("--provider-dir", default=None)
     args = parser.parse_args()
     try:
-        if args.action in ("apply", "ensure"):
+        if args.action == "plan":
+            plan()
+        elif args.action in ("apply", "ensure"):
             if not args.provider_dir:
                 parser.error("apply/ensure requires --provider-dir")
             if args.action == "ensure" and (OWNER.exists() or OWNER.is_symlink()):
