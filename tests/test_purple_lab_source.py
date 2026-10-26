@@ -22,6 +22,20 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn("bento/ubuntu-22.04", vm)
         self.assertIn("provision-ubuntu-desktop.sh", vm)
 
+    def test_windows_reuse_original_minilab(self):
+        original = (ROOT / "ad" / "MINILAB" / "providers" / "vmware" / "Vagrantfile").read_text()
+        purple = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
+        for name, box in (("DC01", "mayfly/windows_server2019"), ("WS01", "mayfly/windows10")):
+            original_line = next(line for line in original.splitlines() if ':name => "' + name + '"' in line)
+            purple_line = next(line for line in purple.splitlines() if ':name => "PURPLE-' + name + '"' in line)
+            for marker in (':box => "' + box + '"', ':os => "windows"', ':cpus => 2', ':mem => 4000'):
+                self.assertIn(marker, original_line)
+                self.assertIn(marker, purple_line)
+            self.assertNotIn(":vmware_network_adapters", purple_line)
+            self.assertNotIn(":lab_mac", purple_line)
+        template = (ROOT / "template" / "provider" / "vmware" / "Vagrantfile").read_text()
+        self.assertNotIn("['GOAD', 'NORTH', 'PURPLE']", template)
+
     def test_windows_only_ad_provisioning(self):
         inventory = (PURPLE / "data" / "inventory").read_text()
         domain_part = inventory.split("[domain]", 1)[1].split("[", 1)[0]
