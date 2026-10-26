@@ -21,6 +21,8 @@ TARGETS = {
 
 POWERSHELL = r"""
 $ErrorActionPreference='Continue'
+# Progress records are noise in remote CLIXML stderr; suppress per-process only.
+$ProgressPreference='SilentlyContinue'
 Write-Output '==== CLOCK ===='
 Get-Date -Format o
 Write-Output '==== DOMAIN SECURE CHANNEL ===='
@@ -50,6 +52,14 @@ Get-WinEvent -LogName 'Microsoft-Windows-Time-Service/Operational' -MaxEvents 20
  Where-Object { $_.TimeCreated -ge (Get-Date).AddHours(-24) } |
  Select-Object TimeCreated,Id,LevelDisplayName,Message | Format-List
 """
+
+# DCs do not use member-style /sc_query trust semantics against their own
+# domain. WINTERFELL must prove its DC Locator TIMESERV advertisement instead.
+# CASTELBLACK retains the genuine member secure-channel diagnostic.
+POWERSHELL_DC = POWERSHELL.replace(
+    "nltest.exe /sc_query:north.sevenkingdoms.local",
+    "nltest.exe /dsgetdc:north.sevenkingdoms.local /timeserv /force",
+)
 
 
 def assert_instance(instance_id):
@@ -134,9 +144,12 @@ def evidence_problems(status_code, stdout, stderr, warning_messages):
 def capture(instance_id):
     assert_instance(instance_id)
     # Avoid a second Windows command-line length failure in diagnostics.
-    encoded_length = len(base64.b64encode(POWERSHELL.encode("utf-16le")))
-    if encoded_length > 6500:
-        raise ValueError(f"Diagnostic encoded command too large: {encoded_length}")
+    for script in (POWERSHELL, POWERSHELL_DC):
+        encoded_length = len(base64.b64encode(script.encode("utf-16le")))
+        if encoded_length > 6500:
+            raise ValueError(
+                f"Diagnostic encoded command too large: {encoded_length}"
+            )
     # Scripts executed by path set sys.path[0] to scripts/diagnostics.
     # Resolve imports from this repository instead of assuming a shell PYTHONPATH.
     if str(ROOT) not in sys.path:
@@ -160,7 +173,8 @@ def capture(instance_id):
             session = GoadNomadVmwareProvider._lab_winrm_session(ip)
             with warnings.catch_warnings(record=True) as raised:
                 warnings.simplefilter("always")
-                result = session.run_ps(POWERSHELL)
+                script = POWERSHELL_DC if name == "winterfell" else POWERSHELL
+                result = session.run_ps(script)
             stdout = result.std_out.decode(errors="replace")
             stderr = result.std_err.decode(errors="replace")
             warning_messages = [str(item.message) for item in raised]
