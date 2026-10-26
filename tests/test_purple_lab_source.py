@@ -86,27 +86,35 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn('"NAT": "no"', checker)
         self.assertIn('"DHCP": "no"', checker)
 
-    def test_ws01_reuses_existing_eval_rearm_strategy(self):
+    def test_ws01_early_vmware_eval_before_ansible(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         template = (ROOT / "template" / "provider" / "vmware" / "Vagrantfile").read_text()
+        provider = (ROOT / "goad" / "provider" / "vagrant" / "vmware.py").read_text()
         script = (PURPLE / "providers" / "vmware" / "activate-ws01.ps1").read_text()
         role = (ROOT / "ansible" / "roles" / "settings" / "eval_rearm"
                 / "tasks" / "main.yml").read_text()
         ws01 = next(line for line in vm.splitlines() if ':name => "PURPLE-WS01"' in line)
         self.assertIn('mayfly/windows10', ws01)
-        self.assertEqual(vm.count(':eval_rearm_script =>'), 1)
-        self.assertIn('activate-ws01.ps1', vm)
-        self.assertIn('if box.has_key?(:eval_rearm_script)', template)
-        self.assertIn('purple-ws01-eval-rearm', template)
-        self.assertIn('purple-ws01-eval-verify', template)
-        self.assertIn('reboot: true', template)
+        self.assertNotIn(':eval_rearm_script =>', vm)
+        self.assertNotIn('if box.has_key?(:eval_rearm_script)', template)
+        self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', template)
+        self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', script)
         for marker in ('TIMEBASED_EVAL', 'GracePeriodRemaining', '/rearm'):
             self.assertIn(marker, role)
             self.assertIn(marker, script)
         self.assertIn('PURPLE_WS01_EVAL_READY=PASS', script)
-        self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', template)
-        self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', script)
-        self.assertNotIn(':license_script =>', vm)
+        self.assertIn("self._install_purple_with_eval_maintenance()", provider)
+        method = provider.split("    def _install_purple_with_eval_maintenance(self):", 1)[1].split(
+            "    def install(self):", 1)[0]
+        boot = method.index("['up', 'PURPLE-WS01', '--no-provision']")
+        recovery = method.index("purple-ws01-vmware-eval.py")
+        provision = method.index("['up', 'PURPLE-WS01', '--provision']")
+        self.assertLess(boot, recovery)
+        self.assertLess(recovery, provision)
+        self.assertIn("'_last_bounded_vagrant_reaped'", method)
+        self.assertIn("return False", method)
+        self.assertIn("('PURPLE-LX01', 'PURPLE-WAZUH')", method)
+        self.assertNotIn("GOAD-WS01", method)
 
     def test_ws01_direct_vmware_recovery_scope(self):
         helper = (ROOT / "scripts" / "purple-ws01-vmware-eval.py").read_text()
