@@ -101,7 +101,14 @@ function Invoke-NorthParentWinRS {
         } finally { $output.stdout.Dispose(); $output.stderr.Dispose() }
     } catch {
         # Avoid dumping remoting objects/credentials into Ansible failure output.
-        throw "KINGSLANDING WinRS $stage failed; inspect DC01 inventory authentication and existing WinRM authorization"
+        $code = 'unavailable'
+        if ($session.Error -match 'Code="([0-9]+)"') { $code = $Matches[1] }
+        if ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted' -and
+            $env:KINGDOMS_TEST_NORTH_WINRS -eq '1') {
+            # Disposable fixture diagnostics; never print the connection object.
+            Write-Warning ($session.Error.Replace($Credential.GetNetworkCredential().Password, '[redacted]'))
+        }
+        throw "KINGSLANDING WinRS $stage failed (WSMan code $code); inspect DC01 inventory authentication and existing WinRM authorization"
     } finally {
         if ($locator) { $null = $session.Delete($locator, 0) }
         $options.Password = ''
