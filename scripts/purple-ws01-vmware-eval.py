@@ -224,7 +224,8 @@ def main():
             print("[INFO] No Windows evaluation rearm was necessary", flush=True)
             result.unlink(missing_ok=True)
             print("[INFO] Verifying Windows evaluation state", flush=True)
-            vmrun_phase(vmx, SOURCE, runner_path, result, verify=True)
+            vmrun_phase(vmx, SOURCE, runner_path, result, verify=True,
+                        fresh_install=args.fresh_install)
     print("[PASS] PURPLE_WS01_EVAL_MAINTENANCE_COMPLETE", flush=True)
 
 
