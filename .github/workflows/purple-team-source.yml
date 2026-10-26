@@ -10,6 +10,7 @@ on:
       - 'goad/purple_vmware_network.py'
       - 'goad/course1_host_network_apply.py'
       - 'goad/provider/vagrant/vmware.py'
+      - 'scripts/purple-ws01-vmware-eval.py'
       - 'template/provider/vmware/Vagrantfile'
       - 'tests/test_purple_*.py'
       - '.github/workflows/purple-team-source.yml'
@@ -26,7 +27,7 @@ jobs:
           python-version: '3.11'
       - name: Compile edited Python modules and tests
         run: |
-          python -m py_compile goad/purple_vmware_network.py goad/course1_host_network_apply.py goad/provider/vagrant/vmware.py tests/test_purple_vmware_network.py tests/test_purple_lab_source.py
+          python -m py_compile goad/purple_vmware_network.py goad/course1_host_network_apply.py goad/provider/vagrant/vmware.py scripts/purple-ws01-vmware-eval.py tests/test_purple_vmware_network.py tests/test_purple_lab_source.py
       - name: Execute offline Purple Team regressions
         run: |
           python -m unittest tests.test_purple_lab_source tests.test_purple_vmware_network -v
