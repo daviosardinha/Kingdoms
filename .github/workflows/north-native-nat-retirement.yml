@@ -43,6 +43,9 @@ on:
       - tests/test_north_one_shot_reset_script.py
       - scripts/validate-north-runtime.sh
       - ansible/north-exercise-health-readonly.yml
+      - ansible/files/north-parent-dc-health.ps1
+      - ansible/files/north-parent-winrs.ps1
+      - tests/test_north_parent_winrs.ps1
       - tests/test_north_runtime_validation.py
       - goad/course1_recovered_runtime.py
       - tests/test_north_recovered_runtime_metadata.py
@@ -87,6 +90,17 @@ permissions:
   contents: read
 
 jobs:
+  windows-parent-winrs:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise native parent WinRS transport and failure paths
+        shell: powershell
+        env:
+          KINGDOMS_TEST_NORTH_WINRS: '1'
+        run: ./tests/test_north_parent_winrs.ps1
+
   source-gates:
     runs-on: ubuntu-latest
     steps:

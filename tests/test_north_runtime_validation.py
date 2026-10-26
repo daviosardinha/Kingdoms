@@ -33,6 +33,8 @@ class NorthRuntimeSourceTests(unittest.TestCase):
         cls.north = NORTH.read_text(encoding="utf-8")
         cls.legacy = LEGACY.read_text(encoding="utf-8")
         cls.playbook = PLAYBOOK.read_text(encoding="utf-8")
+        cls.parent = (ROOT / 'ansible/files/north-parent-winrs.ps1').read_text()
+        cls.health = (ROOT / 'ansible/files/north-parent-dc-health.ps1').read_text()
 
     def test_bash_syntax_and_inline_python_compile(self):
         subprocess.run(["bash", "-n", str(NORTH)], check=True)
@@ -78,13 +80,18 @@ class NorthRuntimeSourceTests(unittest.TestCase):
         # No host vmnet20 route or NAT fallback: hop is DC02 -> DC01.
         self.assertIn("hosts: dc02:srv02:ws01", self.playbook)
         self.assertIn("hosts: dc02\n", self.playbook)
-        self.assertIn("New-PSSession -ComputerName $target -Port 5986 -UseSSL", self.playbook)
-        self.assertIn("-Credential $ParentCredential", self.playbook)
-        self.assertIn("Invoke-Command -Session $session", self.playbook)
+        self.assertIn("Invoke-NorthParentWinRS", self.playbook)
+        self.assertIn("Get-NorthParentCredential $ParentCredential", self.playbook)
         self.assertIn("param([PSCredential]$ParentCredential)", self.playbook)
         self.assertIn("sensitive_parameters:", self.playbook)
-        self.assertIn('password: "{{ ansible_password }}"', self.playbook)
-        self.assertIn("Remove-PSSession -Session $session", self.playbook)
+        self.assertIn("hostvars['dc01'].ansible_user", self.playbook)
+        self.assertIn("hostvars['dc01'].ansible_password", self.playbook)
+        self.assertNotIn('{{ ansible_password }}', self.playbook)
+        self.assertIn("$session.Delete($locator, 0)", self.parent)
+        self.assertIn("$ns + '/cmd'", self.parent)
+        self.assertIn("SessionFlagUseNegotiate", self.parent)
+        self.assertNotIn('New-PSSession', self.parent)
+        self.assertNotIn('Invoke-Command -Session', self.parent)
         for expected in (
             "NTDS','DNS','ADWS','Netlogon','Kdc','W32Time",
             "SYSVOL','NETLOGON",
@@ -96,7 +103,7 @@ class NorthRuntimeSourceTests(unittest.TestCase):
             "w32tm.exe /query /source",
             "w32tm.exe /query /status",
         ):
-            self.assertIn(expected, self.playbook)
+            self.assertIn(expected, self.health)
         self.assertIn(
             'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING',
             self.north,
@@ -111,7 +118,7 @@ class NorthRuntimeSourceTests(unittest.TestCase):
         parent = self.playbook.split(
             "- name: Verify KINGSLANDING directly through the permitted inter-DC path",
             1
-        )[1]
+        )[1] + self.parent + self.health
         self.assertIn("changed_when: false", parent)
         self.assertIn("'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'", parent)
         for forbidden in (
