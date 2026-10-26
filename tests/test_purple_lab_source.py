@@ -86,24 +86,27 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn('"NAT": "no"', checker)
         self.assertIn('"DHCP": "no"', checker)
 
-    def test_ws01_activation_is_scoped_and_secret_free(self):
+    def test_ws01_reuses_existing_eval_rearm_strategy(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         template = (ROOT / "template" / "provider" / "vmware" / "Vagrantfile").read_text()
         script = (PURPLE / "providers" / "vmware" / "activate-ws01.ps1").read_text()
+        role = (ROOT / "ansible" / "roles" / "settings" / "eval_rearm"
+                / "tasks" / "main.yml").read_text()
         ws01 = next(line for line in vm.splitlines() if ':name => "PURPLE-WS01"' in line)
         self.assertIn('mayfly/windows10', ws01)
-        self.assertEqual(vm.count(':license_script =>'), 1)
+        self.assertEqual(vm.count(':eval_rearm_script =>'), 1)
         self.assertIn('activate-ws01.ps1', vm)
-        self.assertIn('if box.has_key?(:license_script)', template)
-        self.assertIn('ENV.fetch("PURPLE_WS01_PRODUCT_KEY", "")', template)
-        self.assertIn('sensitive: true', template)
+        self.assertIn('if box.has_key?(:eval_rearm_script)', template)
+        self.assertIn('purple-ws01-eval-rearm', template)
+        self.assertIn('purple-ws01-eval-verify', template)
         self.assertIn('reboot: true', template)
-        self.assertIn('PURPLE_WS01_PRODUCT_KEY', script)
-        self.assertIn("Invoke-Slmgr '/ipk'", script)
-        self.assertIn("Invoke-Slmgr '/ato'", script)
-        self.assertIn('LicenseStatus -eq 1', script)
-        self.assertNotIn('YOUR-VALID-PRODUCT-KEY', script)
-        self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', vm)
+        for marker in ('TIMEBASED_EVAL', 'GracePeriodRemaining', '/rearm'):
+            self.assertIn(marker, role)
+            self.assertIn(marker, script)
+        self.assertIn('PURPLE_WS01_EVAL_READY=PASS', script)
+        self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', template)
+        self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', script)
+        self.assertNotIn(':license_script =>', vm)
 
     def test_monitoring_is_next_phase(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
