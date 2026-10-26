@@ -41,6 +41,19 @@ class NorthTimeEvidenceTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, script)
 
+    def test_dc_uses_domain_controller_time_advertisement_not_member_trust(self):
+        self.assertIn("POWERSHELL_DC = POWERSHELL.replace(", self.source)
+        self.assertIn(
+            '"nltest.exe /dsgetdc:north.sevenkingdoms.local /timeserv /force"',
+            self.source,
+        )
+        self.assertIn(
+            'script = POWERSHELL_DC if name == "winterfell" else POWERSHELL',
+            self.source,
+        )
+        self.assertIn("$ProgressPreference='SilentlyContinue'",
+                      self.values["script"])
+
     def test_diagnostic_includes_previous_night_failure_window(self):
         script = self.values["script"]
         self.assertIn("AddHours(-24)", script)
