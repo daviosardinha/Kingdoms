@@ -56,7 +56,7 @@ boxes.append(
         v.vmx["memsize"] = box[:mem]
         v.vmx["numvcpus"] = box[:cpus]
 
-{% if lab_name in ['GOAD', 'NORTH', 'PURPLE'] %}
+{% if lab_name in ['GOAD', 'NORTH'] %}
         # Multi-NIC Windows guests must use the provisioning NAT address for
         # Vagrant management. VMware Tools can otherwise return an exercise NIC
         # first (for example 10.4.30.12), which is intentionally unreachable
