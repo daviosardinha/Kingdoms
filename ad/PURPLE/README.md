@@ -68,6 +68,45 @@ installation until the read-only preflight and generated Vagrantfile review
 pass. Never create vmnet40 through the editor on the currently NORTH-owned
 host, since NORTH's immutable verifier would reject it.
 
+## Windows 10 workstation activation during fresh installs
+
+The original MINILAB Windows boxes and network configuration are unchanged.
+PURPLE adds **one** Windows-specific Vagrant shell provisioner to WS01:
+after WinRM/network setup, apply a valid Windows product key, confirm activation,
+then reboot and wait for WinRM to recover **before** AD Ansible provisioning.
+DC01 and the Linux guests are unaffected.
+
+The key is **never stored in Git or generated Vagrantfile**. Provide it to the
+installation process as a temporary environment variable (do not type the
+literal key into a command or commit it to a file):
+
+```bash
+cd ~/labs/purple-team/Kingdoms
+read -rs -p 'PURPLE-WS01 Windows product key: ' PURPLE_WS01_PRODUCT_KEY
+echo
+export PURPLE_WS01_PRODUCT_KEY
+sudo -v
+./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233
+unset PURPLE_WS01_PRODUCT_KEY
+```
+
+A missing key causes the WS01 activation provisioner to fail clearly rather
+than proceeding silently. A key that does not match the installed Windows
+edition or cannot activate will also block WS01 provisioning. Use a legitimate
+license for the **actual edition** in the Mayfly Windows 10 image; Windows
+Enterprise Evaluation editions may require an appropriate non-evaluation image
+or supported edition conversion, not just a product key.
+
+The key passes transiently through Vagrant's sensitive environment-variable
+mechanism and WinRM; it is not a hardware-backed secret store. Keep debug
+logging disabled and protect the operator account. Vagrant's `sensitive: true`
+masks provisioner environment values in normal output.
+
+This hook applies to **newly generated PURPLE instances**. The already installed
+`ef5c0b-purple-vmware` has a generated Vagrantfile from before the hook; do
+not rebuild or automatically reprovision it. Activate that existing WS01
+manually with a valid key if needed.
+
 ## Next phase
 
 - Verify Debian VM disk meets Wazuh's storage requirements; expand if needed.
