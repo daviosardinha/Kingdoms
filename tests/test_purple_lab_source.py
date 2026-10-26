@@ -41,7 +41,7 @@ class PurpleLabSourceTests(unittest.TestCase):
     def test_pinned_cached_windows_boxes(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         for ref in (
-            '"StefanScherer/windows_2019"',
+            '"mayfly/windows_server2019"',
             '"mayfly/windows10"',
             '"bento/debian-12"',
             '"bento/ubuntu-22.04"',
@@ -50,11 +50,11 @@ class PurpleLabSourceTests(unittest.TestCase):
 
     def test_explicit_isolated_lab_nics(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
-        self.assertEqual(vm.count(':skip_private_network => true'), 4)
-        self.assertEqual(vm.count(':vnet => "vmnet4"'), 4)
-        self.assertEqual(vm.count(':slot => 1'), 4)
+        self.assertEqual(vm.count(':skip_private_network => true'), 2)
+        self.assertEqual(vm.count(':vnet => "vmnet4"'), 2)
+        self.assertEqual(vm.count(':slot => 1'), 2)
         self.assertIn('172.28.233', vm)
-        for last in ("30", "31", "32", "51"):
+        for last in ("32", "51"):
             self.assertIn("00:50:56:10:04:" + last, vm)
         self.assertEqual(vm.count(':lab_linux_config_script =>'), 2)
         self.assertNotIn(":lab_gateway =>", vm)
