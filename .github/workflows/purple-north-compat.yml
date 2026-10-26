@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/north-purple-vmnet40-compat
+      - feature/north-purple-vmnet40-from-installed
   pull_request:
     paths:
       - 'goad/course1_host_network_apply.py'
