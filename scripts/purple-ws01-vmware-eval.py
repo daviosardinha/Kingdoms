@@ -83,6 +83,8 @@ Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
 try {
     $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
     if ([int]$os.ProductType -ne 1) { throw 'Expected a Windows client, not a server' }
+    $bootTime = $os.LastBootUpTime.ToUniversalTime().ToString('o')
+    Add-Content -LiteralPath $log -Value ("PURPLE_VMWARE_BOOT=" + $bootTime)
     $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
         Where-Object IPAddress -eq '172.28.233.31')
     if ($ips.Count -ne 1) { throw 'Selected guest does not own the expected PURPLE WS01 address' }
@@ -131,25 +133,35 @@ def main():
         print("[INFO] Evaluating Windows grace period through VMware Tools", flush=True)
         output = vmrun_phase(vmx, SOURCE, runner_path, result, verify=False)
         if "PURPLE_WS01_EVAL=REARMED" in output:
+            prior = re.search(r"(?m)^PURPLE_VMWARE_BOOT=(.+)$", output)
+            if not prior:
+                raise PurpleEvaluationError("Cannot prove WS01 boot identity before rearm reboot")
             print("[INFO] Evaluation rearmed. Rebooting only PURPLE-WS01.", flush=True)
             checked(["vmrun", "-T", "ws", "reset", str(vmx), "soft"], timeout=120)
             deadline = time.monotonic() + 300
+            time.sleep(15)
             while time.monotonic() < deadline:
                 try:
                     if (checked(["vmrun", "-T", "ws", "checkToolsState", str(vmx)],
-                                timeout=15).strip().lower() == "running"):
-                        guest_command(vmx, "listProcessesInGuest", timeout=20)
+                                timeout=15).strip().lower() != "running"):
+                        time.sleep(5)
+                        continue
+                    guest_command(vmx, "listProcessesInGuest", timeout=20)
+                    result.unlink(missing_ok=True)
+                    verified = vmrun_phase(vmx, SOURCE, runner_path, result, verify=True)
+                    current = re.search(r"(?m)^PURPLE_VMWARE_BOOT=(.+)$", verified)
+                    if current and current.group(1).strip() != prior.group(1).strip():
                         break
                 except PurpleEvaluationError:
                     pass
                 time.sleep(5)
             else:
-                raise PurpleEvaluationError("WS01 VMware Tools did not recover after reboot")
+                raise PurpleEvaluationError("WS01 evaluation or reboot could not be verified")
         else:
             print("[INFO] No Windows evaluation rearm was necessary", flush=True)
-        result.unlink(missing_ok=True)
-        print("[INFO] Verifying Windows evaluation state", flush=True)
-        vmrun_phase(vmx, SOURCE, runner_path, result, verify=True)
+            result.unlink(missing_ok=True)
+            print("[INFO] Verifying Windows evaluation state", flush=True)
+            vmrun_phase(vmx, SOURCE, runner_path, result, verify=True)
     print("[PASS] PURPLE_WS01_EVAL_MAINTENANCE_COMPLETE", flush=True)
 
 
