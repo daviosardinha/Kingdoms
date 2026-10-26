@@ -1,0 +1,20 @@
+# Purple Team: same Windows base as MINILAB, plus two Linux guests.
+# All machines are created in one Vagrant/VMware deployment.
+# Wazuh is intentionally installed in a separate, later phase.
+boxes = [
+  { :name => "PURPLE-DC01", :ip => "{{ip_range}}.30",
+    :box => "mayfly/windows_server2019", :os => "windows",
+    :cpus => 2, :mem => 4096 },
+  { :name => "PURPLE-WS01", :ip => "{{ip_range}}.31",
+    :box => "mayfly/windows10", :os => "windows",
+    :cpus => 2, :mem => 4096 },
+  { :name => "PURPLE-LX01", :ip => "{{ip_range}}.32",
+    :box => "bento/ubuntu-22.04", :box_version => "202510.26.0",
+    :os => "linux", :cpus => 2, :mem => 4096,
+    :provision_scripts => [
+      "../../../ad/PURPLE/providers/vmware/provision-ubuntu-desktop.sh"
+    ] },
+  { :name => "PURPLE-WAZUH", :ip => "{{ip_range}}.51",
+    :box => "bento/debian-12", :os => "linux",
+    :cpus => 2, :mem => 8192 }
+]

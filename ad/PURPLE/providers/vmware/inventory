@@ -1,0 +1,9 @@
+[default]
+; Windows-only AD hosts: original MINILAB role mapping.
+dc01 ansible_host={{ip_range}}.30 dns_domain=dc01 dict_key=dc01
+ws01 ansible_host={{ip_range}}.31 dns_domain=dc01 dict_key=ws01
+
+[linux]
+; Vagrant provisions these through SSH; no Wazuh/AD role is applied yet.
+lx01 ansible_host={{ip_range}}.32 ansible_connection=ssh ansible_user=vagrant
+wazuh ansible_host={{ip_range}}.51 ansible_connection=ssh ansible_user=vagrant
