@@ -577,7 +577,8 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         # and checks a different boot time plus positive evaluation grace.
         try:
             repaired = subprocess.run(
-                ['python3', helper, '--provider-dir', os.path.realpath(str(self.path))],
+                ['python3', helper, '--provider-dir', os.path.realpath(str(self.path)),
+                 '--fresh-install'],
                 cwd=GoadPath.get_project_path(), check=False, timeout=900,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
