@@ -174,6 +174,23 @@ def main():
     with tempfile.TemporaryDirectory(prefix="purple-ws01-eval-") as temporary:
         base = Path(temporary)
         runner_path, result = base / "runner.ps1", base / "result.txt"
+        if args.fresh_install and not args.resume_pending_rearm:
+            # A previous install attempt might have completed /rearm but
+            # been interrupted before its mandatory reboot. If the original
+            # exact guest retained the successful result, resume it rather
+            # than consuming another evaluation rearm.
+            pending_result = base / "pending.txt"
+            try:
+                guest_command(vmx, "copyFileFromGuestToHost",
+                              GUEST_OUTPUT, str(pending_result), timeout=30)
+                previous = pending_result.read_text(encoding="utf-8", errors="replace")
+            except (OSError, PurpleEvaluationError):
+                previous = ""
+            if (re.search(r"(?m)^PURPLE_WS01_EVAL=REARMED\s*$", previous) and
+                    re.search(r"(?m)^PURPLE_VMWARE_GUEST_OPERATION=PASS\s*$", previous)):
+                print("[INFO] Resuming previously successful rearm without repeating it",
+                      flush=True)
+                args.resume_pending_rearm = True
         if args.resume_pending_rearm:
             # The prior run wrote these markers after slmgr /rearm returned
             # success, but crashed before reboot because it overwrote the
