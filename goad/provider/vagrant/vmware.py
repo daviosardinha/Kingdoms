@@ -537,6 +537,70 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         )
         return True
 
+    def _install_purple_with_eval_maintenance(self):
+        """Boot only PURPLE's four guests and heal WS01 before WinRM provisioning.
+
+        The mayfly/windows10 evaluation box can be expired on first boot.
+        Vagrant shell provisioners are too late: Vagrant first waits for
+        WinRM, which may hang when Windows licensing is exhausted.
+        Use the verified, exact-VMX VMware Tools path before Vagrant provisions.
+        """
+        bounded = getattr(self, '_run_vagrant_bounded', None)
+        if not callable(bounded):
+            Log.error('PURPLE: bounded Vagrant controller required; refusing unsafe bring-up')
+            return False
+        Log.info('PURPLE: bringing up DC01 without altering its original Windows provisioning')
+        if not self.command.run_vagrant(['up', 'PURPLE-DC01'], self.path):
+            return False
+
+        # First boot can reach a healthy desktop and VMware Tools but hang
+        # indefinitely while Vagrant waits for forwarded WinRM. Bound that
+        # initial Vagrant controller and use the already-established NORTH
+        # selective cleanup to avoid killing VMware guests on timeout.
+        Log.info('PURPLE: starting WS01 without provisioning before evaluation maintenance')
+        first_boot = bounded(['up', 'PURPLE-WS01', '--no-provision'], timeout=360)
+        if not getattr(self, '_last_bounded_vagrant_reaped', True):
+            Log.error('PURPLE: initial Vagrant controller cleanup incomplete; no concurrent recovery')
+            return False
+        if not first_boot:
+            Log.warning(
+                'PURPLE: WS01 initial WinRM boot did not complete; attempting '
+                'exact-guest evaluation recovery through authenticated VMware Tools'
+            )
+        helper = GoadPath.get_script_file('purple-ws01-vmware-eval.py')
+        if not os.path.isfile(helper):
+            Log.error('PURPLE: VMware Tools evaluation maintenance helper is missing')
+            return False
+        # No product key; the original Windows 10 Enterprise Evaluation
+        # rearm is conditional on an expired grace period. The helper verifies
+        # the selected VMX, performs only the necessary rearm and reboot,
+        # and checks a different boot time plus positive evaluation grace.
+        try:
+            repaired = subprocess.run(
+                ['python3', helper, '--provider-dir', os.path.realpath(str(self.path))],
+                cwd=GoadPath.get_project_path(), check=False, timeout=900,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'PURPLE: WS01 evaluation maintenance interrupted: {exc}')
+            return False
+        if repaired.returncode != 0:
+            Log.error('PURPLE: WS01 evaluation was not verified; refusing AD provisioning')
+            return False
+
+        # Complete the normal Vagrant scripts now that the evaluation is
+        # healthy. Never bypass WS01's source-owned networking/WinRM setup.
+        Log.info('PURPLE: running standard WS01 Vagrant provisioning after evaluation recovery')
+        if not bounded(['up', 'PURPLE-WS01', '--provision'], timeout=900):
+            Log.error('PURPLE: WS01 Vagrant/WinRM provisioning failed after rearm; '
+                      'leaving guests intact for targeted recovery')
+            return False
+        for machine in ('PURPLE-LX01', 'PURPLE-WAZUH'):
+            Log.info(f'PURPLE: bringing up {machine}')
+            if not self.command.run_vagrant(['up', machine], self.path):
+                return False
+        Log.success('PURPLE: four VMs brought up with WS01 evaluation verified before Ansible')
+        return True
+
     def install(self):
         """Bring up VMware guests and prepare GOAD_NOMAD local provisioning reachability."""
         if self.lab_name == 'PURPLE':
@@ -566,7 +630,7 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
                          'no guests have been started')
                 return False
             Log.success('PURPLE: dedicated vmnet4 preflight/owner validated')
-            return super().install()
+            return self._install_purple_with_eval_maintenance()
         if self.lab_name != 'GOAD':
             return super().install()
 
