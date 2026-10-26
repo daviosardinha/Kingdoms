@@ -89,25 +89,30 @@ Fresh install:
 ./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233
 ```
 
-**Recovery of the already installed ef5c0b instance:** Its generated
-Vagrantfile was created before the correction and still names the hook
-`purple-ws01-activation`, but points to the same updated script path.
-After `git pull --ff-only`, start only WS01 without reprovisioning, then
-invoke that one hook. Do not rebuild the lab:
+**Recovery of the already installed ef5c0b instance:** VMware Tools can
+authenticate and execute guest processes even when Vagrant forwarded WinRM
+hangs. Use the repository-owned helper instead of manual PowerShell or another
+Vagrant install. It verifies the exact running WS01 VMX, checks the Windows
+client and lab IP, copies the source rearm script to the guest, runs it through
+VMware Tools, reboots **only WS01 if rearm was actually needed**, waits for
+VMware Tools, and verifies the post-reboot evaluation state.
 
 ```bash
 cd ~/labs/purple-team/Kingdoms
 git pull --ff-only
-cd workspace/ef5c0b-purple-vmware/provider
-vagrant up PURPLE-WS01 --provider=vmware_desktop --no-provision
-vagrant provision PURPLE-WS01 --provision-with purple-ws01-activation
-vagrant status PURPLE-WS01
-ping -c 3 172.28.233.31
+python3 scripts/purple-ws01-vmware-eval.py \
+  --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"
 ```
 
-The old generated hook's name is cosmetic; the updated PowerShell script
-no longer needs `PURPLE_WS01_PRODUCT_KEY`. New instances use
-`purple-ws01-eval-rearm` and `purple-ws01-eval-verify`.
+The helper requires the original Mayfly `vagrant/vagrant` local test account
+to retain working VMware Tools guest access, as verified on this instance.
+It is deliberately scoped to PURPLE-WS01 and never reconfigures VMware
+networks or any other guest. **This direct Tools recovery is a separate
+operator-invoked fallback**; live validation is required before making it
+an automatic initial-boot path. Fresh installations still have the Vagrant
+evaluation hook after WinRM becomes ready. If WinRM cannot become ready on
+a fresh installation, its early boot remains a limitation until the fallback
+is safely integrated into the bring-up lifecycle.
 
 ## Next phase
 
