@@ -194,6 +194,16 @@ def _guard_north_checkout(north_provider: str):
                 "Installed NORTH checkout is not vmnet40-overlay aware; "
                 "update and test NORTH's owner verifier before changing VMware"
             )
+        # This first pilot authorizes one reviewed implementation, not any
+        # compatible-looking Python file. Exact byte equality also prevents
+        # a working tree containing a hand-edited/untested verifier from
+        # silently acquiring privilege to change /etc/vmware.
+        reviewed = Path(__file__).parent / file.name
+        if file.read_bytes() != reviewed.read_bytes():
+            raise PurpleNetworkError(
+                "Installed NORTH verifier differs from the reviewed Purple "
+                "compatibility source: " + str(file)
+            )
 
 
 def _guard_host():
