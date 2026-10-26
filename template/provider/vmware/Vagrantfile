@@ -135,18 +135,6 @@ boxes.append(
           end
         end
 
-        # PURPLE-WS01: reuse the existing KINGDOMS/NORTH TIMEBASED_EVAL
-        # rearm strategy before AD Ansible. No product key or activation.
-        if box.has_key?(:eval_rearm_script)
-          target.vm.provision "purple-ws01-eval-rearm", type: "shell",
-            path: box[:eval_rearm_script],
-            privileged: true,
-            reboot: true
-          target.vm.provision "purple-ws01-eval-verify", type: "shell",
-            path: box[:eval_rearm_script],
-            args: ["-Verify"],
-            privileged: true
-        end
       else
         target.vm.communicator = "ssh"
         # Optional static lab NIC for Linux guests on an explicit custom vmnet.
