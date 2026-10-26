@@ -17,16 +17,24 @@ Vagrantfile and brought up with a single command.
 
 ## Source-only preflight
 
+The first four-machine source tests passed on 2026-10-26. This is not
+a runtime or VM networking acceptance test.
+
 Create a **separate checkout** from `main`. The existing NORTH instance
 must remain untouched. Before any install, check `vmrun list`,
 `ip -br -4 addr`, `ip route`, and VMware Virtual Network Editor to select
 a subnet free of conflict with existing VM networks, VPNs and host routes.
 For example, `192.168.240` is only a candidate, not pre-approved.
 
-The original MINILAB VMware Windows box names were retained as *sources*:
-`mayfly/windows_server2019` and `mayfly/windows10`.
+For a reliable local pilot, PURPLE pins the **locally cached VMware boxes**
+`StefanScherer/windows_2019` (2021.05.15) and `mayfly/windows10`
+(2024.01.06). The AD scenario is copied from MINILAB; the server box
+source is intentionally changed because the StefanScherer version is
+already installed and proven in the NORTH test environment.
 Linux boxes come from the same Vagrant Cloud registry:
-`bento/debian-12` and `bento/ubuntu-22.04`. The latter is a server
+`bento/debian-12` and `bento/ubuntu-22.04` (both pinned to
+202510.26.0). Debian is already cached locally; Ubuntu 22.04 must be
+added to the cache before installing. The latter is a server
 base transformed into **Ubuntu Desktop** by the guest provisioning script;
 the desktop installation adds significant download time and takes effect
 on the next graphical boot.
