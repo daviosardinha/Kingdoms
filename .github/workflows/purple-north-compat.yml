@@ -1,0 +1,29 @@
+name: NORTH Purple vmnet40 compatibility regressions
+
+on:
+  push:
+    branches:
+      - feature/north-purple-vmnet40-compat
+  pull_request:
+    paths:
+      - 'goad/course1_host_network_apply.py'
+      - 'goad/purple_vmware_network.py'
+      - 'tests/test_purple_north_compat.py'
+      - '.github/workflows/purple-north-compat.yml'
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile changed modules
+        run: |
+          python -m py_compile goad/purple_vmware_network.py goad/course1_host_network_apply.py tests/test_purple_north_compat.py
+      - name: Check conservative North vmnet ownership compatibility
+        run: |
+          python -m unittest tests.test_purple_north_compat -v
