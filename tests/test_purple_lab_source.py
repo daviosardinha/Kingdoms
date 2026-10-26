@@ -125,6 +125,16 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertNotIn('vagrant up', helper.lower())
         self.assertNotIn('GOAD-WS01', helper)
 
+    def test_vmware_rearm_resume_does_not_rearm_again(self):
+        helper = (ROOT / "scripts" / "purple-ws01-vmware-eval.py").read_text()
+        self.assertIn("--resume-pending-rearm", helper)
+        self.assertIn("Previously successful /rearm confirmed", helper)
+        self.assertIn("probe=True", helper)
+        self.assertIn("Out-File -LiteralPath $log -Encoding ascii -Append", helper)
+        self.assertIn("PURPLE_WS01_EVAL=REARMED", helper)
+        self.assertIn("PURPLE_VMWARE_BOOT=", helper)
+        self.assertIn("if args.resume_pending_rearm or", helper)
+
     def test_monitoring_is_next_phase(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
