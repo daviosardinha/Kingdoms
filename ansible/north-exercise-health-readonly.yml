@@ -1,6 +1,6 @@
 ---
 # NORTH exercise-mode health acceptance. No repair, restart, host route, NAT
-# reconnection, or AD writes. Protected parent DC is proven via child DC.
+# reconnection, or AD writes. Root PDC is verified via permitted DC02->DC01.
 - name: Verify NORTH identity health from accessible exercise-zone guests
   hosts: dc02:srv02:ws01
   gather_facts: false
@@ -80,3 +80,105 @@
     - name: Expose identity proof for host-by-host runtime acceptance
       ansible.builtin.debug:
         msg: "{{ north_runtime_probe.output | join(' | ') }}"
+
+# Parent DC is intentionally unreachable from Linux in exercise mode. The
+# installed DC02-to-DC01 cross-zone exception supplies a credentialed WinRM
+# hop. This preserves the host-only isolation of protected vmnet20.
+- name: Verify KINGSLANDING directly through the permitted inter-DC path
+  hosts: dc02
+  gather_facts: false
+  tasks:
+    - name: Assert root PDC services SYSVOL NETLOGON DNS and time authority
+      ansible.windows.win_powershell:
+        script: |
+          param([PSCredential]$ParentCredential)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+
+          $target = 'kingslanding.sevenkingdoms.local'
+          $resolved = @(Resolve-DnsName $target -Type A -ErrorAction Stop |
+                        Where-Object IPAddress -eq '10.4.20.10')
+          if ($resolved.Count -lt 1) {
+              throw "Parent DC DNS identity is not 10.4.20.10"
+          }
+
+          $discovery = @(& nltest.exe '/dsgetdc:sevenkingdoms.local' /timeserv /force 2>&1)
+          if ($LASTEXITCODE -ne 0 -or ($discovery -join ' ') -notmatch '10\.4\.20\.10') {
+              throw "Parent DC TIMESERV discovery failed: $($discovery -join ' ')"
+          }
+
+          # Supplying an explicit masked credential avoids reliance on
+          # an implicit second-hop WinRM delegated authentication context.
+          $options = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck -OpenTimeout 15000 -OperationTimeout 30000
+          $session = $null
+          try {
+              $session = New-PSSession -ComputerName $target -Port 5986 -UseSSL -Credential $ParentCredential -Authentication Negotiate -SessionOption $options -ErrorAction Stop
+              $proof = @(Invoke-Command -Session $session -ErrorAction Stop -ScriptBlock {
+                  $ErrorActionPreference = 'Stop'
+                  if ($env:COMPUTERNAME -ne 'KINGSLANDING') {
+                      throw "Unexpected remote DC identity $env:COMPUTERNAME"
+                  }
+
+                  $computer = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+                  if (-not $computer.PartOfDomain -or
+                      $computer.Domain -ine 'sevenkingdoms.local' -or
+                      $computer.DomainRole -ne 5) {
+                      throw 'KINGSLANDING root PDC domain identity unhealthy'
+                  }
+
+                  foreach ($name in @('NTDS','DNS','ADWS','Netlogon','Kdc','W32Time')) {
+                      if ((Get-Service -Name $name -ErrorAction Stop).Status -ne 'Running') {
+                          throw "KINGSLANDING service $name not running"
+                      }
+                  }
+
+                  foreach ($name in @('SYSVOL','NETLOGON')) {
+                      if (-not (Get-SmbShare -Name $name -ErrorAction SilentlyContinue)) {
+                          throw "KINGSLANDING missing $name share"
+                      }
+                  }
+
+                  $records = @(Resolve-DnsName '_ldap._tcp.dc._msdcs.sevenkingdoms.local' -Type SRV -Server 127.0.0.1 -ErrorAction Stop |
+                      Where-Object { $_.NameTarget.TrimEnd('.') -ieq 'kingslanding.sevenkingdoms.local' })
+                  if ($records.Count -lt 1) {
+                      throw 'KINGSLANDING root-domain LDAP SRV advertisement missing'
+                  }
+
+                  $locator = @(& nltest.exe '/dsgetdc:sevenkingdoms.local' /timeserv /force 2>&1)
+                  if ($LASTEXITCODE -ne 0 -or ($locator -join ' ') -notmatch '10\.4\.20\.10') {
+                      throw 'KINGSLANDING local TIMESERV discovery failed'
+                  }
+
+                  $source = (& w32tm.exe /query /source 2>&1 | Out-String).Trim()
+                  if ($LASTEXITCODE -ne 0 -or -not $source) {
+                      throw 'KINGSLANDING W32Time source unavailable'
+                  }
+                  $status = (& w32tm.exe /query /status 2>&1 | Out-String)
+                  if ($LASTEXITCODE -ne 0 -or -not $status.Trim()) {
+                      throw 'KINGSLANDING W32Time status unavailable'
+                  }
+
+                  # Root PDC may use a local source; it must advertise time,
+                  # not follow its child controller's time hierarchy.
+                  Write-Output 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
+              })
+
+              if ($proof -notcontains 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING') {
+                  throw 'Authenticated parent DC proof marker missing'
+              }
+              Write-Output 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
+          } finally {
+              if ($session) {
+                  Remove-PSSession -Session $session -ErrorAction SilentlyContinue
+              }
+          }
+        sensitive_parameters:
+          - name: ParentCredential
+            username: "{{ ansible_user }}"
+            password: "{{ ansible_password }}"
+      changed_when: false
+      register: north_parent_dc_probe
+
+    - name: Expose authenticated root PDC proof for runtime acceptance
+      ansible.builtin.debug:
+        msg: "{{ north_parent_dc_probe.output | join(' | ') }}"
