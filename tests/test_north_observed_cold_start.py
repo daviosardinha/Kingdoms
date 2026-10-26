@@ -67,6 +67,9 @@ class NorthObservedColdStartTests(unittest.TestCase):
 
     def test_capture_covers_full_start_with_bounded_runtime_and_cleanup(self):
         self.assertIn('tcpdump -i vmnet10', self.source)
+        self.assertIn('tcpdump -i vmnet10 -n -U -s 0 -w -', self.source)
+        self.assertIn('> "$EVIDENCE/ntp.pcap"', self.source)
+        self.assertNotIn('-w "$EVIDENCE/ntp.pcap"', self.source)
         self.assertIn("udp port 123 and (host 10.4.10.11 or host 10.4.10.22 or host 10.4.10.31)", self.source)
         self.assertIn('timeout --signal=INT --kill-after=5 1250', self.source)
         self.assertIn('kill -TERM "$CAP_PID"', self.source)
