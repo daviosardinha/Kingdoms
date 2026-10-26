@@ -57,7 +57,7 @@ bash scripts/purple-vmware-preflight.sh
 No NORTH checkout/source update is required. The preflight checks only
 existing VMware state; it performs no host networking edits.
 
-## Target installation command (not yet runtime tested)
+## Installation command
 
 ```bash
 ./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233
@@ -75,13 +75,37 @@ PURPLE-WS01 uses the **same evaluation rearm strategy as KINGDOMS and NORTH**:
 box is a time-based evaluation image. This is **not** a purchased-product-key
 activation flow. No key or environment variable is needed.
 
-During a new PURPLE installation, Vagrant checks the WS01 evaluation grace
-period immediately after Windows network/WinRM setup, before AD Ansible.
-If grace remains, no rearm is consumed. If expired, it runs
-`cscript.exe //NoLogo slmgr.vbs /rearm`, reboots through Vagrant, waits for
-WinRM, then checks that grace was restored. If the allowed rearm count is
-exhausted, installation stops with an explicit error; it does not disable
-Windows licensing services.
+During a new PURPLE installation, the provider explicitly brings up DC01,
+then starts WS01 **without running Vagrant Windows provisioners**. The initial
+WS01 Vagrant wait is bounded to 360 seconds. If it cannot complete, the
+provider reuses the hardened NORTH/KINGDOMS Vagrant-controller cleanup and
+does not begin guest recovery while a Vagrant controller remains active.
+
+The provider then runs `scripts/purple-ws01-vmware-eval.py --fresh-install`
+through authenticated VMware Tools, independently of Vagrant's forwarded
+WinRM. This invokes the same conditional `TIMEBASED_EVAL` / `slmgr /rearm`
+strategy as KINGDOMS/NORTH. When no grace remains, it rearms and reboots only
+WS01, verifies the reboot timestamp changed, and requires positive evaluation
+grace. A usable evaluation never consumes a rearm or forces a licensing reboot.
+If rearm was completed but installation was interrupted, the helper detects
+and resumes the successful pending rearm instead of consuming another.
+
+Only **after** evaluation verification does Vagrant execute WS01's original
+WinRM/networking provisioners; Linux machines are brought up afterward,
+then normal AD Ansible provisioning runs. The provider fails closed if either
+the VMware Tools recovery or subsequent Windows/WinRM provisioning fails.
+The software does not disable evaluation services or bypass licensing.
+
+**Fresh-install caveat:** before Vagrant's `fix_ip.ps1` runs, the new WS01
+lab-facing NIC may not yet have `172.28.233.31`. The helper's special
+`--fresh-install` mode tolerates a temporarily missing lab IP only if both
+VMware adapters are up; it does not weaken identity checks for manual
+recovery of existing installed instances.
+
+**Validation:** the original four-VM PURPLE pilot and a separate manual
+VMware Tools WS01 rearm/reboot have been tested live. The *new fully automatic
+first-boot orchestration* has passing offline regressions but still needs a
+fresh-instance end-to-end test. Do not assume success until that run is verified.
 
 Fresh install:
 
@@ -123,12 +147,10 @@ then requires a **different boot timestamp** and nonexpired evaluation.
 The helper requires the original Mayfly `vagrant/vagrant` local test account
 to retain working VMware Tools guest access, as verified on this instance.
 It is deliberately scoped to PURPLE-WS01 and never reconfigures VMware
-networks or any other guest. **This direct Tools recovery is a separate
-operator-invoked fallback**; live validation is required before making it
-an automatic initial-boot path. Fresh installations still have the Vagrant
-evaluation hook after WinRM becomes ready. If WinRM cannot become ready on
-a fresh installation, its early boot remains a limitation until the fallback
-is safely integrated into the bring-up lifecycle.
+networks or any other guest. The same helper now runs **automatically** during
+new PURPLE installations; manual invocation remains a bounded recovery option
+for already-created instances. Only the new installation path uses
+`--fresh-install` to handle an as-yet-unconfigured Windows lab NIC.
 
 ## Next phase
 
