@@ -65,10 +65,12 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn('purple-lab-interface.service', script)
         self.assertIn('/sys/class/net/', script)
         gate = (ROOT / "scripts" / "purple-vmware-preflight.sh").read_text()
-        self.assertIn('VNET_4_', gate)
-        self.assertIn('172.28.233.0/24', gate)
-        self.assertIn('NAT no', gate)
-        self.assertIn('DHCP no', gate)
+        self.assertIn('goad.purple_vmware_network verify', gate)
+        checker = (ROOT / "goad" / "purple_vmware_network.py").read_text()
+        self.assertIn('VNET_4_', checker)
+        self.assertIn('172.28.233.0/24', checker)
+        self.assertIn('"NAT": "no"', checker)
+        self.assertIn('"DHCP": "no"', checker)
 
     def test_monitoring_is_next_phase(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
