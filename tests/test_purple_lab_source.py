@@ -108,6 +108,23 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertNotIn('PURPLE_WS01_PRODUCT_KEY', script)
         self.assertNotIn(':license_script =>', vm)
 
+    def test_ws01_direct_vmware_recovery_scope(self):
+        helper = (ROOT / "scripts" / "purple-ws01-vmware-eval.py").read_text()
+        self.assertIn('PURPLE-WS01', helper)
+        self.assertIn('purple-vmware', helper)
+        self.assertIn('owned_vmx(provider_dir', helper)
+        self.assertIn('checkToolsState', helper)
+        self.assertIn('listProcessesInGuest', helper)
+        self.assertIn('copyFileFromHostToGuest', helper)
+        self.assertIn('runProgramInGuest', helper)
+        self.assertIn('copyFileFromGuestToHost', helper)
+        self.assertIn('PURPLE_WS01_EVAL=REARMED', helper)
+        self.assertIn('reset', helper)
+        self.assertIn('verify=True', helper)
+        self.assertIn('PURPLE_WS01_EVAL_MAINTENANCE_COMPLETE', helper)
+        self.assertNotIn('vagrant up', helper.lower())
+        self.assertNotIn('GOAD-WS01', helper)
+
     def test_monitoring_is_next_phase(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
