@@ -1,50 +1,53 @@
-# PURPLE-WS01: activate Windows during first Vagrant provisioning.
-# The product key is supplied by the operator at runtime, never committed.
+# PURPLE WS01 uses the same Windows 10 Enterprise Evaluation grace-period
+# maintenance as KINGDOMS/NORTH (ansible/roles/settings/eval_rearm).
+# No product key is required, stored, or passed.
+param([switch]$Verify)
 $ErrorActionPreference = 'Stop'
 
-$key = $env:PURPLE_WS01_PRODUCT_KEY
-if ([string]::IsNullOrWhiteSpace($key)) {
-    throw 'PURPLE-WS01 activation requires PURPLE_WS01_PRODUCT_KEY before installation. No license is stored in Git.'
-}
-$key = $key.Trim().ToUpperInvariant()
-if ($key -notmatch '^[A-Z0-9]{5}(-[A-Z0-9]{5}){4}$') {
-    throw 'PURPLE-WS01 product key format is invalid (expected five groups of five characters).'
+$license = Get-CimInstance SoftwareLicensingProduct -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.Name -like 'Windows*' -and
+        $_.PartialProductKey -and
+        $_.Description -match 'TIMEBASED_EVAL'
+    } |
+    Select-Object -First 1
+
+if (-not $license) {
+    Write-Output 'PURPLE_WS01_EVAL=NOT_TIMEBASED_EVAL'
+    return
 }
 
-$slmgr = Join-Path $env:SystemRoot 'System32\slmgr.vbs'
-function Invoke-Slmgr([string]$operation, [string]$productKey = '') {
-    if ($productKey) {
-        # Never write the key or slmgr output to the provisioner log.
-        $null = & cscript.exe //nologo $slmgr $operation $productKey 2>&1
-    } else {
-        $null = & cscript.exe //nologo $slmgr $operation 2>&1
-    }
-    if ($LASTEXITCODE -ne 0) {
-        throw "PURPLE-WS01 Windows activation step $operation failed. Check edition and license compatibility inside the guest."
-    }
-}
-try {
-    Invoke-Slmgr '/ipk' $key
-} finally {
-    Remove-Item Env:\PURPLE_WS01_PRODUCT_KEY -ErrorAction SilentlyContinue
-    $key = $null
-}
-Invoke-Slmgr '/ato'
+$minutes = [int64]$license.GracePeriodRemaining
+Write-Output "PURPLE_WS01_EVAL_GRACE_MINUTES=$minutes"
 
-# slmgr may return before the Windows licensing service reports the result.
-$deadline = (Get-Date).AddSeconds(90)
-$activated = $false
-while ((Get-Date) -lt $deadline) {
-    $windows = Get-CimInstance SoftwareLicensingProduct -Filter "ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f'" |
-        Where-Object { $_.PartialProductKey -and $_.LicenseStatus -eq 1 }
-    if ($windows) {
-        $activated = $true
-        break
+if ($Verify) {
+    if ($minutes -le 0) {
+        throw "PURPLE WS01 Windows evaluation is still expired after reboot (status=$($license.LicenseStatus))"
     }
-    Start-Sleep -Seconds 5
+    Write-Output 'PURPLE_WS01_EVAL_READY=PASS'
+    return
 }
-if (-not $activated) {
-    throw 'PURPLE-WS01 Windows activation was not confirmed. Check that the product key matches the installed edition and the activation service is reachable.'
+
+if ($minutes -gt 0) {
+    Write-Output 'PURPLE_WS01_EVAL=READY'
+    return
 }
-Write-Output 'PURPLE_WS01_ACTIVATION_CONFIRMED'
-# Vagrant shell provisioner handles the subsequent reboot and communicator wait.
+
+# Same conditional rearm used by the existing KINGDOMS/NORTH Ansible role.
+$stdout = Join-Path $env:TEMP 'purple-ws01-slmgr-rearm.out'
+$stderr = Join-Path $env:TEMP 'purple-ws01-slmgr-rearm.err'
+Remove-Item -LiteralPath $stdout,$stderr -Force -ErrorAction SilentlyContinue
+$process = Start-Process -FilePath "$env:SystemRoot\System32\cscript.exe" `
+    -ArgumentList @('//NoLogo', "$env:SystemRoot\System32\slmgr.vbs", '/rearm') `
+    -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+
+$out = if (Test-Path -LiteralPath $stdout) { Get-Content -LiteralPath $stdout -Raw } else { '' }
+$err = if (Test-Path -LiteralPath $stderr) { Get-Content -LiteralPath $stderr -Raw } else { '' }
+if ($process.ExitCode -ne 0) {
+    throw "PURPLE WS01 evaluation rearm failed with exit code $($process.ExitCode): $out $err"
+}
+if (($out + $err) -notmatch '(?i)success|restart|rearm') {
+    throw "PURPLE WS01 evaluation rearm returned unexpected output: $out $err"
+}
+Write-Output 'PURPLE_WS01_EVAL=REARMED'
+# Vagrant's reboot: true waits for Windows/WinRM to return before continuing.
