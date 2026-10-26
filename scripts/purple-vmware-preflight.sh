@@ -20,8 +20,14 @@ require_field HOSTONLY_NETMASK 255.255.255.0
 require_field NAT no
 require_field DHCP no
 
-ip -o -4 address show dev "$vmnet" | grep -Eq 'inet 192\.168\.240\.254/24([[:space:]]|$)' ||
-  fail "Expected vmnet40 host IP 192.168.240.254/24"
+host_cidr="$(ip -o -4 address show dev "$vmnet" | awk '$3 == "inet" {print $4; exit}')"
+[[ "$host_cidr" =~ ^192\\.168\\.240\\.[0-9]{1,3}/24$ ]] ||
+  fail "Expected a host adapter address on 192.168.240.0/24, found: $host_cidr"
+case "$host_cidr" in
+  192.168.240.30/24|192.168.240.31/24|192.168.240.32/24|192.168.240.51/24)
+    fail "Host IP conflicts with a Purple Team guest"
+    ;;
+esac
 ip -4 route show "$subnet/24" | grep -q "dev $vmnet" ||
   fail "Missing Purple Team route via vmnet40"
 
