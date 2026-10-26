@@ -127,9 +127,9 @@ state after-stop
 # Capture NtpClient source UDP/123 (not /stripchart ephemeral-source traffic).
 echo "[INFO] Passive vmnet10 UDP/123 capture starts before VM power-on"
 sudo -n timeout --signal=INT --kill-after=5 1250 \
-    tcpdump -i vmnet10 -n -U -s 0 -w "$EVIDENCE/ntp.pcap" \
+    tcpdump -i vmnet10 -n -U -s 0 -w - \
     'udp port 123 and (host 10.4.10.11 or host 10.4.10.22 or host 10.4.10.31)' \
-    > "$EVIDENCE/capture-stdout.txt" 2> "$EVIDENCE/capture-stderr.txt" &
+    > "$EVIDENCE/ntp.pcap" 2> "$EVIDENCE/capture-stderr.txt" &
 CAP_PID=$!
 sleep 2
 kill -0 "$CAP_PID" 2>/dev/null || fail "Packet capture exited before start"
