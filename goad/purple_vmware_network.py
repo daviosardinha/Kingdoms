@@ -156,6 +156,8 @@ def authorized_strip(
     if (not backup.is_absolute() or backup.is_symlink()
             or not backup.is_file()
             or BACKUPS not in backup.parents
+            or backup.stat().st_uid != uid
+            or stat.S_IMODE(backup.stat().st_mode) != 0o600
             or _sha(backup.read_bytes()) != record["network_before_sha256"]):
         raise PurpleNetworkError("Purple backup missing or checksum mismatch")
     return strip_checked_overlay(observed)
@@ -209,12 +211,16 @@ def _guard_host():
                 raise PurpleNetworkError("Registered VM already uses Purple MAC")
 
 
-def _verify_live_overlay(after: bytes, previous: bytes):
-    # The original config must remain valid under NORTH's existing narrow
-    # Vagrant normalization allowances; no broad declaration changes allowed.
+def _verify_overlay_bytes_only(after: bytes, previous: bytes):
+    # Preserve NORTH's narrow drift allowances even if VMware fails before
+    # the new vmnet40 interface comes online.
     from goad.kingdoms_topology import load_course1_topology
     verify_owned_vmnet_runtime(previous, strip_checked_overlay(after),
                                previous, load_course1_topology())
+
+
+def _verify_live_overlay(after: bytes, previous: bytes):
+    _verify_overlay_bytes_only(after, previous)
     address = _command("ip", "-o", "-4", "address", "show", "dev", VMNET)
     host = [part for part in address.split() if part.startswith("192.168.240.")]
     if not host or not any(ipaddress.ip_interface(a).ip in SUBNET for a in host):
@@ -236,6 +242,11 @@ def install(provider_dir: str):
     )
     with exclusive_vmnet_lock(BACKUPS):
         require_reconciled(BACKUPS)
+        # Our own interrupted operations must not be silently adopted.
+        for prior in BACKUPS.glob("purple-*/journal.json"):
+            j = json.loads(prior.read_text(encoding="utf-8"))
+            if j.get("state") not in ("COMMITTED", "ROLLED_BACK"):
+                raise PurpleNetworkError("Interrupted Purple vmnet transaction needs reconciliation")
         if OWNER.exists() or OWNER.is_symlink():
             raise PurpleNetworkError("Purple network owner already exists")
         north, north_bytes = _owner_record(NORTH_OWNER)
@@ -298,14 +309,16 @@ def install(provider_dir: str):
                 # Never overwrite an unknown third-party modification.
                 now = NETWORKING.read_bytes()
                 try:
-                    _verify_live_overlay(now, before)
+                    _verify_overlay_bytes_only(now, before)
                 except Exception as drift:
                     journal["state"] = "MANUAL_RECONCILIATION"
                     record_journal(backup_folder, journal)
                     raise PurpleNetworkError(
                         f"Unsafe rollback due to observed network drift: {backup}"
                     ) from drift
-                if OWNER.exists():
+                if OWNER.exists() or OWNER.is_symlink():
+                    journal["state"] = "MANUAL_RECONCILIATION"
+                    record_journal(backup_folder, journal)
                     raise PurpleNetworkError("Purple owner created; manual reconciliation required") from error
                 _atomic_bytes(NETWORKING, before, meta)
                 try:
@@ -332,14 +345,17 @@ def check():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("apply", "verify"))
+    parser.add_argument("action", choices=("apply", "verify", "ensure"))
     parser.add_argument("--provider-dir", default=None)
     args = parser.parse_args()
     try:
-        if args.action == "apply":
+        if args.action in ("apply", "ensure"):
             if not args.provider_dir:
-                parser.error("apply requires --provider-dir")
-            install(args.provider_dir)
+                parser.error("apply/ensure requires --provider-dir")
+            if args.action == "ensure" and (OWNER.exists() or OWNER.is_symlink()):
+                check()
+            else:
+                install(args.provider_dir)
         else:
             check()
     except (OSError, ValueError, PurpleNetworkError) as exc:
