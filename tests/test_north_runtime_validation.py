@@ -74,6 +74,60 @@ class NorthRuntimeSourceTests(unittest.TestCase):
         self.assertIn("kingslanding.sevenkingdoms.local", self.playbook)
 
 
+    def test_parent_root_dc_requires_guest_side_authenticated_proof(self):
+        # No host vmnet20 route or NAT fallback: hop is DC02 -> DC01.
+        self.assertIn("hosts: dc02:srv02:ws01", self.playbook)
+        self.assertIn("hosts: dc02\n", self.playbook)
+        self.assertIn("New-PSSession -ComputerName $target -Port 5986 -UseSSL", self.playbook)
+        self.assertIn("-Credential $ParentCredential", self.playbook)
+        self.assertIn("Invoke-Command -Session $session", self.playbook)
+        self.assertIn("param([PSCredential]$ParentCredential)", self.playbook)
+        self.assertIn("sensitive_parameters:", self.playbook)
+        self.assertIn('password: "{{ ansible_password }}"', self.playbook)
+        self.assertIn("Remove-PSSession -Session $session", self.playbook)
+        for expected in (
+            "NTDS','DNS','ADWS','Netlogon','Kdc','W32Time",
+            "SYSVOL','NETLOGON",
+            "Get-CimInstance Win32_ComputerSystem",
+            "DomainRole -ne 5",
+            "Get-SmbShare -Name $name",
+            "_ldap._tcp.dc._msdcs.sevenkingdoms.local",
+            "nltest.exe '/dsgetdc:sevenkingdoms.local' /timeserv /force",
+            "w32tm.exe /query /source",
+            "w32tm.exe /query /status",
+        ):
+            self.assertIn(expected, self.playbook)
+        self.assertIn(
+            'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING',
+            self.north,
+        )
+        self.assertIn('NORTH_PARENT_DC_AD_HEALTH_READY', self.north)
+        self.assertLess(
+            self.north.index('NORTH_PARENT_DC_AD_HEALTH_READY'),
+            self.north.index('NORTH_RUNTIME_ACCEPTANCE=PASS'),
+        )
+
+    def test_parent_direct_proof_has_no_fallback_or_guest_modification(self):
+        parent = self.playbook.split(
+            "- name: Verify KINGSLANDING directly through the permitted inter-DC path",
+            1
+        )[1]
+        self.assertIn("changed_when: false", parent)
+        self.assertIn("'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'", parent)
+        for forbidden in (
+            "Reset-ComputerMachinePassword", "Restart-Service",
+            "Start-Service", "Set-ItemProperty", "New-ItemProperty",
+            "w32tm.exe /config", "w32tm.exe /resync",
+            "ip route", "ethernet0.startConnected", "vagrant",
+            "Set-NetFirewallRule", "New-NetFirewallRule",
+            "Add-Computer", "New-PSSession -ComputerName 10.4.20.10",
+        ):
+            self.assertNotIn(forbidden, parent)
+        self.assertNotIn("ignore_errors: true", parent)
+        self.assertNotIn("failed_when: false", parent)
+        self.assertNotIn("rescue:", parent)
+
+
 class NorthRuntimeProviderDispatchTests(unittest.TestCase):
     def setUp(self):
         self.logger = Mock()
