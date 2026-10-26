@@ -4,20 +4,8 @@
 raise "PURPLE requires -ip 172.28.233; refusing a mismatched network" unless "{{ip_range}}" == "172.28.233"
 
 boxes = [
-  { :name => "PURPLE-DC01", :ip => "{{ip_range}}.30",
-    :box => "StefanScherer/windows_2019", :box_version => "2021.05.15",
-    :os => "windows", :cpus => 2, :mem => 4096,
-    :lab_mac => "00:50:56:10:04:30", :skip_private_network => true,
-    :vmware_network_adapters => [
-      { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:30" }
-    ] },
-  { :name => "PURPLE-WS01", :ip => "{{ip_range}}.31",
-    :box => "mayfly/windows10", :box_version => "2024.01.06",
-    :os => "windows", :cpus => 2, :mem => 4096,
-    :lab_mac => "00:50:56:10:04:31", :skip_private_network => true,
-    :vmware_network_adapters => [
-      { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:31" }
-    ] },
+  { :name => "PURPLE-DC01", :ip => "{{ip_range}}.30", :box => "mayfly/windows_server2019", :os => "windows", :cpus => 2, :mem => 4000 },
+  { :name => "PURPLE-WS01", :ip => "{{ip_range}}.31", :box => "mayfly/windows10", :os => "windows", :cpus => 2, :mem => 4000 },
   { :name => "PURPLE-LX01", :ip => "{{ip_range}}.32",
     :box => "bento/ubuntu-22.04", :box_version => "202510.26.0",
     :os => "linux", :cpus => 2, :mem => 4096,
