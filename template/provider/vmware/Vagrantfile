@@ -135,16 +135,17 @@ boxes.append(
           end
         end
 
-        # PURPLE-WS01 opt-in license step: run after Windows network/WinRM
-        # setup, before AD Ansible provisioning. Keep product keys out of Git,
-        # the generated Vagrantfile, and ordinary Vagrant output.
-        if box.has_key?(:license_script)
-          target.vm.provision "purple-ws01-activation", type: "shell",
-            path: box[:license_script],
+        # PURPLE-WS01: reuse the existing KINGDOMS/NORTH TIMEBASED_EVAL
+        # rearm strategy before AD Ansible. No product key or activation.
+        if box.has_key?(:eval_rearm_script)
+          target.vm.provision "purple-ws01-eval-rearm", type: "shell",
+            path: box[:eval_rearm_script],
             privileged: true,
-            env: { "PURPLE_WS01_PRODUCT_KEY" => ENV.fetch("PURPLE_WS01_PRODUCT_KEY", "") },
-            sensitive: true,
             reboot: true
+          target.vm.provision "purple-ws01-eval-verify", type: "shell",
+            path: box[:eval_rearm_script],
+            args: ["-Verify"],
+            privileged: true
         end
       else
         target.vm.communicator = "ssh"
