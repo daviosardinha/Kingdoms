@@ -74,7 +74,20 @@ def guest_command(vmx: Path, *args: str, timeout=120) -> str:
                    timeout=timeout)
 
 
-def runner(verify: bool) -> str:
+def runner(verify: bool, probe: bool = False) -> str:
+    if probe:
+        return r"""
+$ErrorActionPreference = 'Stop'
+$log = 'C:\Windows\Temp\purple-ws01-eval-result.txt'
+$os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+if ([int]$os.ProductType -ne 1) { throw 'Expected Windows client' }
+$ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+    Where-Object IPAddress -eq '172.28.233.31')
+if ($ips.Count -ne 1) { throw 'WS01 lab address missing' }
+'PURPLE_VMWARE_BOOT=' + $os.LastBootUpTime.ToUniversalTime().ToString('o') |
+    Out-File -LiteralPath $log -Encoding ascii
+Add-Content -LiteralPath $log -Value 'PURPLE_VMWARE_GUEST_OPERATION=PASS'
+"""
     arg = "-Verify" if verify else ""
     return (r"""
 $ErrorActionPreference = 'Stop'
@@ -89,7 +102,7 @@ try {
         Where-Object IPAddress -eq '172.28.233.31')
     if ($ips.Count -ne 1) { throw 'Selected guest does not own the expected PURPLE WS01 address' }
     & 'C:\Windows\Temp\purple-ws01-eval-rearm.ps1' """ + arg + r""" 2>&1 |
-        Out-File -LiteralPath $log -Encoding ascii
+        Out-File -LiteralPath $log -Encoding ascii -Append
     if (-not $?) { throw 'Windows evaluation script returned an error' }
     Add-Content -LiteralPath $log -Value 'PURPLE_VMWARE_GUEST_OPERATION=PASS'
 } catch {
@@ -99,8 +112,8 @@ try {
 """).lstrip()
 
 
-def vmrun_phase(vmx: Path, source: Path, runner_path: Path, output_path: Path, verify: bool):
-    runner_path.write_text(runner(verify), encoding="utf-8")
+def vmrun_phase(vmx: Path, source: Path, runner_path: Path, output_path: Path, verify: bool, probe: bool = False):
+    runner_path.write_text(runner(verify, probe=probe), encoding="utf-8")
     guest_command(vmx, "copyFileFromHostToGuest", str(source), GUEST_SCRIPT)
     guest_command(vmx, "copyFileFromHostToGuest", str(runner_path), GUEST_RUNNER)
     # A shell command is fully executed in the guest, independent of WinRM.
@@ -129,6 +142,10 @@ def vmrun_phase(vmx: Path, source: Path, runner_path: Path, output_path: Path, v
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider-dir", required=True)
+    parser.add_argument(
+        "--resume-pending-rearm", action="store_true",
+        help="Reboot and verify an already successful WS01 /rearm without running /rearm again",
+    )
     args = parser.parse_args()
     vmx = owned_vmx(args.provider_dir)
     if not SOURCE.is_file():
@@ -141,10 +158,26 @@ def main():
     with tempfile.TemporaryDirectory(prefix="purple-ws01-eval-") as temporary:
         base = Path(temporary)
         runner_path, result = base / "runner.ps1", base / "result.txt"
-        print("[INFO] Evaluating Windows grace period through VMware Tools", flush=True)
-        output = vmrun_phase(vmx, SOURCE, runner_path, result, verify=False)
-        if "PURPLE_WS01_EVAL=REARMED" in output:
+        if args.resume_pending_rearm:
+            # The prior run wrote these markers after slmgr /rearm returned
+            # success, but crashed before reboot because it overwrote the
+            # boot-time marker. Require the on-guest result, never guess.
+            guest_command(vmx, "copyFileFromGuestToHost", GUEST_OUTPUT, str(result))
+            pending = result.read_text(encoding="utf-8", errors="replace")
+            if (not re.search(r"(?m)^PURPLE_WS01_EVAL=REARMED\\s*$", pending) or
+                    not re.search(r"(?m)^PURPLE_VMWARE_GUEST_OPERATION=PASS\\s*$", pending)):
+                raise PurpleEvaluationError(
+                    "No proven successful pending rearm in the registered guest; refusing reboot")
+            print("[INFO] Previously successful /rearm confirmed from guest log", flush=True)
+            result.unlink()
+            before = vmrun_phase(vmx, SOURCE, runner_path, result,
+                                 verify=False, probe=True)
+            prior = re.search(r"(?m)^PURPLE_VMWARE_BOOT=(.+)$", before)
+        else:
+            print("[INFO] Evaluating Windows grace period through VMware Tools", flush=True)
+            output = vmrun_phase(vmx, SOURCE, runner_path, result, verify=False)
             prior = re.search(r"(?m)^PURPLE_VMWARE_BOOT=(.+)$", output)
+        if args.resume_pending_rearm or "PURPLE_WS01_EVAL=REARMED" in output:
             if not prior:
                 raise PurpleEvaluationError("Cannot prove WS01 boot identity before rearm reboot")
             print("[INFO] Evaluation rearmed. Rebooting only PURPLE-WS01.", flush=True)
