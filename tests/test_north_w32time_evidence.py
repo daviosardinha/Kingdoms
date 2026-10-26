@@ -65,11 +65,14 @@ class NorthTimeEvidenceTests(unittest.TestCase):
         exec(compile(ast.Module(body=[fn], type_ignores=[]),
                      str(FILE), "exec"), namespace)
         problems = namespace["evidence_problems"]
-        stdout = "\\n".join(names["REQUIRED_SECTIONS"]) + (
-            "\\n==== SOURCE ====\\nwinterfell.north.sevenkingdoms.local\\n"
-            "==== PEERS ====\\nPeer: winterfell\\n"
-            "==== STATUS ====\\nLeap Indicator: 0\\n"
-            "==== EFFECTIVE CONFIGURATION ====\\n"
+        stdout = "\\n".join(
+            heading + (
+                "\\nwinterfell.north.sevenkingdoms.local"
+                if heading == "==== SOURCE ====" else
+                "\\nPeer: winterfell" if heading == "==== PEERS ====" else
+                "\\nLeap Indicator: 0" if heading == "==== STATUS ====" else ""
+            )
+            for heading in names["REQUIRED_SECTIONS"]
         )
         self.assertEqual(problems(0, stdout, "", []), [])
         self.assertIn("PowerShell stderr is nonempty",
