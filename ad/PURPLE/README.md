@@ -40,7 +40,7 @@ future task is intentionally not implemented in this pilot.
 
 ## Cached box sources
 
-- StefanScherer/windows_2019 2021.05.15
+- mayfly/windows_server2019 (original MINILAB box)
 - mayfly/windows10 2024.01.06
 - bento/ubuntu-22.04 202510.26.0 (Desktop packages installed by shell)
 - bento/debian-12 202510.26.0
