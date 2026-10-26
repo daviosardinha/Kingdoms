@@ -5,7 +5,8 @@ raise "PURPLE requires -ip 172.28.233; refusing a mismatched network" unless "{{
 
 boxes = [
   { :name => "PURPLE-DC01", :ip => "{{ip_range}}.30", :box => "mayfly/windows_server2019", :os => "windows", :cpus => 2, :mem => 4000 },
-  { :name => "PURPLE-WS01", :ip => "{{ip_range}}.31", :box => "mayfly/windows10", :os => "windows", :cpus => 2, :mem => 4000 },
+  { :name => "PURPLE-WS01", :ip => "{{ip_range}}.31", :box => "mayfly/windows10", :os => "windows", :cpus => 2, :mem => 4000,
+    :license_script => "../../../ad/PURPLE/providers/vmware/activate-ws01.ps1" },
   { :name => "PURPLE-LX01", :ip => "{{ip_range}}.32",
     :box => "bento/ubuntu-22.04", :box_version => "202510.26.0",
     :os => "linux", :cpus => 2, :mem => 4096,
