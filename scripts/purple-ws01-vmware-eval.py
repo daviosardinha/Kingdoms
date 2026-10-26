@@ -164,8 +164,8 @@ def main():
             # boot-time marker. Require the on-guest result, never guess.
             guest_command(vmx, "copyFileFromGuestToHost", GUEST_OUTPUT, str(result))
             pending = result.read_text(encoding="utf-8", errors="replace")
-            if (not re.search(r"(?m)^PURPLE_WS01_EVAL=REARMED\\s*$", pending) or
-                    not re.search(r"(?m)^PURPLE_VMWARE_GUEST_OPERATION=PASS\\s*$", pending)):
+            if (not re.search(r"(?m)^PURPLE_WS01_EVAL=REARMED\s*$", pending) or
+                    not re.search(r"(?m)^PURPLE_VMWARE_GUEST_OPERATION=PASS\s*$", pending)):
                 raise PurpleEvaluationError(
                     "No proven successful pending rearm in the registered guest; refusing reboot")
             print("[INFO] Previously successful /rearm confirmed from guest log", flush=True)
