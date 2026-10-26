@@ -1,7 +1,7 @@
 # Purple Team (PURPLE) — independent four-VM VMware baseline
 
 PURPLE is a new lab in KINGDOMS, based on MINILAB. It is developed **only**
-on the dedicated \`feature/purple-team-four-vm\` branch. NORTH, WSLPE and
+on the dedicated `feature/purple-team-four-vm` branch. NORTH, WSLPE and
 KINGDOMS lab definitions and networking ownership are unchanged.
 
 | Guest | OS | Address | RAM |
@@ -47,21 +47,21 @@ future task is intentionally not implemented in this pilot.
 
 ## Read-only preflight
 
-\`\`\`bash
+```bash
 cd ~/labs/purple-team/Kingdoms
 git pull --ff-only
 python3 -m unittest tests.test_purple_lab_source tests.test_purple_vmware_network -v
 bash scripts/purple-vmware-preflight.sh
-\`\`\`
+```
 
 No NORTH checkout/source update is required. The preflight checks only
 existing VMware state; it performs no host networking edits.
 
 ## Target installation command (not yet runtime tested)
 
-\`\`\`bash
+```bash
 ./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233
-\`\`\`
+```
 
 The provider checks vmnet4 **before starting any VM**. Do not run the
 installation until the read-only preflight and generated Vagrantfile review
