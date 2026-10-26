@@ -49,7 +49,7 @@ to vmnet40, with these static IPs:
 - WS01 192.168.240.31
 - LX01 192.168.240.32
 - WAZUH 192.168.240.51
-- VMware host 192.168.240.254/24
+- VMware host adapter: its own unused `192.168.240.x/24` (usually assigned by VMware)
 
 **Host network creation is not automated in this PR.** Only add vmnet40
 after scheduling a maintenance window and stopping NORTH/all other VMware
@@ -57,8 +57,10 @@ VMs: applying VMware virtual network configuration can interrupt live
 guests. In VMware Workstation Virtual Network Editor (Linux:
 `sudo vmware-netcfg`, if installed), add `vmnet40`, choose **Host-only**,
 set subnet `192.168.240.0` with mask `255.255.255.0`, disable VMware
-DHCP and NAT for this segment, and set the host adapter address to
-`192.168.240.254/24`. Do not change any existing VMware networks.
+DHCP and NAT for this segment, and keep the **host virtual adapter enabled** on vmnet40. VMware can choose
+an unused host IP automatically; the preflight validates the subnet and
+ensures it does not overlap guest IPs. Do not change any existing VMware
+networks.
 
 After configuring vmnet40, verify it without mutating anything:
 
