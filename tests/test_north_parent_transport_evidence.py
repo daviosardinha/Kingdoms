@@ -36,7 +36,9 @@ class NorthParentTransportEvidenceTests(unittest.TestCase):
         self.assertIn("'SEVENKINGDOMS\\' + $identity", text)
         self.assertIn('hostvars["dc01"].ansible_user', text)
         self.assertNotIn("ParentCredential.Password", text)
-        self.assertNotIn("GetNetworkCredential()", text)
+        self.assertIn("$options.Password = $ParentCredential.GetNetworkCredential().Password", text)
+        self.assertIn("$options.Password = ''", text)
+        self.assertNotIn("Write-Output $identity", text)
 
     def test_certificate_handshake_is_inspection_only(self):
         text = SOURCE.read_text(encoding="utf-8")
