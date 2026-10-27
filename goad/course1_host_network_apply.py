@@ -20,6 +20,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from goad.course1_foreign_nat import approved_foreign_forwardings
 from goad.course1_hostaddrs import (
     HELPER, SERVICE, TIMER, inspect_live_hostaddrs, inspect_live_hostaddr_assets,
 )
