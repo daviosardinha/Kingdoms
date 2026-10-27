@@ -72,6 +72,7 @@ class PurpleStopTests(unittest.TestCase):
             lab_name="PURPLE",
             path=str(self.provider),
             _last_bounded_vagrant_reaped=True,
+            _purple_stop_order=NAMES,
             _vmx_path=lambda name: str(self.vmx[name]),
         )
         self.lab._purple_running_vms = types.MethodType(
