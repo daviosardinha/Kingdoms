@@ -56,7 +56,7 @@ class CoexistenceTests(unittest.TestCase):
         for old, new in (
             (b"172.28.233.31", b"10.4.10.31"),
             (b"2200", b"3200"),
-            (b"5985", b"3389"),
+            (b"172.28.233.31 5985", b"172.28.233.31 3389"),
             (b"8 tcp", b"10 tcp"),
         ):
             with self.subTest(new=new), self.assertRaises(NetworkPlanError):
