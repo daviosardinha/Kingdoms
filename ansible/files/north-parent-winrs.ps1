@@ -38,6 +38,26 @@ function Get-NorthParentWinRSShellGuid([xml]$CreateResponse) {
     return $identifier
 }
 
+# PowerShell may put a #< CLIXML progress block immediately before stdout
+# without a newline. Require one exact proof marker either at the beginning of
+# a line or immediately following a closing CLIXML document.
+function Get-NorthParentHealthProofStatus($Result) {
+    $expected = 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
+    $text = [string]$Result.Stdout
+    $pattern = '(?:^|</Objs>)' + [regex]::Escape($expected) + '(?=\r?$)'
+    $matchesFound = [regex]::Matches(
+        $text, $pattern,
+        [Text.RegularExpressions.RegexOptions]::Multiline)
+    $exitCode = [int]$Result.ExitCode
+    return [pscustomobject]@{
+        Accepted = ($exitCode -eq 0 -and $matchesFound.Count -eq 1)
+        ExitCode = $exitCode
+        MarkerCount = [int]$matchesFound.Count
+        StdoutBytes = [Text.Encoding]::UTF8.GetByteCount($text)
+        StderrBytes = [int]$Result.StderrBytes
+    }
+}
+
 function Invoke-NorthParentWinRS {
     param([PSCredential]$Credential, [string]$Script,
           [string]$Endpoint = 'https://kingslanding.sevenkingdoms.local:5986/wsman')
@@ -111,6 +131,7 @@ function Invoke-NorthParentWinRS {
                     return [pscustomobject]@{
                         ExitCode=[int]$state.ExitCode
                         Stdout=[Text.Encoding]::UTF8.GetString($output.stdout.ToArray())
+                        StderrBytes=[int]$output.stderr.Length
                     }
                 }
             }
