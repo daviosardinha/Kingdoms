@@ -43,7 +43,7 @@ function Invoke-LocalEncodedParentFixture([string]$Script) {
 $good = Invoke-LocalEncodedParentFixture "Write-Output 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'"
 $accepted = Get-NorthParentHealthProofStatus $good
 if (-not $accepted.Accepted -or $accepted.ExitCode -ne 0) {
-    throw 'Read-only fixture success did not retain zero-exit and exact marker'
+    throw ('Read-only fixture unexpected result: exit={0} count={1} bytes={2} stdout={3}' -f $good.ExitCode, $accepted.MarkerCount, $accepted.StdoutBytes, ($good.Stdout.Trim() -replace '[^A-Za-z0-9_:=|\-]', '_'))
 }
 $bad = Invoke-LocalEncodedParentFixture @'
 Write-Output 'NORTH_PARENT_HEALTH_STAGE=identity'
