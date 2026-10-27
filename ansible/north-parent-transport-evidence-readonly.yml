@@ -88,8 +88,7 @@
               try {
                   Import-Module ActiveDirectory -ErrorAction Stop
                   $escaped = $sam.Replace("'", "''")
-                  $account = @(Get-ADUser -Server $hostName -Filter
-                      "SamAccountName -eq '$escaped'" -ErrorAction Stop)
+                  $account = @(Get-ADUser -Server $hostName -Filter "SamAccountName -eq '$escaped'" -ErrorAction Stop)
                   if ($account.Count -eq 1) {
                       Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=EXISTS'
                   } else {
