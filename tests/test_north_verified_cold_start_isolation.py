@@ -106,7 +106,7 @@ class VerifiedColdStartIsolationTests(unittest.TestCase):
         self.assertIn("require_north_validated_cold_start", exercise)
         self.assertLess(exercise.index("require_north_validated_cold_start"),
                         exercise.index("apply_router_policy exercise"))
-        self.assertIn("sudo bash ${ROUTES}", exercise)
+        self.assertIn('sudo bash "${ROUTES}" --north disable', exercise)
         self.assertIn("configure_windows_nat_exercise", exercise)
         self.assertIn("verify_persistent_state FALSE", exercise)
 
