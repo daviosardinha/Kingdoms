@@ -79,22 +79,24 @@ function New-NorthParentWinRSLoader([string]$PackedScript) {
     if ($PackedScript -notmatch '^[A-Za-z0-9+/]+={0,2}$') {
         throw 'Invalid compressed parent proof encoding'
     }
-    $template = @'
-$ErrorActionPreference = 'Stop'
-try {
-    $decoded = [Convert]::FromBase64String('__NORTH_PACKED__')
-    $m = [IO.MemoryStream]::new($decoded)
-    $g = [IO.Compression.GzipStream]::new($m,[IO.Compression.CompressionMode]::Decompress)
-    $r = [IO.StreamReader]::new($g)
-    & ([scriptblock]::Create($r.ReadToEnd()))
-} catch {
-    $kind = ([string]$_.Exception.GetType().Name) -replace '[^A-Za-z0-9_]', ''
-    $category = ([string]$_.CategoryInfo.Category) -replace '[^A-Za-z0-9_]', ''
-    $line = if ($_.InvocationInfo) { [int]$_.InvocationInfo.ScriptLineNumber } else { 0 }
-    [Console]::Out.WriteLine("NORTH_PARENT_REMOTE_ERROR|type=$kind|category=$category|line=$line")
-    exit 1
-}
-'@
+    # Construct source from literals; Jinja's indent filter would otherwise
+    # indent the closing delimiter of a PowerShell 5.1 here-string.
+    $template = @(
+        '$ErrorActionPreference = ''Stop''',
+        'try {',
+        '    $decoded = [Convert]::FromBase64String(''__NORTH_PACKED__'')',
+        '    $m = [IO.MemoryStream]::new($decoded)',
+        '    $g = [IO.Compression.GzipStream]::new($m,[IO.Compression.CompressionMode]::Decompress)',
+        '    $r = [IO.StreamReader]::new($g)',
+        '    & ([scriptblock]::Create($r.ReadToEnd()))',
+        '} catch {',
+        '    $kind = ([string]$_.Exception.GetType().Name) -replace ''[^A-Za-z0-9_]'', ''''',
+        '    $category = ([string]$_.CategoryInfo.Category) -replace ''[^A-Za-z0-9_]'', ''''',
+        '    $line = if ($_.InvocationInfo) { [int]$_.InvocationInfo.ScriptLineNumber } else { 0 }',
+        '    [Console]::Out.WriteLine("NORTH_PARENT_REMOTE_ERROR|type=$kind|category=$category|line=$line")',
+        '    exit 1',
+        '}'
+    ) -join [Environment]::NewLine
     return $template.Replace('__NORTH_PACKED__', $PackedScript)
 }
 
