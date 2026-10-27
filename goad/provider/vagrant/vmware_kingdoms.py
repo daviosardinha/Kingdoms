@@ -1276,6 +1276,16 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
                 Log.error(f'PURPLE: registered VMware VMX is missing for {machine}')
                 return None
             canonical = os.path.realpath(vmx)
+            # An instance-local Vagrant ID must never be allowed to direct a
+            # shutdown at a VMX belonging to NORTH or another PURPLE instance.
+            expected_root = os.path.realpath(os.path.join(
+                str(self.path), '.vagrant', 'machines',
+                machine, 'vmware_desktop',
+            ))
+            if (os.path.islink(vmx) or
+                    os.path.commonpath((expected_root, canonical)) != expected_root):
+                Log.error(f'PURPLE: VMX for {machine} points outside its own Vagrant registration')
+                return None
             if canonical in registered.values():
                 Log.error('PURPLE: duplicate VMware VMX identity; refusing shutdown')
                 return None
