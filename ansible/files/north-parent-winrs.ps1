@@ -82,7 +82,8 @@ function New-NorthParentWinRSLoader([string]$PackedScript) {
     $template = @'
 $ErrorActionPreference = 'Stop'
 try {
-    $m = [IO.MemoryStream]::new(,[Convert]::FromBase64String('__NORTH_PACKED__'))
+    $decoded = [Convert]::FromBase64String('__NORTH_PACKED__')
+    $m = [IO.MemoryStream]::new($decoded)
     $g = [IO.Compression.GzipStream]::new($m,[IO.Compression.CompressionMode]::Decompress)
     $r = [IO.StreamReader]::new($g)
     & ([scriptblock]::Create($r.ReadToEnd()))
