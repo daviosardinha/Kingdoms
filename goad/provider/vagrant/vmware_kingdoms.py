@@ -1274,10 +1274,10 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
     # Preserve AD/DNS availability as other guests shut down, and make DC01
     # available before WS01 boots. Never inherit NORTH's segmented router policy.
     def restart_vm(self, vm_name):
-        """Restart one installed PURPLE guest only after verified safe stop."""
-        if self.lab_name != 'PURPLE':
+        """Restart exactly one guest using its own lab-safe provider methods."""
+        if self.lab_name not in ('PURPLE', 'GOAD', 'NORTH'):
             return super().restart_vm(vm_name)
-        if vm_name not in self._purple_start_order:
+        if self.lab_name == 'PURPLE' and vm_name not in self._purple_start_order:
             Log.error(f'PURPLE: unknown machine {vm_name}; refusing restart')
             return False
         if not self.stop_vm(vm_name):
