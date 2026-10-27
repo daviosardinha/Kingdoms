@@ -69,6 +69,14 @@ class DirectDc02ModeTests(unittest.TestCase):
         self.assertEqual(kw["auth"], ("vagrant", "vagrant"))
         self.assertEqual(kw["transport"], "ntlm")
         self.assertEqual(kw["server_cert_validation"], "ignore")
+        # The 75s NORTH/DC02 probe reuses the already-proven KINGDOMS
+        # direct WinRM transport contract: operation 30s, HTTP read 45s.
+        with patch.dict(sys.modules, {"winrm": winrm}):
+            module.run("Write-Output 'GOAD_READY'", timeout=75,
+                       machine="GOAD-DC02", provider=str(self.p))
+        _, long_kw = winrm.Session.call_args
+        self.assertEqual(long_kw["operation_timeout_sec"], 30)
+        self.assertEqual(long_kw["read_timeout_sec"], 45)
         self.assertEqual(session.run_ps.call_args.args[0],
                          "Write-Output 'GOAD_READY'")
         session.run_ps.return_value = types.SimpleNamespace(
@@ -98,6 +106,22 @@ class DirectDc02ModeTests(unittest.TestCase):
         self.assertIn('apply_router_policy exercise', script)
         self.assertIn('verify_persistent_state FALSE', script)
         self.assertIn('GOAD_PROVIDER_DIR', script)
+        self.assertIn('readonly NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS=75',
+                      script)
+        for function_name, stop_name in (
+            ("ensure_child_dc_time_ready()", "wait_domain_controller_ready()"),
+            ("wait_domain_controller_ready()", "wait_domain_member_ready()"),
+        ):
+            body = script[script.index(function_name):script.index(
+                stop_name, script.index(function_name) + len(function_name))]
+            self.assertIn(
+                'probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"',
+                body,
+            )
+            self.assertIn(
+                'if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]',
+                body,
+            )
 
 
 if __name__ == "__main__":
