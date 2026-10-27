@@ -115,7 +115,7 @@
               $options = $automation.CreateConnectionOptions()
               $identity = $ParentCredential.UserName
               if ($identity -notmatch '[@\\]') {
-                  $identity = 'SEVENKINGDOMS\\' + $identity
+                  $identity = 'SEVENKINGDOMS\' + $identity
               }
               $options.UserName = $identity
               $options.Password = $ParentCredential.GetNetworkCredential().Password
