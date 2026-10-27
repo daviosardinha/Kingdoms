@@ -71,6 +71,43 @@ installation until the read-only preflight and generated Vagrantfile review
 pass. Never create vmnet40 through the editor on the currently NORTH-owned
 host, since NORTH's immutable verifier would reject it.
 
+## Ubuntu Desktop remote access and baseline utilities
+
+Starting with the PURPLE-LX01 desktop-access follow-up, **fresh**
+PURPLE-LX01 installations automatically include:
+
+- Ubuntu 22.04 GNOME desktop (`ubuntu-desktop-minimal`) and VMware Tools desktop support.
+- `xrdp` and `xorgxrdp` for RDP access with an **Xorg** desktop session.
+- `net-tools` to provide familiar tools such as `ifconfig`, `netstat` and `route`.
+- `gdm3`, `xrdp-sesman` and `xrdp` services enabled and checked during Vagrant provisioning.
+- `xrdp` membership in the `ssl-cert` group for its server TLS key.
+
+The existing `vagrant` Linux user remains the provisioning/SSH account.
+**No login password is added to the repository or hardcoded by this change.**
+An interactive RDP account must have a password set once inside the guest
+(e.g., `sudo passwd vagrant` via `vagrant ssh PURPLE-LX01`), or use a
+separate local desktop user. This intentionally leaves credential selection
+with the operator. SSH key-based Vagrant access is unaffected.
+
+Connect from Kali over the isolated lab-facing interface:
+
+```bash
+xfreerdp3 /v:172.28.233.32 /u:vagrant /from-stdin /cert:ignore /size:80%
+```
+
+At the XRDP login window, select **Xorg**. An existing GNOME session under
+the same account at the VMware console can conflict with an XRDP session:
+sign out of the console session first if necessary.
+
+**Pilot:** These provisioning edits apply to newly generated Vagrantfiles.
+The existing `ef5c0b-purple-vmware` LX01 was manually configured, successfully
+tested over RDP, and must not be rebuilt or blindly reprovisioned.
+
+**Future hostname standardization:** Align guest OS hostnames with their VMware
+display names (`PURPLE-DC01`, `PURPLE-WS01`, `PURPLE-LX01`,
+`PURPLE-WAZUH`) only after confirming AD/DNS fixture dependencies; that
+migration is a separate change and is not applied to this working pilot.
+
 ## Windows 10 Enterprise Evaluation maintenance
 
 PURPLE-WS01 uses the **same evaluation rearm strategy as KINGDOMS and NORTH**:
