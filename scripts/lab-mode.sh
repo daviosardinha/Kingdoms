@@ -377,6 +377,23 @@ ensure_vm_nat_state() {
         "${action}"
 }
 
+north_direct_dc02_capture() {
+    local vm="$1"
+    local script="$2"
+    local timeout_seconds="$3"
+    local python="${HOME}/.goad/.venv/bin/python"
+
+    [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]] ||
+        fail "Direct DC02 transport is only supported for NORTH"
+    [[ -x "${python}" ]] ||
+        fail "Missing KINGDOMS management Python runtime: ${python}"
+
+    # Reuse direct WinRM/NTLM already proven by installed NORTH startup.
+    printf '%s' "${script}" |
+        timeout "${timeout_seconds}" "${python}" "${ROOT}/scripts/north-exercise-winrm.py" \
+            --machine "${vm}" --provider "${PROVIDER}" --timeout "${timeout_seconds}"
+}
+
 vagrant_powershell_ready() {
     local vm="$1"
     local script="$2"
@@ -384,6 +401,11 @@ vagrant_powershell_ready() {
     local encoded
 
     (( timeout_seconds > 0 )) || return 124
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+        north_direct_dc02_capture "${vm}" "${script}" "${timeout_seconds}" >/dev/null 2>&1
+        return $?
+    fi
 
     encoded="$(
         printf '%s' "${script}" |
@@ -405,6 +427,11 @@ vagrant_powershell_capture() {
     local encoded
 
     (( timeout_seconds > 0 )) || return 124
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+        north_direct_dc02_capture "${vm}" "${script}" "${timeout_seconds}" 2>&1
+        return $?
+    fi
 
     encoded="$(
         printf '%s' "${script}" |
@@ -1071,6 +1098,14 @@ prove_isolated_guest_ready() (
 
     [[ "${persistent}" == "FALSE" ]] ||
         fail "${vm}: exercise readiness probe requires persistent NAT to remain FALSE"
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 && "${kind}" == dc ]]; then
+        # Do not reconnect DC02's isolated NAT adapter just to repeat a probe.
+        echo "        [*] NORTH GOAD-DC02: validating directly over owned lab WinRM"
+        wait_domain_controller_ready "${vm}"
+        echo "        [+] GOAD-DC02 authenticated direct readiness proven; NAT unchanged"
+        return 0
+    fi
 
     echo "        [*] temporarily connecting runtime NAT for authenticated readiness"
 
