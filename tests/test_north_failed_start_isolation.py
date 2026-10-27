@@ -99,6 +99,65 @@ class OfflineRestorationTests(TestCase):
         self.assertIn("allow_stopped_members=True", start)
         self.assertIn("set_mode('exercise')", start)
 
+    def test_vmware_override_forwards_failed_start_exception_to_parent(self):
+        """Regression: crashed after DC02 time-readiness failure with TypeError.
+
+        The generic Vagrant caller passes allow_stopped_members=True to the
+        subclass override; prove the real class override accepts and forwards
+        this flag without changing normal provisioning/exercise transitions.
+        """
+        provider = ROOT / "goad/provider/vagrant/vmware_kingdoms.py"
+        tree = ast.parse(provider.read_text())
+        original = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "set_runtime_mode"
+        )
+        parent = type("ShimParent", (), {
+            "set_runtime_mode": lambda self, mode, *,
+                allow_stopped_members=False: (
+                    mode, allow_stopped_members
+                ),
+        })
+        ast_class = ast.ClassDef(
+            name="ShimVmware",
+            bases=[ast.Name(id="ShimParent", ctx=ast.Load())],
+            keywords=[],
+            body=[original],
+            decorator_list=[],
+        )
+        ast.fix_missing_locations(ast_class)
+        namespace = {"ShimParent": parent, "Log": Mock()}
+        exec(compile(ast.Module(body=[ast_class], type_ignores=[]),
+                     str(provider), "exec"), namespace)
+        instance = namespace["ShimVmware"]()
+        instance.lab_name = "NORTH"
+        instance._course1_unwired = lambda: False
+        instance.is_goad_nomad_segmented = lambda: True
+        instance._require_cached_sudo = lambda: True
+        instance.get_runtime_mode = lambda: "exercise"
+        self.assertEqual(
+            instance.set_runtime_mode("exercise", allow_stopped_members=True),
+            ("exercise", True),
+        )
+        self.assertEqual(
+            instance.set_runtime_mode("exercise"), ("exercise", False))
+        self.assertEqual(
+            instance.set_runtime_mode("provisioning"), ("provisioning", False))
+        instance.lab_name = "GOAD"
+        self.assertFalse(instance.set_runtime_mode(
+            "exercise", allow_stopped_members=True))
+        instance.lab_name = "NORTH"
+        self.assertFalse(instance.set_runtime_mode(
+            "provisioning", allow_stopped_members=True))
+        instance.get_runtime_mode = lambda: "provisioning"
+        self.assertFalse(instance.set_runtime_mode(
+            "exercise", allow_stopped_members=True))
+        instance.get_runtime_mode = lambda: "exercise"
+        instance._require_cached_sudo = lambda: False
+        self.assertFalse(instance.set_runtime_mode(
+            "exercise", allow_stopped_members=True))
+
     def test_mode_controller_rejects_foreign_or_unknown_instance(self):
         text = NOMAD.read_text()
         tree = ast.parse(text)

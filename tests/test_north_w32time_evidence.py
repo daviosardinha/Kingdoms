@@ -17,6 +17,20 @@ class NorthTimeEvidenceTests(unittest.TestCase):
                 if isinstance(node.targets[0], ast.Name) and node.targets[0].id == "POWERSHELL":
                     self.values["script"] = ast.literal_eval(node.value)
 
+    def test_partial_start_supports_dc02_only_read_only_capture(self):
+        self.assertIn('--target', self.source)
+        self.assertIn('"winterfell", "castelblack"', self.source)
+        self.assertIn('target == "both" else {target: TARGETS[target]}', self.source)
+        self.assertIn('assert_instance(instance_id, target=target)', self.source)
+        self.assertIn('capture(args.instance, target=args.target)', self.source)
+        # Partial cold starts may not power on CASTELBLACK. Only the selected
+        # exact guest is required to exist/running when --target is specified.
+        self.assertEqual(
+            self.source.count(
+                'selected = TARGETS if target == "both" else {target: TARGETS[target]}'
+            ), 2,
+        )
+
     def test_command_fits_windows_encoded_command_length(self):
         import base64
         script = self.values["script"]

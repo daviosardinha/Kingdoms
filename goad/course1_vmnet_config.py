@@ -193,7 +193,8 @@ def known_vmware_hostaddr_normalization(proposed: bytes, observed: bytes, layout
 
 
 def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
-                               layout: dict, reviewed_nat_retirements=None) -> tuple[str, ...]:
+                               layout: dict, reviewed_nat_retirements=None,
+                               reviewed_foreign_nat=None) -> tuple[str, ...]:
     """Accept only safe VMware/Vagrant runtime normalization of owned vmnets.
 
     The commit-time owner SHA remains immutable. Unlike the initial apply
@@ -343,6 +344,15 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
         if len(replacements) != 1:
             raise NetworkPlanError(
                 "Reviewed retired host port lacks unique replacement")
+    # Allow host-only destinations only with a verified root-owned receipt
+    # bound to a specific PURPLE VMX and its Vagrant port mapping.
+    foreign = frozenset() if reviewed_foreign_nat is None else reviewed_foreign_nat
+    if (type(foreign) is not frozenset or len(foreign) not in (0, 3)
+            or any(type(line) is not str or
+                   not line.startswith("add_nat_portfwd 8 tcp ") for line in foreign)):
+        raise NetworkPlanError("Invalid foreign Vagrant forwarding attestation")
+    if any(active[line] != 1 or additions[line] != 1 for line in foreign):
+        raise NetworkPlanError("Foreign Vagrant forwarding attestation is stale or duplicated")
     if not additions and not removed:
         return ("VMware network declarations are semantically unchanged",)
 
@@ -353,10 +363,14 @@ def verify_owned_vmnet_runtime(owned: bytes, observed: bytes, baseline: bytes,
             raise NetworkPlanError("Unexpected new VMware networking directive")
         target = ipaddress.IPv4Address(parts[4])
         target_port = int(parts[5])
-        if (target not in nat_range
-                or target in (nat_range.network_address, nat_range.broadcast_address)
-                or target_port not in (22, 5985, 5986)):
+        if target_port not in (22, 5985, 5986):
             raise NetworkPlanError("New NAT forwarding is outside approved Vagrant management")
+        if target not in nat_range or target in (
+                nat_range.network_address, nat_range.broadcast_address):
+            if declaration not in foreign:
+                raise NetworkPlanError("New NAT forwarding is outside approved Vagrant management")
+            if target in ipaddress.ip_network(layout["network_base"], strict=False):
+                raise NetworkPlanError("Foreign Vagrant forwarding targets NORTH")
     return (
         "VMware declaration ordering and foreign DHCP hashes are normalized",
         "New Vagrant forwarding is restricted to baseline vmnet8 guest management",
