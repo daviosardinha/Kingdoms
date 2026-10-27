@@ -71,6 +71,30 @@ installation until the read-only preflight and generated Vagrantfile review
 pass. Never create vmnet40 through the editor on the currently NORTH-owned
 host, since NORTH's immutable verifier would reject it.
 
+## Bounded graceful shutdown (next PURPLE maintenance fix)
+
+A deployed PURPLE-WS01 can continue working via VMware Tools even while its
+Vagrant/WinRM communicator hangs. Historically `stop` ran `vagrant halt`
+without a PURPLE-specific timeout, causing the console to stall at
+`PURPLE-WS01: Attempting graceful shutdown` (default VMware Vagrant
+graceful-halt window: up to 600 seconds).
+
+The scoped provider fix in `GoadKingdomsVmwareProvider.stop()` now
+requests a **VMware Tools soft shutdown**, in this order:
+`PURPLE-WS01` -> `PURPLE-LX01` -> `PURPLE-DC01` -> `PURPLE-WAZUH`.
+It verifies the exact registered VMX for each selected guest belongs to this
+PURPLE instance and observes its power state with bounded host commands.
+It **never** forces a hard shutdown of AD or Wazuh when a guest fails to
+stop gracefully. It leaves that guest running, reports the failure and
+prevents subsequent shutdown transitions. No NORTH or KINGDOMS runtime
+shutdown path is changed.
+
+**Runtime acceptance pending:** validate one graceful
+`stop` on the already deployed `ef5c0b-purple-vmware` instance
+after updating the management checkout. A source-only CI test cannot prove
+the live VMware stop behavior. Do not apply this modification mid-shutdown
+or while an earlier Vagrant process is still active.
+
 ## Ubuntu Desktop remote access and baseline utilities
 
 Starting with the PURPLE-LX01 desktop-access follow-up, **fresh**
