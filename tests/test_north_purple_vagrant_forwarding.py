@@ -22,6 +22,12 @@ class CoexistenceTests(unittest.TestCase):
         self.baseline, self.owned, self.normal = (
             self.fixture.vmware_post_vagrant_fixture()
         )
+        # Original normalization fixture already uses host TCP/2200 for
+        # another VM. Move that unrelated fixture forward to avoid introducing
+        # an artificial duplicate host port in our three-rule PURPLE case.
+        self.normal = self.normal.replace(
+            b"2200 192.168.213.244 22", b"2233 192.168.213.244 22"
+        )
         self.ports = {5985: 2200, 5986: 2201, 22: 2202}
         self.rules = foreign._rules(self.ports)
         self.purple = ("\n".join(sorted(self.rules)) + "\n").encode()
