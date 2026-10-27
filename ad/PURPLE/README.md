@@ -71,6 +71,42 @@ installation until the read-only preflight and generated Vagrantfile review
 pass. Never create vmnet40 through the editor on the currently NORTH-owned
 host, since NORTH's immutable verifier would reject it.
 
+## PURPLE GOAD console lifecycle — shared command interface
+
+PURPLE uses the same GOAD management-console commands as NORTH and KINGDOMS,
+but with its own **installed-instance** VMware power lifecycle. The original
+`vagrant halt` could stall for up to 600 seconds when PURPLE-WS01 WinRM became
+unresponsive; `vmrun stop ... soft` also may fail to deliver a shutdown. This
+fix avoids unbounded Vagrant power transitions and never silently assumes the
+VM has shut down.
+
+| Console command | PURPLE installed-VM behavior |
+| --- | --- |
+| `status` | Existing Vagrant status output (read-only) |
+| `start` | Power on all registered VMX in DC01, WAZUH, LX01, WS01 order |
+| `stop` | Request graceful VMware Tools shutdown in WS01, LX01, DC01, WAZUH order |
+| `start_vm PURPLE-WS01` | Start only the selected registered VMX, no reprovision |
+| `stop_vm PURPLE-WS01` | Stop only that guest with VMware Tools soft shutdown |
+| `restart_vm PURPLE-WS01` | Safely stop selected VM, verify it is off, then start it |
+| `snapshot` / `reset` | Existing GOAD snapshot and restore commands; end-to-end PURPLE validation pending |
+| `destroy` / `destroy_vm` | Existing destructive GOAD commands; **not** changed by this fix |
+| `provision*` / `install` | Existing Ansible/Vagrant deployment flow; **not** changed |
+
+The power controller verifies all four instance-local Vagrant VMX identities,
+checks live VMware power state, and rejects a concurrent Vagrant process
+operating in that provider directory. It does not require WinRM to stop a VM.
+A timed-out or unsuccessful VMware Tools soft stop **fails closed** and
+**never** triggers an automatic hard power-off. Existing working NORTH and
+KINGDOMS routing and VM lifecycle policies are retained.
+
+**Important:** a VM appearing as `running` only proves VMware power state,
+not Windows evaluation validity, domain DNS authentication or Wazuh service
+readiness. Guest readiness remains a separate verification. This update is
+source-tested only until the already-installed
+`ef5c0b-purple-vmware` pilot can exercise a safe stop/start sequence.
+Do not run new power commands while the previous `vagrant halt` processes
+still exist.
+
 ## Ubuntu Desktop remote access and baseline utilities
 
 Starting with the PURPLE-LX01 desktop-access follow-up, **fresh**

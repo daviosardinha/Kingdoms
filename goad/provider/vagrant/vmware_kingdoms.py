@@ -58,6 +58,12 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
     def start(self, vm_name=None):
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            if vm_name is not None:
+                if not self._purple_power_action_ready():
+                    return False
+                return self._purple_start_machine(vm_name)
+            return self._start_purple_vms()
         return super().start(vm_name=vm_name)
 
     def _require_cached_sudo(self):
@@ -1228,6 +1234,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Start one installed guest, plus its router dependency when needed."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            return self.start(vm_name=vm_name)
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().start_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -1240,6 +1248,10 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Stop one instance guest locally; preserve routing for live Windows."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            if not self._purple_power_action_ready():
+                return False
+            return self._purple_soft_stop(vm_name)
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -1259,10 +1271,218 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             return False
         return self._stop_machine_via_vmware(vm_name)
 
+    # Preserve AD/DNS availability as other guests shut down, and make DC01
+    # available before WS01 boots. Never inherit NORTH's segmented router policy.
+    def restart_vm(self, vm_name):
+        """Restart exactly one guest using its own lab-safe provider methods."""
+        if self.lab_name not in ('PURPLE', 'GOAD', 'NORTH'):
+            return super().restart_vm(vm_name)
+        if self.lab_name == 'PURPLE' and vm_name not in self._purple_start_order:
+            Log.error(f'PURPLE: unknown machine {vm_name}; refusing restart')
+            return False
+        if not self.stop_vm(vm_name):
+            return False
+        return bool(self.start_vm(vm_name))
+
+    _purple_stop_order = (
+        'PURPLE-WS01', 'PURPLE-LX01', 'PURPLE-DC01', 'PURPLE-WAZUH'
+    )
+    _purple_start_order = (
+        'PURPLE-DC01', 'PURPLE-WAZUH', 'PURPLE-LX01', 'PURPLE-WS01'
+    )
+
+    def _purple_controller_busy(self):
+        """Reject concurrent Vagrant work touching this exact PURPLE provider."""
+        root = os.path.realpath(str(self.path))
+        try:
+            for proc in psutil.process_iter(['pid', 'cmdline']):
+                try:
+                    argv = proc.info.get('cmdline') or []
+                    if not any('vagrant' in str(a).lower() for a in argv):
+                        continue
+                    if os.path.realpath(proc.cwd()) != root:
+                        continue
+                    Log.error(
+                        f'PURPLE: Vagrant controller PID {proc.pid} still owns this '
+                        'provider; finish/reap it before changing VM power'
+                    )
+                    return True
+                except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                    continue
+                except (psutil.AccessDenied, OSError):
+                    Log.error('PURPLE: unable to inspect a possible Vagrant controller')
+                    return True
+        except (psutil.Error, OSError) as exc:
+            Log.error(f'PURPLE: Vagrant process inventory cannot be verified: {exc}')
+            return True
+        return False
+
+    def _purple_power_action_ready(self):
+        if self.lab_name != 'PURPLE' or not self.path:
+            Log.error('PURPLE: no loaded instance for a power operation')
+            return False
+        if not getattr(self, '_last_bounded_vagrant_reaped', True):
+            Log.error('PURPLE: prior bounded Vagrant controller was not reaped')
+            return False
+        return not self._purple_controller_busy()
+
+    def _purple_registered_vmx(self):
+        """Fail closed unless all four identities resolve inside THIS workspace."""
+        if self.lab_name != 'PURPLE' or self.path is None:
+            Log.error('PURPLE: no loaded PURPLE provider')
+            return None
+        registered = {}
+        for machine in self._purple_stop_order:
+            vmx = self._vmx_path(machine)
+            if not vmx or not os.path.isfile(vmx):
+                Log.error(f'PURPLE: registered VMware VMX is missing for {machine}')
+                return None
+            canonical = os.path.realpath(vmx)
+            expected_root = os.path.realpath(os.path.join(
+                str(self.path), '.vagrant', 'machines', machine,
+                'vmware_desktop',
+            ))
+            if (os.path.islink(vmx) or
+                    os.path.commonpath((expected_root, canonical)) != expected_root):
+                Log.error(f'PURPLE: VMX for {machine} points outside its own Vagrant registration')
+                return None
+            if canonical in registered.values():
+                Log.error('PURPLE: duplicate VMware VMX identity; refusing VM power changes')
+                return None
+            registered[machine] = canonical
+        return registered
+
+    def _purple_running_vms(self):
+        """Inspect only registered PURPLE VMX identities, never all VMware guests."""
+        registered = self._purple_registered_vmx()
+        if registered is None:
+            return None
+        try:
+            result = subprocess.run(
+                ['vmrun', '-T', 'ws', 'list'], capture_output=True,
+                text=True, check=False, timeout=20,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'PURPLE: unable to inspect VMware power state: {exc}')
+            return None
+        if result.returncode != 0 or not result.stdout.startswith('Total running VMs:'):
+            Log.error('PURPLE: VMware running-guest inventory is unavailable or malformed')
+            return None
+        active = {
+            os.path.realpath(line.strip())
+            for line in result.stdout.splitlines()[1:] if line.strip()
+        }
+        return [name for name in self._purple_stop_order if registered[name] in active]
+
+    def _purple_wait_for_power(self, machine, running, timeout):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            current = self._purple_running_vms()
+            if current is None:
+                return False
+            if (machine in current) == running:
+                return True
+            time.sleep(3)
+        return False
+
+    def _purple_soft_stop(self, machine):
+        if machine not in self._purple_stop_order:
+            Log.error(f'PURPLE: unknown machine {machine}; refusing shutdown')
+            return False
+        vmx = self._purple_registered_vmx()
+        if vmx is None:
+            return False
+        active = self._purple_running_vms()
+        if active is None:
+            return False
+        if machine not in active:
+            Log.success(f'PURPLE: {machine} already stopped')
+            return True
+        Log.info(f'PURPLE: requesting VMware Tools graceful shutdown of {machine}')
+        try:
+            result = subprocess.run(
+                ['vmrun', '-T', 'ws', 'stop', vmx[machine], 'soft'],
+                capture_output=True, text=True, check=False, timeout=45,
+            )
+            if result.returncode:
+                Log.warning(f'PURPLE: soft shutdown returned an error for {machine}; verifying guest power')
+        except subprocess.TimeoutExpired:
+            Log.warning(f'PURPLE: VMware soft-stop command timed out for {machine}; checking guest power')
+        except OSError as exc:
+            Log.error(f'PURPLE: VMware soft-stop command unavailable: {exc}')
+            return False
+        if self._purple_wait_for_power(machine, running=False, timeout=120):
+            Log.success(f'PURPLE: {machine} stopped gracefully')
+            return True
+        Log.error(
+            f'PURPLE: {machine} did not stop within the graceful window. '
+            'No hard power-off attempted; manual guest diagnosis required'
+        )
+        return False
+
+    def _purple_start_machine(self, machine):
+        if machine not in self._purple_start_order:
+            Log.error(f'PURPLE: unknown machine {machine}; refusing start')
+            return False
+        vmx = self._purple_registered_vmx()
+        if vmx is None:
+            return False
+        active = self._purple_running_vms()
+        if active is None:
+            return False
+        if machine in active:
+            Log.success(f'PURPLE: {machine} already running')
+            return True
+        Log.info(f'PURPLE: starting installed VM {machine} without reprovisioning')
+        try:
+            result = subprocess.run(
+                ['vmrun', '-T', 'ws', 'start', vmx[machine], 'nogui'],
+                capture_output=True, text=True, check=False, timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'PURPLE: VMware VM start failed for {machine}: {exc}')
+            return False
+        if result.returncode != 0:
+            Log.error(f'PURPLE: VMware VM start returned an error for {machine}')
+            return False
+        if not self._purple_wait_for_power(machine, running=True, timeout=60):
+            Log.error(f'PURPLE: {machine} did not reach VMware running state')
+            return False
+        Log.success(f'PURPLE: {machine} VM powered on (guest/application readiness is separate)')
+        return True
+
+    def _stop_purple_vms(self):
+        """Stop only the installed PURPLE guests; never force power off."""
+        if not self._purple_power_action_ready():
+            return False
+        for machine in self._purple_stop_order:
+            if not self._purple_soft_stop(machine):
+                return False
+        remaining = self._purple_running_vms()
+        if remaining is None:
+            return False
+        if remaining:
+            Log.error('PURPLE: guest shutdown incomplete: ' + ', '.join(remaining))
+            return False
+        Log.success('PURPLE: all registered guests stopped; other VMware labs untouched')
+        return True
+
+    def _start_purple_vms(self):
+        """Power on existing VMs only; this is NOT a fresh-install path."""
+        if not self._purple_power_action_ready():
+            return False
+        for machine in self._purple_start_order:
+            if not self._purple_start_machine(machine):
+                return False
+        Log.success('PURPLE: all guests powered on; AD and Wazuh service readiness must be checked separately')
+        return True
+
     def stop(self):
         """Shut down members, then DCs, then the router without Vagrant NAT."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            return self._stop_purple_vms()
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop()
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
