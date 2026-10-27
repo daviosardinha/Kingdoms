@@ -1259,10 +1259,115 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             return False
         return self._stop_machine_via_vmware(vm_name)
 
+    _purple_stop_order = (
+        'PURPLE-WS01', 'PURPLE-LX01', 'PURPLE-DC01', 'PURPLE-WAZUH'
+    )
+
+    def _purple_running_vms(self):
+        """Inspect only registered PURPLE VMX identities, never all VMware guests."""
+        if self.lab_name != 'PURPLE' or self.path is None:
+            Log.error('PURPLE: cannot inspect shutdown identities outside a loaded PURPLE instance')
+            return None
+
+        registered = {}
+        for machine in self._purple_stop_order:
+            vmx = self._vmx_path(machine)
+            if not vmx or not os.path.isfile(vmx):
+                Log.error(f'PURPLE: registered VMware VMX is missing for {machine}')
+                return None
+            canonical = os.path.realpath(vmx)
+            if canonical in registered.values():
+                Log.error('PURPLE: duplicate VMware VMX identity; refusing shutdown')
+                return None
+            registered[machine] = canonical
+        try:
+            result = subprocess.run(
+                ['vmrun', '-T', 'ws', 'list'], capture_output=True,
+                text=True, check=False, timeout=20,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            Log.error(f'PURPLE: unable to inspect VMware power state: {exc}')
+            return None
+        if result.returncode != 0 or not result.stdout.startswith('Total running VMs:'):
+            Log.error('PURPLE: VMware running-guest inventory is unavailable or malformed')
+            return None
+
+        active = {
+            os.path.realpath(line.strip())
+            for line in result.stdout.splitlines()[1:] if line.strip()
+        }
+        return [name for name in self._purple_stop_order if registered[name] in active]
+
+    def _stop_purple_vms(self):
+        """Gracefully stop only the four installed PURPLE machines via VMware Tools.
+
+        PURPLE Windows WinRM can be unresponsive even while VMware Tools works;
+        Vagrant's default 600-second graceful halt obscures this condition.
+        Avoid Vagrant entirely at shutdown. Never power-cut a domain controller
+        or Wazuh indexer automatically when guest shutdown cannot be verified.
+        """
+        if not getattr(self, '_last_bounded_vagrant_reaped', True):
+            Log.error('PURPLE: a Vagrant controller is still running; refusing concurrent shutdown')
+            return False
+        initial = self._purple_running_vms()
+        if initial is None:
+            return False
+        if not initial:
+            Log.success('PURPLE: all registered guests are already stopped')
+            return True
+
+        for machine in self._purple_stop_order:
+            active = self._purple_running_vms()
+            if active is None:
+                return False
+            if machine not in active:
+                continue
+            vmx = self._vmx_path(machine)
+            Log.info(f'PURPLE: requesting VMware Tools graceful shutdown of {machine}')
+            try:
+                shutdown = subprocess.run(
+                    ['vmrun', '-T', 'ws', 'stop', vmx, 'soft'],
+                    capture_output=True, text=True, check=False, timeout=45,
+                )
+                if shutdown.returncode:
+                    Log.warning(f'PURPLE: soft shutdown request for {machine} returned an error; checking power state')
+            except subprocess.TimeoutExpired:
+                Log.warning(f'PURPLE: VMware soft shutdown request timed out for {machine}; checking power state')
+            except OSError as exc:
+                Log.error(f'PURPLE: VMware soft shutdown tool failed for {machine}: {exc}')
+                return False
+
+            deadline = time.monotonic() + 120
+            while time.monotonic() < deadline:
+                current = self._purple_running_vms()
+                if current is None:
+                    return False
+                if machine not in current:
+                    Log.success(f'PURPLE: {machine} shut down gracefully')
+                    break
+                time.sleep(3)
+            else:
+                Log.error(
+                    f'PURPLE: {machine} still running after a bounded graceful shutdown; '
+                    'refusing hard power-off; guest requires targeted diagnosis'
+                )
+                return False
+
+        remaining = self._purple_running_vms()
+        if remaining is None:
+            return False
+        if remaining:
+            Log.error('PURPLE: guest shutdown incomplete: ' + ', '.join(remaining))
+            return False
+        Log.success('PURPLE: all four guests safely stopped; other VMware labs untouched')
+        return True
+
     def stop(self):
         """Shut down members, then DCs, then the router without Vagrant NAT."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            return self._stop_purple_vms()
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop()
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
