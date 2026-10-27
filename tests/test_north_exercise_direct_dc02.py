@@ -1,5 +1,6 @@
 """Offline NORTH DC02 exercise-mode WinRM transport regression."""
 import importlib.util
+import subprocess
 import io
 from pathlib import Path
 import sys
@@ -103,6 +104,70 @@ class DirectDc02ModeTests(unittest.TestCase):
         self.assertIn("KINGDOMS_DC_TIME_READY|", script)
         self.assertNotIn("${", script)
         self.assertNotIn(r"\$", script)
+
+    def _extract_time_marker(self, profile, machine, kinds, output):
+        source = LAB.read_text()
+        helper = source[source.index("extract_dc02_time_marker() {"):
+                        source.index("north_direct_dc02_capture() {")]
+        script = (
+            "set -euo pipefail\n" + helper +
+            '\nGOAD_LAB_PROFILE="$1"\n' +
+            'extract_dc02_time_marker "$2" "$3" "$4"\n'
+        )
+        result = subprocess.run(
+            ["bash", "-c", script, "_", profile, machine, kinds, output],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        return result.stdout.strip()
+
+    def test_north_dc02_clixml_prefixed_readiness_markers(self):
+        # Captured from a *successful* live WinRM probe where PowerShell
+        # progress CLIXML and the readiness token share the same line.
+        clixml = (
+            '<Objs Version="1.1.0.1" '
+            'xmlns="http://schemas.microsoft.com/powershell/2004/04">'
+            '<Obj S="progress">Preparing modules for first use.</Obj>'
+            '</Objs>'
+        )
+        ready = (
+            'KINGDOMS_DC_TIME_READY|'
+            'source=kingslanding.sevenkingdoms.local|'
+            'parent=kingslanding.sevenkingdoms.local'
+        )
+        pending = (
+            'KINGDOMS_DC_TIME_NOT_READY|reason=source|'
+            'source=Local CMOS Clock|expected=kingslanding.sevenkingdoms.local'
+        )
+        repaired = 'KINGDOMS_DC_TIME_REPAIRED|source=kingslanding.sevenkingdoms.local'
+        failed = 'KINGDOMS_DC_TIME_REPAIR_FAILED|stage=parent_timeserv_locator|rc=1'
+        for kind, value in (
+            ('READY|NOT_READY', ready),
+            ('READY|NOT_READY', pending),
+            ('REPAIRED|REPAIR_FAILED', repaired),
+            ('REPAIRED|REPAIR_FAILED', failed),
+        ):
+            with self.subTest(marker=value):
+                self.assertEqual(
+                    self._extract_time_marker(
+                        'NORTH', 'GOAD-DC02', kind, clixml + value),
+                    value,
+                )
+        # Keep the original full-line behavior for GOAD and other guests.
+        self.assertEqual(
+            self._extract_time_marker('GOAD', 'GOAD-DC02',
+                                      'READY|NOT_READY', clixml + ready),
+            clixml + ready,
+        )
+        self.assertEqual(
+            self._extract_time_marker('NORTH', 'GOAD-DC01',
+                                      'READY|NOT_READY', clixml + ready),
+            clixml + ready,
+        )
+        self.assertEqual(
+            self._extract_time_marker('NORTH', 'GOAD-DC02',
+                                      'READY|NOT_READY', clixml),
+            '',
+        )
 
     def test_mode_controller_only_switches_north_dc02_transport(self):
         script = LAB.read_text()
