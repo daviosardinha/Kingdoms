@@ -62,7 +62,9 @@ POWERSHELL_DC = POWERSHELL.replace(
 )
 
 
-def assert_instance(instance_id):
+def assert_instance(instance_id, target="both"):
+    if target not in ("both", "winterfell", "castelblack"):
+        raise ValueError("Unrecognized NORTH diagnostic target")
     if not re.fullmatch(r"[a-f0-9]{6}-north-vmware", instance_id):
         raise ValueError("Invalid exact NORTH instance ID")
     base = ROOT / "workspace" / instance_id
@@ -79,7 +81,8 @@ def assert_instance(instance_id):
     ) or mode.read_text(encoding="utf-8").strip() != "exercise":
         raise ValueError("Instance is not installed NORTH in recorded exercise mode")
     registrations = {}
-    for label, (guest, _) in TARGETS.items():
+    selected = TARGETS if target == "both" else {target: TARGETS[target]}
+    for label, (guest, _) in selected.items():
         ident = provider / ".vagrant" / "machines" / guest / "vmware_desktop" / "id"
         if ident.is_symlink() or not ident.is_file():
             raise ValueError(f"Missing trusted VMware registration: {guest}")
@@ -141,8 +144,8 @@ def evidence_problems(status_code, stdout, stderr, warning_messages):
     return problems
 
 
-def capture(instance_id):
-    assert_instance(instance_id)
+def capture(instance_id, target="both"):
+    assert_instance(instance_id, target=target)
     # Avoid a second Windows command-line length failure in diagnostics.
     for script in (POWERSHELL, POWERSHELL_DC):
         encoded_length = len(base64.b64encode(script.encode("utf-16le")))
@@ -167,7 +170,8 @@ def capture(instance_id):
     dest.mkdir(mode=0o700, exist_ok=False)
     print(f"[EVIDENCE] {dest}", flush=True)
     failed = False
-    for name, (_, ip) in TARGETS.items():
+    selected = TARGETS if target == "both" else {target: TARGETS[target]}
+    for name, (_, ip) in selected.items():
         target = dest / f"{name}.txt"
         try:
             session = GoadNomadVmwareProvider._lab_winrm_session(ip)
@@ -207,9 +211,13 @@ def capture(instance_id):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--instance", required=True)
+    parser.add_argument(
+        "--target", choices=("both", "winterfell", "castelblack"),
+        default="both", help="Capture only a powered-on guest after partial start"
+    )
     args = parser.parse_args()
     try:
-        return capture(args.instance)
+        return capture(args.instance, target=args.target)
     except (OSError, ValueError, KeyError, RuntimeError) as exc:
         print(f"[BLOCKED] {exc}", file=sys.stderr)
         return 2
