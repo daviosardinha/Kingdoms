@@ -15,6 +15,9 @@ readonly POLICY_DIR="${ROOT}/ad/${GOAD_LAB_PROFILE}/providers/vmware/router/nfta
 # Explicitly enabled only by the failed-start NORTH recovery controller.
 # Normal exercise transitions still require every guest's AD readiness.
 EXERCISE_ALLOW_STOPPED_MEMBERS=0
+# Only requested by the parent provider after a complete, successful NORTH
+# installed cold-start readiness chain (four guests, not a single-VM start).
+EXERCISE_VALIDATED_COLD_START=0
 
 readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
@@ -1177,8 +1180,40 @@ prove_isolated_guest_ready() (
     echo "        [+] ${vm} authenticated post-reboot readiness proven; runtime NAT disconnected"
 )
 
+require_north_validated_cold_start() {
+    # The provider has already proven all four guests' authenticated AD/time
+    # contracts. Only a full, previously isolated NORTH cold start may avoid
+    # repeating the same probes through a now-unreliable Vagrant NAT path.
+    [[ "${GOAD_LAB_PROFILE}" == NORTH &&
+       "${EXERCISE_VALIDATED_COLD_START}" == 1 &&
+       "${EXERCISE_ALLOW_STOPPED_MEMBERS}" == 0 &&
+       "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" == exercise ]] ||
+        fail "NORTH validated cold-start isolation scope is not satisfied"
+
+    local vm vmx
+    for vm in "${WINDOWS_VMS[@]}"; do
+        vmx="$(vmx_for "${vm}")"
+        [[ "$(get_start_connected "${vmx}")" == FALSE ]] ||
+            fail "${vm}: validated cold-start cannot change a persistent NAT adapter"
+        is_running "${vmx}" ||
+            fail "${vm}: validated cold-start requires all previously verified guests running"
+    done
+}
+
 configure_windows_nat_exercise() {
     local vm
+
+    if [[ "${EXERCISE_VALIDATED_COLD_START:-0}" == 1 ]]; then
+        # Only after require_north_validated_cold_start has verified every VM,
+        # and after the provider's complete direct authenticated readiness
+        # chain. NICs remain persistently FALSE: no reboots, Vagrant WinRM,
+        # NAT re-connections, or duplicate AD/time repairs.
+        for vm in "${DOMAIN_MEMBERS[@]}" "${EXERCISE_DOMAIN_CONTROLLERS[@]}"; do
+            ensure_vm_nat_state "${vm}" FALSE disconnect
+        done
+        echo "[+] NORTH: all four guests were authenticated before isolation; NAT disconnected without Vagrant or restart"
+        return 0
+    fi
 
     # Members reboot first while their DCs are still healthy. Every restarted
     # guest keeps ethernet0.startConnected=FALSE. The management NIC is then
@@ -1318,7 +1353,10 @@ enter_exercise_mode() {
     # On a cold start of an already-recorded exercise range, persistent NAT is
     # intentionally still FALSE, so probe only the child-DC time dependency
     # with temporary runtime NAT before checking members.
-    if [[ "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" != "exercise" ]]; then
+    if [[ "${EXERCISE_VALIDATED_COLD_START}" == 1 ]]; then
+        require_north_validated_cold_start
+        echo "[+] NORTH: authenticated full installed-start guest readiness reused for isolation"
+    elif [[ "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" != "exercise" ]]; then
         preflight_domain_health
     else
         preflight_exercise_time_dependencies
@@ -1410,11 +1448,20 @@ main() {
     resolve_provider
 
     if [[ "$#" -eq 2 ]]; then
-        [[ "${1}" == exercise && "${2}" == --allow-stopped-members &&
-           "${GOAD_LAB_PROFILE}" == NORTH &&
+        [[ "${1}" == exercise && "${GOAD_LAB_PROFILE}" == NORTH &&
            "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" == exercise ]] ||
-            fail "Offline-member restoration requires already-recorded NORTH exercise mode"
-        EXERCISE_ALLOW_STOPPED_MEMBERS=1
+            fail "NORTH restoration flags require already-recorded exercise mode"
+        case "${2}" in
+            --allow-stopped-members)
+                EXERCISE_ALLOW_STOPPED_MEMBERS=1
+                ;;
+            --validated-cold-start)
+                EXERCISE_VALIDATED_COLD_START=1
+                ;;
+            *)
+                fail "Unknown NORTH exercise restoration flag"
+                ;;
+        esac
     elif [[ "$#" -gt 2 ]]; then
         fail "Unexpected mode controller arguments"
     fi

@@ -100,11 +100,12 @@
           Assert-NorthParentPath
           $credential = Get-NorthParentCredential $ParentCredential
           $result = Invoke-NorthParentWinRS -Credential $credential -Script $proofScript
-          if ($result.ExitCode -ne 0 -or
-              @($result.Stdout -split '[\r\n]+' | Where-Object {
-                  $_ -ceq 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
-              }).Count -ne 1) {
-              throw 'KINGSLANDING authenticated health proof failed; no recovery attempted'
+          $proof = Get-NorthParentHealthProofStatus $result
+          if (-not $proof.Accepted) {
+              # Fail closed without printing any guest stdout/stderr or secrets.
+              throw ("KINGSLANDING authenticated health proof failed; exit_code={0} marker_count={1} stdout_bytes={2} stderr_bytes={3} stage={4} remote_type={5} remote_category={6} remote_line={7}; no recovery attempted" -f
+                  $proof.ExitCode, $proof.MarkerCount, $proof.StdoutBytes, $proof.StderrBytes,
+                  $proof.LastStage, $proof.RemoteType, $proof.RemoteCategory, $proof.RemoteLine)
           }
           Write-Output 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
         sensitive_parameters:
