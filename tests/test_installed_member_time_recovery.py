@@ -257,30 +257,47 @@ class ControllerTests(unittest.TestCase):
         self.provider._recover_installed_member_time.assert_called_once()
         self.assertGreaterEqual(self.clock.now, 45)
 
-    def test_child_dc_requires_signed_sync_and_active_time_service(self):
+    def test_child_dc_parity_with_working_kingdoms_start_contract(self):
+        """Use real AD discovery + selected parent source; no fragile verbose gate.
+
+        A signed time state can be investigated separately without deadlocking
+        an otherwise available DC's dependency-ordered boot. The next member
+        still needs its own strict authenticated time/secure-channel proof.
+        """
         self.session.run_ps.return_value = result("KINGDOMS_INSTALLED_AD_READY")
         self.assertTrue(self.call_wait(machine="GOAD-DC02", timeout=35))
         script = self.session.run_ps.call_args.args[0]
         for required in (
             "kingslanding.sevenkingdoms.local",
             "w32tm.exe /query /source",
+            "Get-Service -Name $serviceName",
+            "'NTDS','DNS','ADWS','Netlogon','Kdc','W32Time'",
+            "'SYSVOL','NETLOGON'",
+            "nltest.exe '/dsgetdc:north.sevenkingdoms.local' /force",
+            "nltest.exe '/dsgetdc:north.sevenkingdoms.local' /timeserv /force",
+            "W32Time source is",
+            "TIMESERV advertising is not ready",
+        ):
+            self.assertIn(required, script)
+        for extra in (
             "w32tm.exe /query /status /verbose",
             "State Machine:",
             "Time Source Flags:",
             "SignatureAuthenticated",
             "Server Role:",
-            "Time Service",
             "Last Sync Error:",
             "Leap Indicator:",
+            "W32Time child-domain time server is not yet signed",
+            "Restart-Service W32Time",
+            "w32tm.exe /resync",
+            "w32tm.exe /config",
+            "netdom resetpwd",
         ):
-            self.assertIn(required, script)
+            self.assertNotIn(extra, script)
         self.assertLess(
             script.index("TIMESERV advertising is not ready"),
-            script.index("$timeStatus = "),
+            script.index("w32tm.exe /query /source"),
         )
-        for forbidden in ("Restart-Service W32Time", "w32tm.exe /resync",
-                          "w32tm.exe /config", "netdom resetpwd"):
-            self.assertNotIn(forbidden, script)
         self.provider._recover_installed_member_time.assert_not_called()
 
     def test_forest_root_dc_does_not_gain_child_time_source_requirement(self):

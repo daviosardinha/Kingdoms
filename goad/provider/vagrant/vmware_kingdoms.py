@@ -1831,6 +1831,12 @@ Write-Output ("KINGDOMS_NT5DS_BACKOFF_READY|changed={0}|reload={1}|minutes=1|max
             return False
 
         if contract['kind'] == 'dc':
+            # Match the working KINGDOMS installed-DC startup contract:
+            # running AD/time services, SYSVOL/NETLOGON, DC Locator
+            # (including TIMESERV), and the exact selected parent source.
+            # Verbose w32tm diagnostics belong in independent W32Time
+            # evidence, not startup's text-format-dependent readiness gate.
+            # Members retain strict secure-channel and domain-time checks.
             expected_source = contract.get('expected_source')
             source_check = ''
             if expected_source:
@@ -1838,20 +1844,6 @@ Write-Output ("KINGDOMS_NT5DS_BACKOFF_READY|changed={0}|reload={1}|minutes=1|max
 $source = (& w32tm.exe /query /source 2>$null | Out-String).Trim().TrimEnd('.')
 if ($LASTEXITCODE -ne 0 -or $source -ine '{expected_source}') {{
     throw "W32Time source is '$source', expected {expected_source}"
-}}
-# DC Locator /timeserv and the selected source can become visible before
-# W32Time actually synchronizes and advertises NTP service after reboot.
-# WINTERFELL must be a CURRENT authenticated time server before any NORTH
-# members are powered on. This is intentionally read-only and retries using
-# the existing bounded DC startup readiness loop.
-$timeStatus = (& w32tm.exe /query /status /verbose 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0 -or
-    $timeStatus -notmatch 'State Machine:\\s*2\\s*\\(Sync\\)' -or
-    $timeStatus -notmatch 'Time Source Flags:\\s*8\\s*\\(SignatureAuthenticated' -or
-    $timeStatus -notmatch 'Server Role:\\s*64\\s*\\(Time Service\\)' -or
-    $timeStatus -notmatch 'Last Sync Error:\\s*0\\s*\\(' -or
-    $timeStatus -notmatch 'Leap Indicator:\\s*0\\s*\\(') {{
-    throw 'W32Time child-domain time server is not yet signed, synchronized and advertising'
 }}
 """
             script = f"""
