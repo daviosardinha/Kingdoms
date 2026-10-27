@@ -18,6 +18,9 @@ EXERCISE_ALLOW_STOPPED_MEMBERS=0
 
 readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
+# Only NORTH/DC02 uses direct HTTPS WinRM; its existing 15s probe was
+# shorter than the proven 30s/45s operation/read timeout pair.
+readonly NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS=75
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
 readonly AD_REPAIR_TIMEOUT_SECONDS=90
 
@@ -377,6 +380,27 @@ ensure_vm_nat_state() {
         "${action}"
 }
 
+extract_dc02_time_marker() {
+    local vm="$1"
+    local kinds="$2"
+    local output="$3"
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+        # pywinrm can prepend PowerShell CLIXML progress without a newline:
+        # </Objs>KINGDOMS_DC_TIME_READY|source=... .
+        # Extract the marker instead of requiring the line to begin with it.
+        # Caller also requires a successful authenticated WinRM return code.
+        printf '%s\n' "${output}" |
+            grep -oE "KINGDOMS_DC_TIME_(${kinds})\|[^<]*" |
+            tail -n 1 || true
+    else
+        # Preserve original KINGDOMS/GOAD matching.
+        printf '%s\n' "${output}" |
+            grep -E "KINGDOMS_DC_TIME_(${kinds})\|" |
+            tail -n 1 || true
+    fi
+}
+
 north_direct_dc02_capture() {
     local vm="$1"
     local script="$2"
@@ -456,6 +480,8 @@ ensure_child_dc_time_ready() {
     local output=""
     local marker=""
     local last_state="reason=transport"
+    local probe_rc=0
+    local transport_detail=""
     local consecutive_source_failures=0
     local repair_attempted=0
     [[ -n "${parent_domain}" && -n "${parent_server}" ]] || return 0
@@ -576,18 +602,22 @@ POWERSHELL
         elapsed=$((SECONDS - started))
         remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
         probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+        if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+            probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"
+        fi
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
 
         output=""
         marker=""
+        probe_rc=0
 
         if output="$(vagrant_powershell_capture "${vm}" "${probe_script}" "${probe_timeout}")"; then
             marker="$(
-                printf '%s\n' "${output}" |
-                    grep -E 'KINGDOMS_DC_TIME_(READY|NOT_READY)\|' |
-                    tail -n 1 || true
+                extract_dc02_time_marker "${vm}" "READY|NOT_READY" "${output}"
             )"
+        else
+            probe_rc=$?
         fi
 
         if [[ "${marker}" == KINGDOMS_DC_TIME_READY\|* ]]; then
@@ -599,6 +629,15 @@ POWERSHELL
             last_state="${marker#KINGDOMS_DC_TIME_NOT_READY|}"
         else
             last_state="reason=transport"
+            if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+                # NORTH-only failure evidence; never print arbitrary remote
+                # PowerShell output or potentially sensitive response content.
+                transport_detail="$(printf '%s\n' "${output}" |
+                    grep -E '^NORTH_DIRECT_WINRM_ERROR machine=GOAD-DC02 ' |
+                    tail -n 1 | cut -c 1-500 || true)"
+                printf '        [DIAG] NORTH DC02 probe rc=%s, output_bytes=%s; %s\n' \
+                    "${probe_rc}" "${#output}" "${transport_detail:-no recognized WinRM error or time-readiness marker}"
+            fi
         fi
 
         if [[ "${last_state}" == reason=source\|* ]]; then
@@ -621,9 +660,7 @@ POWERSHELL
             output=""
             if output="$(vagrant_powershell_capture "${vm}" "${repair_script}" "${repair_timeout}")"; then
                 marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
+                    extract_dc02_time_marker "${vm}" "REPAIRED|REPAIR_FAILED" "${output}"
                 )"
 
                 if [[ "${marker}" == KINGDOMS_DC_TIME_REPAIRED\|* ]]; then
@@ -635,9 +672,7 @@ POWERSHELL
                 fi
             else
                 marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
+                    extract_dc02_time_marker "${vm}" "REPAIRED|REPAIR_FAILED" "${output}"
                 )"
                 fail "${vm} child-domain time recovery transport failed within remaining readiness budget: ${marker:-no marker}"
             fi
@@ -719,6 +754,9 @@ POWERSHELL
         elapsed=$((SECONDS - started))
         remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
         probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+        if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+            probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"
+        fi
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
 
