@@ -16,9 +16,9 @@ from tests.test_course1_vmnet_config import Course1VmnetPlanTests
 
 class CoexistenceTests(unittest.TestCase):
     def setUp(self):
-        with patch.object(Course1VmnetPlanTests, "runTest", lambda self: None):
-            self.fixture = Course1VmnetPlanTests()
-            self.fixture.setUp()
+        self.fixture = Course1VmnetPlanTests(
+            "test_post_vagrant_accepts_real_vmware_normalization_and_forwards")
+        self.fixture.setUp()
         self.baseline, self.owned, self.normal = (
             self.fixture.vmware_post_vagrant_fixture()
         )
