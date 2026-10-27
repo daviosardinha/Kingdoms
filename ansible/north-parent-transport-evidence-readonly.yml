@@ -107,6 +107,9 @@
           # production validator. The shell is deleted immediately and no
           # command is started. Output contains a code/class, not raw exception
           # messages, remoting objects, usernames or credentials.
+          # Reuse production's EPR ShellId selector parser verbatim.
+          {{ lookup('ansible.builtin.file', 'files/north-parent-winrs.ps1') | indent(10) }}
+
           $session = $null
           $locator = $null
           $options = $null
@@ -137,10 +140,7 @@
               $created = [xml]$session.Create($resource,
                   "<rsp:Shell xmlns:rsp='$ns'><rsp:InputStreams>stdin</rsp:InputStreams><rsp:OutputStreams>stdout stderr</rsp:OutputStreams></rsp:Shell>", 0)
               # $ShellId is a built-in read-only PowerShell variable.
-              $parentEvidenceShellGuid = $created.SelectSingleNode("//*[local-name()='ShellId']").InnerText
-              if (-not $parentEvidenceShellGuid) {
-                  throw 'Missing remote shell identifier'
-              }
+              $parentEvidenceShellGuid = Get-NorthParentWinRSShellGuid $created
               $winrsStage = 'resource_locator'
               $locator = $automation.CreateResourceLocator($resource)
               $locator.AddSelector('ShellId', $parentEvidenceShellGuid)
