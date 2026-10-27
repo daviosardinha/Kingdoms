@@ -4,6 +4,32 @@ This file is the repository backlog for capabilities that are intentionally
 deferred. Items here are **not** blockers for the currently accepted Kingdoms
 phase unless they are explicitly promoted into the active curriculum.
 
+## KINGDOMS — One root directory, one lab management console
+
+**Status:** Deferred — document and acceptance contract recorded; no live
+VM migration or runtime modification.
+
+The installed NORTH and PURPLE pilot were started from separate source
+checkouts, so `./goad.sh` discovers only the
+`workspace/<instance-id>/instance.json` records under whichever checkout
+is currently active. The next shared-infrastructure update must allow
+a **single canonical KINGDOMS source root and one `./goad.sh`** to list,
+select and manage NORTH, PURPLE, full KINGDOMS and (after standalone
+integration) WSLPE. This is one management interface for independent lab
+instances, **not** one combined AD environment or a VM reinstall.
+
+The complete migration boundaries, rollback plan and acceptance tests are
+tracked in [KINGDOMS_SINGLE_ROOT_MULTI_LAB_MIGRATION.md](KINGDOMS_SINGLE_ROOT_MULTI_LAB_MIGRATION.md).
+
+Do not move `.vagrant` state or VMX paths manually, alter NORTH/PURPLE
+network ownership, or claim WSLPE is already integrated into `main`.
+
+### Related PURPLE infrastructure backlog
+
+- Align actual guest OS hostnames with the VMware display names
+  `PURPLE-DC01`, `PURPLE-WS01`, `PURPLE-LX01`, and `PURPLE-WAZUH`
+  only after accounting for AD/DNS, agent enrollment and dependent fixtures.
+
 ## Phase 03 — Poison the Wells
 
 Phase 03's current engineered attack catalogue is considered complete for the
