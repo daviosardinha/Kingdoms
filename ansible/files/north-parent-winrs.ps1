@@ -48,6 +48,18 @@ function Get-NorthParentHealthProofStatus($Result) {
     $matchesFound = [regex]::Matches(
         $text, $pattern,
         [Text.RegularExpressions.RegexOptions]::Multiline)
+    $stageMatches = [regex]::Matches($text,
+        'NORTH_PARENT_HEALTH_STAGE=(identity|services|shares|dns_srv|locator_timeserv|w32tm_source|w32tm_status)',
+        [Text.RegularExpressions.RegexOptions]::Multiline)
+    $lastStage = 'none'
+    if ($stageMatches.Count -gt 0) {
+        $lastStage = $stageMatches[$stageMatches.Count - 1].Groups[1].Value
+    }
+    $remote = [regex]::Match($text,
+        'NORTH_PARENT_REMOTE_ERROR\|type=([A-Za-z0-9_]+)\|category=([A-Za-z0-9_]+)\|line=([0-9]+)')
+    $remoteType = if ($remote.Success) { $remote.Groups[1].Value } else { 'none' }
+    $remoteCategory = if ($remote.Success) { $remote.Groups[2].Value } else { 'none' }
+    $remoteLine = if ($remote.Success) { [int]$remote.Groups[3].Value } else { 0 }
     $exitCode = [int]$Result.ExitCode
     return [pscustomobject]@{
         Accepted = ($exitCode -eq 0 -and $matchesFound.Count -eq 1)
@@ -55,6 +67,10 @@ function Get-NorthParentHealthProofStatus($Result) {
         MarkerCount = [int]$matchesFound.Count
         StdoutBytes = [Text.Encoding]::UTF8.GetByteCount($text)
         StderrBytes = [int]$Result.StderrBytes
+        LastStage = $lastStage
+        RemoteType = $remoteType
+        RemoteCategory = $remoteCategory
+        RemoteLine = $remoteLine
     }
 }
 
