@@ -123,17 +123,28 @@ boxes.append(
         # Configure the exercise NIC. The legacy one-argument form is kept for
         # other labs; segmented boxes additionally provide their gateway + MAC.
         if ENV['VAGRANT_DEFAULT_PROVIDER'] == "vmware_desktop"
-          if box.has_key?(:lab_gateway) && box.has_key?(:lab_mac)
+          if box.has_key?(:lab_mac)
+            # Optional gateway: PURPLE is a flat host-only segment and must
+            # never inherit the segmented GOAD/NORTH 10.4.0.0/16 route.
             target.vm.provision :shell,
               :path => "../../../vagrant/fix_ip.ps1",
               privileged: false,
-              args: [box[:ip], box[:lab_gateway], box[:lab_mac]]
+              args: [box[:ip], box.fetch(:lab_gateway, ""), box[:lab_mac]]
           else
             target.vm.provision :shell, :path => "../../../vagrant/fix_ip.ps1", privileged: false, args: box[:ip]
           end
         end
+
       else
         target.vm.communicator = "ssh"
+        # Optional static lab NIC for Linux guests on an explicit custom vmnet.
+        # Keeps default NAT on ethernet0 during package provisioning.
+        if box.has_key?(:lab_linux_config_script)
+          target.vm.provision :shell,
+            :path => box[:lab_linux_config_script],
+            privileged: true,
+            args: [box[:ip], box[:lab_mac]]
+        end
       end
 
       if box.has_key?(:provision_scripts)

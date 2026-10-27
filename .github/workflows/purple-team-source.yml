@@ -1,0 +1,37 @@
+name: Purple Team VMware source regressions
+
+on:
+  push:
+    branches:
+      - feature/purple-team-four-vm
+  pull_request:
+    paths:
+      - 'ad/PURPLE/**'
+      - 'goad/purple_vmware_network.py'
+      - 'goad/course1_host_network_apply.py'
+      - 'goad/provider/vagrant/vmware.py'
+      - 'scripts/purple-ws01-vmware-eval.py'
+      - 'template/provider/vmware/Vagrantfile'
+      - 'tests/test_purple_*.py'
+      - '.github/workflows/purple-team-source.yml'
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile edited Python modules and tests
+        run: |
+          python -m py_compile goad/purple_vmware_network.py goad/course1_host_network_apply.py goad/provider/vagrant/vmware.py scripts/purple-ws01-vmware-eval.py tests/test_purple_vmware_network.py tests/test_purple_lab_source.py tests/test_purple_ws01_install_recovery.py
+      - name: Check Wazuh provisioning shell syntax
+        run: |
+          bash -n ad/PURPLE/providers/vmware/provision-wazuh-all-in-one.sh
+          bash -n scripts/purple-wazuh-credentials.sh
+      - name: Execute offline Purple Team regressions
+        run: |
+          python -m unittest tests.test_purple_lab_source tests.test_purple_vmware_network tests.test_purple_ws01_install_recovery -v
