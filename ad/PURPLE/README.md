@@ -187,12 +187,28 @@ installations stop with an actionable error; it will **not** rerun an
 installer over partially present components, remove packages, reset
 passwords, replace certificates or force unsupported OS overrides.
 
-The Wazuh assistant prints generated passwords. Its output, downloads
-and credential archive are deliberately kept under the **root-only**
-directory `/root/purple-wazuh-installer/`; normal Vagrant logs do not
-reveal the admin password. Use:
-`sudo tar -O -xf /root/purple-wazuh-installer/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt`
-inside PURPLE-WAZUH to retrieve credentials securely.
+Wazuh generates a random admin password during setup. The automation
+keeps the original generated password (no rotation or hardcoded lab secret)
+and verifies the installer preserved a root-owned credential archive before
+reporting success. The assistant's output and archive are kept under
+`/root/purple-wazuh-installer/` and are not printed in Vagrant logs.
+
+Retrieve the existing generated password from Kali through the registered
+PURPLE-WAZUH guest, without changing it:
+
+```bash
+cd ~/labs/purple-team/Kingdoms
+bash scripts/purple-wazuh-credentials.sh \
+  --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" --status
+bash scripts/purple-wazuh-credentials.sh \
+  --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" --show
+```
+
+`--status` only checks recoverability, without printing secrets. Explicit
+`--show` prints existing Wazuh credentials in a terminal; don't paste or
+screenshot that output. The helper also checks the older `/root/` location
+used by the manually installed pilot. No password is committed to Git or
+embedded in a generated Vagrantfile.
 
 Dashboard target: `https://172.28.233.51`. A valid fresh instance must
 complete the assistant and start all three services before Vagrant
