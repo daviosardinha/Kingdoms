@@ -26,6 +26,8 @@ systemctl enable --now gdm3
 # The ssl-cert group allows the xrdp daemon to use its generated TLS key.
 usermod -aG ssl-cert xrdp
 systemctl enable --now xrdp-sesman xrdp
+# Reload service credentials so the ssl-cert group takes effect immediately.
+systemctl restart xrdp
 
 # Fail provisioning if the graphical remote-access stack is not operational.
 systemctl is-active --quiet gdm3
