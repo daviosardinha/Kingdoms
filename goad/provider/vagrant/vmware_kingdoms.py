@@ -2276,7 +2276,8 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         )
         return True
 
-    def set_runtime_mode(self, mode, *, allow_stopped_members=False):
+    def set_runtime_mode(self, mode, *, allow_stopped_members=False,
+                         validated_cold_start=False):
         if self._course1_unwired():
             return False
         # Never expose partial-member isolation to ordinary mode transitions.
@@ -2290,6 +2291,13 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
                 'after a failed installed exercise-mode start'
             )
             return False
+        if validated_cold_start and (
+                allow_stopped_members or self.lab_name != 'NORTH'
+                or mode != 'exercise' or self.get_runtime_mode() != 'exercise'):
+            Log.error(
+                'NORTH: refusing unqualified cold-start isolation shortcut'
+            )
+            return False
         # Re-check immediately before every provisioning/exercise transition.
         # This covers long-running starts where the sudo timestamp may have
         # expired since prepare_install() and prevents the compatibility mode
@@ -2299,5 +2307,9 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         if allow_stopped_members:
             return super().set_runtime_mode(
                 mode, allow_stopped_members=True
+            )
+        if validated_cold_start:
+            return super().set_runtime_mode(
+                mode, validated_cold_start=True
             )
         return super().set_runtime_mode(mode)
