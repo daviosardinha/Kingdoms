@@ -9,7 +9,7 @@ KINGDOMS lab definitions and networking ownership are unchanged.
 | PURPLE-DC01 | Windows Server 2019 / Active Directory | 172.28.233.30 | 4 GB |
 | PURPLE-WS01 | Windows 10 domain workstation | 172.28.233.31 | 4 GB |
 | PURPLE-LX01 | Ubuntu 22.04 Desktop | 172.28.233.32 | 4 GB |
-| PURPLE-WAZUH | Debian 12 / clean Wazuh host | 172.28.233.51 | 8 GB |
+| PURPLE-WAZUH | Debian 12 / clean Wazuh host | 172.28.233.51 | 8 GB, 4 vCPUs |
 
 All four guests are created through one Vagrant/VMware provider file. The
 Windows machines retain standard MINILAB/GOAD AD provisioning. Ubuntu 22.04
@@ -151,6 +151,21 @@ networks or any other guest. The same helper now runs **automatically** during
 new PURPLE installations; manual invocation remains a bounded recovery option
 for already-created instances. Only the new installation path uses
 `--fresh-install` to handle an as-yet-unconfigured Windows lab NIC.
+
+
+### Wazuh installation readiness
+
+PURPLE-WAZUH is configured with **4 vCPUs and 8 GiB RAM**, matching the Wazuh
+all-in-one quickstart recommendation for 1–25 agents. The installed pilot
+`ef5c0b` was generated with 2 vCPUs before this change; its generated
+Vagrantfile must be synchronized and that one VM restarted to apply the
+additional CPUs (not reinstalled). The pilot's 62 GiB root filesystem
+provides enough disk capacity for initial Wazuh testing.
+
+Wazuh 4.14 provides Debian-family DEB packages, but current quickstart
+recommendations explicitly list Ubuntu/RHEL-family operating systems rather
+than Debian 12. Debian 12 therefore needs an installation smoke test and
+must not be represented as a vendor-recommended Wazuh server OS.
 
 ## Next phase
 
