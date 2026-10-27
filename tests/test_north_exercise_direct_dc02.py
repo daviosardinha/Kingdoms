@@ -125,6 +125,12 @@ class DirectDc02ModeTests(unittest.TestCase):
         self.assertIn('GOAD_PROVIDER_DIR', script)
         self.assertIn('readonly NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS=75',
                       script)
+        # A silent reason=transport must include the authenticated helper's
+        # return code/error class on NORTH only, without dumping arbitrary
+        # PowerShell output or changing the GOAD path.
+        self.assertIn("probe_rc=$?", script)
+        self.assertIn("NORTH DC02 probe rc=%s, output_bytes=%s", script)
+        self.assertIn("NORTH_DIRECT_WINRM_ERROR machine=GOAD-DC02", script)
         for function_name, stop_name in (
             ("ensure_child_dc_time_ready()", "wait_domain_controller_ready()"),
             ("wait_domain_controller_ready()", "wait_domain_member_ready()"),
