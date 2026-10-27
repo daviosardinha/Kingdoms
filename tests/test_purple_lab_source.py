@@ -20,6 +20,7 @@ class PurpleLabSourceTests(unittest.TestCase):
             self.assertEqual(vm.count(':name => "' + name + '"'), 1)
         self.assertIn("bento/debian-12", vm)
         self.assertIn("bento/ubuntu-22.04", vm)
+        self.assertRegex(vm, r':name => "PURPLE-WAZUH"[\\s\\S]*?:cpus => 4, :mem => 8192')
         self.assertIn("provision-ubuntu-desktop.sh", vm)
 
     def test_windows_reuse_original_minilab(self):
