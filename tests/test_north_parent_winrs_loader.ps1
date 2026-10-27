@@ -35,6 +35,7 @@ function Invoke-LocalEncodedParentFixture([string]$Script) {
             ExitCode = [int]$p.ExitCode
             Stdout = $stdout
             StderrBytes = [Text.Encoding]::UTF8.GetByteCount($stderr)
+            Stderr = $stderr
         }
     } finally {
         $p.Dispose()
@@ -43,7 +44,9 @@ function Invoke-LocalEncodedParentFixture([string]$Script) {
 $good = Invoke-LocalEncodedParentFixture "Write-Output 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'"
 $accepted = Get-NorthParentHealthProofStatus $good
 if (-not $accepted.Accepted -or $accepted.ExitCode -ne 0) {
-    throw ('Read-only fixture unexpected result: exit={0} count={1} bytes={2} stdout={3}' -f $good.ExitCode, $accepted.MarkerCount, $accepted.StdoutBytes, ($good.Stdout.Trim() -replace '[^A-Za-z0-9_:=|\-]', '_'))
+    $safeErr = ($good.Stderr -replace '[^A-Za-z0-9_.:=| -]', '_')
+    if ($safeErr.Length -gt 900) { $safeErr = $safeErr.Substring(0, 900) }
+    throw ('Read-only fixture unexpected result: exit={0} count={1} bytes={2} stdout={3} stderr={4}' -f $good.ExitCode, $accepted.MarkerCount, $accepted.StdoutBytes, ($good.Stdout.Trim() -replace '[^A-Za-z0-9_:=|\-]', '_'), $safeErr)
 }
 $bad = Invoke-LocalEncodedParentFixture @'
 Write-Output 'NORTH_PARENT_HEALTH_STAGE=identity'
