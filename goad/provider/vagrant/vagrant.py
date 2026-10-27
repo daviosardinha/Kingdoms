@@ -160,6 +160,16 @@ class VagrantProvider(Provider):
                             restored = callable(set_mode) and set_mode(
                                 'exercise', allow_stopped_members=True
                             )
+                        elif (self.lab_name == 'NORTH' and ready
+                              and vm_name is None and callable(start_existing)):
+                            # A complete installed NORTH cold start already
+                            # authenticated every Windows guest over direct
+                            # HTTPS/NTLM and checked the strict AD/NT5DS
+                            # contract. Do not repeat checks over Vagrant NAT
+                            # just to close routing and disconnect NICs.
+                            restored = callable(set_mode) and set_mode(
+                                'exercise', validated_cold_start=True
+                            )
                         else:
                             restored = callable(set_mode) and set_mode('exercise')
                         if not restored:
