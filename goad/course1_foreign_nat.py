@@ -182,7 +182,13 @@ def register(north_provider: str, foreign_provider: str, *,
         vagrant_output = proc.stdout
     ports = _parse_ports(vagrant_output)
     rules = _rules(ports)
-    observed = _safe_file(networking, uid=0, mode=0o644) if False else networking.read_text(encoding="utf-8")
+    if networking.is_symlink() or not networking.is_file():
+        raise ForeignNatError("VMware networking file missing or unsafe")
+    net_meta = networking.stat()
+    if (net_meta.st_uid != 0 or not stat.S_ISREG(net_meta.st_mode)
+            or net_meta.st_size > 1048576):
+        raise ForeignNatError("VMware networking ownership or size is unsafe")
+    observed = networking.read_text(encoding="utf-8")
     lines = [ln.strip() for ln in observed.splitlines() if ln.strip().startswith("add_nat_portfwd ")]
     if any(lines.count(line) != 1 for line in rules):
         raise ForeignNatError("Observed VMware NAT forwards do not exactly match registered PURPLE ports")
