@@ -84,6 +84,7 @@ on:
       - tests/test_north_parent_winrs_readonly_variable.py
       - tests/test_north_parent_winrs_epr.ps1
       - tests/test_north_parent_winrs_loader.ps1
+      - tests/test_north_parent_rendered_script.ps1
       - ansible/files/north-parent-winrs.ps1
       - scripts/diagnostics/north-installed-time-evidence.py
       - tests/test_north_w32time_evidence.py
@@ -115,6 +116,9 @@ jobs:
       - name: Verify safe local PowerShell encoded-command failure classification
         shell: powershell
         run: ./tests/test_north_parent_winrs_loader.ps1
+      - name: Parse full Jinja-rendered parent health script in PowerShell 5.1
+        shell: powershell
+        run: ./tests/test_north_parent_rendered_script.ps1
 
   windows-parent-winrs:
     runs-on: windows-latest
