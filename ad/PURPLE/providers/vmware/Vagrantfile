@@ -19,7 +19,7 @@ boxes = [
     ] },
   { :name => "PURPLE-WAZUH", :ip => "{{ip_range}}.51",
     :box => "bento/debian-12", :box_version => "202510.26.0",
-    :os => "linux", :cpus => 2, :mem => 8192,
+    :os => "linux", :cpus => 4, :mem => 8192,
     :lab_mac => "00:50:56:10:04:51", :skip_private_network => true,
     :vmware_network_adapters => [
       { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:51" }
