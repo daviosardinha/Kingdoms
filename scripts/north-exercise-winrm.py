@@ -52,13 +52,19 @@ def run(script: str, *, timeout: int, machine: str, provider: str):
     # Windows packages until an authenticated WinRM probe is genuinely needed.
     import winrm
 
+    # The exercise controller gives NORTH/DC02 a 75-second bounded probe.
+    # Reuse the operation/read budgets proven by installed startup instead of
+    # timing out PowerShell/DC Locator after only 5/10 seconds. Preserve a
+    # shorter pair for any final probe clipped by the remaining global budget.
+    operation_timeout = 30 if timeout >= 60 else 5
+    read_timeout = 45 if timeout >= 60 else 10
     session = winrm.Session(
         f"https://{HOST}:5986/wsman",
         auth=("vagrant", "vagrant"),
         transport="ntlm",
         server_cert_validation="ignore",
-        operation_timeout_sec=5,
-        read_timeout_sec=10,
+        operation_timeout_sec=operation_timeout,
+        read_timeout_sec=read_timeout,
     )
     result = session.run_ps(script)
     stdout = result.std_out.decode("utf-8", errors="replace")
