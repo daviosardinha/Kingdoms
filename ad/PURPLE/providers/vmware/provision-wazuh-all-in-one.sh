@@ -39,7 +39,19 @@ for service in "${SERVICES[@]}"; do
     fi
 done
 if [[ "$all_running" == true ]]; then
-    log "Wazuh manager, indexer and dashboard already active; preserving existing stack"
+    # Idempotency must preserve credentials as well as running services.
+    # Include the original manual install path for already deployed pilots.
+    archive=""
+    for candidate in /root/purple-wazuh-installer/wazuh-install-files.tar /root/wazuh-install-files.tar; do
+        if [[ -s "$candidate" ]] && tar -tf "$candidate" | grep -Fqx "wazuh-install-files/wazuh-passwords.txt"; then
+            archive="$candidate"
+            break
+        fi
+    done
+    [[ -n "$archive" ]] || fail "Wazuh services are active but the generated password archive is missing; refusing to claim recoverable credentials"
+    [[ "$(stat -c %u "$archive")" = 0 ]] || fail "Generated Wazuh password archive is not owned by root"
+    chmod 0600 "$archive"
+    log "Wazuh services already active; verified preserved password archive at $archive"
     exit 0
 fi
 if [[ "$any_installed" == true ]]; then
