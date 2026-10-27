@@ -2284,8 +2284,19 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         )
         return True
 
-    def set_runtime_mode(self, mode):
+    def set_runtime_mode(self, mode, *, allow_stopped_members=False):
         if self._course1_unwired():
+            return False
+        # Never expose partial-member isolation to ordinary mode transitions.
+        # The parent controller also checks NORTH, exercise, and the existing
+        # recorded exercise mode before honoring this opt-in.
+        if allow_stopped_members and (
+                self.lab_name != 'NORTH' or mode != 'exercise'
+                or self.get_runtime_mode() != 'exercise'):
+            Log.error(
+                'NORTH: stopped-member isolation restoration is valid only '
+                'after a failed installed exercise-mode start'
+            )
             return False
         # Re-check immediately before every provisioning/exercise transition.
         # This covers long-running starts where the sudo timestamp may have
@@ -2293,4 +2304,8 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
         # controller from ever becoming an interactive password prompt.
         if self.is_goad_nomad_segmented() and not self._require_cached_sudo():
             return False
+        if allow_stopped_members:
+            return super().set_runtime_mode(
+                mode, allow_stopped_members=True
+            )
         return super().set_runtime_mode(mode)
