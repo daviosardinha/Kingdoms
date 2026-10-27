@@ -84,7 +84,7 @@ class DirectDc02ModeTests(unittest.TestCase):
         helpers = script[script.index("north_direct_dc02_capture()"):
                          script.index("ensure_child_dc_time_ready()")]
         self.assertEqual(helpers.count(
-            '[[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]'),
+            '    [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]'),
             1)
         self.assertEqual(helpers.count(
             'if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]'),
