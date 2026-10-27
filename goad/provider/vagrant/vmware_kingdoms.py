@@ -58,6 +58,12 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
     def start(self, vm_name=None):
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            if vm_name is not None:
+                if not self._purple_power_action_ready():
+                    return False
+                return self._purple_start_machine(vm_name)
+            return self._start_purple_vms()
         return super().start(vm_name=vm_name)
 
     def _require_cached_sudo(self):
@@ -1228,6 +1234,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Start one installed guest, plus its router dependency when needed."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            return self.start(vm_name=vm_name)
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().start_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -1240,6 +1248,10 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Stop one instance guest locally; preserve routing for live Windows."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            if not self._purple_power_action_ready():
+                return False
+            return self._purple_soft_stop(vm_name)
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -1261,6 +1273,17 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
 
     # Preserve AD/DNS availability as other guests shut down, and make DC01
     # available before WS01 boots. Never inherit NORTH's segmented router policy.
+    def restart_vm(self, vm_name):
+        """Restart one installed PURPLE guest only after verified safe stop."""
+        if self.lab_name != 'PURPLE':
+            return super().restart_vm(vm_name)
+        if vm_name not in self._purple_start_order:
+            Log.error(f'PURPLE: unknown machine {vm_name}; refusing restart')
+            return False
+        if not self.stop_vm(vm_name):
+            return False
+        return bool(self.start_vm(vm_name))
+
     _purple_stop_order = (
         'PURPLE-WS01', 'PURPLE-LX01', 'PURPLE-DC01', 'PURPLE-WAZUH'
     )
