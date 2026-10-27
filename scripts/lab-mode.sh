@@ -459,6 +459,8 @@ ensure_child_dc_time_ready() {
     local output=""
     local marker=""
     local last_state="reason=transport"
+    local probe_rc=0
+    local transport_detail=""
     local consecutive_source_failures=0
     local repair_attempted=0
     [[ -n "${parent_domain}" && -n "${parent_server}" ]] || return 0
@@ -587,6 +589,7 @@ POWERSHELL
 
         output=""
         marker=""
+        probe_rc=0
 
         if output="$(vagrant_powershell_capture "${vm}" "${probe_script}" "${probe_timeout}")"; then
             marker="$(
@@ -594,6 +597,8 @@ POWERSHELL
                     grep -E 'KINGDOMS_DC_TIME_(READY|NOT_READY)\|' |
                     tail -n 1 || true
             )"
+        else
+            probe_rc=$?
         fi
 
         if [[ "${marker}" == KINGDOMS_DC_TIME_READY\|* ]]; then
@@ -605,6 +610,15 @@ POWERSHELL
             last_state="${marker#KINGDOMS_DC_TIME_NOT_READY|}"
         else
             last_state="reason=transport"
+            if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+                # NORTH-only failure evidence; never print arbitrary remote
+                # PowerShell output or potentially sensitive response content.
+                transport_detail="$(printf '%s\n' "${output}" |
+                    grep -E '^NORTH_DIRECT_WINRM_ERROR machine=GOAD-DC02 ' |
+                    tail -n 1 | cut -c 1-500 || true)"
+                printf '        [DIAG] NORTH DC02 probe rc=%s, output_bytes=%s; %s\n' \
+                    "${probe_rc}" "${#output}" "${transport_detail:-no recognized WinRM error or time-readiness marker}"
+            fi
         fi
 
         if [[ "${last_state}" == reason=source\|* ]]; then
