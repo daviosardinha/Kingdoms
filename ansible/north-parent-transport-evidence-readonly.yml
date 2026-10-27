@@ -1,0 +1,110 @@
+---
+# Read-only evidence from the NORTH child DC to the protected parent PDC.
+# No NAT change, route addition, guest restart, certificate installation,
+# WinRM configuration, account change or domain repair.
+- name: Diagnose KINGSLANDING WinRS proof from WINTERFELL
+  hosts: dc02
+  gather_facts: false
+  tasks:
+    - name: Inspect parent DC route, TLS certificate and inventory account type
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          if ($env:COMPUTERNAME -ne 'WINTERFELL') {
+              throw 'Expected WINTERFELL as read-only diagnostic origin'
+          }
+
+          $hostName = 'kingslanding.sevenkingdoms.local'
+          $expected = '10.4.20.10'
+          $resolved = @(Resolve-DnsName $hostName -Type A -ErrorAction Stop |
+              Where-Object { $_.IPAddress -eq $expected })
+          if ($resolved.Count -ne 1) {
+              throw 'Unexpected parent DC DNS path'
+          }
+          Write-Output 'NORTH_PARENT_DNS=PASS'
+
+          $client = [Net.Sockets.TcpClient]::new()
+          $stream = $null
+          try {
+              $async = $client.BeginConnect($expected, 5986, $null, $null)
+              if (-not $async.AsyncWaitHandle.WaitOne(5000)) {
+                  throw 'Parent HTTPS TCP connection timed out'
+              }
+              $client.EndConnect($async)
+              Write-Output 'NORTH_PARENT_TCP_5986=PASS'
+
+              # Certificate inspection only: bypass chain verification for
+              # this in-memory TLS handshake to READ the presented cert.
+              # The real WinRS connector retains its existing TLS policy.
+              $callback = [Net.Security.RemoteCertificateValidationCallback]{
+                  param($sender, $certificate, $chain, $errors)
+                  return $true
+              }
+              $stream = [Net.Security.SslStream]::new(
+                  $client.GetStream(), $false, $callback)
+              $stream.AuthenticateAsClient($hostName)
+              if (-not $stream.RemoteCertificate) {
+                  throw 'No parent HTTPS certificate presented'
+              }
+              $cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                  $stream.RemoteCertificate)
+              $utc = [DateTime]::UtcNow
+              $state = if ($cert.NotAfter.ToUniversalTime() -lt $utc) {
+                  'EXPIRED'
+              } elseif ($cert.NotBefore.ToUniversalTime() -gt $utc) {
+                  'NOT_YET_VALID'
+              } else {
+                  'WITHIN_VALIDITY'
+              }
+              Write-Output "NORTH_PARENT_TLS_VALIDITY=$state"
+              Write-Output ("NORTH_PARENT_TLS_NOTAFTER_UTC={0:yyyy-MM-ddTHH:mm:ssZ}" -f
+                  $cert.NotAfter.ToUniversalTime())
+          } catch {
+              $type = $_.Exception.GetType().Name
+              Write-Output "NORTH_PARENT_TLS_INSPECTION=ERROR type=$type"
+          } finally {
+              if ($stream) { $stream.Dispose() }
+              $client.Dispose()
+          }
+
+          # The current validator auto-prefixes unqualified inventory names
+          # with SEVENKINGDOMS\\. Check whether that account actually exists.
+          $user = '{{ hostvars["dc01"].ansible_user }}'
+          $sam = if ($user -match '^([^\\@]+)$') {
+              $Matches[1]
+          } elseif ($user -match '^[^\\]+\\([^\\]+)$') {
+              $Matches[1]
+          } elseif ($user -match '^([^@]+)@') {
+              $Matches[1]
+          } else { '' }
+          $userType = if ($user -match '^[^\\]+\\') {
+              'QUALIFIED'
+          } elseif ($user -match '@') {
+              'UPN'
+          } else { 'UNQUALIFIED' }
+          Write-Output "NORTH_PARENT_INVENTORY_IDENTITY=$userType"
+          if ($sam -match '^[A-Za-z0-9._-]{1,48}$') {
+              try {
+                  Import-Module ActiveDirectory -ErrorAction Stop
+                  $escaped = $sam.Replace("'", "''")
+                  $account = @(Get-ADUser -Server $hostName -Filter
+                      "SamAccountName -eq '$escaped'" -ErrorAction Stop)
+                  if ($account.Count -eq 1) {
+                      Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=EXISTS'
+                  } else {
+                      Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=ABSENT'
+                  }
+              } catch {
+                  Write-Output ("NORTH_PARENT_DOMAIN_ACCOUNT=UNKNOWN error={0}" -f
+                      $_.Exception.GetType().Name)
+              }
+          } else {
+              Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=UNKNOWN'
+          }
+      changed_when: false
+      register: north_parent_path_evidence
+
+    - name: Show only safe classification and TLS dates
+      ansible.builtin.debug:
+        msg: "{{ north_parent_path_evidence.output | join(' | ') }}"
