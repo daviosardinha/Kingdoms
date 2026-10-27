@@ -144,10 +144,27 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn("PURPLE_VMWARE_BOOT=", helper)
         self.assertIn("if args.resume_pending_rearm or", helper)
 
-    def test_monitoring_is_next_phase(self):
+    def test_wazuh_all_in_one_installed_only_in_wazuh_guest(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
+        source = (PURPLE / "providers" / "vmware"
+                  / "provision-wazuh-all-in-one.sh").read_text()
+        template = (ROOT / "template" / "provider"
+                    / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
-        self.assertNotIn("wazuh-install.sh", vm)
+        self.assertEqual(vm.count("provision-wazuh-all-in-one.sh"), 1)
+        self.assertIn("box[:provision_scripts]", template)
+        self.assertIn("bash ./wazuh-install.sh -a", source)
+        self.assertIn("https://packages.wazuh.com/", source)
+        self.assertIn('WAZUH_VERSION="4.14"', source)
+        self.assertIn('EXPECTED_IP="172.28.233.51"', source)
+        self.assertIn("wazuh-manager wazuh-indexer wazuh-dashboard", source)
+        self.assertIn('if [[ "$all_running" == true ]]', source)
+        self.assertIn('if [[ "$any_installed" == true ]]', source)
+        self.assertIn("umask 077", source)
+        self.assertIn("install.log", source)
+        self.assertIn("nproc", source)
+        self.assertIn("debian", source)
+        self.assertNotIn("wazuh-install.sh -u", source)
 
 
 if __name__ == "__main__":
