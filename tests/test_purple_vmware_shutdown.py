@@ -64,10 +64,24 @@ def isolated_class_methods():
         success=lambda s: events.append(("success", s)),
     )
     import time
-    import psutil
+    class FakeNoSuchProcess(Exception):
+        pass
+    class FakeZombieProcess(Exception):
+        pass
+    class FakeAccessDenied(Exception):
+        pass
+    class FakePsutilError(Exception):
+        pass
+    fake_psutil = types.SimpleNamespace(
+        process_iter=lambda _: [],
+        NoSuchProcess=FakeNoSuchProcess,
+        ZombieProcess=FakeZombieProcess,
+        AccessDenied=FakeAccessDenied,
+        Error=FakePsutilError,
+    )
     ns = {
         "Log": log, "os": os, "time": time,
-        "psutil": psutil, "subprocess": subprocess,
+        "psutil": fake_psutil, "subprocess": subprocess,
     }
     exec(compile(ast.Module(body=methods, type_ignores=[]), str(SOURCE), "exec"), ns)
     return ns, events, method_names
@@ -90,10 +104,6 @@ class PurpleShutdownTests(unittest.TestCase):
         self.mock = FakeVmrun(self.vmx)
         self.ns["subprocess"] = types.SimpleNamespace(
             run=self.mock.run, TimeoutExpired=subprocess.TimeoutExpired,
-        )
-        self.ns["psutil"] = types.SimpleNamespace(
-            process_iter=lambda _: [], NoSuchProcess=Exception, ZombieProcess=Exception,
-            AccessDenied=PermissionError, Error=OSError,
         )
         self.lab = types.SimpleNamespace(
             lab_name="PURPLE", path=str(self.provider),
