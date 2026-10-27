@@ -23,6 +23,26 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertRegex(vm, r':name => "PURPLE-WAZUH"[\s\S]*?:cpus => 4, :mem => 8192')
         self.assertIn("provision-ubuntu-desktop.sh", vm)
 
+    def test_ubuntu_desktop_xrdp_and_net_tools(self):
+        vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
+        installer = (PURPLE / "providers" / "vmware"
+                     / "provision-ubuntu-desktop.sh").read_text()
+        self.assertEqual(vm.count("provision-ubuntu-desktop.sh"), 1)
+        for package in ("ubuntu-desktop-minimal", "open-vm-tools-desktop",
+                        "xrdp", "xorgxrdp", "net-tools"):
+            self.assertIn(package, installer)
+        self.assertIn("systemctl set-default graphical.target", installer)
+        self.assertIn("systemctl enable --now gdm3", installer)
+        self.assertIn("usermod -aG ssl-cert xrdp", installer)
+        self.assertIn("systemctl enable --now xrdp-sesman xrdp", installer)
+        self.assertIn("systemctl restart xrdp", installer)
+        self.assertIn("systemctl is-active --quiet xrdp", installer)
+        self.assertIn("command -v ifconfig", installer)
+        self.assertIn("PURPLE_LX01_XRDP_READY=1", installer)
+        self.assertIn("PURPLE_LX01_NET_TOOLS_READY=1", installer)
+        self.assertNotIn("passwd --stdin", installer)
+        self.assertNotIn("chpasswd", installer)
+
     def test_windows_reuse_original_minilab(self):
         original = (ROOT / "ad" / "MINILAB" / "providers" / "vmware" / "Vagrantfile").read_text()
         purple = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
