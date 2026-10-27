@@ -61,9 +61,14 @@ function Invoke-NorthParentWinRS {
     try {
         $created = [xml]$session.Create($resource,
             "<rsp:Shell xmlns:rsp='$ns'><rsp:InputStreams>stdin</rsp:InputStreams><rsp:OutputStreams>stdout stderr</rsp:OutputStreams></rsp:Shell>", 0)
-        $shellId = $created.SelectSingleNode("//*[local-name()='ShellId']").InnerText
+        # $ShellId is a built-in read-only PowerShell automatic variable.
+        # Keep the remote WSMan shell GUID in a distinct writable variable.
+        $parentWinrsShellGuid = $created.SelectSingleNode("//*[local-name()='ShellId']").InnerText
+        if ([string]::IsNullOrWhiteSpace($parentWinrsShellGuid)) {
+            throw 'KINGSLANDING returned no WinRS shell identifier'
+        }
         $locator = $automation.CreateResourceLocator($resource)
-        $locator.AddSelector('ShellId', $shellId)
+        $locator.AddSelector('ShellId', $parentWinrsShellGuid)
         $stage = 'start command'
         $command = [xml]$session.Invoke($ns + '/Command', $locator,
             "<rsp:CommandLine xmlns:rsp='$ns'><rsp:Command>powershell.exe</rsp:Command><rsp:Arguments>-NoLogo -NoProfile -NonInteractive -EncodedCommand $encoded</rsp:Arguments></rsp:CommandLine>", 0)
