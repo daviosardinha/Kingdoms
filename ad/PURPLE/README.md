@@ -14,7 +14,10 @@ KINGDOMS lab definitions and networking ownership are unchanged.
 All four guests are created through one Vagrant/VMware provider file. The
 Windows machines retain standard MINILAB/GOAD AD provisioning. Ubuntu 22.04
 Server is converted to Desktop by an automatic package installation.
-Debian is OS-only for now: Wazuh software and agents are **not installed**.
+The PURPLE-WAZUH Debian guest now has an opt-in-at-VM-provisioning Wazuh 4.14
+all-in-one bootstrap (manager, indexer, dashboard), automatically run on
+**new** PURPLE-WAZUH Vagrant provisioning. Wazuh agents on the other guests
+remain a separate workstream.
 
 ## Laptop pilot: reuse existing unallocated VMware segment
 
@@ -167,11 +170,52 @@ recommendations explicitly list Ubuntu/RHEL-family operating systems rather
 than Debian 12. Debian 12 therefore needs an installation smoke test and
 must not be represented as a vendor-recommended Wazuh server OS.
 
+## Automatic Wazuh server installation on new instances
+
+A new `./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233`
+now configures the Debian monitoring guest's static `172.28.233.51/24`
+interface and automatically runs
+`ad/PURPLE/providers/vmware/provision-wazuh-all-in-one.sh` through
+Vagrant SSH. It installs Wazuh's **version-pinned 4.14 all-in-one
+installation assistant** (`wazuh-manager`, `wazuh-indexer`,
+`wazuh-dashboard`), rather than requiring a manual SSH command.
+
+The script checks 4 vCPUs, approximately 8 GiB RAM, adequate free disk,
+Debian 12 OS identity and the static PURPLE address before installing.
+It is idempotent when all three services are already active. Partial
+installations stop with an actionable error; it will **not** rerun an
+installer over partially present components, remove packages, reset
+passwords, replace certificates or force unsupported OS overrides.
+
+The Wazuh assistant prints generated passwords. Its output, downloads
+and credential archive are deliberately kept under the **root-only**
+directory `/root/purple-wazuh-installer/`; normal Vagrant logs do not
+reveal the admin password. Use:
+`sudo tar -O -xf /root/purple-wazuh-installer/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt`
+inside PURPLE-WAZUH to retrieve credentials securely.
+
+Dashboard target: `https://172.28.233.51`. A valid fresh instance must
+complete the assistant and start all three services before Vagrant
+considers monitoring provisioning successful.
+
+**OS caveat:** Wazuh currently recommends supported Ubuntu or RHEL-family
+distributions for its central components; Debian 12 is not on that
+list. The installer runs on the existing Debian 12 lab baseline **without**
+passing a bypass flag. If the official assistant refuses Debian 12,
+the lab installation stops, and the appropriate fix is to switch the
+Wazuh guest to a supported distribution in a separately tested change.
+This source-only integration has not yet been proven in a fresh-instance
+end-to-end install.
+
+**Existing installed pilot:** `ef5c0b-purple-vmware` retains its
+previously generated Vagrantfile, so `git pull` by itself does not
+retroactively add this provisioner or reinstall Wazuh there. Continue
+your manual Wazuh setup today; do not reprovision the installed guest.
+
 ## Next phase
 
-- Verify Debian VM disk meets Wazuh's storage requirements; expand if needed.
-- Install the Wazuh all-in-one stack on Debian, enroll Windows and Ubuntu
-  agents, configure Windows Sysmon, and validate the first detection.
+- Test the automated Wazuh all-in-one Vagrant provisioning on a **fresh** PURPLE instance; capture Debian 12 installer compatibility evidence.
+- Enroll Windows and Ubuntu agents, configure Windows Sysmon, and validate the first detection.
 - Preserve independent snapshots, health tests and Vagrant lifecycle.
 - Replace intentionally vulnerable MINILAB credentials before use outside
   a fully isolated, synthetic-data learning environment.
