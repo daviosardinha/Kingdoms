@@ -36,7 +36,33 @@ foreach ($invalid in @(
     if (-not $rejected) { throw 'Invalid WinRS EPR selector was accepted' }
     $checks++
 }
+# Parent health proof must remain fail-closed on a nonzero remote exit or
+# a forged/prefixed marker, while accepting the observed CLIXML progress prefix.
+$marker = 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
+$clixml = '<Objs Version="1.1.0.1"><Obj S="progress" /></Objs>'
+$cases = @(
+    @{ ExitCode = 0; Stdout = $marker; Accepted = $true; Count = 1 },
+    @{ ExitCode = 0; Stdout = $clixml + $marker; Accepted = $true; Count = 1 },
+    @{ ExitCode = 1; Stdout = $clixml + $marker; Accepted = $false; Count = 1 },
+    @{ ExitCode = 0; Stdout = 'UNEXPECTED' + $marker; Accepted = $false; Count = 0 },
+    @{ ExitCode = 0; Stdout = ''; Accepted = $false; Count = 0 },
+    @{ ExitCode = 0; Stdout = $marker + "`n" + $marker; Accepted = $false; Count = 2 }
+)
+foreach ($case in $cases) {
+    $result = [pscustomobject]@{
+        ExitCode = $case.ExitCode
+        Stdout = $case.Stdout
+        StderrBytes = 0
+    }
+    $observed = Get-NorthParentHealthProofStatus $result
+    if ($observed.Accepted -ne $case.Accepted -or
+        $observed.MarkerCount -ne $case.Count -or
+        $observed.ExitCode -ne $case.ExitCode) {
+        throw 'WinRS parent proof accepted unexpected marker or failed expected CLIXML case'
+    }
+    $checks++
+}
 # The earlier implementation incorrectly required an XML <ShellId> element.
 # This fixture contains only the documented wsman:Selector Name=ShellId.
-if ($checks -ne 5) { throw "Expected five EPR parser cases, got $checks" }
+if ($checks -ne 11) { throw "Expected eleven offline WinRS parser/proof cases, got $checks" }
 Write-Output "NORTH_PARENT_WINRS_EPR_TESTS=$checks PASS"
