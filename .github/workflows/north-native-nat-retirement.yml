@@ -82,6 +82,7 @@ on:
       - ansible/north-parent-transport-evidence-readonly.yml
       - tests/test_north_parent_transport_evidence.py
       - tests/test_north_parent_winrs_readonly_variable.py
+      - tests/test_north_parent_winrs_epr.ps1
       - ansible/files/north-parent-winrs.ps1
       - scripts/diagnostics/north-installed-time-evidence.py
       - tests/test_north_w32time_evidence.py
@@ -100,6 +101,17 @@ permissions:
   contents: read
 
 jobs:
+  # Pure in-memory Microsoft WSMan EPR parsing; independent of runner WinRM
+  # listener/certificate state and original GOAD/KINGDOMS transport.
+  windows-parent-epr-parser:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify ShellId endpoint-reference selector extraction
+        shell: powershell
+        run: ./tests/test_north_parent_winrs_epr.ps1
+
   windows-parent-winrs:
     runs-on: windows-latest
     timeout-minutes: 8
