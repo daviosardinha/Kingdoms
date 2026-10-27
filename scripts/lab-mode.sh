@@ -18,6 +18,9 @@ EXERCISE_ALLOW_STOPPED_MEMBERS=0
 
 readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
+# Only NORTH/DC02 uses direct HTTPS WinRM; its existing 15s probe was
+# shorter than the proven 30s/45s operation/read timeout pair.
+readonly NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS=75
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
 readonly AD_REPAIR_TIMEOUT_SECONDS=90
 
@@ -576,6 +579,9 @@ POWERSHELL
         elapsed=$((SECONDS - started))
         remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
         probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+        if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+            probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"
+        fi
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
 
@@ -719,6 +725,9 @@ POWERSHELL
         elapsed=$((SECONDS - started))
         remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
         probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+        if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+            probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"
+        fi
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
 
