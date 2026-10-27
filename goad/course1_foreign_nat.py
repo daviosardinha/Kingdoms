@@ -185,7 +185,7 @@ def register(north_provider: str, foreign_provider: str, *,
     if networking.is_symlink() or not networking.is_file():
         raise ForeignNatError("VMware networking file missing or unsafe")
     net_meta = networking.stat()
-    if (net_meta.st_uid != 0 or not stat.S_ISREG(net_meta.st_mode)
+    if (net_meta.st_uid != owner_uid or not stat.S_ISREG(net_meta.st_mode)
             or net_meta.st_size > 1048576):
         raise ForeignNatError("VMware networking ownership or size is unsafe")
     observed = networking.read_text(encoding="utf-8")
