@@ -73,6 +73,25 @@ These findings from the full-project audit have priority over every new platform
 - [ ] Add isolation assertions after both successful and failed provisioning.
 - [ ] Run a disposable release matrix before declaring a provider or platform supported.
 
+## Deferred cross-lab management: one KINGDOMS root
+
+**Requested for the next shared-infrastructure update; not implemented.**
+The current management console reads installed instances only from the
+launching Git checkout's local `workspace/` directory, causing NORTH and
+PURPLE to appear in different consoles when run from two development
+checkouts. The target is a **single canonical KINGDOMS repository root,
+one `./goad.sh`, one registered instance catalog, and selection of
+independently deployed NORTH, PURPLE, full KINGDOMS and WSLPE**.
+
+Do not promote this to a runtime migration until existing NORTH/PURPLE
+lifecycle reliability and source integration are proven. Reuse the same
+VMware guests and preserve Vagrant/VMX IDs, network ownership, AD state,
+Wazuh data, and per-lab start/stop isolation. WSLPE must first be merged
+into the canonical lab catalog; do not assume it already exists on main.
+
+See the [single-root multi-lab migration contract](docs/KINGDOMS_SINGLE_ROOT_MULTI_LAB_MIGRATION.md)
+for path discovery, read-only migration, acceptance gates and rollback.
+
 ## P3 — Provider-neutral architecture and VirtualBox on Linux
 
 First extract provider-neutral lifecycle contracts for network preparation, runtime mode, adapter state, rollback and validation. Do not copy VMware-specific shell behavior into another provider.
