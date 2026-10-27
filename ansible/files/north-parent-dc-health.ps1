@@ -26,9 +26,21 @@ foreach ($name in @('SYSVOL','NETLOGON')) {
     }
 }
 
+# The DNS response may include additional A/AAAA records. These do not
+# have an SRV NameTarget; calling .TrimEnd() on them throws InvalidOperation.
+# Match exactly the root PDC SRV target and fail closed when it is absent.
+function Get-NorthParentLdapSrvMatches([object[]]$Answers) {
+    @($Answers | Where-Object {
+        $_ -and
+        $_.Type -eq 'SRV' -and
+        -not [string]::IsNullOrWhiteSpace([string]$_.NameTarget) -and
+        ([string]$_.NameTarget).TrimEnd('.') -ieq 'kingslanding.sevenkingdoms.local'
+    })
+}
+
 Write-Output 'NORTH_PARENT_HEALTH_STAGE=dns_srv'
-$records = @(Resolve-DnsName '_ldap._tcp.dc._msdcs.sevenkingdoms.local' -Type SRV -Server 127.0.0.1 -ErrorAction Stop |
-    Where-Object { $_.NameTarget.TrimEnd('.') -ieq 'kingslanding.sevenkingdoms.local' })
+$dnsAnswers = @(Resolve-DnsName '_ldap._tcp.dc._msdcs.sevenkingdoms.local' -Type SRV -Server 127.0.0.1 -ErrorAction Stop)
+$records = @(Get-NorthParentLdapSrvMatches -Answers $dnsAnswers)
 if ($records.Count -lt 1) {
     throw 'KINGSLANDING root-domain LDAP SRV advertisement missing'
 }
