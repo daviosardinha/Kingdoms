@@ -9,6 +9,7 @@
     - name: Inspect parent DC route, TLS certificate and inventory account type
       ansible.windows.win_powershell:
         script: |
+          param([PSCredential]$ParentCredential)
           $ErrorActionPreference = 'Stop'
           $Ansible.Changed = $false
           if ($env:COMPUTERNAME -ne 'WINTERFELL') {
@@ -101,6 +102,73 @@
           } else {
               Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=UNKNOWN'
           }
+
+          # Attempt only the same protected remote-shell CREATE performed by
+          # production validator. The shell is deleted immediately and no
+          # command is started. Output contains a code/class, not raw exception
+          # messages, remoting objects, usernames or credentials.
+          $session = $null
+          $locator = $null
+          $options = $null
+          try {
+              $automation = New-Object -ComObject WSMan.Automation
+              $options = $automation.CreateConnectionOptions()
+              $identity = $ParentCredential.UserName
+              if ($identity -notmatch '[@\\]') {
+                  $identity = 'SEVENKINGDOMS\\' + $identity
+              }
+              $options.UserName = $identity
+              $options.Password = $ParentCredential.GetNetworkCredential().Password
+              $flags = $automation.SessionFlagCredUsernamePassword() -bor
+                  $automation.SessionFlagUseNegotiate() -bor
+                  $automation.SessionFlagSkipCACheck() -bor
+                  $automation.SessionFlagSkipCNCheck() -bor 0x2000000 -bor 0x8000000
+              $session = $automation.CreateSession(
+                  "https://$hostName" + ':5986/wsman', $flags, $options)
+              $session.Timeout = 15000
+              $ns = 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell'
+              $resource = $ns + '/cmd'
+              $created = [xml]$session.Create($resource,
+                  "<rsp:Shell xmlns:rsp='$ns'><rsp:InputStreams>stdin</rsp:InputStreams><rsp:OutputStreams>stdout stderr</rsp:OutputStreams></rsp:Shell>", 0)
+              $shellId = $created.SelectSingleNode("//*[local-name()='ShellId']").InnerText
+              if (-not $shellId) {
+                  throw 'Missing remote shell identifier'
+              }
+              $locator = $automation.CreateResourceLocator($resource)
+              $locator.AddSelector('ShellId', $shellId)
+              Write-Output 'NORTH_PARENT_WINRS_CREATE=PASS'
+          } catch {
+              $exceptionType = $_.Exception.GetType().Name
+              $hresult = [BitConverter]::ToUInt32(
+                  [BitConverter]::GetBytes([int]$_.Exception.HResult), 0).ToString('X8')
+              $errorCode = 'unavailable'
+              $classification = 'other'
+              $detail = if ($session) { [string]$session.Error } else { '' }
+              if ($detail -match 'Code="([0-9]+)"') {
+                  $errorCode = $Matches[1]
+              }
+              if ($detail -match 'expired|validity period|not yet valid') {
+                  $classification = 'certificate_validity'
+              } elseif ($detail -match 'access denied|unauthorized|permission') {
+                  $classification = 'authorization'
+              } elseif ($detail -match 'credential|logon failure|username or password') {
+                  $classification = 'authentication'
+              } elseif ($detail -match 'connect|unreachable|timed out|network path') {
+                  $classification = 'connectivity'
+              }
+              Write-Output "NORTH_PARENT_WINRS_CREATE=FAIL code=$errorCode hresult=$hresult kind=$exceptionType category=$classification"
+          } finally {
+              if ($locator -and $session) {
+                  try { $null = $session.Delete($locator, 0) } catch {}
+              }
+              if ($options) {
+                  $options.Password = ''
+              }
+          }
+        sensitive_parameters:
+          - name: ParentCredential
+            username: "{{ hostvars['dc01'].ansible_user }}"
+            password: "{{ hostvars['dc01'].ansible_password }}"
       changed_when: false
       register: north_parent_path_evidence
 
