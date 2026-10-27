@@ -110,37 +110,61 @@
           $session = $null
           $locator = $null
           $options = $null
+          $winrsStage = 'com_automation'
           try {
               $automation = New-Object -ComObject WSMan.Automation
+              $winrsStage = 'connection_options'
               $options = $automation.CreateConnectionOptions()
+              $winrsStage = 'credential_qualification'
               $identity = $ParentCredential.UserName
               if ($identity -notmatch '[@\\]') {
                   $identity = 'SEVENKINGDOMS\' + $identity
               }
               $options.UserName = $identity
               $options.Password = $ParentCredential.GetNetworkCredential().Password
+              $winrsStage = 'session_flags'
               $flags = $automation.SessionFlagCredUsernamePassword() -bor
                   $automation.SessionFlagUseNegotiate() -bor
                   $automation.SessionFlagSkipCACheck() -bor
                   $automation.SessionFlagSkipCNCheck() -bor 0x2000000 -bor 0x8000000
+              $winrsStage = 'session_create'
               $session = $automation.CreateSession(
                   "https://$hostName" + ':5986/wsman', $flags, $options)
               $session.Timeout = 15000
               $ns = 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell'
               $resource = $ns + '/cmd'
+              $winrsStage = 'shell_create'
               $created = [xml]$session.Create($resource,
                   "<rsp:Shell xmlns:rsp='$ns'><rsp:InputStreams>stdin</rsp:InputStreams><rsp:OutputStreams>stdout stderr</rsp:OutputStreams></rsp:Shell>", 0)
               $shellId = $created.SelectSingleNode("//*[local-name()='ShellId']").InnerText
               if (-not $shellId) {
                   throw 'Missing remote shell identifier'
               }
+              $winrsStage = 'resource_locator'
               $locator = $automation.CreateResourceLocator($resource)
               $locator.AddSelector('ShellId', $shellId)
               Write-Output 'NORTH_PARENT_WINRS_CREATE=PASS'
           } catch {
-              $exceptionType = $_.Exception.GetType().Name
+              $record = $_
+              $exceptionType = $record.Exception.GetType().Name
               $hresult = [BitConverter]::ToUInt32(
-                  [BitConverter]::GetBytes([int]$_.Exception.HResult), 0).ToString('X8')
+                  [BitConverter]::GetBytes([int]$record.Exception.HResult), 0).ToString('X8')
+              $errorId = [string]$record.FullyQualifiedErrorId
+              $errorId = ($errorId -replace '[^A-Za-z0-9._-]', '_')
+              if ($errorId.Length -gt 90) {
+                  $errorId = $errorId.Substring(0, 90)
+              }
+              $line = if ($record.InvocationInfo) {
+                  [int]$record.InvocationInfo.ScriptLineNumber
+              } else { 0 }
+              $item = if ($record.Exception -is
+                  [System.Management.Automation.SessionStateUnauthorizedAccessException]) {
+                  [string]$record.Exception.ItemName
+              } else { 'n/a' }
+              $item = ($item -replace '[^A-Za-z0-9._-]', '_')
+              if ($item.Length -gt 64) {
+                  $item = $item.Substring(0, 64)
+              }
               $errorCode = 'unavailable'
               $classification = 'other'
               $detail = if ($session) { [string]$session.Error } else { '' }
@@ -156,7 +180,7 @@
               } elseif ($detail -match 'connect|unreachable|timed out|network path') {
                   $classification = 'connectivity'
               }
-              Write-Output "NORTH_PARENT_WINRS_CREATE=FAIL code=$errorCode hresult=$hresult kind=$exceptionType category=$classification"
+              Write-Output "NORTH_PARENT_WINRS_CREATE=FAIL stage=$winrsStage code=$errorCode hresult=$hresult kind=$exceptionType error_id=$errorId item=$item line=$line category=$classification"
           } finally {
               if ($locator -and $session) {
                   try { $null = $session.Delete($locator, 0) } catch {}
