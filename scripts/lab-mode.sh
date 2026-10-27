@@ -1203,7 +1203,7 @@ require_north_validated_cold_start() {
 configure_windows_nat_exercise() {
     local vm
 
-    if [[ "${EXERCISE_VALIDATED_COLD_START}" == 1 ]]; then
+    if [[ "${EXERCISE_VALIDATED_COLD_START:-0}" == 1 ]]; then
         # Only after require_north_validated_cold_start has verified every VM,
         # and after the provider's complete direct authenticated readiness
         # chain. NICs remain persistently FALSE: no reboots, Vagrant WinRM,
