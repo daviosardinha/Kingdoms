@@ -87,6 +87,23 @@ class DirectDc02ModeTests(unittest.TestCase):
                 module.run("Write-Output 'BAD'", timeout=15,
                            machine="GOAD-DC02", provider=str(self.p))
 
+    def test_readonly_diagnostic_replays_the_exact_shell_probe(self):
+        diagnostic = ROOT / "scripts/diagnostics/north-dc02-exercise-readiness-evidence.py"
+        diag_spec = importlib.util.spec_from_file_location(
+            "north_dc02_exercise_readiness_evidence", diagnostic)
+        self.assertIsNotNone(diag_spec)
+        self.assertIsNotNone(diag_spec.loader)
+        diag_module = importlib.util.module_from_spec(diag_spec)
+        diag_spec.loader.exec_module(diag_module)
+        script = diag_module.exact_probe()
+        self.assertIn("w32tm.exe /query /source", script)
+        self.assertIn("/dsgetdc:north.sevenkingdoms.local", script)
+        self.assertIn("/timeserv /force", script)
+        self.assertIn("kingslanding.sevenkingdoms.local", script)
+        self.assertIn("KINGDOMS_DC_TIME_READY|", script)
+        self.assertNotIn("${", script)
+        self.assertNotIn(r"\$", script)
+
     def test_mode_controller_only_switches_north_dc02_transport(self):
         script = LAB.read_text()
         helpers = script[script.index("north_direct_dc02_capture()"):
