@@ -85,6 +85,7 @@ on:
       - tests/test_north_parent_winrs_epr.ps1
       - tests/test_north_parent_winrs_loader.ps1
       - tests/test_north_parent_rendered_script.ps1
+      - tests/test_north_parent_dns_srv_filter.ps1
       - ansible/files/north-parent-winrs.ps1
       - scripts/diagnostics/north-installed-time-evidence.py
       - tests/test_north_w32time_evidence.py
@@ -119,6 +120,9 @@ jobs:
       - name: Parse full Jinja-rendered parent health script in PowerShell 5.1
         shell: powershell
         run: ./tests/test_north_parent_rendered_script.ps1
+      - name: Verify root PDC DNS SRV response selection with mixed records
+        shell: powershell
+        run: ./tests/test_north_parent_dns_srv_filter.ps1
 
   windows-parent-winrs:
     runs-on: windows-latest
