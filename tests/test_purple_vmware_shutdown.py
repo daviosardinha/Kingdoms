@@ -174,6 +174,29 @@ class PurpleShutdownTests(unittest.TestCase):
         self.assertFalse(self.lab._stop_purple_vms())
         self.assertFalse(self.lab._start_purple_vms())
 
+    def test_unknown_machine_name_cannot_change_power(self):
+        self.assertFalse(self.lab._purple_soft_stop("GOAD-DC02"))
+        self.assertFalse(self.lab._purple_start_machine("GOAD-DC01"))
+        self.assertFalse(any(x[3] in ("start", "stop")
+                             for x in self.mock.commands))
+
+    def test_single_start_preserves_unrelated_guest_states(self):
+        self.mock.running = {"PURPLE-DC01", "PURPLE-WAZUH"}
+        self.assertTrue(self.lab._purple_start_machine("PURPLE-LX01"))
+        self.assertEqual(
+            self.mock.running,
+            {"PURPLE-DC01", "PURPLE-WAZUH", "PURPLE-LX01"},
+        )
+        self.assertEqual(len([x for x in self.mock.commands if x[3] == "start"]), 1)
+
+    def test_public_provider_dispatch_routes_purple_commands(self):
+        text = SOURCE.read_text(encoding="utf-8")
+        self.assertIn("return self._start_purple_vms()", text)
+        self.assertIn("return self._purple_start_machine(vm_name)", text)
+        self.assertIn("return self._purple_soft_stop(vm_name)", text)
+        self.assertIn("return self._stop_purple_vms()", text)
+        self.assertIn("return bool(self.start_vm(vm_name))", text)
+
     def test_cli_restart_command_exists_and_checks_provider_result(self):
         text = CLI_SOURCE.read_text(encoding="utf-8")
         self.assertIn("def do_restart_vm(self, arg):", text)
