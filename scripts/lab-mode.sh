@@ -380,6 +380,27 @@ ensure_vm_nat_state() {
         "${action}"
 }
 
+extract_dc02_time_marker() {
+    local vm="$1"
+    local kinds="$2"
+    local output="$3"
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+        # pywinrm can prepend PowerShell CLIXML progress without a newline:
+        # </Objs>KINGDOMS_DC_TIME_READY|source=... .
+        # Extract the marker instead of requiring the line to begin with it.
+        # Caller also requires a successful authenticated WinRM return code.
+        printf '%s\n' "${output}" |
+            grep -oE "KINGDOMS_DC_TIME_(${kinds})\|[^<]*" |
+            tail -n 1 || true
+    else
+        # Preserve original KINGDOMS/GOAD matching.
+        printf '%s\n' "${output}" |
+            grep -E "KINGDOMS_DC_TIME_(${kinds})\|" |
+            tail -n 1 || true
+    fi
+}
+
 north_direct_dc02_capture() {
     local vm="$1"
     local script="$2"
@@ -593,9 +614,7 @@ POWERSHELL
 
         if output="$(vagrant_powershell_capture "${vm}" "${probe_script}" "${probe_timeout}")"; then
             marker="$(
-                printf '%s\n' "${output}" |
-                    grep -E 'KINGDOMS_DC_TIME_(READY|NOT_READY)\|' |
-                    tail -n 1 || true
+                extract_dc02_time_marker "${vm}" "READY|NOT_READY" "${output}"
             )"
         else
             probe_rc=$?
@@ -641,9 +660,7 @@ POWERSHELL
             output=""
             if output="$(vagrant_powershell_capture "${vm}" "${repair_script}" "${repair_timeout}")"; then
                 marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
+                    extract_dc02_time_marker "${vm}" "REPAIRED|REPAIR_FAILED" "${output}"
                 )"
 
                 if [[ "${marker}" == KINGDOMS_DC_TIME_REPAIRED\|* ]]; then
@@ -655,9 +672,7 @@ POWERSHELL
                 fi
             else
                 marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
+                    extract_dc02_time_marker "${vm}" "REPAIRED|REPAIR_FAILED" "${output}"
                 )"
                 fail "${vm} child-domain time recovery transport failed within remaining readiness budget: ${marker:-no marker}"
             fi
