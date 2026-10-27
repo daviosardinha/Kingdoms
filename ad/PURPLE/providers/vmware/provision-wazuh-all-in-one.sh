@@ -68,6 +68,23 @@ if ! bash ./wazuh-install.sh -a > "${WORK_DIR}/install.log" 2>&1; then
     fail "Wazuh assistant failed. Inspect ${WORK_DIR}/install.log in the guest (contains secrets). No forced reinstall attempted"
 fi
 
+# Wazuh generates random credentials; installation is NOT complete until
+# they can be recovered from its official archive. Never scrape the
+# installer's terminal log or export passwords into Vagrant/GitHub output.
+ARCHIVE="${WORK_DIR}/wazuh-install-files.tar"
+PASSWORD_MEMBER="wazuh-install-files/wazuh-passwords.txt"
+[[ -s "$ARCHIVE" ]] || fail "Wazuh finished without its password archive: ${ARCHIVE}; preserve the private install.log for recovery"
+if ! tar -tf "$ARCHIVE" | grep -Fqx "$PASSWORD_MEMBER"; then
+    fail "Wazuh password archive exists but has no expected credentials entry; preserve it for inspection"
+fi
+if ! tar -xOf "$ARCHIVE" "$PASSWORD_MEMBER" | grep -Eq "indexer_username:[[:space:]]*['\"]?admin['\"]?"; then
+    fail "Wazuh password archive has no admin account entry; preserve it for inspection"
+fi
+chown root:root "$ARCHIVE" "${WORK_DIR}/install.log"
+chmod 0600 "$ARCHIVE" "${WORK_DIR}/install.log"
+chmod 0700 "$WORK_DIR"
+log "Generated Wazuh credentials saved in a verified root-only archive (not shown in logs)"
+
 # Services may still need time for indexer and dashboard initialization.
 for attempt in $(seq 1 60); do
     ready=true
