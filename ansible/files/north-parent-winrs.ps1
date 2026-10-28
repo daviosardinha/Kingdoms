@@ -100,15 +100,31 @@ function New-NorthParentWinRSLoader([string]$PackedScript) {
     return $template.Replace('__NORTH_PACKED__', $PackedScript)
 }
 
+# Native WinRS localhost integration is allowed only in disposable CI.
+# The private self-hosted runner belongs to an isolated, private repository,
+# never to public KINGDOMS, and is not any of the actual training guests.
+function Test-NorthParentWinRSCiFixture {
+    if ($env:GITHUB_ACTIONS -ne 'true' -or
+        $env:KINGDOMS_TEST_NORTH_WINRS -ne '1' -or
+        $env:COMPUTERNAME -in @('WINTERFELL','KINGSLANDING','CASTELBLACK','WS01','WSLPE-WS01')) {
+        return $false
+    }
+    if ($env:RUNNER_ENVIRONMENT -eq 'github-hosted') {
+        return ($env:GITHUB_REPOSITORY -eq 'daviosardinha/Kingdoms')
+    }
+    return ($env:RUNNER_ENVIRONMENT -eq 'self-hosted' -and
+        $env:GITHUB_REPOSITORY -eq 'daviosardinha/Kingdoms-WinRS-CI' -and
+        $env:KINGDOMS_NORTH_PRIVATE_WINRS_RUNNER -eq '1' -and
+        $env:COMPUTERNAME -ceq 'NK-WINRS-CI')
+}
+
 function Invoke-NorthParentWinRS {
     param([PSCredential]$Credential, [string]$Script,
           [string]$Endpoint = 'https://kingslanding.sevenkingdoms.local:5986/wsman')
     # Alternate endpoint is restricted to a disposable hosted Windows CI fixture.
     if ($Endpoint -cne 'https://kingslanding.sevenkingdoms.local:5986/wsman' -and
-        -not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted' -and
-              $env:KINGDOMS_TEST_NORTH_WINRS -eq '1' -and
-              $Endpoint -ceq 'https://localhost:5986/wsman' -and
-              $env:COMPUTERNAME -notin @('WINTERFELL','KINGSLANDING'))) {
+        -not ($Endpoint -ceq 'https://localhost:5986/wsman' -and
+              (Test-NorthParentWinRSCiFixture))) {
         throw 'Unexpected parent WinRM endpoint'
     }
     $ErrorActionPreference = 'Stop'
@@ -183,8 +199,7 @@ function Invoke-NorthParentWinRS {
         # Avoid dumping remoting objects/credentials into Ansible failure output.
         $code = 'unavailable'
         if ($session.Error -match 'Code="([0-9]+)"') { $code = $Matches[1] }
-        if ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted' -and
-            $env:KINGDOMS_TEST_NORTH_WINRS -eq '1') {
+        if (Test-NorthParentWinRSCiFixture) {
             # Disposable fixture diagnostics; never print the connection object.
             Write-Warning ($session.Error.Replace($Credential.GetNetworkCredential().Password, '[redacted]'))
         }
