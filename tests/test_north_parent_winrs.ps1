@@ -1,12 +1,10 @@
 # Real Windows WinRS acceptance on a disposable GitHub-hosted runner only.
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
-    $env:KINGDOMS_TEST_NORTH_WINRS -ne '1' -or
-    $env:COMPUTERNAME -in @('KINGSLANDING','WINTERFELL','CASTELBLACK','WS01','WSLPE-WS01')) {
-    throw 'Only the explicitly enabled disposable Windows CI runner is permitted'
-}
 . "$PSScriptRoot\..\ansible\files\north-parent-winrs.ps1"
+if (-not (Test-NorthParentWinRSCiFixture)) {
+    throw 'Only the explicitly authorized disposable Windows CI fixture is permitted'
+}
 $checks = 0
 function Check($Condition, $Message) {
     if (-not $Condition) { throw $Message }

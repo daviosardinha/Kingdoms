@@ -1,0 +1,93 @@
+# TEMPLATE ONLY. Copy into the default branch of the PRIVATE repository
+# daviosardinha/Kingdoms-WinRS-CI as .github/workflows/north-winrs-private.yml.
+# NEVER activate this workflow in the PUBLIC Kingdoms repository.
+name: NORTH native WinRS - private Windows integration
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: north-private-winrs
+  cancel-in-progress: false
+
+jobs:
+  native-winrs-transport:
+    # Not an untrusted pull_request or pull_request_target workflow.
+    if: ${{ github.repository == 'daviosardinha/Kingdoms-WinRS-CI' }}
+    runs-on: [self-hosted, windows, x64, kingdoms-winrs-ci]
+    timeout-minutes: 15
+    env:
+      KINGDOMS_TEST_NORTH_WINRS: '1'
+      KINGDOMS_NORTH_PRIVATE_WINRS_RUNNER: '1'
+    steps:
+      - name: Fail closed unless this is the isolated disposable Windows VM
+        shell: powershell
+        run: |
+          if ($env:GITHUB_REPOSITORY -ne 'daviosardinha/Kingdoms-WinRS-CI' -or
+              $env:RUNNER_ENVIRONMENT -ne 'self-hosted' -or
+              $env:COMPUTERNAME -cne 'NK-WINRS-CI') {
+              throw 'Dedicated private WinRS integration runner is required'
+          }
+          $computer = Get-CimInstance Win32_ComputerSystem
+          if ($computer.PartOfDomain) { throw 'CI runner must not be domain joined' }
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+          if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+              throw 'Dedicated disposable CI fixture must run with local administrator privileges'
+          }
+
+      # Never use an unreviewed pull-request head or a caller-controlled SHA.
+      # For each new release candidate, review source and update both pins
+      # in this PRIVATE repository, then trigger workflow_dispatch manually.
+      - name: Checkout pinned reviewed public KINGDOMS source
+        uses: actions/checkout@v4
+        with:
+          repository: daviosardinha/Kingdoms
+          ref: fdfcb64871f481f467f130ae8b744dfbeba3f1ac
+          persist-credentials: false
+
+      - name: Verify immutable source before executing scripts
+        shell: powershell
+        run: |
+          $expected = 'fdfcb64871f481f467f130ae8b744dfbeba3f1ac'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -cne $expected) { throw 'Unexpected KINGDOMS source revision' }
+          Write-Output "NORTH_PRIVATE_WINRS_PINNED_SOURCE=$expected"
+
+      - name: Verify prepared Windows WinRM HTTPS listener (read-only)
+        shell: powershell
+        run: |
+          if ((Get-Service WinRM).Status -ne 'Running') {
+              throw 'WinRM service must be running on disposable runner'
+          }
+          $listeners = @(Get-ChildItem WSMan:\localhost\Listener | Where-Object {
+              $_.Keys -contains 'Transport=HTTPS'
+          })
+          if ($listeners.Count -ne 1) {
+              throw 'Exactly one HTTPS WinRM listener is required'
+          }
+          $thumbprint = [string](Get-Item ($listeners[0].PSPath + '\CertificateThumbprint')).Value
+          $cert = Get-Item ("Cert:\LocalMachine\My\" + $thumbprint) -ErrorAction Stop
+          if ($cert.NotAfter -le (Get-Date).AddHours(2) -or
+              $cert.NotBefore -gt (Get-Date) -or
+              -not $cert.HasPrivateKey) {
+              throw 'HTTPS listener certificate invalid or nearly expired'
+          }
+          if (-not (Test-NetConnection -ComputerName 127.0.0.1 -Port 5986 -InformationLevel Quiet)) {
+              throw 'Prepared HTTPS WinRM endpoint is not reachable on loopback'
+          }
+          Write-Output 'NORTH_PRIVATE_WINRS_TLS_PREFLIGHT=PASS'
+
+      - name: Validate source parsing and private-runner guard
+        shell: powershell
+        run: |
+          ./tests/test_north_parent_winrs_epr.ps1
+          ./tests/test_north_parent_winrs_loader.ps1
+          ./tests/test_north_parent_rendered_script.ps1
+          ./tests/test_north_private_winrs_runner_gate.ps1
+
+      - name: Execute real local WinRS shell/Negotiate integration
+        shell: powershell
+        run: ./tests/test_north_parent_winrs.ps1
