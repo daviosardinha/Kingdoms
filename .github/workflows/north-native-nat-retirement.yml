@@ -124,16 +124,12 @@ jobs:
         shell: powershell
         run: ./tests/test_north_parent_dns_srv_filter.ps1
 
-  windows-parent-winrs:
-    runs-on: windows-latest
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@v4
-      - name: Exercise native parent WinRS transport and failure paths
-        shell: powershell
-        env:
-          KINGDOMS_TEST_NORTH_WINRS: '1'
-        run: ./tests/test_north_parent_winrs.ps1
+  # The native localhost WinRS integration fixture is intentionally NOT
+  # run on mutable GitHub-hosted Windows images: they present an expired
+  # localhost listener certificate and then a WSMan Create timeout after
+  # renewal. See docs/NORTH_PRIVATE_WINRS_CI.md for the separately gated,
+  # pinned-SHA Windows integration workflow in a PRIVATE CI repository.
+  # This source/parser workflow alone cannot certify native WinRS transport.
 
   source-gates:
     runs-on: ubuntu-latest
