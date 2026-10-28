@@ -125,7 +125,10 @@ jobs:
         run: ./tests/test_north_parent_dns_srv_filter.ps1
 
   windows-parent-winrs:
-    runs-on: windows-latest
+    # Pin the actual WinRS transport fixture to the stable Windows 2022 image;
+    # the mutable windows-latest image presents an expired localhost cert.
+    # Keep all native TLS / authorization checks intact.
+    runs-on: windows-2022
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
