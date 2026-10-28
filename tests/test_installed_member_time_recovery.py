@@ -165,6 +165,25 @@ class ScriptContract(unittest.TestCase):
         self.assertIn("host, read_timeout_sec=budget + 35", source)
 
 
+class ColdStartBudgetTests(unittest.TestCase):
+    def test_north_late_w32time_stays_bounded_and_goad_unchanged(self):
+        code = PROVIDER.read_text()
+        start = code.split("def _start_existing_instance(", 1)[1].split(
+            "\n    def ", 1
+        )[0]
+        self.assertIn("1200 if self.lab_name == 'NORTH' else 900", start)
+        self.assertIn("480 if self.lab_name == 'NORTH'", start)
+        self.assertIn("machine in ('GOAD-SRV02', 'GOAD-WS01')", start)
+        self.assertIn("timeout=min(ad_wait_budget, remaining)", start)
+        self.assertIn("timeout=min(300, remaining)", start)
+        wait = code.split("def _wait_installed_ad_ready(", 1)[1].split(
+            "\n    def ", 1
+        )[0]
+        self.assertIn("time_repair_attempted = True", wait)
+        self.assertIn("not time_repair_attempted", wait)
+        self.assertIn("is_time_only_pending", wait)
+
+
 class ControllerTests(unittest.TestCase):
     DC = "winterfell.north.sevenkingdoms.local"
     DOMAIN = "north.sevenkingdoms.local"
