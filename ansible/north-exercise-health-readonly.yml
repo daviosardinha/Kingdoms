@@ -1,6 +1,6 @@
 ---
 # NORTH exercise-mode health acceptance. No repair, restart, host route, NAT
-# reconnection, or AD writes. Protected parent DC is proven via child DC.
+# reconnection, or AD writes. Root PDC is verified via permitted DC02->DC01.
 - name: Verify NORTH identity health from accessible exercise-zone guests
   hosts: dc02:srv02:ws01
   gather_facts: false
@@ -80,3 +80,40 @@
     - name: Expose identity proof for host-by-host runtime acceptance
       ansible.builtin.debug:
         msg: "{{ north_runtime_probe.output | join(' | ') }}"
+
+# Parent DC stays isolated from Linux. Use the existing Windows remote-shell
+# endpoint over the permitted DC02 -> DC01 path, with DC01 inventory credentials.
+- name: Verify KINGSLANDING directly through the permitted inter-DC path
+  hosts: dc02
+  gather_facts: false
+  tasks:
+    - name: Assert root PDC services SYSVOL NETLOGON DNS and time authority
+      ansible.windows.win_powershell:
+        script: |
+          param([PSCredential]$ParentCredential)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          {{ lookup('ansible.builtin.file', 'files/north-parent-winrs.ps1') | indent(10) }}
+          $proofScript = @'
+          {{ lookup('ansible.builtin.file', 'files/north-parent-dc-health.ps1') | indent(10) }}
+          '@
+          Assert-NorthParentPath
+          $credential = Get-NorthParentCredential $ParentCredential
+          $result = Invoke-NorthParentWinRS -Credential $credential -Script $proofScript
+          if ($result.ExitCode -ne 0 -or
+              @($result.Stdout -split '[\r\n]+' | Where-Object {
+                  $_ -ceq 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
+              }).Count -ne 1) {
+              throw 'KINGSLANDING authenticated health proof failed; no recovery attempted'
+          }
+          Write-Output 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'
+        sensitive_parameters:
+          - name: ParentCredential
+            username: "{{ hostvars['dc01'].ansible_user }}"
+            password: "{{ hostvars['dc01'].ansible_password }}"
+      changed_when: false
+      register: north_parent_dc_probe
+
+    - name: Expose authenticated root PDC proof for runtime acceptance
+      ansible.builtin.debug:
+        msg: "{{ north_parent_dc_probe.output | join(' | ') }}"

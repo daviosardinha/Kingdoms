@@ -12,6 +12,10 @@ case "${GOAD_LAB_PROFILE}" in
 esac
 readonly POLICY_DIR="${ROOT}/ad/${GOAD_LAB_PROFILE}/providers/vmware/router/nftables"
 
+# Explicitly enabled only by the failed-start NORTH recovery controller.
+# Normal exercise transitions still require every guest's AD readiness.
+EXERCISE_ALLOW_STOPPED_MEMBERS=0
+
 readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
@@ -1109,6 +1113,20 @@ configure_windows_nat_exercise() {
     # readiness through Vagrant WinRM and is immediately disconnected again.
     for vm in "${DOMAIN_MEMBERS[@]}"; do
         ensure_vm_nat_state "${vm}" FALSE disconnect
+        if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS}" == 1 ]]; then
+            local vmx vm_list
+            vmx="$(vmx_for "${vm}")"
+            [[ "$(get_start_connected "${vmx}")" == FALSE ]] ||
+                fail "${vm}: offline skip requires persistent NAT isolation"
+            vm_list="$(vmrun -T ws list)" ||
+                fail "${vm}: VMware power inventory unavailable; cannot skip"
+            [[ "${vm_list}" == "Total running VMs:"* ]] ||
+                fail "${vm}: VMware power inventory ambiguous; cannot skip"
+            if ! printf '%s\n' "${vm_list}" | grep -Fxq "${vmx}"; then
+                echo "    [SKIP] ${vm} powered off; NAT persistently disabled; no AD readiness claimed"
+                continue
+            fi
+        fi
         prove_isolated_guest_ready "${vm}" member
     done
 
@@ -1317,6 +1335,16 @@ main() {
         fail "${POLICY_DIR} is missing."
 
     resolve_provider
+
+    if [[ "$#" -eq 2 ]]; then
+        [[ "${1}" == exercise && "${2}" == --allow-stopped-members &&
+           "${GOAD_LAB_PROFILE}" == NORTH &&
+           "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" == exercise ]] ||
+            fail "Offline-member restoration requires already-recorded NORTH exercise mode"
+        EXERCISE_ALLOW_STOPPED_MEMBERS=1
+    elif [[ "$#" -gt 2 ]]; then
+        fail "Unexpected mode controller arguments"
+    fi
 
     case "${1:-status}" in
         exercise)
