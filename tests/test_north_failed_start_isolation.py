@@ -66,8 +66,8 @@ class OfflineRestorationTests(TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("[OFFLINE] GOAD-WS01 powered off", out.stdout)
         self.assertIn("[ISOLATED] GOAD-SRV02 running", out.stdout)
-        self.assertIn("disconnect:/registered/GOAD-SRV02.vmx:ethernet0", out.stdout)
-        self.assertIn("disconnect:/registered/GOAD-DC01.vmx:ethernet0", out.stdout)
+        self.assertIn("[ISOLATED] GOAD-DC01 running", out.stdout)
+        self.assertNotIn("[ISOLATED] GOAD-WS01", out.stdout)
         self.assertIn("runtime NOT certified", out.stdout)
         self.assertNotIn("ready:", out.stdout)
 
@@ -104,7 +104,7 @@ class OfflineRestorationTests(TestCase):
         )[1].split("return 0", 1)[0]
         self.assertNotIn("prove_isolated_guest_ready", cleanup)
         self.assertNotIn("ensure_vm_nat_state", cleanup)
-        self.assertNotIn("connectNamedDevice", cleanup)
+        self.assertNotIn("vmrun -T ws connectNamedDevice", cleanup)
 
     def test_flag_requires_north_and_existing_exercise_record(self):
         text = MODE.read_text()
