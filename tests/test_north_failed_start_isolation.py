@@ -20,7 +20,7 @@ def exercise_function():
                 .split("\n}\n", 1)[0])
 
 
-def run_mock_exercise(allow, persistent="FALSE", inventory_ok=True):
+def run_mock_exercise(allow, persistent="FALSE", inventory_ok=True, disconnect_ok=True):
     body = exercise_function()
     source = """
 set -euo pipefail
@@ -33,6 +33,11 @@ ensure_vm_nat_state() { echo "nat:$1:$2:$3"; }
 prove_isolated_guest_ready() { echo "ready:$1:$2"; }
 fail() { echo "blocked:$*" >&2; exit 1; }
 vmrun() {
+    if [[ "${3:-}" == disconnectNamedDevice ]]; then
+        [[ "__DISCONNECT_OK__" == 1 ]] || return 1
+        echo "disconnect:${4:-}:${5:-}"
+        return 0
+    fi
     __RETURN__
     printf "Total running VMs: 4\\n"
     printf "/registered/GOAD-SRV02.vmx\\n"
@@ -47,6 +52,7 @@ configure_windows_nat_exercise
     source = (source.replace("__ALLOW__", "1" if allow else "0")
               .replace("__PERSISTENT__", persistent)
               .replace("__RETURN__", ":" if inventory_ok else "return 1")
+              .replace("__DISCONNECT_OK__", "1" if disconnect_ok else "0")
               .replace("__BODY__", body))
     return subprocess.run(
         ["bash", "-c", source], text=True, capture_output=True,
@@ -58,11 +64,12 @@ class OfflineRestorationTests(TestCase):
     def test_only_failed_start_explicit_mode_allows_stopped_member(self):
         out = run_mock_exercise(True)
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertIn("[SKIP] GOAD-WS01 powered off", out.stdout)
-        self.assertIn("ready:GOAD-SRV02:member", out.stdout)
-        self.assertNotIn("ready:GOAD-WS01:member", out.stdout)
-        self.assertIn("ready:GOAD-DC01:dc", out.stdout)
-        self.assertIn("ready:GOAD-DC02:dc", out.stdout)
+        self.assertIn("[OFFLINE] GOAD-WS01 powered off", out.stdout)
+        self.assertIn("[ISOLATED] GOAD-SRV02 running", out.stdout)
+        self.assertIn("[ISOLATED] GOAD-DC01 running", out.stdout)
+        self.assertNotIn("[ISOLATED] GOAD-WS01", out.stdout)
+        self.assertIn("runtime NOT certified", out.stdout)
+        self.assertNotIn("ready:", out.stdout)
 
     def test_normal_exercise_keeps_authentication_requirement(self):
         out = run_mock_exercise(False)
@@ -73,12 +80,31 @@ class OfflineRestorationTests(TestCase):
     def test_nonisolated_stopped_member_cannot_be_skipped(self):
         out = run_mock_exercise(True, persistent="TRUE")
         self.assertNotEqual(out.returncode, 0)
-        self.assertIn("offline skip requires persistent NAT isolation", out.stderr)
+        self.assertIn("offline isolation requires persistent NAT isolation", out.stderr)
 
     def test_unknown_vmware_power_state_blocks_offline_skip(self):
         out = run_mock_exercise(True, inventory_ok=False)
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("VMware power inventory unavailable", out.stderr)
+
+    def test_running_nic_disconnect_failure_fails_closed(self):
+        out = run_mock_exercise(True, disconnect_ok=False)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("failed-start runtime NAT disconnection failed", out.stderr)
+        self.assertNotIn("runtime NOT certified", out.stdout)
+
+    def test_failed_start_skips_guest_health_preflight(self):
+        start = MODE.read_text().split("enter_exercise_mode() {", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn('if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS}" == 1 ]]; then', start)
+        self.assertIn("skip guest health preflight", start)
+        self.assertIn("preflight_domain_health", start)
+        self.assertIn("preflight_exercise_time_dependencies", start)
+        cleanup = exercise_function().split(
+            'if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS:-0}" == 1 ]]; then', 1
+        )[1].split("return 0", 1)[0]
+        self.assertNotIn("prove_isolated_guest_ready", cleanup)
+        self.assertNotIn("ensure_vm_nat_state", cleanup)
+        self.assertNotIn("vmrun -T ws connectNamedDevice", cleanup)
 
     def test_flag_requires_north_and_existing_exercise_record(self):
         text = MODE.read_text()

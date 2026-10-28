@@ -2055,7 +2055,10 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
 
         # Keep one bounded budget for the complete dependency chain. Individual
         # WinRM/AD gates are capped so one guest cannot consume the whole start.
-        deadline = time.monotonic() + 900
+        # NORTH's observed NT5DS convergence took over five minutes.
+        # Preserve strict authenticated readiness and bound the total start;
+        # never change the original full-GOAD startup budget.
+        deadline = time.monotonic() + (1200 if self.lab_name == 'NORTH' else 900)
 
         for machine in start_order:
             vmx = vmxs[machine]
@@ -2105,8 +2108,14 @@ Write-Output 'KINGDOMS_INSTALLED_AD_READY'
                 return False
 
             Log.info(f'GOAD Kingdoms: waiting for {machine} AD dependency readiness')
+            # Only NORTH members may need an extended cold-start time window.
+            # DNS, machine trust, Netlogon and authenticated NT5DS remain strict.
+            ad_wait_budget = (
+                480 if self.lab_name == 'NORTH' and
+                machine in ('GOAD-SRV02', 'GOAD-WS01') else 300
+            )
             if not self._wait_installed_ad_ready(
-                machine, host, timeout=min(300, remaining)
+                machine, host, timeout=min(ad_wait_budget, remaining)
             ):
                 return False
 

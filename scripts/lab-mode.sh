@@ -1215,26 +1215,39 @@ configure_windows_nat_exercise() {
         return 0
     fi
 
+    if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS:-0}" == 1 ]]; then
+        # Failed-start cleanup only: never use Vagrant/WinRM/AD authentication,
+        # reconnect NAT or restart guests to restore network isolation.
+        local vmx vm_list
+        vm_list="$(vmrun -T ws list)" ||
+            fail "NORTH failed-start: VMware power inventory unavailable"
+        [[ "${vm_list}" == "Total running VMs:"* ]] ||
+            fail "NORTH failed-start: ambiguous VMware power inventory"
+        for vm in "${DOMAIN_MEMBERS[@]}" "${EXERCISE_DOMAIN_CONTROLLERS[@]}"; do
+            vmx="$(vmx_for "${vm}")"
+            [[ "$(get_start_connected "${vmx}")" == FALSE ]] ||
+                fail "${vm}: offline isolation requires persistent NAT isolation"
+        done
+        for vm in "${DOMAIN_MEMBERS[@]}" "${EXERCISE_DOMAIN_CONTROLLERS[@]}"; do
+            vmx="$(vmx_for "${vm}")"
+            if printf '%s\n' "${vm_list}" | grep -Fxq "${vmx}"; then
+                vmrun -T ws disconnectNamedDevice "${vmx}" ethernet0 >/dev/null 2>&1 ||
+                    fail "${vm}: failed-start runtime NAT disconnection failed"
+                echo "    [ISOLATED] ${vm} running; runtime NAT disconnected; AD health not asserted"
+            else
+                echo "    [OFFLINE] ${vm} powered off; persistent NAT disabled; AD health not asserted"
+            fi
+        done
+        echo "[+] NORTH failed-start isolation restored without guest authentication; runtime NOT certified"
+        return 0
+    fi
+
     # Members reboot first while their DCs are still healthy. Every restarted
     # guest keeps ethernet0.startConnected=FALSE. The management NIC is then
     # connected only long enough to prove authenticated Windows/domain
     # readiness through Vagrant WinRM and is immediately disconnected again.
     for vm in "${DOMAIN_MEMBERS[@]}"; do
         ensure_vm_nat_state "${vm}" FALSE disconnect
-        if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS}" == 1 ]]; then
-            local vmx vm_list
-            vmx="$(vmx_for "${vm}")"
-            [[ "$(get_start_connected "${vmx}")" == FALSE ]] ||
-                fail "${vm}: offline skip requires persistent NAT isolation"
-            vm_list="$(vmrun -T ws list)" ||
-                fail "${vm}: VMware power inventory unavailable; cannot skip"
-            [[ "${vm_list}" == "Total running VMs:"* ]] ||
-                fail "${vm}: VMware power inventory ambiguous; cannot skip"
-            if ! printf '%s\n' "${vm_list}" | grep -Fxq "${vmx}"; then
-                echo "    [SKIP] ${vm} powered off; NAT persistently disabled; no AD readiness claimed"
-                continue
-            fi
-        fi
         prove_isolated_guest_ready "${vm}" member
     done
 
@@ -1353,7 +1366,12 @@ enter_exercise_mode() {
     # On a cold start of an already-recorded exercise range, persistent NAT is
     # intentionally still FALSE, so probe only the child-DC time dependency
     # with temporary runtime NAT before checking members.
-    if [[ "${EXERCISE_VALIDATED_COLD_START}" == 1 ]]; then
+    if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS}" == 1 ]]; then
+        [[ "${GOAD_LAB_PROFILE}" == NORTH &&
+           "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" == exercise ]] ||
+            fail "NORTH failed-start isolation requires existing exercise-mode record"
+        echo "[*] NORTH failed-start: skip guest health preflight; restore isolation only"
+    elif [[ "${EXERCISE_VALIDATED_COLD_START}" == 1 ]]; then
         require_north_validated_cold_start
         echo "[+] NORTH: authenticated full installed-start guest readiness reused for isolation"
     elif [[ "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" != "exercise" ]]; then
