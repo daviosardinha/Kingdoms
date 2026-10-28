@@ -86,6 +86,7 @@ on:
       - tests/test_north_parent_winrs_loader.ps1
       - tests/test_north_parent_rendered_script.ps1
       - tests/test_north_parent_dns_srv_filter.ps1
+      - tests/test_north_private_winrs_runner_gate.ps1
       - ansible/files/north-parent-winrs.ps1
       - scripts/diagnostics/north-installed-time-evidence.py
       - tests/test_north_w32time_evidence.py
@@ -123,6 +124,9 @@ jobs:
       - name: Verify root PDC DNS SRV response selection with mixed records
         shell: powershell
         run: ./tests/test_north_parent_dns_srv_filter.ps1
+      - name: Verify private CI fixture runner authorization
+        shell: powershell
+        run: ./tests/test_north_private_winrs_runner_gate.ps1
 
   # The native localhost WinRS integration fixture is intentionally NOT
   # run on mutable GitHub-hosted Windows images: they present an expired
