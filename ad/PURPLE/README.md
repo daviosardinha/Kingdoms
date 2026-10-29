@@ -1,4 +1,5 @@
-# Purple Team (PURPLE) — independent four-VM VMware baseline
+# Purple Team (PURPLE) - independent four-VM VMware baseline
+<img width="1448" height="1086" alt="Purple Team Lab Network Topology" src="https://github.com/user-attachments/assets/331b200e-c804-4e5e-8ceb-b238f7190d5c" />
 
 PURPLE is a new lab in KINGDOMS, based on MINILAB. It is developed **only**
 on the dedicated `feature/purple-team-four-vm` branch. NORTH, WSLPE and
