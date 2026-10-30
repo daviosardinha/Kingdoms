@@ -215,6 +215,12 @@ for host in WINTERFELL CASTELBLACK WS01; do
   grep -Fq "NORTH_EXERCISE_AD_HEALTH=PASS host=$host" "$temp_log" ||
     fail "Missing successful authenticated AD proof for $host"
 done
+# The root PDC is on protected vmnet20, intentionally unreachable from the
+# Linux host. Prove DC01 guest health over the existing DC02 -> DC01 WinRM
+# exception, rather than silently relying on DC02's parent discovery alone.
+grep -Fq 'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING' "$temp_log" ||
+  fail "Missing direct KINGSLANDING root DC service/share/time proof"
+pass "NORTH_PARENT_DC_AD_HEALTH_READY"
 pass "NORTH_AD_IDENTITY_TIME_TRUST_READY"
 
 # Verify no validation operation has changed the recorded exercise state.

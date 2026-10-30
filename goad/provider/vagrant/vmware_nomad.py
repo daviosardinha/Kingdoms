@@ -257,14 +257,22 @@ class GoadNomadVmwareProvider(VmwareProvider):
         return True
 
     @staticmethod
-    def _lab_winrm_session(host):
+    def _lab_winrm_session(host, read_timeout_sec=45):
+        """Direct member WinRM with an optional bounded recovery read budget.
+
+        Existing calls retain their 45-second read timeout; only the single
+        conditional installed-member NT5DS repair extends the HTTP read budget.
+        """
+        if (type(read_timeout_sec) is not int
+                or not 45 <= read_timeout_sec <= 125):
+            raise ValueError('WinRM read timeout must be 45..125 seconds')
         return winrm.Session(
             f'https://{host}:5986/wsman',
             auth=('vagrant', 'vagrant'),
             transport='ntlm',
             server_cert_validation='ignore',
             operation_timeout_sec=30,
-            read_timeout_sec=45,
+            read_timeout_sec=read_timeout_sec,
         )
 
     def _wait_lab_winrm_ready(self, machine, host, timeout=300):
@@ -372,7 +380,8 @@ class GoadNomadVmwareProvider(VmwareProvider):
             value = handle.read().strip()
         return value if value else 'unknown'
 
-    def set_runtime_mode(self, mode):
+    def set_runtime_mode(self, mode, *, allow_stopped_members=False,
+                         validated_cold_start=False):
         if not self.is_goad_nomad_segmented():
             Log.error('Runtime modes are only available for GOAD_NOMAD GOAD/VMware instances')
             return False
@@ -385,9 +394,37 @@ class GoadNomadVmwareProvider(VmwareProvider):
         if mode_script is None:
             return False
 
+        if validated_cold_start:
+            # Only the complete NORTH installed-start caller can qualify for
+            # this mode. The shell controller re-proves running VM inventory
+            # and persistent NAT isolation before applying exercise policy.
+            if (self.lab_name != 'NORTH' or mode != 'exercise'
+                    or self.get_runtime_mode() != 'exercise'
+                    or allow_stopped_members):
+                Log.error(
+                    'NORTH: validated-cold-start isolation requires the '
+                    'recorded exercise mode and a full readiness success'
+                )
+                return False
+
+        args = ['bash', mode_script, mode]
+        if validated_cold_start:
+            args.append('--validated-cold-start')
+        if allow_stopped_members:
+            # Never expose the partial-range exemption to normal transitions,
+            # full GOAD, new provisioning or a previously unrecorded mode.
+            if (self.lab_name != 'NORTH' or mode != 'exercise'
+                    or self.get_runtime_mode() != 'exercise'):
+                Log.error(
+                    'GOAD_NOMAD: offline-member isolation restoration is '
+                    'permitted only for already-recorded NORTH exercise mode'
+                )
+                return False
+            args.append('--allow-stopped-members')
+
         Log.info(f'GOAD_NOMAD: switching to {mode} mode')
         result = subprocess.run(
-            ['bash', mode_script, mode],
+            args,
             env=self._provider_env(),
             check=False,
         )
