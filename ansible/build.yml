@@ -22,3 +22,16 @@
   hosts: update
   roles:
     - { role: 'settings/updates', tags: 'updates'}
+
+# NORTH WS01 only. Keep the other labs and their Windows security baselines unchanged.
+# This proof helper records an identity only when a student later executes it.
+- name: NORTH WS01 | install harmless execution proof prerequisite
+  hosts: workstation
+  gather_facts: false
+  tags:
+    - north_kingdom_proof
+  roles:
+    - role: settings/north_kingdom_proof
+      when:
+        - domain_name == 'NORTH'
+        - inventory_hostname == 'ws01'
