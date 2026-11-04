@@ -1,0 +1,32 @@
+name: NORTH WS01 KingdomProof source regression
+
+on:
+  push:
+    branches:
+      - main
+      - fix/north-ws01-kingdomproof-provision
+    paths:
+      - ansible/build.yml
+      - ansible/roles/settings/north_kingdom_proof/**
+      - tests/test_north_kingdom_proof_source.py
+      - .github/workflows/north-kingdom-proof.yml
+  pull_request:
+    paths:
+      - ansible/build.yml
+      - ansible/roles/settings/north_kingdom_proof/**
+      - tests/test_north_kingdom_proof_source.py
+      - .github/workflows/north-kingdom-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: NORTH WS01 provisioning source contract
+        run: python -m unittest -v tests.test_north_kingdom_proof_source
