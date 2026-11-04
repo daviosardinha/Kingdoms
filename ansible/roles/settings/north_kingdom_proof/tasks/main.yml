@@ -1,0 +1,65 @@
+---
+# NORTH-only, safe to reapply to the existing WS01.
+# Do not execute the proof under the provisioning account: the first output
+# entry must be created by Rickon's actual student session.
+
+- name: NORTH | prepare source directory for WS01 proof helper
+  ansible.windows.win_file:
+    path: 'C:\ProgramData\Kingdoms'
+    state: directory
+
+- name: NORTH | stage reviewed benign proof source
+  ansible.windows.win_copy:
+    src: KingdomProof.cs
+    dest: 'C:\ProgramData\Kingdoms\KingdomProof.cs'
+  register: north_kingdom_proof_source
+
+- name: NORTH | inspect existing WS01 proof executable
+  ansible.windows.win_stat:
+    path: 'C:\Users\Public\Documents\KingdomProof.exe'
+  register: north_kingdom_proof_existing
+
+- name: NORTH | compile proof when source changed or executable is missing
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $sourcePath = 'C:\ProgramData\Kingdoms\KingdomProof.cs'
+      $destination = 'C:\Users\Public\Documents\KingdomProof.exe'
+      $temporary = Join-Path $env:TEMP ('KingdomProof-{0}.exe' -f [Guid]::NewGuid().ToString('N'))
+      try {
+          $sourceCode = [IO.File]::ReadAllText($sourcePath)
+          Add-Type -TypeDefinition $sourceCode -Language CSharp -OutputAssembly $temporary -OutputType ConsoleApplication -ErrorAction Stop
+          if (-not (Test-Path -LiteralPath $temporary -PathType Leaf)) {
+              throw 'KingdomProof compilation produced no executable'
+          }
+          Copy-Item -LiteralPath $temporary -Destination $destination -Force -ErrorAction Stop
+      }
+      finally {
+          if (Test-Path -LiteralPath $temporary) {
+              Remove-Item -LiteralPath $temporary -Force
+          }
+      }
+  when: north_kingdom_proof_source.changed or not north_kingdom_proof_existing.stat.exists
+
+- name: NORTH | verify compiled WS01 proof without executing as provisioning admin
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $path = 'C:\Users\Public\Documents\KingdomProof.exe'
+      if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+          throw "NORTH proof prerequisite missing: $path"
+      }
+      $file = Get-Item -LiteralPath $path
+      $bytes = [IO.File]::ReadAllBytes($path)
+      if ($bytes.Length -lt 512 -or $bytes[0] -ne 0x4d -or $bytes[1] -ne 0x5a) {
+          throw "NORTH proof prerequisite is not a valid PE file: $path"
+      }
+      $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+      $Ansible.Changed = $false
+      Write-Output ("NORTH_KINGDOM_PROOF_READY|bytes={0}|sha256={1}" -f $file.Length, $hash)
+  register: north_kingdom_proof_ready
+  changed_when: false
+  failed_when: >-
+    north_kingdom_proof_ready is failed or
+    'NORTH_KINGDOM_PROOF_READY' not in
+    (north_kingdom_proof_ready.output | default([]) | join(' '))
