@@ -82,9 +82,13 @@ class ExistingPurpleStarter:
 
     def running_vmxs(self) -> set[str]:
         output = self.vmrun("list", timeout=30).splitlines()
-        if not output or not output[0].startswith("Total running VMs:"):
+        if not output or not re.fullmatch(r"Total running VMs: [0-9]+", output[0]):
             raise PurpleStartBlocked("VMware did not return a valid running guest inventory")
-        return set(output[1:])
+        expected = int(output[0].split(": ", 1)[1])
+        observed = [line for line in output[1:] if line]
+        if len(observed) != expected or len(set(observed)) != expected:
+            raise PurpleStartBlocked("VMware running guest inventory is incomplete or ambiguous")
+        return set(observed)
 
     def power_on(self, machine: str, running: set[str]) -> None:
         vmx = str(self.vmx[machine])
@@ -198,18 +202,24 @@ if ($ip -and $remote.Status -eq 'Running' -and $domain -and $ad) {{
             try:
                 info = process.info
                 cmd = info.get("cmdline") or []
-                if not cmd or not any(Path(str(arg)).name in
-                                      ("vagrant", "vagrant.exe") for arg in cmd):
-                    continue
-                if not any(str(arg) in ("halt", "up", "provision", "reload")
-                           for arg in cmd):
+                is_vagrant = any(Path(str(arg)).name in
+                                 ("vagrant", "vagrant.exe") for arg in cmd)
+                is_vmrun = any(Path(str(arg)).name == "vmrun" for arg in cmd)
+                lifecycle = any(str(arg) in
+                                ("halt", "up", "provision", "reload")
+                                for arg in cmd)
+                vmware_operation = any(str(arg) in
+                                       ("stop", "start", "reset")
+                                       for arg in cmd)
+                if not ((is_vagrant and lifecycle)
+                        or (is_vmrun and vmware_operation)):
                     continue
                 cwd = info.get("cwd")
                 if cwd and Path(cwd).resolve() == self.provider:
                     raise PurpleStartBlocked(
-                        f"Vagrant controller PID {info['pid']} is still acting on "
-                        "this PURPLE instance. End/reap it before retrying; "
-                        "do not race its VMware guest operations."
+                        f"VMware/Vagrant lifecycle process PID {info['pid']} "
+                        "is still acting on this PURPLE instance. End/reap "
+                        "it before retrying; do not race guest operations."
                     )
             except (psutil.NoSuchProcess, psutil.ZombieProcess):
                 continue
@@ -311,6 +321,8 @@ if ($ip -and $remote.Status -eq 'Running' -and $domain -and $ad) {{
         names = [row[0] for row in ROSTER]
         if vm_name is not None and vm_name not in names:
             raise PurpleStartBlocked(f"Unsupported PURPLE guest: {vm_name}")
+        # Do not race an interrupted Vagrant up/halt on the same instance.
+        self.ensure_no_competing_vagrant()
         # Prove all registered VMX identities before changing any VM state.
         running = self.running_vmxs()
         targets = ROSTER if vm_name is None else tuple(
