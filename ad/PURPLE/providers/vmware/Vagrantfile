@@ -25,10 +25,7 @@ boxes = [
     :vmware_network_adapters => [
       { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:51" }
     ],
-    :lab_linux_config_script => "../../../ad/PURPLE/providers/vmware/configure-linux-interface.sh",
-    :provision_scripts => [
-      "../../../ad/PURPLE/providers/vmware/provision-wazuh-all-in-one.sh"
-    ] },
+    :lab_linux_config_script => "../../../ad/PURPLE/providers/vmware/configure-linux-interface.sh" },
   { :name => "PURPLE-C2", :hostname => "c2", :ip => "{{ip_range}}.60",
     :box => "bento/debian-12", :box_version => "202510.26.0",
     :os => "linux", :cpus => 2, :mem => 4096,
