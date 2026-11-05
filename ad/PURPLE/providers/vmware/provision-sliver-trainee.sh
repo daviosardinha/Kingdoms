@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # PURPLE-LX01 only: create/verify a standard, non-admin Sliver trainee.
-# No plaintext passwords, SSH keys, sudoers edits, or security tool installation.
+# No passwords, keys, sudoers changes, installed tools, or other guest changes.
 set -euo pipefail
 
 ACCOUNT="sliver.trainee"
 HOME_DIR="/home/$ACCOUNT"
 EXPECTED_IP="172.28.233.32/24"
 MODE="${1:---ensure}"
-HASH_DIR="/home/vagrant/.purple-trainee-private"
-HASH_FILE="$HASH_DIR/password.sha512"
+# Public, synthetic training credential. Only the salted crypt hash belongs
+# in executable source; the corresponding lab-only password is documented in
+# ad/PURPLE/DEPLOYMENT.md. NEVER reuse this account outside the isolated lab.
+FIXED_PASSWORD_HASH='$6$dgsIO1th926L.8bc$hveg.SfOeMnQzK1hK35dzy5RSSy.tyg5k/rwcXDIPBSTDouH99qS1wIFytV4t./zyol6.bwLBGJimqdE41eV7.'
 
 die() {
     printf '[PURPLE-LX01][BLOCKED] %s\n' "$*" >&2
@@ -27,25 +29,6 @@ ip -o -4 addr show | grep -Fq "inet $EXPECTED_IP" ||
     die "Expected PURPLE-LX01 lab IP $EXPECTED_IP not found"
 getent passwd vagrant >/dev/null || die "Existing Vagrant SSH identity missing"
 [[ -x /bin/bash ]] || die "Interactive bash shell not available"
-
-# The host maintains a password hash (never plaintext) outside the repository.
-# Vagrant uploads the hash to the guest only during provisioning. Require it
-# before changing an account, and always remove the temporary guest copy.
-PASSWORD_HASH=""
-if [[ "$MODE" == "--ensure" ]]; then
-    [[ -d "$HASH_DIR" && ! -L "$HASH_DIR" &&
-       "$(stat -c '%a' "$HASH_DIR")" == "700" &&
-       "$(stat -c '%U' "$HASH_DIR")" == "vagrant" ]] ||
-        die "Password hash directory is not private and owned by vagrant"
-    [[ -f "$HASH_FILE" && ! -L "$HASH_FILE" ]] ||
-        die "Missing password hash for trainee; initialize it on Kali before provisioning"
-    chmod 600 "$HASH_FILE"
-    trap 'rm -f "$HASH_FILE"' EXIT
-    IFS= read -r PASSWORD_HASH < "$HASH_FILE" ||
-        die "Unable to read trainee password hash"
-    [[ "$PASSWORD_HASH" =~ ^\$6\$(rounds=[0-9]+\$)?[A-Za-z0-9./]{8,16}\$[A-Za-z0-9./]{86}$ ]] ||
-        die "Trainee password hash must be a valid SHA-512 crypt string"
-fi
 
 if ! getent passwd "$ACCOUNT" >/dev/null; then
     [[ "$MODE" == "--ensure" ]] || die "Account is absent (verify mode never creates users)"
@@ -99,21 +82,22 @@ if command -v sudo >/dev/null 2>&1; then
         die "Sudo policy is not an unambiguous denial for the trainee"
 fi
 
-# Enforce the same fixed password hash on first install and reprovisioning.
-# chpasswd receives the hash via standard input, not process arguments.
+# Enforce the same known training password on first install/reprovisioning.
+# Only the salted hash enters chpasswd via stdin. No plaintext, no prompt,
+# no external host secret, no password/hashed credential in process arguments.
 if [[ "$MODE" == "--ensure" ]]; then
-    stored_hash="$(getent shadow "$ACCOUNT" | cut -d: -f2)"
-    if [[ "$stored_hash" != "$PASSWORD_HASH" ]]; then
-        printf '%s:%s\n' "$ACCOUNT" "$PASSWORD_HASH" | chpasswd --encrypted ||
-            die "Unable to enforce fixed trainee password"
+    current_hash="$(getent shadow "$ACCOUNT" | cut -d: -f2)"
+    if [[ "$current_hash" != "$FIXED_PASSWORD_HASH" ]]; then
+        printf '%s:%s\n' "$ACCOUNT" "$FIXED_PASSWORD_HASH" | chpasswd --encrypted ||
+            die "Failed to apply fixed lab password"
     fi
-    [[ "$(getent shadow "$ACCOUNT" | cut -d: -f2)" == "$PASSWORD_HASH" ]] ||
-        die "Trainee password hash did not match configured value"
-    unset PASSWORD_HASH stored_hash
+    unset current_hash
 fi
+[[ "$(getent shadow "$ACCOUNT" | cut -d: -f2)" == "$FIXED_PASSWORD_HASH" ]] ||
+    die "Lab password hash does not match expected value"
 
 # Test a genuine login shell, own-home write/execute access, and execution
-# of a standard unprivileged binary.
+# of a standard unprivileged binary, without requiring a password.
 runuser -l "$ACCOUNT" -c '
     set -eu
     test "$HOME" = "/home/sliver.trainee"
@@ -133,7 +117,8 @@ echo "PURPLE_SLIVER_TRAINEE_GROUPS=$(id -nG "$ACCOUNT")"
 echo "PURPLE_SLIVER_TRAINEE_SUDO=DENIED"
 echo "PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS"
 echo "PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS"
+# Password is pre-defined by the lab fixture. No interactive prompt.
 case "$(passwd -S "$ACCOUNT" | awk '{print $2}')" in
     P) echo "PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED" ;;
-    *) die "Trainee password is not set or is locked" ;;
+    *) die "Trainee password is missing or locked" ;;
 esac
