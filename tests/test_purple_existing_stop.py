@@ -42,7 +42,7 @@ def isolated_starter():
            "subprocess": subprocess,
            "Path": Path,
            "time": __import__("time"),
-           "psutil": __import__("psutil")}
+           "psutil": SimpleNamespace()}
     exec(compile(ast.Module(body=[cls], type_ignores=[]), str(SOURCE), "exec"), env)
     return env["ExistingPurpleStarter"], logs
 
