@@ -127,48 +127,80 @@ contains the C2 definition without needing the in-place helper.
 
 ## Dedicated Sliver trainee on PURPLE-LX01
 
-Fresh PURPLE installations automatically create the `sliver.trainee` local
-**standard user on PURPLE-LX01 only** after Ubuntu Desktop provisioning.
-The source-owned `provision-sliver-trainee.sh` is idempotent: it creates an
-account only when absent, validates existing accounts without replacing them,
-and fails closed on unwanted administrative membership, sudo permissions,
-an unexpected home/shell, or inability to execute regular user programs.
-It does not touch other VMs, the `vagrant` account, SSH keys, or sudoers.
+The `sliver.trainee` local user on `PURPLE-LX01` is a regular non-admin
+Ubuntu 22.04 account with `/home/sliver.trainee` and `/bin/bash`.
+No other PURPLE machine gets this account.
 
-The user's home is `/home/sliver.trainee`, interactive shell is `/bin/bash`,
-and a private primary group is created when the account is new. The dotted
-username requires Ubuntu 22.04's `useradd --badname` option. A fresh account
-has **no configured password or SSH key**. Root can validate an interactive
-login shell with `runuser -l`; password-based console/XRDP/SSH login remains
-disabled until the operator explicitly configures a guest-local password.
-No passwords are stored in Git or displayed in provisioning output.
+### Fixed password without embedding secrets in Git
 
-For the **existing installed pilot**, the generated Vagrantfile does not gain
-new provisioners automatically. Apply only the targeted script over Vagrant's
-existing SSH management channel instead of reinstalling/reprovisioning LX01:
+Choose the fixed training password **once** on the Kali host, through a masked
+terminal prompt. The setup stores **only** its salted SHA-512-crypt hash at
+`~/.config/kingdoms/purple-lx01-trainee.sha512`, with directory mode 0700
+and file mode 0600. It never prints a password or hash.
 
 ```bash
 cd ~/labs/purple-team/Kingdoms
-git fetch origin refs/heads/main
-git show FETCH_HEAD:ad/PURPLE/providers/vmware/provision-sliver-trainee.sh > /tmp/purple-provision-sliver-trainee.sh
-(cd workspace/ef5c0b-purple-vmware/provider && \
-  vagrant upload /tmp/purple-provision-sliver-trainee.sh /tmp/purple-provision-sliver-trainee.sh PURPLE-LX01 && \
-  vagrant ssh PURPLE-LX01 -c 'sudo bash /tmp/purple-provision-sliver-trainee.sh --ensure && sudo bash /tmp/purple-provision-sliver-trainee.sh --verify && sudo rm -f /tmp/purple-provision-sliver-trainee.sh')
+python3 scripts/purple-trainee-password.py init
+python3 scripts/purple-trainee-password.py status
 ```
 
-A successful verification outputs `PURPLE_SLIVER_TRAINEE_PRESENT=PASS`,
-`PURPLE_SLIVER_TRAINEE_SUDO=DENIED`,
-`PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS`, and
-`PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS`, plus the actual UID/group names.
-The output will say `PASSWORD_LOGIN=REQUIRES_MANUAL_SETUP` until a password
-is explicitly set. To allow normal password-based login later, connect as the
-existing `vagrant` account and run `sudo passwd sliver.trainee`
-interactively; never put a password in scripts, commands, documentation or Git.
+If the same Kali host and hash file are used, **fresh PURPLE installs always
+assign the same selected password**. Reprovisioning LX01 re-enforces the same
+hash; the user is not recreated. Back up the local hash privately if you
+intend to deploy from a different computer. To change the fixed password,
+run `python3 scripts/purple-trainee-password.py init --rotate` and apply
+the change to the current guest or reprovision LX01.
 
-On a **new** five-VM PURPLE install, the canonical provider definition
-automatically invokes this script only for LX01. Repeating provisioning
-validates the account instead of creating duplicates. The existing guest
-is not altered by a Git merge alone.
+**Initialize before any fresh PURPLE install.** The generated PURPLE VMware
+Vagrantfile checks that the host-private hash exists and has safe ownership
+and permissions before provisioning. A missing or unsafe secret causes the
+install to fail instead of creating a login account with an unknown password.
+The provisioner uses Vagrant's file transfer for the hash, consumes it inside
+LX01 using `chpasswd --encrypted`, and removes the uploaded copy. No
+plaintext password or hash is embedded in the committed/generated Vagrantfile,
+command-line arguments, or shell logs.
+
+Fresh-install command, after password initialization and normal preflight:
+
+```bash
+./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233
+```
+
+### Existing laptop pilot: apply to LX01 only
+
+Because `workspace/ef5c0b-purple-vmware/provider/Vagrantfile` was generated
+before this change, do not reinstall or run generic whole-lab provisioning.
+With LX01 **running** and Vagrant SSH reachable, use the host helper once
+to transfer the updated account provisioner and password hash to **only LX01**:
+
+```bash
+cd ~/labs/purple-team/Kingdoms
+python3 scripts/purple-trainee-password.py init
+python3 scripts/purple-trainee-password.py apply --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"
+```
+
+The helper checks the local hash, verifies the selected instance identity,
+uploads the account provisioner and hash over Vagrant's existing SSH channel,
+runs `--ensure` and `--verify` as root inside LX01, and removes the
+temporary guest files. Other VMs, `vagrant` access, SSH keys and sudoers are
+unmodified.
+
+Expected guest verification markers:
+
+```text
+PURPLE_SLIVER_TRAINEE_PRESENT=PASS
+PURPLE_SLIVER_TRAINEE_SUDO=DENIED
+PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS
+PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS
+PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED
+```
+
+The script also prints the actual trainee UID and group membership; no
+password or password hash is logged. Both an absent and an existing compliant
+account are supported; an incompatible account is rejected rather than
+silently modified. Only the password hash is brought back to the
+host-configured fixed value during `--ensure`. The `--verify` action does
+not create or modify the user.
 
 ## Ubuntu Desktop remote access and baseline utilities
 
