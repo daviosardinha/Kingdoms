@@ -95,7 +95,7 @@ fi
 chown root:root "$ARCHIVE" "${WORK_DIR}/install.log"
 chmod 0600 "$ARCHIVE" "${WORK_DIR}/install.log"
 chmod 0700 "$WORK_DIR"
-log "Generated Wazuh credentials preserved in a verified root-only archive"
+log "Generated Wazuh credentials saved in a verified root-only archive"
 
 # Extract only the indexer 'admin' credential from the official archive.
 # The small YAML-like Wazuh password file uses indexer_username/indexer_password
