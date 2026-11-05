@@ -1,4 +1,4 @@
-"""Source-only Purple Team four-VM baseline regression checks."""
+"""Source-only Purple Team five-VM baseline regression checks."""
 import json
 import pathlib
 import unittest
@@ -14,9 +14,9 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn("purple.lab", config["lab"]["domains"])
         self.assertEqual(config["lab"]["hosts"]["ws01"]["domain"], "purple.lab")
 
-    def test_four_vm_definitions(self):
+    def test_five_vm_definitions(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
-        for name in ("PURPLE-DC01", "PURPLE-WS01", "PURPLE-LX01", "PURPLE-WAZUH"):
+        for name in ("PURPLE-DC01", "PURPLE-WS01", "PURPLE-LX01", "PURPLE-WAZUH", "PURPLE-C2"):
             self.assertEqual(vm.count(':name => "' + name + '"'), 1)
         self.assertIn("bento/debian-12", vm)
         self.assertIn("bento/ubuntu-22.04", vm)
@@ -64,6 +64,7 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn("ws01", domain_part)
         self.assertNotIn("lx01", domain_part)
         self.assertNotIn("wazuh", domain_part)
+        self.assertNotIn("c2", domain_part)
         self.assertIn("domain_name=PURPLE", inventory)
 
     def test_no_stale_minilab_domain_references(self):
@@ -85,13 +86,13 @@ class PurpleLabSourceTests(unittest.TestCase):
 
     def test_explicit_isolated_lab_nics(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
-        self.assertEqual(vm.count(':skip_private_network => true'), 2)
-        self.assertEqual(vm.count(':vnet => "vmnet4"'), 2)
-        self.assertEqual(vm.count(':slot => 1'), 2)
+        self.assertEqual(vm.count(':skip_private_network => true'), 3)
+        self.assertEqual(vm.count(':vnet => "vmnet4"'), 3)
+        self.assertEqual(vm.count(':slot => 1'), 3)
         self.assertIn('172.28.233', vm)
-        for last in ("32", "51"):
+        for last in ("32", "51", "60"):
             self.assertIn("00:50:56:10:04:" + last, vm)
-        self.assertEqual(vm.count(':lab_linux_config_script =>'), 2)
+        self.assertEqual(vm.count(':lab_linux_config_script =>'), 3)
         self.assertNotIn(":lab_gateway =>", vm)
 
     def test_linux_static_nic_and_preflight_gate(self):
@@ -134,7 +135,7 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertLess(recovery, provision)
         self.assertIn("'_last_bounded_vagrant_reaped'", method)
         self.assertIn("return False", method)
-        self.assertIn("('PURPLE-LX01', 'PURPLE-WAZUH')", method)
+        self.assertIn("('PURPLE-LX01', 'PURPLE-WAZUH', 'PURPLE-C2')", method)
         self.assertNotIn("GOAD-WS01", method)
 
     def test_ws01_direct_vmware_recovery_scope(self):
@@ -171,6 +172,7 @@ class PurpleLabSourceTests(unittest.TestCase):
         template = (ROOT / "template" / "provider"
                     / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
+        self.assertEqual(vm.count('"PURPLE-C2"'), 1)
         self.assertEqual(vm.count("provision-wazuh-all-in-one.sh"), 1)
         self.assertIn("box[:provision_scripts]", template)
         self.assertIn("bash ./wazuh-install.sh -a", source)
