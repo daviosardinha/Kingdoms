@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # PURPLE-LX01 only: create/verify a standard, non-admin Sliver trainee.
-# No passwords, keys, sudoers changes, installed tools, or other guest changes.
+# No plaintext passwords, SSH keys, sudoers changes, or security tools.
 set -euo pipefail
 
 ACCOUNT="sliver.trainee"
@@ -10,7 +10,7 @@ MODE="${1:---ensure}"
 # Public, synthetic training credential. Only the salted crypt hash belongs
 # in executable source; the corresponding lab-only password is documented in
 # ad/PURPLE/DEPLOYMENT.md. NEVER reuse this account outside the isolated lab.
-FIXED_PASSWORD_HASH='$6$dgsIO1th926L.8bc$hveg.SfOeMnQzK1hK35dzy5RSSy.tyg5k/rwcXDIPBSTDouH99qS1wIFytV4t./zyol6.bwLBGJimqdE41eV7.'
+FIXED_PASSWORD_HASH='$6$PurpleLab2026$XOopZk/.7xC7J5dZol4iPun64HtgGijYIm6Gd.Sq8ofePBN3vZCN6mLArlTSKKrJy.oA3we3qvL5uf1ybxANY.'
 
 die() {
     printf '[PURPLE-LX01][BLOCKED] %s\n' "$*" >&2
