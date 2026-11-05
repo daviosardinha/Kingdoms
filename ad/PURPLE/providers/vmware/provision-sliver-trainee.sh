@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # PURPLE-LX01 only: create/verify a standard, non-admin Sliver trainee.
-# No passwords, keys, sudoers changes, installed tools, or other guest changes.
+# No plaintext passwords, SSH keys, sudoers changes, or security tools.
 set -euo pipefail
 
 ACCOUNT="sliver.trainee"
 HOME_DIR="/home/$ACCOUNT"
 EXPECTED_IP="172.28.233.32/24"
 MODE="${1:---ensure}"
+# Public, synthetic training credential. Only the salted crypt hash belongs
+# in executable source; the corresponding lab-only password is documented in
+# ad/PURPLE/DEPLOYMENT.md. NEVER reuse this account outside the isolated lab.
+FIXED_PASSWORD_HASH='$6$PurpleLab2026$XOopZk/.7xC7J5dZol4iPun64HtgGijYIm6Gd.Sq8ofePBN3vZCN6mLArlTSKKrJy.oA3we3qvL5uf1ybxANY.'
 
 die() {
     printf '[PURPLE-LX01][BLOCKED] %s\n' "$*" >&2
@@ -78,6 +82,20 @@ if command -v sudo >/dev/null 2>&1; then
         die "Sudo policy is not an unambiguous denial for the trainee"
 fi
 
+# Enforce the same known training password on first install/reprovisioning.
+# Only the salted hash enters chpasswd via stdin. No plaintext, no prompt,
+# no external host secret, no password/hashed credential in process arguments.
+if [[ "$MODE" == "--ensure" ]]; then
+    current_hash="$(getent shadow "$ACCOUNT" | cut -d: -f2)"
+    if [[ "$current_hash" != "$FIXED_PASSWORD_HASH" ]]; then
+        printf '%s:%s\n' "$ACCOUNT" "$FIXED_PASSWORD_HASH" | chpasswd --encrypted ||
+            die "Failed to apply fixed lab password"
+    fi
+    unset current_hash
+fi
+[[ "$(getent shadow "$ACCOUNT" | cut -d: -f2)" == "$FIXED_PASSWORD_HASH" ]] ||
+    die "Lab password hash does not match expected value"
+
 # Test a genuine login shell, own-home write/execute access, and execution
 # of a standard unprivileged binary, without requiring a password.
 runuser -l "$ACCOUNT" -c '
@@ -99,9 +117,8 @@ echo "PURPLE_SLIVER_TRAINEE_GROUPS=$(id -nG "$ACCOUNT")"
 echo "PURPLE_SLIVER_TRAINEE_SUDO=DENIED"
 echo "PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS"
 echo "PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS"
-# No password or SSH key is placed into source control. An operator may set
-# a guest-local password interactively later when password login is needed.
+# Password is pre-defined by the lab fixture. No interactive prompt.
 case "$(passwd -S "$ACCOUNT" | awk '{print $2}')" in
     P) echo "PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED" ;;
-    *) echo "PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=REQUIRES_MANUAL_SETUP" ;;
+    *) die "Trainee password is missing or locked" ;;
 esac

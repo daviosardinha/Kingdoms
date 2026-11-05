@@ -31,10 +31,16 @@ class SliverTraineeSourceTests(unittest.TestCase):
         self.assertIn('PURPLE_SLIVER_TRAINEE_SUDO=DENIED', script)
         self.assertIn('PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS', script)
         self.assertIn('PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS', script)
-        self.assertIn('PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=REQUIRES_MANUAL_SETUP', script)
+        self.assertIn('PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED', script)
+        self.assertIn('FIXED_PASSWORD_HASH=', script)
+        self.assertIn('chpasswd --encrypted', script)
+        self.assertIn('getent shadow "$ACCOUNT"', script)
+        self.assertIn('if [[ "$MODE" == "--ensure" ]]', script)
+        self.assertNotIn('getpass', script)
+        self.assertNotIn('read -s', script)
+        self.assertNotIn('Sliver.Trainee!2026-Lab', script)
         self.assertNotIn('usermod -aG sudo', script)
         self.assertNotIn('NOPASSWD', script)
-        self.assertNotIn('chpasswd', script)
         self.assertNotIn('passwd --stdin', script)
 
     def test_only_lx01_receives_the_new_provisioner(self):

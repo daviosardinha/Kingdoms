@@ -165,7 +165,7 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn("PURPLE_VMWARE_BOOT=", helper)
         self.assertIn("if args.resume_pending_rearm or", helper)
 
-    def test_wazuh_all_in_one_installed_only_in_wazuh_guest(self):
+    def test_wazuh_auto_install_shows_generated_password_once(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         source = (PURPLE / "providers" / "vmware"
                   / "provision-wazuh-all-in-one.sh").read_text()
@@ -173,7 +173,12 @@ class PurpleLabSourceTests(unittest.TestCase):
                     / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
         self.assertEqual(vm.count('"PURPLE-C2"'), 1)
+        # Wazuh's vendor-generated password is the one accepted exception.
+        # The fresh install prints it once, but repeating a healthy install
+        # must not print it again or regenerate service credentials.
         self.assertEqual(vm.count("provision-wazuh-all-in-one.sh"), 1)
+        self.assertIn('"bento/debian-12"', vm)
+        self.assertIn(':name => "PURPLE-WAZUH"', vm)
         self.assertIn("box[:provision_scripts]", template)
         self.assertIn("bash ./wazuh-install.sh -a", source)
         self.assertIn("https://packages.wazuh.com/", source)
@@ -197,6 +202,17 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn("nproc", source)
         self.assertIn("debian", source)
         self.assertNotIn("wazuh-install.sh -u", source)
+        self.assertIn('INITIAL PASSWORD - SAVE SECURELY', source)
+        self.assertIn('Wazuh initial dashboard username: admin', source)
+        self.assertIn('indexer_username', source)
+        self.assertIn('indexer_password', source)
+        self.assertIn('admin_password="$(tar -xOf', source)
+        # Output happens inside the service-readiness condition, after the
+        # archive has been validated and never in the all-running fast path.
+        service_ready = source.index('if [[ "$ready" == true ]]')
+        show_password = source.index('INITIAL PASSWORD - SAVE SECURELY')
+        self.assertLess(service_ready, show_password)
+        self.assertLess(source.index('if [[ "$all_running" == true ]]'), show_password)
 
 
 if __name__ == "__main__":

@@ -17,10 +17,11 @@ lab definitions and networking ownership remain unchanged.
 All five guests are defined through one Vagrant/VMware provider file. The
 Windows machines retain standard MINILAB/GOAD AD provisioning. Ubuntu 22.04
 Server is converted to Desktop by an automatic package installation.
-The PURPLE-WAZUH Debian guest now has an opt-in-at-VM-provisioning Wazuh 4.14
-all-in-one bootstrap (manager, indexer, dashboard), automatically run on
-**new** PURPLE-WAZUH Vagrant provisioning. Wazuh agents on the other guests
-remain a separate workstream.
+The PURPLE-WAZUH Debian guest installs the Wazuh 4.14 all-in-one
+stack (manager, indexer, dashboard) on **new** instances and displays its
+generated initial admin password once provisioning finishes successfully.
+Other guest credentials are fixed and require no installer input.
+Wazuh agent enrollment remains a separate workstream.
 
 ## Laptop pilot: reuse existing unallocated VMware segment
 
@@ -127,48 +128,47 @@ contains the C2 definition without needing the in-place helper.
 
 ## Dedicated Sliver trainee on PURPLE-LX01
 
-Fresh PURPLE installations automatically create the `sliver.trainee` local
-**standard user on PURPLE-LX01 only** after Ubuntu Desktop provisioning.
-The source-owned `provision-sliver-trainee.sh` is idempotent: it creates an
-account only when absent, validates existing accounts without replacing them,
-and fails closed on unwanted administrative membership, sudo permissions,
-an unexpected home/shell, or inability to execute regular user programs.
-It does not touch other VMs, the `vagrant` account, SSH keys, or sudoers.
+A fresh PURPLE deployment **automatically creates** a local standard account
+`sliver.trainee` on `PURPLE-LX01` only, with home
+`/home/sliver.trainee`, interactive shell `/bin/bash`, and no sudo,
+administrative or privileged group membership.
 
-The user's home is `/home/sliver.trainee`, interactive shell is `/bin/bash`,
-and a private primary group is created when the account is new. The dotted
-username requires Ubuntu 22.04's `useradd --badname` option. A fresh account
-has **no configured password or SSH key**. Root can validate an interactive
-login shell with `runuser -l`; password-based console/XRDP/SSH login remains
-disabled until the operator explicitly configures a guest-local password.
-No passwords are stored in Git or displayed in provisioning output.
+The credential is a **fixed, deliberately weak lab-only password**:
+`sliver123`. It is stored as a salted SHA-512 password hash in the
+account provisioner, not as plaintext in executable source. The installer
+never prompts for credentials. Reprovisioning reapplies the same password
+and validates the account instead of recreating it.
 
-For the **existing installed pilot**, the generated Vagrantfile does not gain
-new provisioners automatically. Apply only the targeted script over Vagrant's
-existing SSH management channel instead of reinstalling/reprovisioning LX01:
+Do not reuse this account or password outside the isolated training
+environment. The user and password are also documented in
+[DEPLOYMENT.md](DEPLOYMENT.md).
+
+### Existing laptop pilot: apply to LX01 only
+
+The already installed `ef5c0b-purple-vmware` instance retains its original
+generated Vagrantfile. A Git update does not automatically reprovision its
+Linux guest. Once LX01 is powered on, apply **only** the source-owned
+account script using Vagrant SSH. Do not reinstall or reprovision PURPLE.
 
 ```bash
 cd ~/labs/purple-team/Kingdoms
 git fetch origin refs/heads/main
 git show FETCH_HEAD:ad/PURPLE/providers/vmware/provision-sliver-trainee.sh > /tmp/purple-provision-sliver-trainee.sh
-(cd workspace/ef5c0b-purple-vmware/provider && \
-  vagrant upload /tmp/purple-provision-sliver-trainee.sh /tmp/purple-provision-sliver-trainee.sh PURPLE-LX01 && \
-  vagrant ssh PURPLE-LX01 -c 'sudo bash /tmp/purple-provision-sliver-trainee.sh --ensure && sudo bash /tmp/purple-provision-sliver-trainee.sh --verify && sudo rm -f /tmp/purple-provision-sliver-trainee.sh')
+(cd workspace/ef5c0b-purple-vmware/provider &&
+  vagrant upload /tmp/purple-provision-sliver-trainee.sh /tmp/purple-provision-sliver-trainee.sh PURPLE-LX01 &&
+  vagrant ssh PURPLE-LX01 -c 'sudo bash /tmp/purple-provision-sliver-trainee.sh --ensure && sudo bash /tmp/purple-provision-sliver-trainee.sh --verify; result=$?; sudo rm -f /tmp/purple-provision-sliver-trainee.sh; exit "$result"')
 ```
 
-A successful verification outputs `PURPLE_SLIVER_TRAINEE_PRESENT=PASS`,
+A successful run verifies a real login shell, user-owned file execution,
+account UID/group membership, absence of sudo and configured password.
+It reports `PURPLE_SLIVER_TRAINEE_PRESENT=PASS`,
 `PURPLE_SLIVER_TRAINEE_SUDO=DENIED`,
-`PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS`, and
-`PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS`, plus the actual UID/group names.
-The output will say `PASSWORD_LOGIN=REQUIRES_MANUAL_SETUP` until a password
-is explicitly set. To allow normal password-based login later, connect as the
-existing `vagrant` account and run `sudo passwd sliver.trainee`
-interactively; never put a password in scripts, commands, documentation or Git.
+`PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS`,
+`PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS`, and
+`PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED`.
 
-On a **new** five-VM PURPLE install, the canonical provider definition
-automatically invokes this script only for LX01. Repeating provisioning
-validates the account instead of creating duplicates. The existing guest
-is not altered by a Git merge alone.
+This targeted update preserves the existing `vagrant` account and SSH
+configuration; it does not change any other PURPLE VM.
 
 ## Ubuntu Desktop remote access and baseline utilities
 
@@ -308,65 +308,50 @@ must not be represented as a vendor-recommended Wazuh server OS.
 
 ## Automatic Wazuh server installation on new instances
 
-A new `./goad.sh -t install -l PURPLE -p vmware -ip 172.28.233`
-now configures the Debian monitoring guest's static `172.28.233.51/24`
-interface and automatically runs
-`ad/PURPLE/providers/vmware/provision-wazuh-all-in-one.sh` through
-Vagrant SSH. It installs Wazuh's **version-pinned 4.14 all-in-one
-installation assistant** (`wazuh-manager`, `wazuh-indexer`,
-`wazuh-dashboard`), rather than requiring a manual SSH command.
+A **fresh PURPLE deployment** configures the Debian monitoring guest at
+`172.28.233.51` and runs the official version-pinned Wazuh 4.14
+all-in-one assistant through Vagrant. The vendor generates its own
+credentials. **Wazuh is the sole approved exception** to the fixed
+training-password rule.
 
-The script checks 4 vCPUs, approximately 8 GiB RAM, adequate free disk,
-Debian 12 OS identity and the static PURPLE address before installing.
-It is idempotent when all three services are already active. Partial
-installations stop with an actionable error; it will **not** rerun an
-installer over partially present components, remove packages, reset
-passwords, replace certificates or force unsupported OS overrides.
+After the initial installation finishes and all three Wazuh services are
+active, the Vagrant output prints:
 
-Wazuh generates a random admin password during setup. The automation
-keeps the original generated password (no rotation or hardcoded lab secret)
-and verifies the installer preserved a root-owned credential archive before
-reporting success. The assistant's output and archive are kept under
-`/root/purple-wazuh-installer/` and are not printed in Vagrant logs.
-
-Retrieve the existing generated password from Kali through the registered
-PURPLE-WAZUH guest, without changing it:
-
-```bash
-cd ~/labs/purple-team/Kingdoms
-bash scripts/purple-wazuh-credentials.sh \
-  --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" --status
-bash scripts/purple-wazuh-credentials.sh \
-  --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" --show
+```text
+[PURPLE-WAZUH] Dashboard URL: https://172.28.233.51
+[PURPLE-WAZUH] Wazuh initial dashboard username: admin
+[PURPLE-WAZUH][INITIAL PASSWORD - SAVE SECURELY] <vendor-generated-password>
 ```
 
-`--status` only checks recoverability, without printing secrets. Explicit
-`--show` prints existing Wazuh credentials in a terminal; don't paste or
-screenshot that output. The helper also checks the older `/root/` location
-used by the manually installed pilot. No password is committed to Git or
-embedded in a generated Vagrantfile.
+That initial password is shown **once on successful first installation**.
+Do not paste it into chats or publish Vagrant output. The installation log
+and all service passwords remain in a root-only archive inside
+`/root/purple-wazuh-installer/`. A subsequent already-installed run will
+not display or regenerate credentials.
 
-Dashboard target: `https://172.28.233.51`. A valid fresh instance must
-complete the assistant and start all three services before Vagrant
-considers monitoring provisioning successful.
+When needed, the current pilot's credentials remain recoverable with:
 
-**OS caveat:** Wazuh currently recommends supported Ubuntu or RHEL-family
-distributions for its central components; Debian 12 is not on that
-list. The installer runs on the existing Debian 12 lab baseline **without**
-passing a bypass flag. If the official assistant refuses Debian 12,
-the lab installation stops, and the appropriate fix is to switch the
-Wazuh guest to a supported distribution in a separately tested change.
-This source-only integration has not yet been proven in a fresh-instance
-end-to-end install.
+```bash
+bash scripts/purple-wazuh-credentials.sh --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" --status
+bash scripts/purple-wazuh-credentials.sh --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" --show
+```
 
-**Existing installed pilot:** `ef5c0b-purple-vmware` retains its
-previously generated Vagrantfile, so `git pull` by itself does not
-retroactively add this provisioner or reinstall Wazuh there. Continue
-your manual Wazuh setup today; do not reprovision the installed guest.
+A full lab deployment is automatic, **without any user-supplied passwords or
+credential prompts during the installation**. Windows AD and the Linux
+trainee use known, synthetic, fixed training credentials; Wazuh generates
+its own initial credentials and displays the dashboard admin password.
+
+**Compatibility caveat:** Debian 12 is not among the vendor's recommended
+central Wazuh installation operating systems. The script does not force
+unsupported installation. An installation refused by Wazuh remains a
+failure requiring diagnosis, not a successful automatic installation.
+
+The already installed pilot is not changed merely by updating Git. Never
+re-run Wazuh's installer on an existing guest just to show its password.
 
 ## Next phase
 
-- Test the automated Wazuh all-in-one Vagrant provisioning on a **fresh** PURPLE instance; capture Debian 12 installer compatibility evidence.
+- Verify the automated Wazuh all-in-one install and one-time credential output on a **fresh** PURPLE instance; capture Debian 12 compatibility evidence.
 - Enroll Windows and Ubuntu agents, configure Windows Sysmon, and validate the first detection.
 - Preserve independent snapshots, health tests and Vagrant lifecycle.
 - Replace intentionally vulnerable MINILAB credentials before use outside
