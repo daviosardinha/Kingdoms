@@ -98,6 +98,11 @@ def verify_existing_vmware(provider: Path) -> None:
         raise UnsafeExtension("Cannot inspect VMware's registered VM inventory")
     inventory = registry.read_text(encoding='utf-8')
     for path in network.VMX_REGISTRY.findall(inventory):
+        # VMware Workstation also stores UI folder identifiers such as
+        # vmlist6.config = "folder6" in inventory.vmls. They are not VMs.
+        # Skip only that exact synthetic format, never arbitrary missing VMX.
+        if re.fullmatch(r"folder[0-9]+", path):
+            continue
         vmx = Path(path)
         if vmx.is_symlink() or not vmx.is_file():
             raise UnsafeExtension(f"Uninspectable registered VMware guest: {path}")
