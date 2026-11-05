@@ -51,12 +51,12 @@ def extend_vagrantfile(source: str, existing: str) -> tuple[str, bool]:
     match = matches[0]
     body = match.group("body")
     defined = re.findall(r':name => "([^"]+)"', body)
-    if tuple(defined) != ORIGINALS:
-        raise UnsafeExtension("Expected exactly the four original PURPLE machines in order")
+    if tuple(defined) not in (ORIGINALS, ORIGINALS + (C2,)):
+        raise UnsafeExtension("Unexpected or reordered PURPLE machine definitions")
     if '{{ip_range}}' in body or ':vnet => "vmnet4"' not in body:
         raise UnsafeExtension("Generated PURPLE networking does not match the installed pilot")
     if f':name => "{C2}"' in body:
-        if entry in body and body.count(f':name => "{C2}"') == 1:
+        if tuple(defined) == ORIGINALS + (C2,) and entry in body and body.count(f':name => "{C2}"') == 1:
             return existing, False
         raise UnsafeExtension("An incompatible PURPLE-C2 machine is already defined")
     if IP in body or MAC in body:
