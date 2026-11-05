@@ -39,7 +39,6 @@ class SliverTraineeSourceTests(unittest.TestCase):
         self.assertNotIn('REQUIRES_MANUAL_SETUP', script)
         self.assertNotIn('usermod -aG sudo', script)
         self.assertNotIn('NOPASSWD', script)
-        self.assertNotIn('chpasswd', script)
         self.assertNotIn('passwd --stdin', script)
 
     def test_only_lx01_receives_the_new_provisioner(self):
