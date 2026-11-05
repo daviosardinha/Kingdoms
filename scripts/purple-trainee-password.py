@@ -23,7 +23,8 @@ HASH_PATH = Path.home() / ".config/kingdoms/purple-lx01-trainee.sha512"
 SHA512_CRYPT = re.compile(r"\$6\$(?:rounds=[0-9]+\$)?[A-Za-z0-9./]{8,16}\$[A-Za-z0-9./]{86}\Z")
 VM = "PURPLE-LX01"
 REMOTE_SCRIPT = "/tmp/purple-provision-sliver-trainee.sh"
-REMOTE_HASH = "/home/vagrant/.purple-sliver-trainee.sha512"
+REMOTE_DIR = "/home/vagrant/.purple-trainee-private"
+REMOTE_HASH = REMOTE_DIR + "/password.sha512"
 
 
 class PasswordConfigurationError(RuntimeError):
@@ -123,6 +124,8 @@ def apply_existing(provider_dir: Path) -> None:
     provider = validate_provider(provider_dir)
     # Vagrant upload transfers the locally secured hash, not a plaintext password.
     commands = [
+        ["vagrant", "ssh", VM, "-c",
+         "sudo install -d -o vagrant -g vagrant -m 0700 " + REMOTE_DIR],
         ["vagrant", "upload", str(SOURCE), REMOTE_SCRIPT, VM],
         ["vagrant", "upload", str(HASH_PATH), REMOTE_HASH, VM],
         ["vagrant", "ssh", VM, "-c",
