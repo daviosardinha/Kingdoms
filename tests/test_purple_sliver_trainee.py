@@ -32,7 +32,8 @@ class SliverTraineeSourceTests(unittest.TestCase):
         self.assertIn('PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS', script)
         self.assertIn('PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS', script)
         self.assertIn('PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED', script)
-        self.assertIn('HASH_FILE="/home/vagrant/.purple-sliver-trainee.sha512"', script)
+        self.assertIn('HASH_DIR="/home/vagrant/.purple-trainee-private"', script)
+        self.assertIn('HASH_FILE="$HASH_DIR/password.sha512"', script)
         self.assertIn('chpasswd --encrypted', script)
         self.assertIn('PASSWORD_HASH', script)
         self.assertIn('getent shadow "$ACCOUNT"', script)
@@ -56,7 +57,8 @@ class SliverTraineeSourceTests(unittest.TestCase):
         self.assertIn('if box.has_key?(:sliver_trainee_password_hash_file)', provider_template)
         self.assertIn('target.vm.provision :file', provider_template)
         self.assertIn('File.stat(hash_source).mode & 0077', provider_template)
-        self.assertIn('/home/vagrant/.purple-sliver-trainee.sha512', provider_template)
+        self.assertIn('install -d -o vagrant -g vagrant -m 0700', provider_template)
+        self.assertIn('/home/vagrant/.purple-trainee-private/password.sha512', provider_template)
         self.assertLess(provider_template.index('target.vm.provision :file'),
                         provider_template.index('if box.has_key?(:provision_scripts)'))
 
