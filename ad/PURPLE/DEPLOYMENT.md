@@ -151,9 +151,29 @@ reported without preventing LX01, WAZUH or C2 from starting.
 Already-running guests are preserved. No VM is recreated, reprovisioned,
 rearmed, reset or halted.
 
-For the **existing pilot** with a locally modified checkout, use this
-one-liner to load only the current, source-owned start helper into a
-temporary location; do not merge local changes or regenerate provider files:
+For the **existing pilot**, the locally modified
+`goad/provider/vagrant/vmware.py` may prevent a guarded `git restore` and
+the old console will continue calling `vagrant up` and `vagrant halt`.
+The KINGDOMS provider now dispatches PURPLE's four console lifecycle
+commands **before calling the inherited VMware provider**. That lets you
+synchronize only the clean `vmware_kingdoms.py` and
+`purple_existing_start.py`, without touching local `vmware.py` edits.
+
+With all earlier `vagrant up/halt` controllers exited, close the console,
+then from Kali update only those two files. The guarded command refuses
+to overwrite either when it has local changes:
+
+```bash
+cd ~/labs/purple-team/Kingdoms && git fetch origin main && if [ -z "$(git status --porcelain -- goad/provider/vagrant/vmware_kingdoms.py goad/purple_existing_start.py)" ]; then cp -a goad/provider/vagrant/vmware_kingdoms.py "/tmp/purple-kingdoms-provider.$(date +%s).bak" && git restore --source=FETCH_HEAD --worktree -- goad/provider/vagrant/vmware_kingdoms.py goad/purple_existing_start.py && "$HOME/.goad/.venv/bin/python" -m py_compile goad/provider/vagrant/vmware_kingdoms.py goad/purple_existing_start.py && echo '[PASS] PURPLE console start/stop synchronized; vmware.py preserved'; else echo '[BLOCKED] Local lifecycle file changes: inspect before merging'; git status --short -- goad/provider/vagrant/vmware_kingdoms.py goad/purple_existing_start.py; fi
+```
+
+Reopen `./goad.sh` afterward. The PURPLE console should now use direct
+VMware lifecycle for both start and stop, even if the local base provider
+remains modified. Do not run a generic `git pull`, `git reset --hard`,
+or overwrite your local modifications.
+
+If you deliberately prefer not to change *any* checkout source yet,
+you can still use the following temporary standalone command:
 
 ```bash
 cd ~/labs/purple-team/Kingdoms && git fetch origin refs/heads/main && git show FETCH_HEAD:goad/purple_existing_start.py > /tmp/purple-existing-start.py && PYTHONPATH="$PWD" "$HOME/.goad/.venv/bin/python" /tmp/purple-existing-start.py --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"

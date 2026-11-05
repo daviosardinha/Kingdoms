@@ -58,6 +58,15 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
     def start(self, vm_name=None):
         if self._course1_unwired():
             return False
+        # The established PURPLE instance uses VMware's registered VMX
+        # lifecycle, even when the local base vmware.py has unmerged edits.
+        # Route here before any inherited Vagrant WinRM boot handshake.
+        if self.lab_name == 'PURPLE':
+            from goad.purple_existing_start import start_existing_purple
+            if not self.path:
+                Log.error('PURPLE: no existing provider directory selected')
+                return False
+            return start_existing_purple(self.path, vm_name=vm_name)
         return super().start(vm_name=vm_name)
 
     def _require_cached_sudo(self):
@@ -1228,6 +1237,8 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Start one installed guest, plus its router dependency when needed."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            return self.start(vm_name=vm_name)
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().start_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -1240,6 +1251,12 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Stop one instance guest locally; preserve routing for live Windows."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            from goad.purple_existing_start import stop_existing_purple
+            if not self.path:
+                Log.error('PURPLE: no existing provider directory selected')
+                return False
+            return stop_existing_purple(self.path, vm_name=vm_name)
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop_vm(vm_name)
         if vm_name not in self.goad_nomad_windows + ['GOAD-ROUTER']:
@@ -1263,6 +1280,12 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         """Shut down members, then DCs, then the router without Vagrant NAT."""
         if self._course1_unwired():
             return False
+        if self.lab_name == 'PURPLE':
+            from goad.purple_existing_start import stop_existing_purple
+            if not self.path:
+                Log.error('PURPLE: no existing provider directory selected')
+                return False
+            return stop_existing_purple(self.path)
         if self.lab_name not in ('GOAD', 'NORTH'):
             return super().stop()
         if not getattr(self, '_last_bounded_vagrant_reaped', True):
