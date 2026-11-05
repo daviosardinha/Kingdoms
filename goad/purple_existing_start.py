@@ -206,7 +206,7 @@ if ($ip -and $remote.Status -eq 'Running' -and $domain -and $ad) {{
             try:
                 self.power_on(machine, running)
                 booted.append((machine, address, kind))
-            except PurpleStartBlocked as exc:
+            except (PurpleStartBlocked, OSError, subprocess.TimeoutExpired) as exc:
                 Log.error(f"PURPLE: {machine} could not be powered on: {exc}")
                 power_failures.append(machine)
                 # Remaining VMs are independent VMware guests: still bring
