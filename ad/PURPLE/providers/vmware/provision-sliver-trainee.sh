@@ -7,7 +7,8 @@ ACCOUNT="sliver.trainee"
 HOME_DIR="/home/$ACCOUNT"
 EXPECTED_IP="172.28.233.32/24"
 MODE="${1:---ensure}"
-HASH_FILE="/home/vagrant/.purple-sliver-trainee.sha512"
+HASH_DIR="/home/vagrant/.purple-trainee-private"
+HASH_FILE="$HASH_DIR/password.sha512"
 
 die() {
     printf '[PURPLE-LX01][BLOCKED] %s\n' "$*" >&2
@@ -32,6 +33,10 @@ getent passwd vagrant >/dev/null || die "Existing Vagrant SSH identity missing"
 # before changing an account, and always remove the temporary guest copy.
 PASSWORD_HASH=""
 if [[ "$MODE" == "--ensure" ]]; then
+    [[ -d "$HASH_DIR" && ! -L "$HASH_DIR" &&
+       "$(stat -c '%a' "$HASH_DIR")" == "700" &&
+       "$(stat -c '%U' "$HASH_DIR")" == "vagrant" ]] ||
+        die "Password hash directory is not private and owned by vagrant"
     [[ -f "$HASH_FILE" && ! -L "$HASH_FILE" ]] ||
         die "Missing password hash for trainee; initialize it on Kali before provisioning"
     chmod 600 "$HASH_FILE"
