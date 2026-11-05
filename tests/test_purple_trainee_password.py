@@ -80,7 +80,8 @@ class TraineePasswordTests(unittest.TestCase):
             with patch.object(helper, "HASH_PATH", secret), \
                  patch.object(helper.subprocess, "run", side_effect=fake_run):
                 helper.apply_existing(provider)
-            self.assertEqual(len(executed), 3)
+            self.assertEqual(len(executed), 4)
+            self.assertIn("install -d -o vagrant -g vagrant -m 0700", executed[0][-1])
             self.assertTrue(all("PURPLE-LX01" in c for c in executed))
             self.assertFalse(any("PURPLE-WS01" in str(c) or "PURPLE-C2" in str(c)
                                  for c in executed))
