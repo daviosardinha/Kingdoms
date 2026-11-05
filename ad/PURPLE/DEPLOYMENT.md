@@ -168,9 +168,49 @@ reports **incomplete readiness**, but leaves powered-on machines intact
 for investigation. Do not misinterpret VMware desktop visibility as
 successful domain authentication or lab readiness.
 
+### Shut down an installed lab without Vagrant's WinRM halt
+
+PURPLE's `stop` and `stop_vm <name>` console commands now use the same
+bounded local VMware shutdown lifecycle as KINGDOMS. The helper validates
+the registered VMX identities and checks that **no previous Vagrant up/halt
+controller for this PURPLE instance is still active**. It never sends a
+process-group kill, touches VM monitors, resets snapshots, or recreates VMs.
+
+Shut down members first in order **C2 → WAZUH → LX01 → WS01 → DC01**.
+For each running VM, request a VMware Tools **soft** shutdown (host command
+capped at 45 seconds), then give the guest up to 120 seconds to stop.
+Only if VMware positively confirms it remains running does the helper use
+a **hard** stop as a last resort, followed by a bounded 30-second final
+power-state check. A timed-out soft-stop can already have been accepted by
+Windows; this grace period prevents premature hard power-off.
+An unreadable VMware running inventory **never** authorizes a hard stop.
+A hard stop can cause data loss, especially on Wazuh; the fallback is only
+used when graceful shutdown is proven unsuccessful.
+
+If WS01 still runs after all attempts, the helper continues with other
+independent guests but **preserves DC01** and reports an incomplete stop.
+If any guest cannot be verified as stopped, it returns an error rather
+than claiming success. `stop_vm` affects only the specified registered
+guest and refuses to stop DC01 while WS01 is running.
+
+On your existing pilot, after the old `vagrant halt` controller has
+completely exited, run only the latest helper without pulling over your
+local changes:
+
+```bash
+cd ~/labs/purple-team/Kingdoms && git fetch origin refs/heads/main && git show FETCH_HEAD:goad/purple_existing_start.py > /tmp/purple-existing-start.py && PYTHONPATH="$PWD" "$HOME/.goad/.venv/bin/python" /tmp/purple-existing-start.py --action stop --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"
+```
+
+To start the same installed range afterward:
+
+```bash
+PYTHONPATH="$PWD" "$HOME/.goad/.venv/bin/python" /tmp/purple-existing-start.py --action start --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"
+```
+
 **Fresh install is unchanged** and still uses Vagrant provisioning;
-this helper is only for already-installed guests. Raw `vagrant up`
-is not the supported PURPLE cold-start workflow.
+the direct VMware helper is only for already-installed guests. Raw
+`vagrant up` / `vagrant halt` is not the supported PURPLE cold-start
+or shutdown workflow.
 
 ## 7. Manual security activities
 

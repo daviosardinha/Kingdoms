@@ -76,6 +76,7 @@ class PurpleExistingStartTests(unittest.TestCase):
             if machine in fails:
                 raise PurpleStartBlocked("WinRM not ready")
 
+        instance.ensure_no_competing_vagrant = Mock()
         instance.running_vmxs = Mock(return_value=set())
         instance.power_on = power
         instance.wait_ready = ready
