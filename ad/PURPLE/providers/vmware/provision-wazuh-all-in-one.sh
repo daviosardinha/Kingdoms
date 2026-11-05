@@ -80,9 +80,9 @@ if ! bash ./wazuh-install.sh -a > "${WORK_DIR}/install.log" 2>&1; then
     fail "Wazuh assistant failed. Inspect ${WORK_DIR}/install.log in the guest (contains secrets). No forced reinstall attempted"
 fi
 
-# Wazuh generates random credentials; installation is NOT complete until
-# they can be recovered from its official archive. Never scrape the
-# installer's terminal log or export passwords into Vagrant/GitHub output.
+# Wazuh generates unique credentials. Preserve all of them in its root-only
+# archive, then show only the dashboard admin password once AFTER successful
+# first-time installation. Vagrant console output may be retained in logs.
 ARCHIVE="${WORK_DIR}/wazuh-install-files.tar"
 PASSWORD_MEMBER="wazuh-install-files/wazuh-passwords.txt"
 [[ -s "$ARCHIVE" ]] || fail "Wazuh finished without its password archive: ${ARCHIVE}; preserve the private install.log for recovery"
@@ -95,7 +95,32 @@ fi
 chown root:root "$ARCHIVE" "${WORK_DIR}/install.log"
 chmod 0600 "$ARCHIVE" "${WORK_DIR}/install.log"
 chmod 0700 "$WORK_DIR"
-log "Generated Wazuh credentials saved in a verified root-only archive (not shown in logs)"
+log "Generated Wazuh credentials preserved in a verified root-only archive"
+
+# Extract only the indexer 'admin' credential from the official archive.
+# The small YAML-like Wazuh password file uses indexer_username/indexer_password
+# pairs. Parse it without executing its contents, and reject ambiguous entries.
+# Do not reveal the password until ALL monitoring services are running.
+admin_password="$(tar -xOf "$ARCHIVE" "$PASSWORD_MEMBER" | python3 -c '
+import sys
+seen_admin = False
+passwords = []
+for line in sys.stdin:
+    key, sep, value = line.partition(":")
+    if not sep:
+        continue
+    key, value = key.strip(), value.strip()
+    if len(value) >= 2 and value[0] in ("\x27", "\x22") and value[-1] == value[0]:
+        value = value[1:-1]
+    if key == "indexer_username":
+        seen_admin = value == "admin"
+    elif key == "indexer_password" and seen_admin:
+        passwords.append(value)
+if len(passwords) != 1 or not passwords[0] or any(ch.isspace() for ch in passwords[0]):
+    sys.exit(1)
+print(passwords[0])
+')" || fail "Cannot safely extract exactly one Wazuh dashboard admin password"
+[[ -n "$admin_password" ]] || fail "Dashboard admin password is empty"
 
 # Services may still need time for indexer and dashboard initialization.
 for attempt in $(seq 1 60); do
@@ -106,7 +131,11 @@ for attempt in $(seq 1 60); do
     if [[ "$ready" == true ]]; then
         log "All Wazuh services active"
         log "Dashboard URL: https://${EXPECTED_IP}"
-        log "Installer credentials/archive are root-only under ${WORK_DIR}"
+        log "Wazuh initial dashboard username: admin"
+        printf '[PURPLE-WAZUH][INITIAL PASSWORD - SAVE SECURELY] %s\n' "$admin_password"
+        log "This password is printed once at successful first install, and may be retained in deployment logs"
+        log "Other installer credentials remain root-only under ${WORK_DIR}"
+        unset admin_password
         exit 0
     fi
     sleep 5
