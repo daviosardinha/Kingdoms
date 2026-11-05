@@ -15,6 +15,12 @@ if [[ "${1:-}" == "--north" ]]; then
     exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
       python3 -m goad.course1_host_network_apply diagnose "$@"
   fi
+  if [[ "${1:-}" == "register-foreign-nat" ]]; then
+    shift
+    [[ ${EUID} -eq 0 ]] || { echo "[BLOCKED] sudo required for explicit NORTH/PURPLE registration" >&2; exit 1; }
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_foreign_nat register "$@"
+  fi
   if [[ "${1:-}" == "verify" ]]; then
     shift
     # Installed-owner attestation is read-only and must inspect root-owned
