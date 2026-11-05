@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import socket
+import psutil
 import subprocess
 import time
 
@@ -186,6 +187,126 @@ if ($ip -and $remote.Status -eq 'Running' -and $domain -and $ad) {{
             "check in-guest network and management service (no Vagrant retry attempted)"
         )
 
+    def ensure_no_competing_vagrant(self) -> None:
+        """Do not race an existing Vagrant controller for the same instance.
+
+        A user may have interrupted a stuck 'vagrant halt', leaving its Ruby
+        helper alive. Observe only: never kill a process or its VMware children.
+        KINGDOMS likewise refuses a second operation after incomplete cleanup.
+        """
+        for process in psutil.process_iter(attrs=("pid", "cmdline", "cwd")):
+            try:
+                info = process.info
+                cmd = info.get("cmdline") or []
+                if not cmd or not any(Path(str(arg)).name in
+                                      ("vagrant", "vagrant.exe") for arg in cmd):
+                    continue
+                if not any(str(arg) in ("halt", "up", "provision", "reload")
+                           for arg in cmd):
+                    continue
+                cwd = info.get("cwd")
+                if cwd and Path(cwd).resolve() == self.provider:
+                    raise PurpleStartBlocked(
+                        f"Vagrant controller PID {info['pid']} is still acting on "
+                        "this PURPLE instance. End/reap it before retrying; "
+                        "do not race its VMware guest operations."
+                    )
+            except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                continue
+            except psutil.AccessDenied:
+                # Ignore unreadable unrelated processes. The known current
+                # user's Vagrant controller should be inspectable by owner.
+                continue
+
+    def wait_stopped(self, machine: str, timeout: int) -> bool:
+        """Use VMware's authoritative running inventory, not a WinRM reply."""
+        vmx = str(self.vmx[machine])
+        deadline = time.monotonic() + timeout
+        while True:
+            if vmx not in self.running_vmxs():
+                return True
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False
+            time.sleep(min(3, left))
+
+    def stop_one(self, machine: str) -> bool:
+        """KINGDOMS policy: bounded Tools soft stop, verify, hard only last."""
+        vmx = str(self.vmx[machine])
+        if vmx not in self.running_vmxs():
+            Log.info(f"PURPLE: {machine} already stopped")
+            return True
+        Log.info(f"PURPLE: requesting VMware Tools soft shutdown for {machine}")
+        try:
+            self.vmrun("stop", vmx, "soft", timeout=45)
+        except (PurpleStartBlocked, OSError, subprocess.TimeoutExpired) as exc:
+            Log.warning(f"PURPLE: {machine} soft-stop command did not complete: "
+                        f"{type(exc).__name__}; allowing grace period")
+        # The vmrun host command can time out after Windows accepted a stop.
+        # Always allow the bounded grace period before a hard power cut.
+        if self.wait_stopped(machine, timeout=120):
+            Log.success(f"PURPLE: {machine} stopped gracefully")
+            return True
+        # A fresh, trustworthy VMware inventory is mandatory before
+        # escalating. Unknown VM power state never authorizes a hard stop.
+        if vmx not in self.running_vmxs():
+            return True
+        Log.warning(f"PURPLE: {machine} still powered on after soft shutdown; "
+                    "using final VMware hard-stop fallback")
+        try:
+            self.vmrun("stop", vmx, "hard", timeout=30)
+        except (PurpleStartBlocked, OSError, subprocess.TimeoutExpired) as exc:
+            Log.warning(f"PURPLE: {machine} hard-stop command result unclear: "
+                        f"{type(exc).__name__}; verifying actual power state")
+        if self.wait_stopped(machine, timeout=30):
+            Log.success(f"PURPLE: {machine} stopped (hard fallback)")
+            return True
+        Log.error(f"PURPLE: {machine} is still running after bounded shutdown")
+        return False
+
+    def stop(self, vm_name: str | None = None) -> bool:
+        """Stop members before DC, preserving dependency on partial failure.
+
+        Never call vagrant halt or touch another lab's guest. One broken
+        Windows guest cannot prevent independent Linux guests from stopping.
+        """
+        names = [machine for machine, _, _ in ROSTER]
+        if vm_name is not None and vm_name not in names:
+            raise PurpleStartBlocked(f"Unsupported PURPLE guest: {vm_name}")
+        self.ensure_no_competing_vagrant()
+        running = self.running_vmxs()
+        targets = (tuple(reversed(names)) if vm_name is None
+                   else (vm_name,))
+        failed = []
+        for machine in targets:
+            if machine == "PURPLE-DC01":
+                # Keep the domain controller available if a dependent
+                # workstation could not be stopped. For full range stop, do
+                # not strand a guest during a partial Windows shutdown.
+                if str(self.vmx["PURPLE-WS01"]) in self.running_vmxs():
+                    Log.warning("PURPLE: WS01 still running; preserving DC01 "
+                                "until its dependent workstation shuts down")
+                    failed.append(machine)
+                    continue
+            try:
+                if not self.stop_one(machine):
+                    failed.append(machine)
+            except (PurpleStartBlocked, OSError, subprocess.TimeoutExpired) as exc:
+                Log.error(f"PURPLE: {machine} shutdown could not be verified: {exc}")
+                failed.append(machine)
+                # Continue with other independent registered guests.
+        final_running = self.running_vmxs()
+        still_on = [machine for machine in targets
+                    if str(self.vmx[machine]) in final_running]
+        if failed or still_on:
+            not_stopped = sorted(set(failed + still_on))
+            Log.error("PURPLE: shutdown incomplete; still running/blocked: "
+                      + ", ".join(not_stopped))
+            return False
+        Log.success("PURPLE: requested VMs stopped and VMware power state verified "
+                    "(no Vagrant WinRM shutdown handshake)")
+        return True
+
     def start(self, vm_name: str | None = None) -> bool:
         names = [row[0] for row in ROSTER]
         if vm_name is not None and vm_name not in names:
@@ -237,10 +358,21 @@ def start_existing_purple(provider_dir: str | Path, vm_name: str | None = None) 
         Log.error(f"PURPLE: installed-guest startup blocked: {exc}")
         return False
 
+
+def stop_existing_purple(provider_dir: str | Path, vm_name: str | None = None) -> bool:
+    try:
+        return ExistingPurpleStarter(provider_dir).stop(vm_name=vm_name)
+    except (PurpleStartBlocked, OSError, subprocess.TimeoutExpired) as exc:
+        Log.error(f"PURPLE: installed-guest shutdown blocked: {exc}")
+        return False
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider-dir", required=True, type=Path)
     parser.add_argument("--vm", choices=[row[0] for row in ROSTER])
+    parser.add_argument("--action", choices=("start", "stop"), default="start")
     args = parser.parse_args()
-    raise SystemExit(0 if start_existing_purple(args.provider_dir, args.vm) else 1)
+    action = start_existing_purple if args.action == "start" else stop_existing_purple
+    raise SystemExit(0 if action(args.provider_dir, args.vm) else 1)
