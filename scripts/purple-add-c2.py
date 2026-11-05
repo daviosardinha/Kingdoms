@@ -50,8 +50,9 @@ def extend_vagrantfile(source: str, existing: str) -> tuple[str, bool]:
         raise UnsafeExtension("Expected exactly one top-level boxes array")
     match = matches[0]
     body = match.group("body")
-    if any(body.count(f':name => "{name}"') != 1 for name in ORIGINALS):
-        raise UnsafeExtension("The four original PURPLE machine definitions are not intact")
+    defined = re.findall(r':name => "([^"]+)"', body)
+    if tuple(defined) != ORIGINALS:
+        raise UnsafeExtension("Expected exactly the four original PURPLE machines in order")
     if '{{ip_range}}' in body or ':vnet => "vmnet4"' not in body:
         raise UnsafeExtension("Generated PURPLE networking does not match the installed pilot")
     if f':name => "{C2}"' in body:
