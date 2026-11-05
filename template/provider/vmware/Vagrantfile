@@ -147,6 +147,21 @@ boxes.append(
         end
       end
 
+      # Optional host-private, prehashed LX01 training credential. This key is
+      # defined on PURPLE-LX01 only. Never place passwords or hashes in Git,
+      # generated Vagrantfiles, process arguments, or Vagrant shell logs.
+      if box.has_key?(:sliver_trainee_password_hash_file)
+        hash_source = box[:sliver_trainee_password_hash_file]
+        unless File.file?(hash_source) && !File.symlink?(hash_source) &&
+               File.stat(hash_source).uid == Process.uid &&
+               (File.stat(hash_source).mode & 0077).zero?
+          raise "PURPLE-LX01: initialize private trainee hash first: python3 scripts/purple-trainee-password.py init"
+        end
+        target.vm.provision :file,
+          :source => hash_source,
+          :destination => "/home/vagrant/.purple-sliver-trainee.sha512"
+      end
+
       if box.has_key?(:provision_scripts)
         box[:provision_scripts].each do |script|
           target.vm.provision :shell, :path => script, privileged: true
