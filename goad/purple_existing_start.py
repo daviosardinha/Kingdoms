@@ -236,3 +236,11 @@ def start_existing_purple(provider_dir: str | Path, vm_name: str | None = None) 
     except (PurpleStartBlocked, OSError, subprocess.TimeoutExpired) as exc:
         Log.error(f"PURPLE: installed-guest startup blocked: {exc}")
         return False
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--provider-dir", required=True, type=Path)
+    parser.add_argument("--vm", choices=[row[0] for row in ROSTER])
+    args = parser.parse_args()
+    raise SystemExit(0 if start_existing_purple(args.provider_dir, args.vm) else 1)
