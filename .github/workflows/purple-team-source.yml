@@ -12,7 +12,6 @@ on:
       - 'goad/provider/vagrant/vmware.py'
       - 'scripts/purple-ws01-vmware-eval.py'
       - 'scripts/purple-add-c2.py'
-      - 'scripts/purple-trainee-password.py'
       - 'template/provider/vmware/Vagrantfile'
       - 'tests/test_purple_*.py'
       - '.github/workflows/purple-team-source.yml'
@@ -29,7 +28,7 @@ jobs:
           python-version: '3.11'
       - name: Compile edited Python modules and tests
         run: |
-          python -m py_compile goad/purple_vmware_network.py goad/course1_host_network_apply.py goad/provider/vagrant/vmware.py scripts/purple-ws01-vmware-eval.py scripts/purple-add-c2.py scripts/purple-trainee-password.py tests/test_purple_trainee_password.py tests/test_purple_add_c2.py tests/test_purple_vmware_network.py tests/test_purple_lab_source.py tests/test_purple_ws01_install_recovery.py
+          python -m py_compile goad/purple_vmware_network.py goad/course1_host_network_apply.py goad/provider/vagrant/vmware.py scripts/purple-ws01-vmware-eval.py scripts/purple-add-c2.py tests/test_purple_add_c2.py tests/test_purple_vmware_network.py tests/test_purple_lab_source.py tests/test_purple_ws01_install_recovery.py
       - name: Check Wazuh provisioning shell syntax
         run: |
           bash -n ad/PURPLE/providers/vmware/provision-ubuntu-desktop.sh
@@ -38,4 +37,4 @@ jobs:
           bash -n scripts/purple-wazuh-credentials.sh
       - name: Execute offline Purple Team regressions
         run: |
-          python -m unittest tests.test_purple_add_c2 tests.test_purple_lab_source tests.test_purple_sliver_trainee tests.test_purple_trainee_password tests.test_purple_vmware_network tests.test_purple_ws01_install_recovery -v
+          python -m unittest tests.test_purple_add_c2 tests.test_purple_lab_source tests.test_purple_sliver_trainee tests.test_purple_vmware_network tests.test_purple_ws01_install_recovery -v
