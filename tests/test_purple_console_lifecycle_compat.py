@@ -32,6 +32,7 @@ def extract_runtime():
         keywords=[], body=methods, decorator_list=[])
     ast.fix_missing_locations(node)
     scope = {
+        "__name__": "purple_console_lifecycle_offline",
         "LegacyVmwareBase": base,
         "Log": SimpleNamespace(error=lambda *_: None)
     }
