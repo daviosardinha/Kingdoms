@@ -31,7 +31,12 @@ class SliverTraineeSourceTests(unittest.TestCase):
         self.assertIn('PURPLE_SLIVER_TRAINEE_SUDO=DENIED', script)
         self.assertIn('PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS', script)
         self.assertIn('PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS', script)
-        self.assertIn('PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=REQUIRES_MANUAL_SETUP', script)
+        self.assertIn('PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED', script)
+        self.assertIn('HASH_FILE="/home/vagrant/.purple-sliver-trainee.sha512"', script)
+        self.assertIn('chpasswd --encrypted', script)
+        self.assertIn('PASSWORD_HASH', script)
+        self.assertIn('getent shadow "$ACCOUNT"', script)
+        self.assertNotIn('REQUIRES_MANUAL_SETUP', script)
         self.assertNotIn('usermod -aG sudo', script)
         self.assertNotIn('NOPASSWD', script)
         self.assertNotIn('chpasswd', script)
@@ -46,6 +51,15 @@ class SliverTraineeSourceTests(unittest.TestCase):
         self.assertNotIn('provision-sliver-trainee.sh', vm[:start])
         self.assertNotIn('provision-sliver-trainee.sh', vm[end:])
         self.assertLess(vm.index('provision-ubuntu-desktop.sh'), vm.index('provision-sliver-trainee.sh'))
+        self.assertEqual(vm.count(':sliver_trainee_password_hash_file =>'), 1)
+        self.assertIn('purple-lx01-trainee.sha512', vm[start:end])
+        provider_template = (ROOT / "template/provider/vmware/Vagrantfile").read_text()
+        self.assertIn('if box.has_key?(:sliver_trainee_password_hash_file)', provider_template)
+        self.assertIn('target.vm.provision :file', provider_template)
+        self.assertIn('File.stat(hash_source).mode & 0077', provider_template)
+        self.assertIn('/home/vagrant/.purple-sliver-trainee.sha512', provider_template)
+        self.assertLess(provider_template.index('target.vm.provision :file'),
+                        provider_template.index('if box.has_key?(:provision_scripts)'))
 
 
 if __name__ == "__main__":
