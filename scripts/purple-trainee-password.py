@@ -30,7 +30,9 @@ class PasswordConfigurationError(RuntimeError):
     pass
 
 
-def check_hash_file(path: Path = HASH_PATH) -> str:
+def check_hash_file(path: Path | None = None) -> str:
+    if path is None:
+        path = HASH_PATH
     if path.is_symlink() or not path.is_file():
         raise PasswordConfigurationError("Password hash file is absent or a symlink; run init")
     metadata = path.stat()
