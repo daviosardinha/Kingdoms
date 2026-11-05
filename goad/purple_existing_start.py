@@ -52,7 +52,7 @@ def owned_vmx(provider: Path, machine: str) -> Path:
     if (not target.is_absolute() or target.is_symlink() or not target.is_file()):
         raise PurpleStartBlocked(f"{machine} has no valid existing VMX")
     parent = identity.parent.resolve(strict=True)
-    if target.resolve(strict=True).parent != parent:
+    if not target.resolve(strict=True).is_relative_to(parent):
         raise PurpleStartBlocked(f"{machine} VMX is not owned by this instance")
     if target.suffix.lower() != ".vmx":
         raise PurpleStartBlocked(f"{machine} VM identity does not point to a VMX")
