@@ -56,6 +56,27 @@ class VmwareProvider(VagrantProvider):
             return self.start(vm_name=vm_name)
         return super().start_vm(vm_name)
 
+    def stop(self):
+        # Mirror KINGDOMS' installed-instance direct VMware lifecycle.
+        # Vagrant halt can hang at a visible WS01 desktop while it waits on
+        # the WinRM communicator; direct vmrun soft stop has bounded fallback.
+        if self.lab_name == 'PURPLE':
+            from goad.purple_existing_start import stop_existing_purple
+            if self.path is None:
+                Log.error('PURPLE: no installed provider selected')
+                return False
+            return stop_existing_purple(self.path)
+        return super().stop()
+
+    def stop_vm(self, vm_name):
+        if self.lab_name == 'PURPLE':
+            from goad.purple_existing_start import stop_existing_purple
+            if self.path is None:
+                Log.error('PURPLE: no installed provider selected')
+                return False
+            return stop_existing_purple(self.path, vm_name=vm_name)
+        return super().stop_vm(vm_name)
+
     def _vmx_path(self, machine):
         machine_id = os.path.join(
             str(self.path), '.vagrant', 'machines', machine, 'vmware_desktop', 'id'
