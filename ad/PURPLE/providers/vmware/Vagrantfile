@@ -15,7 +15,8 @@ boxes = [
     ],
     :lab_linux_config_script => "../../../ad/PURPLE/providers/vmware/configure-linux-interface.sh",
     :provision_scripts => [
-      "../../../ad/PURPLE/providers/vmware/provision-ubuntu-desktop.sh"
+      "../../../ad/PURPLE/providers/vmware/provision-ubuntu-desktop.sh",
+      "../../../ad/PURPLE/providers/vmware/provision-sliver-trainee.sh"
     ] },
   { :name => "PURPLE-WAZUH", :ip => "{{ip_range}}.51",
     :box => "bento/debian-12", :box_version => "202510.26.0",

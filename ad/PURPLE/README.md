@@ -125,6 +125,51 @@ For a **fresh** PURPLE deployment, C2 is brought up after LX01 and Wazuh
 within the normal PURPLE provider lifecycle. The generated Vagrantfile
 contains the C2 definition without needing the in-place helper.
 
+## Dedicated Sliver trainee on PURPLE-LX01
+
+Fresh PURPLE installations automatically create the `sliver.trainee` local
+**standard user on PURPLE-LX01 only** after Ubuntu Desktop provisioning.
+The source-owned `provision-sliver-trainee.sh` is idempotent: it creates an
+account only when absent, validates existing accounts without replacing them,
+and fails closed on unwanted administrative membership, sudo permissions,
+an unexpected home/shell, or inability to execute regular user programs.
+It does not touch other VMs, the `vagrant` account, SSH keys, or sudoers.
+
+The user's home is `/home/sliver.trainee`, interactive shell is `/bin/bash`,
+and a private primary group is created when the account is new. The dotted
+username requires Ubuntu 22.04's `useradd --badname` option. A fresh account
+has **no configured password or SSH key**. Root can validate an interactive
+login shell with `runuser -l`; password-based console/XRDP/SSH login remains
+disabled until the operator explicitly configures a guest-local password.
+No passwords are stored in Git or displayed in provisioning output.
+
+For the **existing installed pilot**, the generated Vagrantfile does not gain
+new provisioners automatically. Apply only the targeted script over Vagrant's
+existing SSH management channel instead of reinstalling/reprovisioning LX01:
+
+```bash
+cd ~/labs/purple-team/Kingdoms
+git fetch origin refs/heads/main
+git show FETCH_HEAD:ad/PURPLE/providers/vmware/provision-sliver-trainee.sh > /tmp/purple-provision-sliver-trainee.sh
+(cd workspace/ef5c0b-purple-vmware/provider && \
+  vagrant upload /tmp/purple-provision-sliver-trainee.sh /tmp/purple-provision-sliver-trainee.sh PURPLE-LX01 && \
+  vagrant ssh PURPLE-LX01 -c 'sudo bash /tmp/purple-provision-sliver-trainee.sh --ensure && sudo bash /tmp/purple-provision-sliver-trainee.sh --verify && sudo rm -f /tmp/purple-provision-sliver-trainee.sh')
+```
+
+A successful verification outputs `PURPLE_SLIVER_TRAINEE_PRESENT=PASS`,
+`PURPLE_SLIVER_TRAINEE_SUDO=DENIED`,
+`PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS`, and
+`PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS`, plus the actual UID/group names.
+The output will say `PASSWORD_LOGIN=REQUIRES_MANUAL_SETUP` until a password
+is explicitly set. To allow normal password-based login later, connect as the
+existing `vagrant` account and run `sudo passwd sliver.trainee`
+interactively; never put a password in scripts, commands, documentation or Git.
+
+On a **new** five-VM PURPLE install, the canonical provider definition
+automatically invokes this script only for LX01. Repeating provisioning
+validates the account instead of creating duplicates. The existing guest
+is not altered by a Git merge alone.
+
 ## Ubuntu Desktop remote access and baseline utilities
 
 Starting with the PURPLE-LX01 desktop-access follow-up, **fresh**
