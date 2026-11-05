@@ -17,9 +17,9 @@ from pathlib import Path
 NETWORKING = Path("/etc/vmware/networking")
 VMNET = "vmnet4"
 CIDR = ipaddress.ip_network("172.28.233.0/24")
-PROPOSED_HOSTS = (30, 31, 32, 51)
+PROPOSED_HOSTS = (30, 31, 32, 51, 60)
 MACS = frozenset(
-    f"00:50:56:10:04:{suffix:02x}" for suffix in (0x30, 0x31, 0x32, 0x51)
+    f"00:50:56:10:04:{suffix:02x}" for suffix in (0x30, 0x31, 0x32, 0x51, 0x60)
 )
 VMX_REGISTRY = re.compile(r'(?m)^vmlist\d+\.config\s*=\s*"([^"]+)"')
 VMX_NET = re.compile(r'(?im)^\s*ethernet\d+\.vnet\s*=\s*"([^"]+)"')
