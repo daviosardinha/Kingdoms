@@ -29,7 +29,7 @@ class UnsafeExtension(RuntimeError):
 
 def c2_definition(source: str) -> str:
     matches = list(re.finditer(
-        r'(?ms)^  \{ :name => "PURPLE-C2".*?^    \] \}(?=\n|$)', source
+        r'(?ms)^  \{ :name => "PURPLE-C2".*?^    :lab_linux_config_script => "[^"]+" \}(?=\n|$)', source
     ))
     if len(matches) != 1:
         raise UnsafeExtension("Canonical PURPLE-C2 definition missing or duplicated")
