@@ -157,9 +157,12 @@ boxes.append(
                (File.stat(hash_source).mode & 0077).zero?
           raise "PURPLE-LX01: initialize private trainee hash first: python3 scripts/purple-trainee-password.py init"
         end
+        target.vm.provision :shell,
+          :inline => "install -d -o vagrant -g vagrant -m 0700 /home/vagrant/.purple-trainee-private",
+          :privileged => true
         target.vm.provision :file,
           :source => hash_source,
-          :destination => "/home/vagrant/.purple-sliver-trainee.sha512"
+          :destination => "/home/vagrant/.purple-trainee-private/password.sha512"
       end
 
       if box.has_key?(:provision_scripts)
