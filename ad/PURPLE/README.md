@@ -1,9 +1,10 @@
-# Purple Team (PURPLE) - independent four-VM VMware baseline
+# Purple Team (PURPLE) - independent five-VM VMware lab
 <img width="1448" height="1086" alt="Purple Team Lab Network Topology" src="https://github.com/user-attachments/assets/331b200e-c804-4e5e-8ceb-b238f7190d5c" />
 
-PURPLE is a new lab in KINGDOMS, based on MINILAB. It is developed **only**
-on the dedicated `feature/purple-team-four-vm` branch. NORTH, WSLPE and
-KINGDOMS lab definitions and networking ownership are unchanged.
+PURPLE is a separate lab in KINGDOMS, based on MINILAB. The original four-VM
+pilot was merged to `main`; its fifth machine, `PURPLE-C2`, is a standalone
+Debian 12 host for later manual C2 installation. NORTH, WSLPE and KINGDOMS
+lab definitions and networking ownership remain unchanged.
 
 | Guest | OS | Address | RAM |
 | --- | --- | --- | --- |
@@ -11,8 +12,9 @@ KINGDOMS lab definitions and networking ownership are unchanged.
 | PURPLE-WS01 | Windows 10 domain workstation | 172.28.233.31 | 4 GB |
 | PURPLE-LX01 | Ubuntu 22.04 Desktop | 172.28.233.32 | 4 GB |
 | PURPLE-WAZUH | Debian 12 / clean Wazuh host | 172.28.233.51 | 8 GB, 4 vCPUs |
+| PURPLE-C2 | Debian 12 / unconfigured C2 server | 172.28.233.60 | 4 GB, 2 vCPUs |
 
-All four guests are created through one Vagrant/VMware provider file. The
+All five guests are defined through one Vagrant/VMware provider file. The
 Windows machines retain standard MINILAB/GOAD AD provisioning. Ubuntu 22.04
 Server is converted to Desktop by an automatic package installation.
 The PURPLE-WAZUH Debian guest now has an opt-in-at-VM-provisioning Wazuh 4.14
@@ -31,8 +33,10 @@ We must **prove vmnet4 is not used by another registered VM** before
 starting. The PURPLE preflight checks the network, host route and registered
 VMX/MAC ownership, and fails closed on conflicts.
 
-PURPLE itself still automatically creates all four VMs and configures
-static IPs on their lab-facing NICs, plus Ubuntu Desktop packages.
+New PURPLE instances create all five VMs and configure static IPs on their
+lab-facing NICs, plus Ubuntu Desktop packages. Existing instances need the
+targeted C2 extension below; changing the source template does not mutate an
+already generated provider file.
 The Vagrant management NAT adapter remains attached during provisioning,
 so this is not a malware-safe, deny-by-default exercise environment.
 
@@ -71,6 +75,55 @@ The provider checks vmnet4 **before starting any VM**. Do not run the
 installation until the read-only preflight and generated Vagrantfile review
 pass. Never create vmnet40 through the editor on the currently NORTH-owned
 host, since NORTH's immutable verifier would reject it.
+
+## Add PURPLE-C2 to the existing four-VM pilot without reinstalling
+
+**Targeted expansion only.** The installed `ef5c0b-purple-vmware` pilot retains
+its generated `provider/Vagrantfile`. Do not rerun `./goad.sh -t install`,
+`vagrant up` without a machine name, or the original strict new-instance
+PURPLE preflight: the latter intentionally rejects an already occupied vmnet4.
+
+The new guest is `PURPLE-C2` (guest hostname `c2`), Debian 12
+`bento/debian-12` `202510.26.0`, 2 vCPUs and 4096 MiB RAM, at
+`172.28.233.60/24` with reserved MAC `00:50:56:10:04:60` on `vmnet4`.
+The Vagrant management NAT adapter stays enabled for first boot and SSH.
+Only the existing `configure-linux-interface.sh` runs automatically.
+**No Sliver, Wazuh agent, listener, payload, or operator configuration is
+installed by this addition.** Existing four VMX files are not modified.
+
+On the laptop checkout containing this change, run the source tests and
+preview the additive change:
+
+```bash
+cd ~/labs/purple-team/Kingdoms
+python3 -m unittest tests.test_purple_lab_source tests.test_purple_vmware_network tests.test_purple_add_c2 -v
+python3 scripts/purple-add-c2.py --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"
+```
+
+After reviewing the preview, run the guarded extension and start **only** C2:
+
+```bash
+python3 scripts/purple-add-c2.py --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider" --apply
+(cd workspace/ef5c0b-purple-vmware/provider && vagrant up PURPLE-C2)
+```
+
+The helper verifies the unchanged `vmnet4` host configuration and registered
+VMX ownership, rejects unexpected/duplicate machine definitions, saves
+`Vagrantfile.pre-purple-c2.bak`, and atomically adds the C2 definition.
+It is idempotent. If ownership or network checks fail, investigate the
+local state rather than bypassing the guard. An IP already in use by a
+non-registered/non-VMware device cannot be excluded by inventory inspection;
+verify `.60` is free before first boot.
+
+Check only the added VM and then connect via Vagrant SSH:
+
+```bash
+(cd workspace/ef5c0b-purple-vmware/provider && vagrant status PURPLE-C2 && vagrant ssh PURPLE-C2)
+```
+
+For a **fresh** PURPLE deployment, C2 is brought up after LX01 and Wazuh
+within the normal PURPLE provider lifecycle. The generated Vagrantfile
+contains the C2 definition without needing the in-place helper.
 
 ## Ubuntu Desktop remote access and baseline utilities
 
