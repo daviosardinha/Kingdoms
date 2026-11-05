@@ -6,6 +6,7 @@ Tests never run vmrun or alter a VM.
 """
 import ast
 from pathlib import Path
+import re
 import subprocess
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -41,6 +42,7 @@ def isolated_starter():
            "PurpleStartBlocked": PurpleStartBlocked,
            "subprocess": subprocess,
            "Path": Path,
+           "re": re,
            "time": __import__("time"),
            "psutil": SimpleNamespace()}
     exec(compile(ast.Module(body=[cls], type_ignores=[]), str(SOURCE), "exec"), env)
@@ -179,6 +181,81 @@ class PurpleInstalledStopTests(unittest.TestCase):
             obj.stop_one("PURPLE-WS01")
         obj.vmrun.assert_called_once()
         self.assertEqual(obj.vmrun.call_args.args[-1], "soft")
+
+
+    def test_already_stopped_guest_no_power_command(self):
+        cls, _ = isolated_starter()
+        obj = cls.__new__(cls)
+        obj.vmx = {n: Path(f"/guest/{n}.vmx") for n in NAMES}
+        obj.running_vmxs = Mock(return_value=set())
+        obj.vmrun = Mock()
+        obj.wait_stopped = Mock()
+        self.assertTrue(obj.stop_one("PURPLE-WS01"))
+        obj.vmrun.assert_not_called()
+        obj.wait_stopped.assert_not_called()
+
+    def test_competing_vagrant_halt_blocks_but_foreign_lab_does_not(self):
+        cls, _ = isolated_starter()
+        obj = cls.__new__(cls)
+        obj.provider = Path("/instance/ef5c0b-purple-vmware/provider")
+        class NoSuchProcess(Exception):
+            pass
+        class AccessDenied(Exception):
+            pass
+        class ZombieProcess(Exception):
+            pass
+        guard_globals = cls.ensure_no_competing_vagrant.__globals__
+        own = SimpleNamespace(info={
+            "pid": 123, "cmdline": ["/usr/bin/vagrant", "halt"],
+            "cwd": str(obj.provider)
+        })
+        foreign = SimpleNamespace(info={
+            "pid": 456, "cmdline": ["/usr/bin/vagrant", "halt"],
+            "cwd": "/different/north/provider"
+        })
+        stub = SimpleNamespace(NoSuchProcess=NoSuchProcess,
+                               AccessDenied=AccessDenied,
+                               ZombieProcess=ZombieProcess,
+                               process_iter=lambda attrs: [foreign])
+        guard_globals["psutil"] = stub
+        obj.ensure_no_competing_vagrant()
+        stub.process_iter = lambda attrs: [foreign, own]
+        with self.assertRaisesRegex(PurpleStartBlocked, "still acting"):
+            obj.ensure_no_competing_vagrant()
+
+    def test_orphaned_vmrun_stop_blocks_new_lifecycle(self):
+        cls, _ = isolated_starter()
+        obj = cls.__new__(cls)
+        obj.provider = Path("/instance/ef5c0b-purple-vmware/provider")
+        class PsutilFailure(Exception):
+            pass
+        guard_globals = cls.ensure_no_competing_vagrant.__globals__
+        guard_globals["psutil"] = SimpleNamespace(
+            process_iter=lambda attrs: [SimpleNamespace(info={
+                "pid": 845, "cmdline": ["/usr/bin/vmrun", "-T", "ws", "stop",
+                                       "/guest/PURPLE-WS01.vmx", "soft"],
+                "cwd": str(obj.provider)
+            })],
+            NoSuchProcess=PsutilFailure,
+            ZombieProcess=PsutilFailure,
+            AccessDenied=PsutilFailure)
+        with self.assertRaisesRegex(PurpleStartBlocked, "still acting"):
+            obj.ensure_no_competing_vagrant()
+
+    def test_vmware_inventory_requires_exact_count_and_unique_paths(self):
+        cls, _ = isolated_starter()
+        obj = cls.__new__(cls)
+        obj.vmrun = Mock(return_value="Total running VMs: 2\n/guest/PURPLE-WS01.vmx")
+        with self.assertRaisesRegex(PurpleStartBlocked, "incomplete"):
+            obj.running_vmxs()
+        obj.vmrun.return_value = (
+            "Total running VMs: 2\n/guest/PURPLE-WS01.vmx\n/guest/PURPLE-WS01.vmx")
+        with self.assertRaisesRegex(PurpleStartBlocked, "ambiguous"):
+            obj.running_vmxs()
+        obj.vmrun.return_value = (
+            "Total running VMs: 2\n/guest/PURPLE-WS01.vmx\n/guest/PURPLE-DC01.vmx")
+        self.assertEqual(obj.running_vmxs(), {
+            "/guest/PURPLE-WS01.vmx", "/guest/PURPLE-DC01.vmx"})
 
 
 if __name__ == "__main__":
