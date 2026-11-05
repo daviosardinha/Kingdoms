@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # PURPLE-LX01 only: create/verify a standard, non-admin Sliver trainee.
-# No passwords, keys, sudoers changes, installed tools, or other guest changes.
+# No plaintext passwords, SSH keys, sudoers edits, or security tool installation.
 set -euo pipefail
 
 ACCOUNT="sliver.trainee"
 HOME_DIR="/home/$ACCOUNT"
 EXPECTED_IP="172.28.233.32/24"
 MODE="${1:---ensure}"
+HASH_FILE="/home/vagrant/.purple-sliver-trainee.sha512"
 
 die() {
     printf '[PURPLE-LX01][BLOCKED] %s\n' "$*" >&2
@@ -25,6 +26,21 @@ ip -o -4 addr show | grep -Fq "inet $EXPECTED_IP" ||
     die "Expected PURPLE-LX01 lab IP $EXPECTED_IP not found"
 getent passwd vagrant >/dev/null || die "Existing Vagrant SSH identity missing"
 [[ -x /bin/bash ]] || die "Interactive bash shell not available"
+
+# The host maintains a password hash (never plaintext) outside the repository.
+# Vagrant uploads the hash to the guest only during provisioning. Require it
+# before changing an account, and always remove the temporary guest copy.
+PASSWORD_HASH=""
+if [[ "$MODE" == "--ensure" ]]; then
+    [[ -f "$HASH_FILE" && ! -L "$HASH_FILE" ]] ||
+        die "Missing password hash for trainee; initialize it on Kali before provisioning"
+    chmod 600 "$HASH_FILE"
+    trap 'rm -f "$HASH_FILE"' EXIT
+    IFS= read -r PASSWORD_HASH < "$HASH_FILE" ||
+        die "Unable to read trainee password hash"
+    [[ "$PASSWORD_HASH" =~ ^\$6\$(rounds=[0-9]+\$)?[A-Za-z0-9./]{8,16}\$[A-Za-z0-9./]{86}$ ]] ||
+        die "Trainee password hash must be a valid SHA-512 crypt string"
+fi
 
 if ! getent passwd "$ACCOUNT" >/dev/null; then
     [[ "$MODE" == "--ensure" ]] || die "Account is absent (verify mode never creates users)"
@@ -78,8 +94,21 @@ if command -v sudo >/dev/null 2>&1; then
         die "Sudo policy is not an unambiguous denial for the trainee"
 fi
 
+# Enforce the same fixed password hash on first install and reprovisioning.
+# chpasswd receives the hash via standard input, not process arguments.
+if [[ "$MODE" == "--ensure" ]]; then
+    stored_hash="$(getent shadow "$ACCOUNT" | cut -d: -f2)"
+    if [[ "$stored_hash" != "$PASSWORD_HASH" ]]; then
+        printf '%s:%s\n' "$ACCOUNT" "$PASSWORD_HASH" | chpasswd --encrypted ||
+            die "Unable to enforce fixed trainee password"
+    fi
+    [[ "$(getent shadow "$ACCOUNT" | cut -d: -f2)" == "$PASSWORD_HASH" ]] ||
+        die "Trainee password hash did not match configured value"
+    unset PASSWORD_HASH stored_hash
+fi
+
 # Test a genuine login shell, own-home write/execute access, and execution
-# of a standard unprivileged binary, without requiring a password.
+# of a standard unprivileged binary.
 runuser -l "$ACCOUNT" -c '
     set -eu
     test "$HOME" = "/home/sliver.trainee"
@@ -99,9 +128,7 @@ echo "PURPLE_SLIVER_TRAINEE_GROUPS=$(id -nG "$ACCOUNT")"
 echo "PURPLE_SLIVER_TRAINEE_SUDO=DENIED"
 echo "PURPLE_SLIVER_TRAINEE_LOGIN_SHELL=PASS"
 echo "PURPLE_SLIVER_TRAINEE_HOME_EXEC=PASS"
-# No password or SSH key is placed into source control. An operator may set
-# a guest-local password interactively later when password login is needed.
 case "$(passwd -S "$ACCOUNT" | awk '{print $2}')" in
     P) echo "PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED" ;;
-    *) echo "PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=REQUIRES_MANUAL_SETUP" ;;
+    *) die "Trainee password is not set or is locked" ;;
 esac
