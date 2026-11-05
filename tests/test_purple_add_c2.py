@@ -47,6 +47,24 @@ class PurpleC2ExtensionTests(unittest.TestCase):
             c2.extend_vagrantfile(SOURCE.read_text(),
                                   old.replace('172.28.233.51', '172.28.233.60'))
 
+    def test_vmware_inventory_folder_entry_is_not_treated_as_vm(self):
+        inventory = (
+            'vmlist1.config = "folder6"\n'
+            'vmlist2.config = "/tmp/PURPLE-DC01.vmx"\n'
+            'vmlist3.config = "folder17"\n'
+            'vmlist4.config = "/tmp/other.vmx"\n'
+        )
+        self.assertEqual(
+            c2.vm_config_paths(inventory),
+            ["/tmp/PURPLE-DC01.vmx", "/tmp/other.vmx"],
+        )
+        # Arbitrary missing/relative VMX records must still be inspected
+        # and rejected by verify_existing_vmware rather than silently skipped.
+        self.assertEqual(
+            c2.vm_config_paths('vmlist5.config = "unexpected-vm"\n'),
+            ["unexpected-vm"],
+        )
+
     def test_c2_has_no_software_installation_scripts(self):
         entry = c2.c2_definition(SOURCE.read_text())
         self.assertIn('"bento/debian-12"', entry)
