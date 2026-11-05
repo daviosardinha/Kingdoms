@@ -67,6 +67,16 @@ def extend_vagrantfile(source: str, existing: str) -> tuple[str, bool]:
     return existing[:match.start("body")] + new_body + existing[match.end("body"):], True
 
 
+def vm_config_paths(inventory: str) -> list[str]:
+    """Return VMX records, omitting only VMware Workstation UI folder markers."""
+    from goad import purple_vmware_network as network
+
+    return [
+        path for path in network.VMX_REGISTRY.findall(inventory)
+        if not re.fullmatch(r"folder[0-9]+", path)
+    ]
+
+
 def verify_existing_vmware(provider: Path) -> None:
     """Allow only the four owned pilot VMX files on vmnet4 before extending it."""
     from goad import purple_vmware_network as network
@@ -97,12 +107,7 @@ def verify_existing_vmware(provider: Path) -> None:
     if registry.is_symlink() or not registry.is_file():
         raise UnsafeExtension("Cannot inspect VMware's registered VM inventory")
     inventory = registry.read_text(encoding='utf-8')
-    for path in network.VMX_REGISTRY.findall(inventory):
-        # VMware Workstation also stores UI folder identifiers such as
-        # vmlist6.config = "folder6" in inventory.vmls. They are not VMs.
-        # Skip only that exact synthetic format, never arbitrary missing VMX.
-        if re.fullmatch(r"folder[0-9]+", path):
-            continue
+    for path in vm_config_paths(inventory):
         vmx = Path(path)
         if vmx.is_symlink() or not vmx.is_file():
             raise UnsafeExtension(f"Uninspectable registered VMware guest: {path}")
