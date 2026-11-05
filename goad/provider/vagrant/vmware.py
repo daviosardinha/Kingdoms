@@ -538,7 +538,7 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
         return True
 
     def _install_purple_with_eval_maintenance(self):
-        """Boot only PURPLE's four guests and heal WS01 before WinRM provisioning.
+        """Boot PURPLE's five guests and heal WS01 before WinRM provisioning.
 
         The mayfly/windows10 evaluation box can be expired on first boot.
         Vagrant shell provisioners are too late: Vagrant first waits for
@@ -595,11 +595,11 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
             Log.error('PURPLE: WS01 Vagrant/WinRM provisioning failed after rearm; '
                       'leaving guests intact for targeted recovery')
             return False
-        for machine in ('PURPLE-LX01', 'PURPLE-WAZUH'):
+        for machine in ('PURPLE-LX01', 'PURPLE-WAZUH', 'PURPLE-C2'):
             Log.info(f'PURPLE: bringing up {machine}')
             if not self.command.run_vagrant(['up', machine], self.path):
                 return False
-        Log.success('PURPLE: four VMs brought up with WS01 evaluation verified before Ansible')
+        Log.success('PURPLE: five VMs brought up with WS01 evaluation verified before Ansible')
         return True
 
     def install(self):
