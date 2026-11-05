@@ -134,7 +134,45 @@ PURPLE_SLIVER_TRAINEE_PASSWORD_LOGIN=CONFIGURED
 The script emits the actual UID and group list too. It does not reset the
 Vagrant SSH transport or install security tools.
 
-## 6. Manual security activities
+## 6. Restart the existing installed lab (no Vagrant WinRM boot handshake)
+
+**Use the Kingdoms-style installed-instance lifecycle**, not a raw
+`vagrant up`. On an existing PURPLE lab, Vagrant can time out while
+waiting for WS01 WinRM even though the Windows desktop is fully running.
+Ordinary `vagrant up` then aborts the rest of the five-machine startup.
+
+On current `main`, the PURPLE console's `start` and
+`start_vm <name>` are routed to `goad/purple_existing_start.py`.
+The helper first checks **all five registered owned VMware VMX files**,
+then powers on the requested guests in dependency order through
+`vmrun -T ws start ... nogui`. **All guests are powered on before**
+any subsequent WinRM/SSH readiness checks. A WS01 readiness failure is
+reported without preventing LX01, WAZUH or C2 from starting.
+Already-running guests are preserved. No VM is recreated, reprovisioned,
+rearmed, reset or halted.
+
+For the **existing pilot** with a locally modified checkout, use this
+one-liner to load only the current, source-owned start helper into a
+temporary location; do not merge local changes or regenerate provider files:
+
+```bash
+cd ~/labs/purple-team/Kingdoms && git fetch origin refs/heads/main && git show FETCH_HEAD:goad/purple_existing_start.py > /tmp/purple-existing-start.py && PYTHONPATH="$PWD" "$HOME/.goad/.venv/bin/python" /tmp/purple-existing-start.py --provider-dir "$PWD/workspace/ef5c0b-purple-vmware/provider"
+```
+
+The code verifies Windows guests through authenticated WinRM on the
+lab-facing interface, using the existing fixed Mayfly `vagrant`
+management credential. It checks Linux SSH reachability and can request
+one targeted WinRM service restart through authenticated VMware Tools.
+If WinRM, AD services or networking are still unavailable, the start
+reports **incomplete readiness**, but leaves powered-on machines intact
+for investigation. Do not misinterpret VMware desktop visibility as
+successful domain authentication or lab readiness.
+
+**Fresh install is unchanged** and still uses Vagrant provisioning;
+this helper is only for already-installed guests. Raw `vagrant up`
+is not the supported PURPLE cold-start workflow.
+
+## 7. Manual security activities
 
 Beyond the baseline OS/VM provisioning and the existing Wazuh bootstrap,
 operator activities stay manual: Sliver C2 installation, listeners, operator
