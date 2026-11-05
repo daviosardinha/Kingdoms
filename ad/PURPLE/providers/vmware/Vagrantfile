@@ -14,7 +14,6 @@ boxes = [
       { :slot => 1, :vnet => "vmnet4", :mac => "00:50:56:10:04:32" }
     ],
     :lab_linux_config_script => "../../../ad/PURPLE/providers/vmware/configure-linux-interface.sh",
-    :sliver_trainee_password_hash_file => File.expand_path("~/.config/kingdoms/purple-lx01-trainee.sha512"),
     :provision_scripts => [
       "../../../ad/PURPLE/providers/vmware/provision-ubuntu-desktop.sh",
       "../../../ad/PURPLE/providers/vmware/provision-sliver-trainee.sh"
