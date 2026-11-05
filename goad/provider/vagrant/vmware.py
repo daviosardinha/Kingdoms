@@ -38,6 +38,24 @@ class VmwareProvider(VagrantProvider):
         ]
         return all(checks)
 
+    def start(self, vm_name=None):
+        # KINGDOMS/NORTH installed ranges start through VMware directly rather
+        # than asking Vagrant to rediscover guest NAT/WinRM on every cold boot.
+        # PURPLE now uses the same existing-guest lifecycle principle, scoped
+        # to this lab. Fresh installations still use install()/Vagrant.
+        if self.lab_name == 'PURPLE':
+            from goad.purple_existing_start import start_existing_purple
+            if self.path is None:
+                Log.error('PURPLE: no installed provider selected')
+                return False
+            return start_existing_purple(self.path, vm_name=vm_name)
+        return super().start(vm_name=vm_name)
+
+    def start_vm(self, vm_name):
+        if self.lab_name == 'PURPLE':
+            return self.start(vm_name=vm_name)
+        return super().start_vm(vm_name)
+
     def _vmx_path(self, machine):
         machine_id = os.path.join(
             str(self.path), '.vagrant', 'machines', machine, 'vmware_desktop', 'id'
