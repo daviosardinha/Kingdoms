@@ -190,15 +190,42 @@ if ($ip -and $remote.Status -eq 'Running' -and $domain -and $ad) {{
         names = [row[0] for row in ROSTER]
         if vm_name is not None and vm_name not in names:
             raise PurpleStartBlocked(f"Unsupported PURPLE guest: {vm_name}")
-        # Fully resolve all registered guests before any power operations.
+        # Prove all registered VMX identities before changing any VM state.
         running = self.running_vmxs()
         targets = ROSTER if vm_name is None else tuple(
             row for row in ROSTER
             if row[0] == "PURPLE-DC01" or row[0] == vm_name
         )
+        # Exactly like KINGDOMS' installed-instance lifecycle, powering on
+        # is independent from Vagrant/WinRM guest provisioning. Start all
+        # requested registered guests first, in AD dependency order. A live
+        # WS01 desktop must never strand LX01, WAZUH or C2 powered off.
+        power_failures = []
+        booted = []
         for machine, address, kind in targets:
-            self.power_on(machine, running)
-            self.wait_ready(machine, address, kind, timeout=240 if kind == "windows" else 120)
+            try:
+                self.power_on(machine, running)
+                booted.append((machine, address, kind))
+            except PurpleStartBlocked as exc:
+                Log.error(f"PURPLE: {machine} could not be powered on: {exc}")
+                power_failures.append(machine)
+                # Remaining VMs are independent VMware guests: still bring
+                # them up and report all failures after the power-on pass.
+        if power_failures:
+            Log.warning("PURPLE: power-on failures: " + ", ".join(power_failures))
+        Log.info("PURPLE: power-on pass completed; checking guest readiness without Vagrant")
+        readiness_failures = []
+        for machine, address, kind in booted:
+            try:
+                self.wait_ready(machine, address, kind, timeout=240 if kind == "windows" else 120)
+            except PurpleStartBlocked as exc:
+                Log.error(str(exc))
+                readiness_failures.append(machine)
+        if power_failures or readiness_failures:
+            Log.error("PURPLE: startup incomplete; powered-on VMs left intact. "
+                      "Guest readiness still missing for: "
+                      + ", ".join(power_failures + readiness_failures))
+            return False
         Log.success("PURPLE: installed guests ready without Vagrant WinRM boot handshake")
         return True
 
