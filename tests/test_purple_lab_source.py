@@ -165,7 +165,7 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertIn("PURPLE_VMWARE_BOOT=", helper)
         self.assertIn("if args.resume_pending_rearm or", helper)
 
-    def test_wazuh_all_in_one_installed_only_in_wazuh_guest(self):
+    def test_wazuh_vm_has_no_automatic_password_generating_installer(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         source = (PURPLE / "providers" / "vmware"
                   / "provision-wazuh-all-in-one.sh").read_text()
@@ -173,7 +173,12 @@ class PurpleLabSourceTests(unittest.TestCase):
                     / "vmware" / "Vagrantfile").read_text()
         self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
         self.assertEqual(vm.count('"PURPLE-C2"'), 1)
-        self.assertEqual(vm.count("provision-wazuh-all-in-one.sh"), 1)
+        # Fresh PURPLE automatically provisions infrastructure only.
+        # The vendor installer generates passwords, so it must not run
+        # during the unattended baseline deployment.
+        self.assertEqual(vm.count("provision-wazuh-all-in-one.sh"), 0)
+        self.assertIn('"bento/debian-12"', vm)
+        self.assertIn(':name => "PURPLE-WAZUH"', vm)
         self.assertIn("box[:provision_scripts]", template)
         self.assertIn("bash ./wazuh-install.sh -a", source)
         self.assertIn("https://packages.wazuh.com/", source)
