@@ -30,7 +30,7 @@ class PurpleC2ExtensionTests(unittest.TestCase):
         for machine in c2.ORIGINALS:
             self.assertEqual(updated.count(f':name => "{machine}"'), 1)
         self.assertIn(':ip => "172.28.233.60"', updated)
-        self.assertIn(':hostname => "c2"', updated)
+        self.assertIn(':hostname => "PURPLE-C2"', updated)
         self.assertIn('00:50:56:10:04:60', updated)
         self.assertEqual(updated.replace(",\n" + c2.c2_definition(SOURCE.read_text()), ""), old)
 
@@ -46,6 +46,20 @@ class PurpleC2ExtensionTests(unittest.TestCase):
         with self.assertRaises(c2.UnsafeExtension):
             c2.extend_vagrantfile(SOURCE.read_text(),
                                   old.replace('172.28.233.51', '172.28.233.60'))
+
+    def test_legacy_installed_c2_preserves_existing_guest_hostname(self):
+        old = existing_pilot_fixture()
+        current, _ = c2.extend_vagrantfile(SOURCE.read_text(), old)
+        legacy = current.replace(':hostname => "PURPLE-C2"', ':hostname => "c2"')
+        unchanged, changed = c2.extend_vagrantfile(SOURCE.read_text(), legacy)
+        self.assertFalse(changed)
+        self.assertEqual(unchanged, legacy)
+        self.assertEqual(unchanged.count(':name => "PURPLE-C2"'), 1)
+        # Refuse unexpected names rather than silently changing installed VMs.
+        with self.assertRaises(c2.UnsafeExtension):
+            c2.extend_vagrantfile(SOURCE.read_text(),
+                                  legacy.replace(':hostname => "c2"',
+                                                 ':hostname => "OTHER-C2"'))
 
     def test_vmware_inventory_folder_entry_is_not_treated_as_vm(self):
         inventory = (
