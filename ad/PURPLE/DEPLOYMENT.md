@@ -22,6 +22,39 @@ provisioning succeeds. No custom training passwords are requested interactively.
 | `PURPLE-WAZUH` | Debian 12 | `172.28.233.51` | Wazuh all-in-one | 4 vCPU, 8 GB |
 | `PURPLE-C2` | Debian 12 | `172.28.233.60` | C2 server (manual Sliver installation) | 2 vCPU, 4 GB |
 
+### Guest operating-system hostnames (new installations)
+
+The five VMware instance IDs and the **in-guest computer names** match:
+
+| VM ID | Guest hostname | Applied by |
+| --- | --- | --- |
+| `PURPLE-DC01` | `PURPLE-DC01` | Ansible `settings/hostname` |
+| `PURPLE-WS01` | `PURPLE-WS01` | Ansible `settings/hostname` |
+| `PURPLE-LX01` | `PURPLE-LX01` | Vagrant Linux guest hostname capability |
+| `PURPLE-WAZUH` | `PURPLE-WAZUH` | Vagrant Linux guest hostname capability |
+| `PURPLE-C2` | `PURPLE-C2` | Vagrant Linux guest hostname capability |
+
+This only changes how **future fresh installations** are provisioned.
+For Windows, `ad/PURPLE/data/config.json` defines the names and the
+existing Ansible `ad-servers.yml` role applies them before domain
+promotion/member join. Windows Vagrant hostname actions are intentionally
+not added: the Mayfly WinRM startup/recovery sequence is preserved.
+
+For Linux, `ad/PURPLE/providers/vmware/Vagrantfile` passes the exact name
+through Vagrant's existing `target.vm.hostname` support; no new shell
+provisioner is needed. IP addresses, MAC addresses, network ownership,
+`purple.lab`, AD inventory keys, credentials, security tools and
+machine counts are unchanged.
+
+**Existing instance `ef5c0b-purple-vmware` is intentionally not renamed.**
+No source update rewrites a generated Vagrantfile or changes a running
+Windows domain computer identity. The old pilot's `c2` identity remains
+supported by the guarded C2 add-on helper. To verify a **new** deployment,
+run `hostname` on LX01/WAZUH/C2 and
+`(Get-CimInstance Win32_ComputerSystem).Name` on DC01/WS01 after Ansible
+completes. Do not attempt to rename an already-promoted DC with these
+fresh-install source changes.
+
 The Linux endpoints retain their Vagrant-managed SSH access. The additional
 `vmnet8` NAT adapter is used for package provisioning and management;
 lab-side communication uses `vmnet4`.

@@ -2,7 +2,7 @@
   "lab": {
     "hosts": {
       "dc01": {
-        "hostname": "dc",
+        "hostname": "PURPLE-DC01",
         "type": "dc",
         "local_admin_password": "8dCT-DJjgScp",
         "domain": "purple.lab",
@@ -38,7 +38,7 @@
         }
       },
       "ws01": {
-        "hostname": "ws",
+        "hostname": "PURPLE-WS01",
         "type": "workstation",
         "local_admin_password": "EP+xh7Rk6j90",
         "domain": "purple.lab",

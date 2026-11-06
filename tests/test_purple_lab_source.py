@@ -171,8 +171,8 @@ class PurpleLabSourceTests(unittest.TestCase):
                   / "provision-wazuh-all-in-one.sh").read_text()
         template = (ROOT / "template" / "provider"
                     / "vmware" / "Vagrantfile").read_text()
-        self.assertEqual(vm.count('"PURPLE-WAZUH"'), 1)
-        self.assertEqual(vm.count('"PURPLE-C2"'), 1)
+        self.assertEqual(vm.count(':name => "PURPLE-WAZUH"'), 1)
+        self.assertEqual(vm.count(':name => "PURPLE-C2"'), 1)
         # Wazuh's vendor-generated password is the one accepted exception.
         # The fresh install prints it once, but repeating a healthy install
         # must not print it again or regenerate service credentials.

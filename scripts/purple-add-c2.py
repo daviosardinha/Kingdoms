@@ -34,7 +34,7 @@ def c2_definition(source: str) -> str:
     if len(matches) != 1:
         raise UnsafeExtension("Canonical PURPLE-C2 definition missing or duplicated")
     entry = matches[0].group(0).replace("{{ip_range}}", "172.28.233")
-    for item in (f':ip => "{IP}"', f':hostname => "c2"', f':lab_mac => "{MAC}"',
+    for item in (f':ip => "{IP}"', f':hostname => "PURPLE-C2"', f':lab_mac => "{MAC}"',
                  ':vnet => "vmnet4"', '"bento/debian-12"'):
         if item not in entry:
             raise UnsafeExtension(f"Canonical C2 definition missing {item}")
@@ -56,7 +56,14 @@ def extend_vagrantfile(source: str, existing: str) -> tuple[str, bool]:
     if '{{ip_range}}' in body or ':vnet => "vmnet4"' not in body:
         raise UnsafeExtension("Generated PURPLE networking does not match the installed pilot")
     if f':name => "{C2}"' in body:
-        if tuple(defined) == ORIGINALS + (C2,) and entry in body and body.count(f':name => "{C2}"') == 1:
+        # Existing deployed pilots used the earlier short Linux guest hostname
+        # "c2". Recognize that exact legacy definition as already installed,
+        # without retroactively renaming or reprovisioning the guest. Fresh
+        # deployments use the new canonical PURPLE-C2 hostname.
+        legacy_entry = entry.replace(':hostname => "PURPLE-C2"', ':hostname => "c2"', 1)
+        if (tuple(defined) == ORIGINALS + (C2,)
+                and (entry in body or legacy_entry in body)
+                and body.count(f':name => "{C2}"') == 1):
             return existing, False
         raise UnsafeExtension("An incompatible PURPLE-C2 machine is already defined")
     if IP in body or MAC in body:
