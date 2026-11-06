@@ -74,7 +74,7 @@ if [[ "${PURPLE_BOOT_SERVICE:-0}" != "1" ]]; then
   fi
   rm -f "$hosts_candidate"
 
-  if [[ "$(hostnamectl --static)" != "$guest_hostname" ]]; then
+  if [[ "$(hostnamectl --static)" != "$guest_hostname" || "$(hostname)" != "$guest_hostname" ]]; then
     hostnamectl set-hostname "$guest_hostname"
   fi
 
