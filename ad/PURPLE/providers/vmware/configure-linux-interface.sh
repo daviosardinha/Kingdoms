@@ -39,6 +39,59 @@ ip link set "$interface" up
 ip -4 address replace "$ipaddr/24" dev "$interface"
 ip -4 address show dev "$interface"
 
+# Set the guest's stable Linux hostname on *fresh provisioning*, matching
+# the source VM name (Linux static hostnames use lowercase). Vagrant may set
+# the transient hostname earlier; resolve the static name locally before any
+# Desktop/Wazuh/C2 package provisioning requires sudo or hostname lookups.
+# The boot-time NIC service does not need to rename the machine again.
+if [[ "${PURPLE_BOOT_SERVICE:-0}" != "1" ]]; then
+  case "$ipaddr" in
+    172.28.233.32) guest_hostname="purple-lx01" ;;
+    172.28.233.51) guest_hostname="purple-wazuh" ;;
+    172.28.233.60) guest_hostname="purple-c2" ;;
+    *) echo "PURPLE: unsupported Linux lab address for hostname assignment: $ipaddr" >&2; exit 1 ;;
+  esac
+  [[ "$(id -u)" == "0" ]] || {
+    echo "PURPLE: Linux hostname setup requires root" >&2; exit 1;
+  }
+  [[ -f /etc/hosts && ! -L /etc/hosts ]] || {
+    echo "PURPLE: /etc/hosts must be a regular file" >&2; exit 1;
+  }
+
+  # Keep unrelated mappings intact, replacing just the Debian/Ubuntu
+  # 127.0.1.1 local-hostname entry. Repeating provisioning never duplicates it.
+  hosts_candidate="$(mktemp)"
+  awk -v name="$guest_hostname" '
+    $1 == "127.0.1.1" {
+      if (!replaced) { print "127.0.1.1\t" name; replaced=1 }
+      next
+    }
+    { print }
+    END { if (!replaced) print "127.0.1.1\t" name }
+  ' /etc/hosts > "$hosts_candidate"
+  if ! cmp -s "$hosts_candidate" /etc/hosts; then
+    cat "$hosts_candidate" > /etc/hosts
+  fi
+  rm -f "$hosts_candidate"
+
+  if [[ "$(hostnamectl --static)" != "$guest_hostname" || "$(hostname)" != "$guest_hostname" ]]; then
+    hostnamectl set-hostname "$guest_hostname"
+  fi
+
+  # Bento Ubuntu/Debian may ship cloud-init. Ensure it doesn't replace the
+  # student-facing static hostname on the next ordinary VMware boot.
+  if [[ -d /etc/cloud/cloud.cfg.d ]]; then
+    printf 'preserve_hostname: true\n' > /etc/cloud/cloud.cfg.d/99-purple-guest-hostname.cfg
+  fi
+  [[ "$(hostname)" == "$guest_hostname" ]] || {
+    echo "PURPLE: unexpected Linux hostname after provisioning" >&2; exit 1;
+  }
+  getent hosts "$guest_hostname" >/dev/null || {
+    echo "PURPLE: guest hostname does not resolve via /etc/hosts" >&2; exit 1;
+  }
+  echo "PURPLE_LINUX_HOSTNAME_READY=$guest_hostname"
+fi
+
 # Preserve lab NIC configuration across guest restarts, without replacing
 # NetworkManager/netplan/ifupdown or modifying the Vagrant management NIC.
 if [[ "${PURPLE_BOOT_SERVICE:-0}" != "1" ]]; then

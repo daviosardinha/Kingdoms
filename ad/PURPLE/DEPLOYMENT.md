@@ -40,11 +40,27 @@ existing Ansible `ad-servers.yml` role applies them before domain
 promotion/member join. Windows Vagrant hostname actions are intentionally
 not added: the Mayfly WinRM startup/recovery sequence is preserved.
 
-For Linux, `ad/PURPLE/providers/vmware/Vagrantfile` passes the exact name
-through Vagrant's existing `target.vm.hostname` support; no new shell
-provisioner is needed. IP addresses, MAC addresses, network ownership,
-`purple.lab`, AD inventory keys, credentials, security tools and
-machine counts are unchanged.
+For Linux, `ad/PURPLE/providers/vmware/Vagrantfile` passes the VM
+name to Vagrant's existing `target.vm.hostname` support. The **existing
+PURPLE-only lab NIC provisioner** also makes the lowercase Linux hostname
+persistent in `/etc/hostname` (through `hostnamectl`), maintains
+a unique `127.0.1.1` mapping in `/etc/hosts`, and sets cloud-init
+`preserve_hostname: true` when cloud-init is installed. It runs before
+Wazuh/Desktop/trainee provisioning, so new guests don't require manual
+`sudo` hostname-resolution fixes. The action is idempotent and does
+not alter the management NAT or other `/etc/hosts` entries.
+
+For Windows, the existing Ansible `ad-servers.yml` hostname step is
+still executed **before** `ad-parent_domain.yml` and `ad-members.yml`,
+avoiding a later in-place DC rename. The existing domain-controller
+role disables NAT-interface dynamic DNS registration and restricts DNS
+listening to the lab-facing address, while the workstation role configures
+lab-side DNS and joins `purple.lab`. No changes to the shared Ansible
+playbook sequence, DNS registry, or domain security configuration are made.
+
+IP addresses, MAC addresses, network ownership, `purple.lab`,
+AD inventory keys, credentials, security tools and machine counts are
+unchanged.
 
 **Existing instance `ef5c0b-purple-vmware` is intentionally not renamed.**
 No source update rewrites a generated Vagrantfile or changes a running
@@ -135,6 +151,28 @@ No password selection is required. The installer brings up all five machines,
 creates `sliver.trainee` with `sliver123`, and runs Wazuh's own installer
 which displays the generated admin password when it finishes successfully.
 Sliver itself remains uninstalled until the manual training exercise.
+
+**Read-only checks after the first complete installation:** on the Kali host,
+from the generated provider directory, run:
+
+```bash
+for vm in PURPLE-LX01 PURPLE-WAZUH PURPLE-C2; do vagrant ssh "$vm" -c 'hostname; getent hosts "$(hostname)"'; done
+```
+
+Expected Linux names: `purple-lx01`, `purple-wazuh`, `purple-c2`,
+each resolving to `127.0.1.1`. On the Windows guests, confirm
+`hostname` is `PURPLE-DC01` / `PURPLE-WS01`. On DC01, validate
+`Get-DnsClient` excludes the NAT NIC from registration,
+`Get-DnsServerSetting -All` listens on `172.28.233.30`, and direct
+`Resolve-DnsName PURPLE-DC01.purple.lab -Server 172.28.233.30 -DnsOnly -NoHostsFile`
+returns the lab IP only. On WS01, validate
+`Test-ComputerSecureChannel -Server PURPLE-DC01.purple.lab` returns
+`True` and `nltest /dsgetdc:purple.lab /force` locates the DC.
+Keep these checks read-only; the fresh build should not require a manual
+`netdom` rename or DNS record deletion.
+
+These source checks do not replace an end-to-end fresh VMware deployment,
+which still needs separate acceptance on an unused instance.
 
 ## 5. Existing deployed pilot: update LX01 only
 
