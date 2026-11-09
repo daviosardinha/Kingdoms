@@ -5,34 +5,74 @@
 # We do not grant Rickon SERVICE_START or modify the service security descriptor.
 
 - name: NORTH | register recurring workstation maintenance task
-  ansible.windows.win_scheduled_task:
-    name: Workstation Service Health
-    description: Check locally installed workstation services on a regular schedule
-    author: NORTH Workstation Maintenance
-    path: '\'
-    actions:
-      - path: 'C:\Windows\System32\sc.exe'
-        arguments: start KingdomBinarySvc
-    triggers:
-      - type: daily
-        start_boundary: '2026-01-01T00:00:00'
-        days_interval: 1
-        repetition:
-          interval: PT1M
-          duration: P1D
-          stop_at_duration_end: false
-    username: SYSTEM
-    logon_type: service_account
-    run_level: highest
-    compatibility: 4
-    enabled: true
-    hidden: false
-    allow_demand_start: false
-    disallow_start_if_on_batteries: false
-    stop_if_going_on_batteries: false
-    start_when_available: true
-    multiple_instances: 2
-    state: present
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $taskName = 'Workstation Service Health'
+      $scheduler = New-Object -ComObject 'Schedule.Service'
+      $scheduler.Connect()
+      $folder = $scheduler.GetFolder('\')
+      $registered = $null
+      try { $registered = $folder.GetTask($taskName) } catch { $registered = $null }
+
+      # Reapply only when the managed task no longer matches the intended contract.
+      $needsRegistration = $true
+      if ($null -ne $registered) {
+          $definition = $registered.Definition
+          if ($definition.Actions.Count -eq 1 -and $definition.Triggers.Count -eq 1) {
+              $action = $definition.Actions.Item(1)
+              $trigger = $definition.Triggers.Item(1)
+              $principal = $definition.Principal
+              $settings = $definition.Settings
+              $matches = (
+                  $action.Path -ieq 'C:\Windows\System32\sc.exe' -and
+                  $action.Arguments -eq 'start KingdomBinarySvc' -and
+                  $trigger.Type -eq 2 -and
+                  $trigger.DaysInterval -eq 1 -and
+                  $trigger.Repetition.Interval -eq 'PT1M' -and
+                  $trigger.Repetition.Duration -eq 'P1D' -and
+                  $principal.UserId -in @('SYSTEM', 'NT AUTHORITY\SYSTEM', 'S-1-5-18') -and
+                  $principal.LogonType -eq 5 -and
+                  $settings.Enabled -and
+                  -not $settings.Hidden -and
+                  -not $settings.AllowDemandStart -and
+                  $settings.MultipleInstances -eq 2
+              )
+              $needsRegistration = -not $matches
+          }
+      }
+      if ($needsRegistration) {
+          $definition = $scheduler.NewTask(0)
+          $definition.RegistrationInfo.Description = 'Check locally installed workstation services on a regular schedule'
+          $definition.RegistrationInfo.Author = 'NORTH Workstation Maintenance'
+          $definition.Principal.UserId = 'SYSTEM'
+          $definition.Principal.LogonType = 5
+          $definition.Principal.RunLevel = 1
+          $definition.Settings.Compatibility = 4
+          $definition.Settings.Enabled = $true
+          $definition.Settings.Hidden = $false
+          $definition.Settings.AllowDemandStart = $false
+          $definition.Settings.DisallowStartIfOnBatteries = $false
+          $definition.Settings.StopIfGoingOnBatteries = $false
+          $definition.Settings.StartWhenAvailable = $true
+          $definition.Settings.MultipleInstances = 2
+          $trigger = $definition.Triggers.Create(2)
+          $trigger.StartBoundary = '2026-01-01T00:00:00'
+          $trigger.DaysInterval = 1
+          $trigger.Repetition.Interval = 'PT1M'
+          $trigger.Repetition.Duration = 'P1D'
+          $trigger.Repetition.StopAtDurationEnd = $false
+          $action = $definition.Actions.Create(0)
+          $action.Path = 'C:\Windows\System32\sc.exe'
+          $action.Arguments = 'start KingdomBinarySvc'
+          $acl = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)'
+          $folder.RegisterTaskDefinition($taskName, $definition, 6, 'SYSTEM', $null, 5, $acl) | Out-Null
+          $Ansible.Changed = $true
+      }
+      else {
+          $Ansible.Changed = $false
+      }
+      Write-Output 'NORTH_TOPIC07_MAINTENANCE_REGISTERED'
 
 # Task Scheduler permissions: BUILTIN\Users may read the task definition
 # (so students can discover its action and schedule), but must not be able
