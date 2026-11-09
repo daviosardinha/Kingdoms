@@ -26,24 +26,27 @@ class NorthTopic07MaintenanceContractTests(unittest.TestCase):
         self.assertIn("domain_name == 'NORTH'", self.build)
         self.assertIn("inventory_hostname == 'ws01'", self.build)
 
-    def test_system_maintenance_is_discoverable_but_not_manually_runnable(self):
+    def test_system_maintenance_uses_builtin_scheduler_api(self):
         for needle in (
-            "ansible.windows.win_scheduled_task:",
-            "name: Workstation Service Health",
-            "description: Check locally installed workstation services",
-            r"path: 'C:\Windows\System32\sc.exe'",
-            "arguments: start KingdomBinarySvc",
-            "username: SYSTEM",
-            "logon_type: service_account",
-            "allow_demand_start: false",
-            "hidden: false",
-            "enabled: true",
-            "multiple_instances: 2",
-            "state: present",
-            "interval: PT1M",
-            "duration: P1D",
+            "ansible.windows.win_powershell:",
+            "New-Object -ComObject 'Schedule.Service'",
+            "GetFolder('\\')",
+            "RegisterTaskDefinition($taskName, $definition, 6, 'SYSTEM', $null, 5, $acl)",
+            "$definition.Principal.UserId = 'SYSTEM'",
+            "$definition.Principal.LogonType = 5",
+            "$definition.Settings.AllowDemandStart = $false",
+            "$definition.Settings.Hidden = $false",
+            "$definition.Settings.Enabled = $true",
+            "$definition.Settings.MultipleInstances = 2",
+            "$trigger.StartBoundary = '2026-01-01T00:00:00'",
+            "$trigger.Repetition.Interval = 'PT1M'",
+            "$trigger.Repetition.Duration = 'P1D'",
+            "$action.Path = 'C:\\Windows\\System32\\sc.exe'",
+            "$action.Arguments = 'start KingdomBinarySvc'",
         ):
             self.assertIn(needle, self.role)
+        self.assertNotIn("ansible.windows.win_scheduled_task:", self.role)
+        self.assertNotIn("community.windows.win_scheduled_task:", self.role)
 
     def test_readonly_standard_user_discovery_is_preserved(self):
         self.assertIn("SetSecurityDescriptor($desired, 0)", self.role)
