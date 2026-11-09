@@ -111,9 +111,13 @@
               $mask = ([long]$ace.AccessMask -band [long]4294967295)
               if ($sid -eq 'S-1-5-18' -or $sid -eq 'S-1-5-32-544') {
                   $fullControl = (($mask -band $genericAll) -ne 0) -or (($mask -band $fileAll) -eq $fileAll)
-                  if (-not $fullControl) { return $false }
-                  if ($sid -eq 'S-1-5-18') { $seenSystemFull = $true }
-                  else { $seenAdminFull = $true }
+                  # Task Scheduler may append a second, read-only SYSTEM ACE.
+                  # Require at least one full-control ACE per privileged SID,
+                  # but do not reject extra restricted ACEs for that same SID.
+                  if ($fullControl) {
+                      if ($sid -eq 'S-1-5-18') { $seenSystemFull = $true }
+                      else { $seenAdminFull = $true }
+                  }
                   continue
               }
               # Include Everyone/Authenticated Users and other non-admin ACEs.
@@ -124,6 +128,17 @@
               }
           }
           return ($seenUsersRead -and $seenSystemFull -and $seenAdminFull)
+      }
+
+      # Regression checks for the actual Windows-normalized ACL and an
+      # intentionally unsafe task granting standard users full control.
+      $windowsNormalizedAcl = 'D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;BU)(A;;FR;;;SY)'
+      $unsafeStudentAcl = 'D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;BU)'
+      if (-not (Test-TaskReadOnlyAcl $windowsNormalizedAcl)) {
+          throw 'NORTH maintenance ACL regression: valid normalized Windows descriptor rejected'
+      }
+      if (Test-TaskReadOnlyAcl $unsafeStudentAcl) {
+          throw 'NORTH maintenance ACL regression: unsafe standard-user rights accepted'
       }
 
       $actual = $registered.GetSecurityDescriptor(4)
