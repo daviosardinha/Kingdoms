@@ -78,7 +78,9 @@
 # (so students can discover its action and schedule), but must not be able
 # to execute, modify or delete the task. Administrators and SYSTEM retain
 # full control. Idempotent comparison avoids rewriting an unchanged DACL.
-- name: NORTH | expose read-only task details to standard users
+# Task Scheduler may normalize ACL entries when a task is registered. Validate
+# effective ACE masks and trustees instead of comparing a raw SDDL string.
+- name: NORTH | verify read-only task access for standard users
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = 'Stop'
@@ -86,11 +88,46 @@
       $scheduler.Connect()
       $registered = $scheduler.GetFolder('\').GetTask('Workstation Service Health')
       $desired = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)'
+
+      function Test-TaskReadOnlyAcl([string]$sddl) {
+          $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor($sddl)
+          $seenUsersRead = $false
+          $seenSystemFull = $false
+          $seenAdminFull = $false
+          # GENERIC_WRITE, GENERIC_EXECUTE, GENERIC_ALL, DELETE, WRITE_DAC,
+          # WRITE_OWNER and file write/execute bits must not reach students.
+          $unsafeMask = [long]0x700D0176
+          $genericRead = [long]0x80000000
+          $genericAll = [long]0x10000000
+          $fileAll = [long]0x001F01FF
+
+          if ($null -eq $descriptor.DiscretionaryAcl) { return $false }
+          foreach ($ace in $descriptor.DiscretionaryAcl) {
+              if ($ace -isnot [System.Security.AccessControl.KnownAce]) { return $false }
+              if ($ace.AceQualifier -ne [System.Security.AccessControl.AceQualifier]::AccessAllowed) {
+                  continue
+              }
+              $sid = $ace.SecurityIdentifier.Value
+              $mask = ([long]$ace.AccessMask -band [long]4294967295)
+              if ($sid -eq 'S-1-5-18' -or $sid -eq 'S-1-5-32-544') {
+                  $fullControl = (($mask -band $genericAll) -ne 0) -or (($mask -band $fileAll) -eq $fileAll)
+                  if (-not $fullControl) { return $false }
+                  if ($sid -eq 'S-1-5-18') { $seenSystemFull = $true }
+                  else { $seenAdminFull = $true }
+                  continue
+              }
+              # Include Everyone/Authenticated Users and other non-admin ACEs.
+              if (($mask -band $unsafeMask) -ne 0) { return $false }
+              if ($sid -eq 'S-1-5-32-545') {
+                  $readAllowed = (($mask -band $genericRead) -ne 0) -or (($mask -band 1) -ne 0)
+                  if ($readAllowed) { $seenUsersRead = $true }
+              }
+          }
+          return ($seenUsersRead -and $seenSystemFull -and $seenAdminFull)
+      }
+
       $actual = $registered.GetSecurityDescriptor(4)
-      $section = [System.Security.AccessControl.AccessControlSections]::Access
-      $actualDacl = (New-Object System.Security.AccessControl.RawSecurityDescriptor($actual)).GetSddlForm($section)
-      $desiredDacl = (New-Object System.Security.AccessControl.RawSecurityDescriptor($desired)).GetSddlForm($section)
-      if ($actualDacl -ne $desiredDacl) {
+      if (-not (Test-TaskReadOnlyAcl $actual)) {
           $registered.SetSecurityDescriptor($desired, 0)
           $Ansible.Changed = $true
       }
@@ -98,9 +135,8 @@
           $Ansible.Changed = $false
       }
       $verified = $registered.GetSecurityDescriptor(4)
-      $verifiedDacl = (New-Object System.Security.AccessControl.RawSecurityDescriptor($verified)).GetSddlForm($section)
-      if ($verifiedDacl -ne $desiredDacl) {
-          throw 'NORTH maintenance task read-only ACL verification failed'
+      if (-not (Test-TaskReadOnlyAcl $verified)) {
+          throw "NORTH maintenance task ACL does not grant read-only Users access with administrative control. Actual SDDL: $verified"
       }
       Write-Output 'NORTH_TOPIC07_MAINTENANCE_ACL_READY'
 
