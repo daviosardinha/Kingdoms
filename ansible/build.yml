@@ -35,3 +35,16 @@
       when:
         - domain_name == 'NORTH'
         - inventory_hostname == 'ws01'
+
+# NORTH WS01 only. The scheduled maintenance task is separately discoverable
+# by Rickon, but is executed by SYSTEM and does not grant service DACL rights.
+- name: NORTH WS01 | register periodic service maintenance for Topic 07
+  hosts: workstation
+  gather_facts: false
+  tags:
+    - north_binary_maintenance
+  roles:
+    - role: settings/north_binary_maintenance
+      when:
+        - domain_name == 'NORTH'
+        - inventory_hostname == 'ws01'
