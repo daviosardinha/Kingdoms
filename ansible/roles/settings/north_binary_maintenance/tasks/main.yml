@@ -1,0 +1,95 @@
+---
+# NORTH Phase 04 Topic 07.
+# A Windows-owned maintenance process starts the vulnerable service regularly.
+# The student's user can inspect the task but cannot start it on demand.
+# We do not grant Rickon SERVICE_START or modify the service security descriptor.
+
+- name: NORTH | register recurring workstation maintenance task
+  ansible.windows.win_scheduled_task:
+    name: Workstation Service Health
+    description: Check locally installed workstation services on a regular schedule
+    author: NORTH Workstation Maintenance
+    path: '\'
+    actions:
+      - path: 'C:\Windows\System32\sc.exe'
+        arguments: start KingdomBinarySvc
+    triggers:
+      - type: daily
+        start_boundary: '2026-01-01T00:00:00'
+        days_interval: 1
+        repetition:
+          interval: PT1M
+          duration: P1D
+          stop_at_duration_end: false
+    username: SYSTEM
+    logon_type: service_account
+    run_level: highest
+    compatibility: 4
+    enabled: true
+    hidden: false
+    allow_demand_start: false
+    disallow_start_if_on_batteries: false
+    stop_if_going_on_batteries: false
+    start_when_available: true
+    multiple_instances: 2
+    state: present
+
+# Task Scheduler permissions: BUILTIN\Users may read the task definition
+# (so students can discover its action and schedule), but must not be able
+# to execute, modify or delete the task. Administrators and SYSTEM retain
+# full control. Idempotent comparison avoids rewriting an unchanged DACL.
+- name: NORTH | expose read-only task details to standard users
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $scheduler = New-Object -ComObject 'Schedule.Service'
+      $scheduler.Connect()
+      $registered = $scheduler.GetFolder('\').GetTask('Workstation Service Health')
+      $desired = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)'
+      $actual = $registered.GetSecurityDescriptor(4)
+      $section = [System.Security.AccessControl.AccessControlSections]::Access
+      $actualDacl = (New-Object System.Security.AccessControl.RawSecurityDescriptor($actual)).GetSddlForm($section)
+      $desiredDacl = (New-Object System.Security.AccessControl.RawSecurityDescriptor($desired)).GetSddlForm($section)
+      if ($actualDacl -ne $desiredDacl) {
+          $registered.SetSecurityDescriptor($desired, 0)
+          $Ansible.Changed = $true
+      }
+      else {
+          $Ansible.Changed = $false
+      }
+      $verified = $registered.GetSecurityDescriptor(4)
+      $verifiedDacl = (New-Object System.Security.AccessControl.RawSecurityDescriptor($verified)).GetSddlForm($section)
+      if ($verifiedDacl -ne $desiredDacl) {
+          throw 'NORTH maintenance task read-only ACL verification failed'
+      }
+      Write-Output 'NORTH_TOPIC07_MAINTENANCE_ACL_READY'
+
+- name: NORTH | verify scheduled maintenance contract without starting the service
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $name = 'Workstation Service Health'
+      $task = Get-ScheduledTask -TaskName $name -ErrorAction Stop
+      [xml]$definition = Export-ScheduledTask -TaskName $name -ErrorAction Stop
+      if ($task.State -eq 'Disabled') { throw 'NORTH maintenance task is disabled' }
+      if ($task.Principal.UserId -notin @('SYSTEM', 'NT AUTHORITY\SYSTEM', 'S-1-5-18')) {
+          throw "NORTH maintenance principal unexpected: $($task.Principal.UserId)"
+      }
+      if ($task.Settings.AllowDemandStart) {
+          throw 'NORTH maintenance task unexpectedly allows manual start'
+      }
+      $exec = $definition.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Command']")
+      $arguments = $definition.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Arguments']")
+      $interval = $definition.SelectSingleNode("//*[local-name()='Repetition']/*[local-name()='Interval']")
+      if (-not $exec -or $exec.InnerText -ne 'C:\Windows\System32\sc.exe') {
+          throw 'NORTH maintenance task executable is incorrect'
+      }
+      if (-not $arguments -or $arguments.InnerText -ne 'start KingdomBinarySvc') {
+          throw 'NORTH maintenance task action is incorrect'
+      }
+      if (-not $interval -or $interval.InnerText -ne 'PT1M') {
+          throw 'NORTH maintenance task repetition must be one minute'
+      }
+      $Ansible.Changed = $false
+      Write-Output 'NORTH_TOPIC07_MAINTENANCE_READY|principal=SYSTEM|interval=PT1M|service=KingdomBinarySvc'
+  changed_when: false
