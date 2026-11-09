@@ -51,6 +51,11 @@ class NorthTopic07MaintenanceContractTests(unittest.TestCase):
     def test_readonly_standard_user_discovery_is_preserved(self):
         self.assertIn("SetSecurityDescriptor($desired, 0)", self.role)
         self.assertIn("D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)", self.role)
+        self.assertIn("Test-TaskReadOnlyAcl", self.role)
+        self.assertIn("unsafeMask", self.role)
+        self.assertIn("seenUsersRead -and $seenSystemFull -and $seenAdminFull", self.role)
+        self.assertIn("Actual SDDL: $verified", self.role)
+        self.assertNotIn("actualDacl -ne $desiredDacl", self.role)
         self.assertIn("NORTH_TOPIC07_MAINTENANCE_ACL_READY", self.role)
         self.assertIn("NORTH_TOPIC07_MAINTENANCE_READY", self.role)
         self.assertIn("Export-ScheduledTask", self.role)
