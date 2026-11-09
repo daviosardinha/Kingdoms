@@ -41,10 +41,17 @@ class NorthTopic07MaintenanceContractTests(unittest.TestCase):
             "$trigger.StartBoundary = '2026-01-01T00:00:00'",
             "$trigger.Repetition.Interval = 'PT1M'",
             "$trigger.Repetition.Duration = 'P1D'",
-            "$action.Path = 'C:\\Windows\\System32\\sc.exe'",
-            "$action.Arguments = 'start KingdomBinarySvc'",
+            "$action.Path = $taskExecutable",
+            "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", 
+            "$action.Arguments = $taskArguments",
+            "Stop-Service -Name KingdomBinarySvc",
+            "sc.exe start KingdomBinarySvc | Out-Null",
+            "Start-Sleep -Seconds 4", 
         ):
             self.assertIn(needle, self.role)
+        # Source must verify the full stop/start/stop cycle, not merely the task name.
+        self.assertIn("$arguments.InnerText -notmatch 'Stop-Service -Name KingdomBinarySvc.*sc\\.exe start KingdomBinarySvc.*Stop-Service -Name KingdomBinarySvc'", self.role)
+        self.assertIn("$action.Arguments -eq $taskArguments", self.role)
         self.assertNotIn("ansible.windows.win_scheduled_task:", self.role)
         self.assertNotIn("community.windows.win_scheduled_task:", self.role)
 
