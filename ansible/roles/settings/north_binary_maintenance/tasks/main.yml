@@ -1,6 +1,7 @@
 ---
 # NORTH Phase 04 Topic 07.
-# A Windows-owned maintenance process starts the vulnerable service regularly.
+# A Windows-owned maintenance cycle stops, starts and stops the service regularly.
+# The service must not remain RUNNING and lock the weak executable between cycles.
 # The student's user can inspect the task but cannot start it on demand.
 # We do not grant Rickon SERVICE_START or modify the service security descriptor.
 
@@ -9,6 +10,10 @@
     script: |
       $ErrorActionPreference = 'Stop'
       $taskName = 'Workstation Service Health'
+      $taskExecutable = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+      # The original service stays RUNNING after startup. The maintenance
+      # cycle briefly starts it, then returns it to STOPPED for repeatable labs.
+      $taskArguments = '-NoProfile -NonInteractive -Command "Stop-Service -Name KingdomBinarySvc -ErrorAction SilentlyContinue; Start-Sleep -Seconds 4; & sc.exe start KingdomBinarySvc | Out-Null; Start-Sleep -Seconds 4; Stop-Service -Name KingdomBinarySvc -ErrorAction SilentlyContinue"'
       $scheduler = New-Object -ComObject 'Schedule.Service'
       $scheduler.Connect()
       $folder = $scheduler.GetFolder('\')
@@ -25,8 +30,8 @@
               $principal = $definition.Principal
               $settings = $definition.Settings
               $matches = (
-                  $action.Path -ieq 'C:\Windows\System32\sc.exe' -and
-                  $action.Arguments -eq 'start KingdomBinarySvc' -and
+                  $action.Path -ieq $taskExecutable -and
+                  $action.Arguments -eq $taskArguments -and
                   $trigger.Type -eq 2 -and
                   $trigger.DaysInterval -eq 1 -and
                   $trigger.Repetition.Interval -eq 'PT1M' -and
@@ -63,8 +68,8 @@
           $trigger.Repetition.Duration = 'P1D'
           $trigger.Repetition.StopAtDurationEnd = $false
           $action = $definition.Actions.Create(0)
-          $action.Path = 'C:\Windows\System32\sc.exe'
-          $action.Arguments = 'start KingdomBinarySvc'
+          $action.Path = $taskExecutable
+          $action.Arguments = $taskArguments
           $acl = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)'
           $folder.RegisterTaskDefinition($taskName, $definition, 6, 'SYSTEM', $null, 5, $acl) | Out-Null
           $Ansible.Changed = $true
@@ -172,10 +177,10 @@
       $exec = $definition.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Command']")
       $arguments = $definition.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Arguments']")
       $interval = $definition.SelectSingleNode("//*[local-name()='Repetition']/*[local-name()='Interval']")
-      if (-not $exec -or $exec.InnerText -ne 'C:\Windows\System32\sc.exe') {
+      if (-not $exec -or $exec.InnerText -ne 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe') {
           throw 'NORTH maintenance task executable is incorrect'
       }
-      if (-not $arguments -or $arguments.InnerText -ne 'start KingdomBinarySvc') {
+      if (-not $arguments -or $arguments.InnerText -notmatch 'Stop-Service -Name KingdomBinarySvc.*sc\.exe start KingdomBinarySvc.*Stop-Service -Name KingdomBinarySvc') {
           throw 'NORTH maintenance task action is incorrect'
       }
       if (-not $interval -or $interval.InnerText -ne 'PT1M') {
