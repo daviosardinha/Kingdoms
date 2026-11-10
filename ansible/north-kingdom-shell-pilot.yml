@@ -6,6 +6,12 @@
   tags:
     - north_kingdom_shell_pilot
   tasks:
+    - name: NORTH pilot | ensure source staging directory exists
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\Kingdoms'
+        state: directory
+      when: domain_name == 'NORTH' and inventory_hostname == 'ws01'
+
     - name: NORTH pilot | stage C# source
       ansible.windows.win_copy:
         src: roles/settings/north_kingdom_shell/files/KingdomShell.cs

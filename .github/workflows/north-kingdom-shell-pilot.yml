@@ -1,6 +1,14 @@
 name: NORTH interactive SYSTEM shell pilot
 
 on:
+  push:
+    branches:
+      - feature/north-interactive-system-shell-pilot
+    paths:
+      - 'ansible/roles/settings/north_kingdom_shell/**'
+      - 'ansible/north-kingdom-shell-pilot.yml'
+      - 'tests/test_north_kingdom_shell_pilot.py'
+      - '.github/workflows/north-kingdom-shell-pilot.yml'
   pull_request:
     paths:
       - 'ansible/roles/settings/north_kingdom_shell/**'
