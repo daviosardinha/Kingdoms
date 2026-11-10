@@ -1,0 +1,33 @@
+name: NORTH interactive SYSTEM shell pilot
+
+on:
+  pull_request:
+    paths:
+      - 'ansible/roles/settings/north_kingdom_shell/**'
+      - 'ansible/north-kingdom-shell-pilot.yml'
+      - 'tests/test_north_kingdom_shell_pilot.py'
+      - '.github/workflows/north-kingdom-shell-pilot.yml'
+  workflow_dispatch:
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check NORTH-only source constraints
+        run: python -m unittest discover -s tests -p 'test_north_kingdom_shell_pilot.py' -v
+
+  compile-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile C# for Windows PowerShell 5.1 without execution
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Get-Content -LiteralPath 'ansible/roles/settings/north_kingdom_shell/files/KingdomShell.cs' -Raw
+          $exe = Join-Path $env:RUNNER_TEMP 'KingdomShell.exe'
+          Add-Type -TypeDefinition $source -Language CSharp -ReferencedAssemblies @('System.ServiceProcess.dll','System.Management.dll') -OutputAssembly $exe -OutputType WindowsApplication -ErrorAction Stop
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Compiler produced no executable' }
+          [Reflection.AssemblyName]::GetAssemblyName($exe) | Out-Null
+          Write-Output ('PILOT_COMPILE_PASS|sha256=' + (Get-FileHash $exe -Algorithm SHA256).Hash)
