@@ -229,12 +229,12 @@ windows_lpe_writable_program_directory:
 
 windows_lpe_insecure_service_registry:
   service_name: KingdomConfigSvc
-  display_name: GOAD Kingdoms Registry Config Service
+  display_name: Kingdoms Registry Config Service
   root: 'C:\Kingdom LPE\Insecure Service Registry'
   service_directory: 'C:\Kingdom LPE\Insecure Service Registry\Service'
   executable: 'C:\Kingdom LPE\Insecure Service Registry\Service\KingdomConfigSvc.exe'
   helper_directory: 'C:\Kingdom LPE\Insecure Service Registry\Protected'
   helper_executable: 'C:\Kingdom LPE\Insecure Service Registry\Protected\KingdomConfigHelper.exe'
-  registry_key: 'HKLM:\SOFTWARE\GOAD Kingdoms\KingdomConfigSvc'
-  registry_subkey: 'SOFTWARE\GOAD Kingdoms\KingdomConfigSvc'
+  registry_key: 'HKLM:\SOFTWARE\Kingdoms\KingdomConfigSvc'
+  registry_subkey: 'SOFTWARE\Kingdoms\KingdomConfigSvc'
   registry_value: HelperPath
