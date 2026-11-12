@@ -145,6 +145,15 @@
       }
       if ($binaryWritable) { throw 'service executable is also writable by Users; technique collision detected' }
 
+      # The exercise is a Registry ACL weakness, not a service DACL weakness.
+      $sd = (& sc.exe sdshow $name 2>&1 | Out-String).Trim()
+      foreach ($group in @('BU', 'IU', 'AU')) {
+          $ace = [regex]::Match($sd, '\(A;;([^;]+);;;' + $group + '\)')
+          if ($ace.Success -and $ace.Groups[1].Value -match '(DC|RP)') {
+              throw "service DACL unexpectedly allows group=$group to configure/start service"
+          }
+      }
+
       Write-Output 'WINDOWS_LPE_WEAK_SERVICE_REGISTRY_PERMISSIONS=VULNERABLE'
   register: windows_lpe_weak_service_registry_permissions_vulnerable
   when:
