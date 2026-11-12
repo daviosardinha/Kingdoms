@@ -30,7 +30,7 @@
       }
       "@
       Add-Type -TypeDefinition $source -Language CSharp -ReferencedAssemblies 'System.ServiceProcess.dll' -OutputAssembly $exe -OutputType WindowsApplication
-      New-Service -Name $name -BinaryPathName ('"{0}"' -f $exe) -DisplayName $display -StartupType Manual | Out-Null
+      New-Service -Name $name -BinaryPathName ('"{0}"' -f $exe) -DisplayName $display -StartupType Automatic | Out-Null
 
       $acl = Get-Acl -Path $regPath
       $usersSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-545')
@@ -47,6 +47,41 @@
       Write-Output 'WINDOWS_LPE_WEAK_SERVICE_REGISTRY_PERMISSIONS=APPLIED'
   when: windows_lpe_action == 'apply'
 
+- name: Create private source staging directory for Topic 10 helper
+  ansible.windows.win_file:
+    path: 'C:\ProgramData\Kingdoms'
+    state: directory
+  when: windows_lpe_action == 'apply'
+
+- name: Stage reviewed Topic 10 service-aware interactive helper source
+  ansible.windows.win_copy:
+    src: registry_shell/KingdomRegistryShell.cs
+    dest: 'C:\ProgramData\Kingdoms\KingdomRegistryShell.cs'
+  when: windows_lpe_action == 'apply'
+
+- name: Compile Topic 10 service-aware helper without executing it
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $source = 'C:\ProgramData\Kingdoms\KingdomRegistryShell.cs'
+      $destination = 'C:\Users\Public\Documents\KingdomRegistryShell.exe'
+      $temporary = Join-Path $env:TEMP ('KingdomRegistryShell-{0}.exe' -f [Guid]::NewGuid().ToString('N'))
+      try {
+          $text = [IO.File]::ReadAllText($source)
+          Add-Type -TypeDefinition $text -Language CSharp -ReferencedAssemblies 'System.ServiceProcess.dll' -OutputAssembly $temporary -OutputType WindowsApplication -ErrorAction Stop
+          if (-not (Test-Path -LiteralPath $temporary -PathType Leaf)) {
+              throw 'Topic 10 helper compilation did not produce an executable'
+          }
+          Copy-Item -LiteralPath $temporary -Destination $destination -Force -ErrorAction Stop
+      }
+      finally {
+          if (Test-Path -LiteralPath $temporary) {
+              Remove-Item -LiteralPath $temporary -Force
+          }
+      }
+      Write-Output 'WINDOWS_LPE_TOPIC10_REGISTRY_SHELL_STAGED'
+  when: windows_lpe_action == 'apply'
+
 - name: Reset weak service registry permissions candidate
   ansible.windows.win_powershell:
     script: |
@@ -59,6 +94,10 @@
           Start-Sleep -Milliseconds 750
       }
       if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+      $shell = 'C:\Users\Public\Documents\KingdomRegistryShell.exe'
+      $source = 'C:\ProgramData\Kingdoms\KingdomRegistryShell.cs'
+      if (Test-Path -LiteralPath $shell) { Remove-Item -LiteralPath $shell -Force }
+      if (Test-Path -LiteralPath $source) { Remove-Item -LiteralPath $source -Force }
       Write-Output 'WINDOWS_LPE_WEAK_SERVICE_REGISTRY_PERMISSIONS=RESET'
   when: windows_lpe_action == 'reset'
 
@@ -74,6 +113,15 @@
       $service = Get-CimInstance Win32_Service -Filter "Name='$name'" -ErrorAction Stop
       if (-not $service) { throw 'KingdomRegistrySvc is missing' }
       if ($service.StartName -ne 'LocalSystem') { throw "service account=$($service.StartName)" }
+      if ($service.StartMode -ne 'Auto') { throw "Topic 10 startup mode=$($service.StartMode), expected Auto" }
+      $helper = 'C:\Users\Public\Documents\KingdomRegistryShell.exe'
+      if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) {
+          throw 'Topic 10 service-aware helper missing'
+      }
+      $bytes = [IO.File]::ReadAllBytes($helper)
+      if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+          throw 'Topic 10 helper is not a Windows PE executable'
+      }
       if (-not $service.PathName.TrimStart().StartsWith('"')) { throw 'service ImagePath is not quoted' }
       if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'service executable missing' }
 
@@ -118,6 +166,12 @@
       if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw 'KingdomRegistrySvc still exists' }
       if (Test-Path -Path $regPath) { throw 'service registry key still exists' }
       if (Test-Path -LiteralPath $root) { throw 'weak registry lab directory still exists' }
+      if (Test-Path -LiteralPath 'C:\Users\Public\Documents\KingdomRegistryShell.exe') {
+          throw 'Topic 10 interactive helper still exists'
+      }
+      if (Test-Path -LiteralPath 'C:\ProgramData\Kingdoms\KingdomRegistryShell.cs') {
+          throw 'Topic 10 helper source still exists'
+      }
       Write-Output 'WINDOWS_LPE_WEAK_SERVICE_REGISTRY_PERMISSIONS=CLEAN'
   register: windows_lpe_weak_service_registry_permissions_clean
   when:
