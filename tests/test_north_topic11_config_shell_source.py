@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE = (ROOT / "ansible/roles/windows_lpe/tasks/techniques/insecure_service_registry.yml").read_text()
+DEFAULTS = (ROOT / "ansible/roles/windows_lpe/defaults/main.yml").read_text()
 HELPER = (ROOT / "ansible/roles/windows_lpe/files/config_shell/KingdomConfigShell.cs").read_text()
 
 
@@ -10,7 +11,12 @@ def test_attack_surface_is_the_application_helper_path():
     assert "if ($valueName -ne 'HelperPath')" in ROLE
     assert "RegistryRights]::SetValue" in ROLE
     assert "RegistryValueKind]::String" in ROLE
-    assert "SOFTWARE\\GOAD Kingdoms" in ROLE
+    assert "registry_key: 'HKLM:\\SOFTWARE\\Kingdoms\\KingdomConfigSvc'" in DEFAULTS
+    assert "registry_subkey: 'SOFTWARE\\Kingdoms\\KingdomConfigSvc'" in DEFAULTS
+    assert "display_name: Kingdoms Registry Config Service" in DEFAULTS
+    assert "foreach ($parentPath in @('SOFTWARE\\Kingdoms', 'SOFTWARE\\GOAD Kingdoms'))" in ROLE
+    assert "old Topic 11 Registry key still exists after migration" in ROLE
+    assert "foreach ($keyPath in @($regSubkey, 'SOFTWARE\\GOAD Kingdoms\\KingdomConfigSvc'))" in ROLE
     assert "sc.exe sdset $name $sddl" in ROLE
     assert "(A;;RPWP;;;BU)" in ROLE
     assert "StartupType Manual" in ROLE
