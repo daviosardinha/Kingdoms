@@ -30,9 +30,14 @@
           [Microsoft.Win32.RegistryView]::Registry64
       )
       try {
-          $parent = $base.OpenSubKey('SOFTWARE\GOAD Kingdoms', $true)
-          if ($parent) {
-              try { $parent.DeleteSubKeyTree('KingdomConfigSvc', $false) } finally { $parent.Close() }
+          # Remove only this scenario's key in both the current and old namespaces.
+          # Never remove either parent, which may contain unrelated lab settings.
+          foreach ($parentPath in @('SOFTWARE\Kingdoms', 'SOFTWARE\GOAD Kingdoms')) {
+              $parent = $base.OpenSubKey($parentPath, $true)
+              if ($parent) {
+                  try { $parent.DeleteSubKeyTree('KingdomConfigSvc', $false) }
+                  finally { $parent.Close() }
+              }
           }
       } finally {
           $base.Close()
@@ -175,9 +180,14 @@
           [Microsoft.Win32.RegistryView]::Registry64
       )
       try {
-          $parent = $base.OpenSubKey('SOFTWARE\GOAD Kingdoms', $true)
-          if ($parent) {
-              try { $parent.DeleteSubKeyTree('KingdomConfigSvc', $false) } finally { $parent.Close() }
+          # Remove only this scenario's key in both the current and old namespaces.
+          # Never remove either parent, which may contain unrelated lab settings.
+          foreach ($parentPath in @('SOFTWARE\Kingdoms', 'SOFTWARE\GOAD Kingdoms')) {
+              $parent = $base.OpenSubKey($parentPath, $true)
+              if ($parent) {
+                  try { $parent.DeleteSubKeyTree('KingdomConfigSvc', $false) }
+                  finally { $parent.Close() }
+              }
           }
       } finally {
           $base.Close()
@@ -227,6 +237,11 @@
           [Microsoft.Win32.RegistryView]::Registry64
       )
       try {
+          $legacyKey = $base.OpenSubKey('SOFTWARE\GOAD Kingdoms\KingdomConfigSvc')
+          if ($legacyKey) {
+              $legacyKey.Close()
+              throw 'old Topic 11 Registry key still exists after migration'
+          }
           $key = $base.OpenSubKey($regSubkey, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadSubTree)
           if (-not $key) { throw "custom registry key missing: HKLM\$regSubkey" }
           try {
@@ -285,10 +300,12 @@
           [Microsoft.Win32.RegistryView]::Registry64
       )
       try {
-          $key = $base.OpenSubKey($regSubkey)
-          if ($key) {
-              $key.Close()
-              throw 'custom insecure service registry key still exists'
+          foreach ($keyPath in @($regSubkey, 'SOFTWARE\GOAD Kingdoms\KingdomConfigSvc')) {
+              $key = $base.OpenSubKey($keyPath)
+              if ($key) {
+                  $key.Close()
+                  throw "custom insecure service registry key still exists: HKLM\$keyPath"
+              }
           }
       } finally {
           $base.Close()
