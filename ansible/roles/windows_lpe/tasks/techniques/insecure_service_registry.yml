@@ -121,6 +121,41 @@
       Write-Output 'WINDOWS_LPE_INSECURE_SERVICE_REGISTRY=APPLIED'
   when: windows_lpe_action == 'apply'
 
+- name: Create staging directory for NORTH Topic 11 helper
+  ansible.windows.win_file:
+    path: 'C:\ProgramData\Kingdoms'
+    state: directory
+  when: windows_lpe_action == 'apply'
+
+- name: Stage NORTH Topic 11 standalone interactive helper source
+  ansible.windows.win_copy:
+    src: config_shell/KingdomConfigShell.cs
+    dest: 'C:\ProgramData\Kingdoms\KingdomConfigShell.cs'
+  when: windows_lpe_action == 'apply'
+
+- name: Compile NORTH Topic 11 helper without executing it
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $source = 'C:\ProgramData\Kingdoms\KingdomConfigShell.cs'
+      $destination = 'C:\Users\Public\Documents\KingdomConfigShell.exe'
+      $temporary = Join-Path $env:TEMP ('KingdomConfigShell-{0}.exe' -f [Guid]::NewGuid().ToString('N'))
+      try {
+          $text = [IO.File]::ReadAllText($source)
+          Add-Type -TypeDefinition $text -Language CSharp -OutputAssembly $temporary -OutputType WindowsApplication -ErrorAction Stop
+          if (-not (Test-Path -LiteralPath $temporary -PathType Leaf)) {
+              throw 'NORTH Topic 11 compilation did not produce an executable'
+          }
+          Copy-Item -LiteralPath $temporary -Destination $destination -Force -ErrorAction Stop
+      }
+      finally {
+          if (Test-Path -LiteralPath $temporary) {
+              Remove-Item -LiteralPath $temporary -Force
+          }
+      }
+      Write-Output 'WINDOWS_LPE_TOPIC11_CONFIG_SHELL_STAGED'
+  when: windows_lpe_action == 'apply'
+
 - name: Reset insecure service registry candidate
   ansible.windows.win_powershell:
     script: |
@@ -149,6 +184,10 @@
       }
 
       if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+      $shell = 'C:\Users\Public\Documents\KingdomConfigShell.exe'
+      $source = 'C:\ProgramData\Kingdoms\KingdomConfigShell.cs'
+      if (Test-Path -LiteralPath $shell) { Remove-Item -LiteralPath $shell -Force }
+      if (Test-Path -LiteralPath $source) { Remove-Item -LiteralPath $source -Force }
       Write-Output 'WINDOWS_LPE_INSECURE_SERVICE_REGISTRY=RESET'
   when: windows_lpe_action == 'reset'
 
@@ -169,6 +208,19 @@
       if (-not $service.PathName.TrimStart().StartsWith('"')) { throw 'service path is not quoted' }
       if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'service executable missing' }
       if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw 'protected helper missing' }
+      if ($service.StartMode -ne 'Manual') { throw "service startup mode=$($service.StartMode), expected Manual" }
+      $interactiveHelper = 'C:\Users\Public\Documents\KingdomConfigShell.exe'
+      if (-not (Test-Path -LiteralPath $interactiveHelper -PathType Leaf)) {
+          throw 'Topic 11 standalone SYSTEM helper missing'
+      }
+      $bytes = [IO.File]::ReadAllBytes($interactiveHelper)
+      if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) {
+          throw 'Topic 11 helper is not a Windows PE executable'
+      }
+      $sddl = (& sc.exe sdshow $name 2>&1 | Out-String).Trim()
+      if ($sddl -notmatch '\(A;;RPWP;;;BU\)') {
+          throw 'Topic 11 service DACL lacks the intended BUILTIN\Users start and stop rights'
+      }
 
       $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
           [Microsoft.Win32.RegistryHive]::LocalMachine,
@@ -243,6 +295,12 @@
       }
 
       if (Test-Path -LiteralPath $root) { throw 'insecure service registry lab directory still exists' }
+      if (Test-Path -LiteralPath 'C:\Users\Public\Documents\KingdomConfigShell.exe') {
+          throw 'Topic 11 interactive helper still exists'
+      }
+      if (Test-Path -LiteralPath 'C:\ProgramData\Kingdoms\KingdomConfigShell.cs') {
+          throw 'Topic 11 interactive helper source still exists'
+      }
       Write-Output 'WINDOWS_LPE_INSECURE_SERVICE_REGISTRY=CLEAN'
   register: windows_lpe_insecure_service_registry_clean
   when:
