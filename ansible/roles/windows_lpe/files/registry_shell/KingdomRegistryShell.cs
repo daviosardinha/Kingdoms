@@ -60,7 +60,9 @@ internal sealed class KingdomRegistryShell : ServiceBase
 
     private void TryLaunch()
     {
-        if (stopping)
+        if (stopping ||
+            !Environment.MachineName.Equals("WS01", StringComparison.OrdinalIgnoreCase) ||
+            !WindowsIdentity.GetCurrent().IsSystem)
             return;
         lock (gate)
         {
