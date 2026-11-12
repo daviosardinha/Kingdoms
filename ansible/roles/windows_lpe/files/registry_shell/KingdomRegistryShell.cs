@@ -7,7 +7,7 @@ using System.Threading;
 
 // NORTH Topic 10 lab helper.
 // Intentionally limited to the WS01 training machine, NORTH\rickon.stark,
-// and the KingdomRegistrySvc service name. No network listener or persistence.
+// and the KingdomRegistrySvc service name. No network listener or self-installation.
 internal sealed class KingdomRegistryShell : ServiceBase
 {
     private readonly object gate = new object();
