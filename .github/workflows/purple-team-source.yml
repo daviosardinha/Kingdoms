@@ -7,6 +7,9 @@ on:
   pull_request:
     paths:
       - 'ad/PURPLE/**'
+      - 'ansible/purple-dns-c2.yml'
+      - 'playbooks.yml'
+      - 'scripts/purple-dns-c2-apply.sh'
       - 'scripts/purple-add-c2.py'
       - 'goad/purple_vmware_network.py'
       - 'goad/purple_existing_start.py'
@@ -31,7 +34,7 @@ jobs:
           python-version: '3.11'
       - name: Compile edited Python modules and tests
         run: |
-          python -m py_compile goad/purple_existing_start.py goad/purple_vmware_network.py goad/course1_host_network_apply.py goad/provider/vagrant/vmware.py goad/provider/vagrant/vmware_kingdoms.py scripts/purple-ws01-vmware-eval.py scripts/purple-add-c2.py tests/test_purple_add_c2.py tests/test_purple_existing_stop.py tests/test_purple_guest_hostnames.py tests/test_purple_fresh_runtime_contract.py tests/test_purple_console_lifecycle_compat.py tests/test_purple_fixed_passwords.py tests/test_purple_vmware_network.py tests/test_purple_lab_source.py tests/test_purple_ws01_install_recovery.py
+          python -m py_compile goad/purple_existing_start.py goad/purple_vmware_network.py goad/course1_host_network_apply.py goad/provider/vagrant/vmware.py goad/provider/vagrant/vmware_kingdoms.py scripts/purple-ws01-vmware-eval.py scripts/purple-add-c2.py tests/test_purple_add_c2.py tests/test_purple_existing_stop.py tests/test_purple_guest_hostnames.py tests/test_purple_fresh_runtime_contract.py tests/test_purple_console_lifecycle_compat.py tests/test_purple_fixed_passwords.py tests/test_purple_vmware_network.py tests/test_purple_lab_source.py tests/test_purple_dns_c2_source.py tests/test_purple_ws01_install_recovery.py
       - name: Check Wazuh provisioning shell syntax
         run: |
           bash -n ad/PURPLE/providers/vmware/configure-linux-interface.sh
@@ -39,6 +42,7 @@ jobs:
           bash -n ad/PURPLE/providers/vmware/provision-sliver-trainee.sh
           bash -n ad/PURPLE/providers/vmware/provision-wazuh-all-in-one.sh
           bash -n scripts/purple-wazuh-credentials.sh
+          bash -n scripts/purple-dns-c2-apply.sh
       - name: Execute offline Purple Team regressions
         run: |
-          python -m unittest tests.test_purple_existing_start tests.test_purple_existing_stop tests.test_purple_guest_hostnames tests.test_purple_fresh_runtime_contract tests.test_purple_console_lifecycle_compat tests.test_purple_add_c2 tests.test_purple_lab_source tests.test_purple_sliver_trainee tests.test_purple_fixed_passwords tests.test_purple_vmware_network tests.test_purple_ws01_install_recovery -v
+          python -m unittest tests.test_purple_existing_start tests.test_purple_existing_stop tests.test_purple_guest_hostnames tests.test_purple_fresh_runtime_contract tests.test_purple_console_lifecycle_compat tests.test_purple_add_c2 tests.test_purple_lab_source tests.test_purple_sliver_trainee tests.test_purple_fixed_passwords tests.test_purple_vmware_network tests.test_purple_dns_c2_source tests.test_purple_ws01_install_recovery -v
