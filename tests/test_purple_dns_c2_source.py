@@ -29,6 +29,20 @@ class PurpleDnsC2SourceTests(unittest.TestCase):
                           'Add-DnsServerConditionalForwarderZone'):
             self.assertNotIn(dangerous, body)
 
+    def test_existing_lab_has_guarded_source_owned_apply_command(self):
+        deploy = (ROOT / 'scripts/purple-dns-c2-apply.sh').read_text()
+        for marker in (
+            '--instance-dir', '--apply', 'purple-dns-c2.yml',
+            '--limit dc01', 'ansible-playbook',
+            'vagrant upload', 'vagrant ssh PURPLE-LX01',
+            'resolvectl query purple-c2.purple.lab',
+            'dig +time=3 +tries=1',
+        ):
+            self.assertIn(marker, deploy)
+        self.assertNotIn('goad.sh -t install', deploy)
+        self.assertNotIn('vagrant up ', deploy)
+        self.assertNotIn('vagrant destroy', deploy)
+
     def test_lx01_split_dns_without_joining_ad(self):
         script = (ROOT / 'ad/PURPLE/providers/vmware/configure-linux-interface.sh').read_text()
         for marker in (
