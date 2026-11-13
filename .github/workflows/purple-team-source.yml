@@ -8,8 +8,10 @@ on:
     paths:
       - 'ad/PURPLE/**'
       - 'ansible/purple-dns-c2.yml'
+      - 'ansible/purple-dns-c2-verify.yml'
       - 'playbooks.yml'
       - 'scripts/purple-dns-c2-apply.sh'
+      - 'scripts/purple-dns-c2-validate.sh'
       - 'scripts/purple-add-c2.py'
       - 'goad/purple_vmware_network.py'
       - 'goad/purple_existing_start.py'
@@ -43,6 +45,7 @@ jobs:
           bash -n ad/PURPLE/providers/vmware/provision-wazuh-all-in-one.sh
           bash -n scripts/purple-wazuh-credentials.sh
           bash -n scripts/purple-dns-c2-apply.sh
+          bash -n scripts/purple-dns-c2-validate.sh
       - name: Execute offline Purple Team regressions
         run: |
           python -m unittest tests.test_purple_existing_start tests.test_purple_existing_stop tests.test_purple_guest_hostnames tests.test_purple_fresh_runtime_contract tests.test_purple_console_lifecycle_compat tests.test_purple_add_c2 tests.test_purple_lab_source tests.test_purple_sliver_trainee tests.test_purple_fixed_passwords tests.test_purple_vmware_network tests.test_purple_dns_c2_source tests.test_purple_ws01_install_recovery -v
