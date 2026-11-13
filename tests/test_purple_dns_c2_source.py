@@ -7,12 +7,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PurpleDnsC2SourceTests(unittest.TestCase):
-    def test_playbook_is_scoped_after_ad(self):
-        main = (ROOT / 'ansible/main.yml').read_text()
-        self.assertIn('import_playbook: purple-dns-c2.yml', main)
-        self.assertIn("when: domain_name == 'PURPLE'", main)
-        self.assertLess(main.index('import_playbook: ad-members.yml'),
-                        main.index('import_playbook: purple-dns-c2.yml'))
+    def test_fresh_purple_install_runs_dns_after_domain_creation(self):
+        manifest = (ROOT / 'playbooks.yml').read_text()
+        self.assertEqual(manifest.count('\nPURPLE:\n'), 1)
+        profile = manifest.split('\nPURPLE:\n', 1)[1].split('\ndefault:\n', 1)[0]
+        default = manifest.split('\ndefault:\n', 1)[1]
+        read_playbooks = lambda s: [
+            line.strip().removeprefix('- ')
+            for line in s.splitlines() if line.startswith('  - ')
+        ]
+        purple = read_playbooks(profile)
+        original = read_playbooks(default)
+        self.assertEqual(purple.count('purple-dns-c2.yml'), 1)
+        self.assertEqual([p for p in purple if p != 'purple-dns-c2.yml'], original)
+        self.assertLess(purple.index('ad-members.yml'),
+                        purple.index('purple-dns-c2.yml'))
+        self.assertLess(purple.index('purple-dns-c2.yml'),
+                        purple.index('ad-trusts.yml'))
 
     def test_dns_changes_guard_ad_zone_and_existing_delegations(self):
         body = (ROOT / 'ansible/purple-dns-c2.yml').read_text()
