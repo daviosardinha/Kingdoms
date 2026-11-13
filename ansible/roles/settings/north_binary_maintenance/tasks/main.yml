@@ -1,0 +1,191 @@
+---
+# NORTH Phase 04 Topic 07.
+# A Windows-owned maintenance cycle stops, starts and stops the service regularly.
+# The service must not remain RUNNING and lock the weak executable between cycles.
+# The student's user can inspect the task but cannot start it on demand.
+# We do not grant Rickon SERVICE_START or modify the service security descriptor.
+
+- name: NORTH | register recurring workstation maintenance task
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $taskName = 'Workstation Service Health'
+      $taskExecutable = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+      # The original service stays RUNNING after startup. The maintenance
+      # cycle briefly starts it, then returns it to STOPPED for repeatable labs.
+      $taskArguments = '-NoProfile -NonInteractive -Command "Stop-Service -Name KingdomBinarySvc -ErrorAction SilentlyContinue; Start-Sleep -Seconds 4; & sc.exe start KingdomBinarySvc | Out-Null; Start-Sleep -Seconds 4; Stop-Service -Name KingdomBinarySvc -ErrorAction SilentlyContinue"'
+      $scheduler = New-Object -ComObject 'Schedule.Service'
+      $scheduler.Connect()
+      $folder = $scheduler.GetFolder('\')
+      $registered = $null
+      try { $registered = $folder.GetTask($taskName) } catch { $registered = $null }
+
+      # Reapply only when the managed task no longer matches the intended contract.
+      $needsRegistration = $true
+      if ($null -ne $registered) {
+          $definition = $registered.Definition
+          if ($definition.Actions.Count -eq 1 -and $definition.Triggers.Count -eq 1) {
+              $action = $definition.Actions.Item(1)
+              $trigger = $definition.Triggers.Item(1)
+              $principal = $definition.Principal
+              $settings = $definition.Settings
+              $matches = (
+                  $action.Path -ieq $taskExecutable -and
+                  $action.Arguments -eq $taskArguments -and
+                  $trigger.Type -eq 2 -and
+                  $trigger.DaysInterval -eq 1 -and
+                  $trigger.Repetition.Interval -eq 'PT1M' -and
+                  $trigger.Repetition.Duration -eq 'P1D' -and
+                  $principal.UserId -in @('SYSTEM', 'NT AUTHORITY\SYSTEM', 'S-1-5-18') -and
+                  $principal.LogonType -eq 5 -and
+                  $settings.Enabled -and
+                  -not $settings.Hidden -and
+                  -not $settings.AllowDemandStart -and
+                  $settings.MultipleInstances -eq 2
+              )
+              $needsRegistration = -not $matches
+          }
+      }
+      if ($needsRegistration) {
+          $definition = $scheduler.NewTask(0)
+          $definition.RegistrationInfo.Description = 'Check locally installed workstation services on a regular schedule'
+          $definition.RegistrationInfo.Author = 'NORTH Workstation Maintenance'
+          $definition.Principal.UserId = 'SYSTEM'
+          $definition.Principal.LogonType = 5
+          $definition.Principal.RunLevel = 1
+          $definition.Settings.Compatibility = 4
+          $definition.Settings.Enabled = $true
+          $definition.Settings.Hidden = $false
+          $definition.Settings.AllowDemandStart = $false
+          $definition.Settings.DisallowStartIfOnBatteries = $false
+          $definition.Settings.StopIfGoingOnBatteries = $false
+          $definition.Settings.StartWhenAvailable = $true
+          $definition.Settings.MultipleInstances = 2
+          $trigger = $definition.Triggers.Create(2)
+          $trigger.StartBoundary = '2026-01-01T00:00:00'
+          $trigger.DaysInterval = 1
+          $trigger.Repetition.Interval = 'PT1M'
+          $trigger.Repetition.Duration = 'P1D'
+          $trigger.Repetition.StopAtDurationEnd = $false
+          $action = $definition.Actions.Create(0)
+          $action.Path = $taskExecutable
+          $action.Arguments = $taskArguments
+          $acl = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)'
+          $folder.RegisterTaskDefinition($taskName, $definition, 6, 'SYSTEM', $null, 5, $acl) | Out-Null
+          $Ansible.Changed = $true
+      }
+      else {
+          $Ansible.Changed = $false
+      }
+      Write-Output 'NORTH_TOPIC07_MAINTENANCE_REGISTERED'
+
+# Task Scheduler permissions: BUILTIN\Users may read the task definition
+# (so students can discover its action and schedule), but must not be able
+# to execute, modify or delete the task. Administrators and SYSTEM retain
+# full control. Idempotent comparison avoids rewriting an unchanged DACL.
+# Task Scheduler may normalize ACL entries when a task is registered. Validate
+# effective ACE masks and trustees instead of comparing a raw SDDL string.
+- name: NORTH | verify read-only task access for standard users
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $scheduler = New-Object -ComObject 'Schedule.Service'
+      $scheduler.Connect()
+      $registered = $scheduler.GetFolder('\').GetTask('Workstation Service Health')
+      $desired = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)'
+
+      function Test-TaskReadOnlyAcl([string]$sddl) {
+          $descriptor = New-Object System.Security.AccessControl.RawSecurityDescriptor($sddl)
+          $seenUsersRead = $false
+          $seenSystemFull = $false
+          $seenAdminFull = $false
+          # GENERIC_WRITE, GENERIC_EXECUTE, GENERIC_ALL, DELETE, WRITE_DAC,
+          # WRITE_OWNER and file write/execute bits must not reach students.
+          $unsafeMask = [long]0x700D0176
+          $genericRead = [long]0x80000000
+          $genericAll = [long]0x10000000
+          $fileAll = [long]0x001F01FF
+
+          if ($null -eq $descriptor.DiscretionaryAcl) { return $false }
+          foreach ($ace in $descriptor.DiscretionaryAcl) {
+              if ($ace -isnot [System.Security.AccessControl.KnownAce]) { return $false }
+              if ($ace.AceQualifier -ne [System.Security.AccessControl.AceQualifier]::AccessAllowed) {
+                  continue
+              }
+              $sid = $ace.SecurityIdentifier.Value
+              $mask = ([long]$ace.AccessMask -band [long]4294967295)
+              if ($sid -eq 'S-1-5-18' -or $sid -eq 'S-1-5-32-544') {
+                  $fullControl = (($mask -band $genericAll) -ne 0) -or (($mask -band $fileAll) -eq $fileAll)
+                  # Task Scheduler may append a second, read-only SYSTEM ACE.
+                  # Require at least one full-control ACE per privileged SID,
+                  # but do not reject extra restricted ACEs for that same SID.
+                  if ($fullControl) {
+                      if ($sid -eq 'S-1-5-18') { $seenSystemFull = $true }
+                      else { $seenAdminFull = $true }
+                  }
+                  continue
+              }
+              # Include Everyone/Authenticated Users and other non-admin ACEs.
+              if (($mask -band $unsafeMask) -ne 0) { return $false }
+              if ($sid -eq 'S-1-5-32-545') {
+                  $readAllowed = (($mask -band $genericRead) -ne 0) -or (($mask -band 1) -ne 0)
+                  if ($readAllowed) { $seenUsersRead = $true }
+              }
+          }
+          return ($seenUsersRead -and $seenSystemFull -and $seenAdminFull)
+      }
+
+      # Regression checks for the actual Windows-normalized ACL and an
+      # intentionally unsafe task granting standard users full control.
+      $windowsNormalizedAcl = 'D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;BU)(A;;FR;;;SY)'
+      $unsafeStudentAcl = 'D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FA;;;BU)'
+      if (-not (Test-TaskReadOnlyAcl $windowsNormalizedAcl)) {
+          throw 'NORTH maintenance ACL regression: valid normalized Windows descriptor rejected'
+      }
+      if (Test-TaskReadOnlyAcl $unsafeStudentAcl) {
+          throw 'NORTH maintenance ACL regression: unsafe standard-user rights accepted'
+      }
+
+      $actual = $registered.GetSecurityDescriptor(4)
+      if (-not (Test-TaskReadOnlyAcl $actual)) {
+          $registered.SetSecurityDescriptor($desired, 0)
+          $Ansible.Changed = $true
+      }
+      else {
+          $Ansible.Changed = $false
+      }
+      $verified = $registered.GetSecurityDescriptor(4)
+      if (-not (Test-TaskReadOnlyAcl $verified)) {
+          throw "NORTH maintenance task ACL does not grant read-only Users access with administrative control. Actual SDDL: $verified"
+      }
+      Write-Output 'NORTH_TOPIC07_MAINTENANCE_ACL_READY'
+
+- name: NORTH | verify scheduled maintenance contract without starting the service
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $name = 'Workstation Service Health'
+      $task = Get-ScheduledTask -TaskName $name -ErrorAction Stop
+      [xml]$definition = Export-ScheduledTask -TaskName $name -ErrorAction Stop
+      if ($task.State -eq 'Disabled') { throw 'NORTH maintenance task is disabled' }
+      if ($task.Principal.UserId -notin @('SYSTEM', 'NT AUTHORITY\SYSTEM', 'S-1-5-18')) {
+          throw "NORTH maintenance principal unexpected: $($task.Principal.UserId)"
+      }
+      if ($task.Settings.AllowDemandStart) {
+          throw 'NORTH maintenance task unexpectedly allows manual start'
+      }
+      $exec = $definition.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Command']")
+      $arguments = $definition.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Arguments']")
+      $interval = $definition.SelectSingleNode("//*[local-name()='Repetition']/*[local-name()='Interval']")
+      if (-not $exec -or $exec.InnerText -ne 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe') {
+          throw 'NORTH maintenance task executable is incorrect'
+      }
+      if (-not $arguments -or $arguments.InnerText -notmatch 'Stop-Service -Name KingdomBinarySvc.*sc\.exe start KingdomBinarySvc.*Stop-Service -Name KingdomBinarySvc') {
+          throw 'NORTH maintenance task action is incorrect'
+      }
+      if (-not $interval -or $interval.InnerText -ne 'PT1M') {
+          throw 'NORTH maintenance task repetition must be one minute'
+      }
+      $Ansible.Changed = $false
+      Write-Output 'NORTH_TOPIC07_MAINTENANCE_READY|principal=SYSTEM|interval=PT1M|service=KingdomBinarySvc'
+  changed_when: false
