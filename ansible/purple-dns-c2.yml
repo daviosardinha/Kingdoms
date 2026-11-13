@@ -44,7 +44,12 @@
     - name: Create only the dedicated c2.purple.lab delegation
       ansible.windows.win_shell: |
         $ErrorActionPreference = 'Stop'
-        $existing = @(Get-DnsServerZoneDelegation -Name 'purple.lab' -ChildZoneName 'c2' -ErrorAction SilentlyContinue)
+        # Missing -ChildZoneName raises a terminating WIN32 9714 error on first run.
+        # Enumerate the existing parent-zone delegations instead, preserving _msdcs.
+        $allDelegations = @(Get-DnsServerZoneDelegation -Name 'purple.lab' -ErrorAction Stop)
+        $existing = @($allDelegations | Where-Object {
+          ([string]$_.ChildZoneName).TrimEnd('.').ToLowerInvariant() -eq 'c2.purple.lab'
+        })
         if ($existing.Count -eq 0) {
           Add-DnsServerZoneDelegation -Name 'purple.lab' -ChildZoneName 'c2' -NameServer 'purple-c2.purple.lab' -IPAddress '172.28.233.60' -ErrorAction Stop | Out-Null
           Write-Output 'PURPLE_DNS_DELEGATION_CHANGED=1'
@@ -70,7 +75,10 @@
             throw "DNS verification failed for $hostname"
           }
         }
-        $delegation = @(Get-DnsServerZoneDelegation -Name 'purple.lab' -ChildZoneName 'c2' -ErrorAction Stop)
+        $allDelegations = @(Get-DnsServerZoneDelegation -Name 'purple.lab' -ErrorAction Stop)
+        $delegation = @($allDelegations | Where-Object {
+          ([string]$_.ChildZoneName).TrimEnd('.').ToLowerInvariant() -eq 'c2.purple.lab'
+        })
         if ($delegation.Count -ne 1) { throw 'Expected exactly one dedicated c2 DNS delegation' }
         Write-Output 'PURPLE_DNS_C2_PROVISIONED=1'
       changed_when: false
