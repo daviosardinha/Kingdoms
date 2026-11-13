@@ -1,0 +1,35 @@
+---
+# Read-only WS01 DNS readiness check for the PURPLE DNS C2 lab.
+- name: Verify PURPLE-WS01 internal DNS configuration and C2 hostname resolution
+  hosts: workstation
+  gather_facts: false
+  tasks:
+    - name: Verify WS01 can resolve PURPLE-C2 through its configured DNS path
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          if ($env:COMPUTERNAME -ne 'PURPLE-WS01') {
+            throw 'Expected PURPLE-WS01; refusing to verify a different host'
+          }
+
+          $servers = @(Get-DnsClientServerAddress -AddressFamily IPv4 |
+            Where-Object { $_.ServerAddresses -contains '172.28.233.30' })
+          if ($servers.Count -eq 0) {
+            throw 'No WS01 network interface lists PURPLE-DC01 (172.28.233.30) as DNS'
+          }
+          Write-Output 'PURPLE_WS01_DC_DNS_CONFIGURED=1'
+
+          $direct = @(Resolve-DnsName -Name 'purple-c2.purple.lab' -Type A -Server '172.28.233.30' -DnsOnly -NoHostsFile -ErrorAction Stop |
+            Where-Object { $_.IPAddress -eq '172.28.233.60' })
+          if ($direct.Count -ne 1) {
+            throw 'WS01 did not obtain the C2 address from PURPLE-DC01'
+          }
+          Write-Output 'PURPLE_WS01_DIRECT_DNS_READY=1'
+
+          $normal = @(Resolve-DnsName -Name 'purple-c2.purple.lab' -Type A -DnsOnly -NoHostsFile -ErrorAction Stop |
+            Where-Object { $_.IPAddress -eq '172.28.233.60' })
+          if ($normal.Count -ne 1) {
+            throw 'WS01 normal resolver path did not return the C2 address'
+          }
+          Write-Output 'PURPLE_WS01_DEFAULT_DNS_READY=1'
