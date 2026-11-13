@@ -150,6 +150,7 @@ PURPLE:
   - ad-servers.yml
   - ad-parent_domain.yml
   - ad-child_domain.yml
+  - wait5m.yml
   - ad-members.yml
   - purple-dns-c2.yml
   - ad-trusts.yml
