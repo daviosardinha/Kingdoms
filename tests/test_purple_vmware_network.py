@@ -57,6 +57,23 @@ class PurpleNetworkTests(unittest.TestCase):
         with self.assertRaises(purple.PurpleNetworkError):
             purple.validate_vmx('vmlist0.config = "/missing.vmx"\n', {})
 
+    def test_vmware_inventory_folder_markers_are_not_vm_files(self):
+        inventory = (
+            'vmlist0.config = "folder6"\n'
+            'vmlist1.config = "/lab/guest.vmx"\n'
+            'vmlist2.config = "folder12"\n'
+        )
+        self.assertEqual(
+            purple.registered_vmx_paths(inventory), ['/lab/guest.vmx']
+        )
+        purple.validate_vmx(inventory, {'/lab/guest.vmx': 'ethernet1.vnet = "vmnet10"\n'})
+
+    def test_nonfolder_missing_vmx_is_not_silently_ignored(self):
+        registry = 'vmlist0.config = "folder-name.vmx"\n'
+        self.assertEqual(purple.registered_vmx_paths(registry), ['folder-name.vmx'])
+        with self.assertRaises(purple.PurpleNetworkError):
+            purple.validate_vmx(registry, {})
+
     def test_no_host_mutation_code(self):
         import pathlib
         path = pathlib.Path(__file__).resolve().parents[1] / "goad/purple_vmware_network.py"

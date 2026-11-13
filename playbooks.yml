@@ -143,6 +143,27 @@ NORTH:
   - ws01-lpe-install.yml
   - kingdoms-health-final.yml
 
+# PURPLE uses the normal AD installation sequence with its own DNS C2 fixture.
+# Explicit profile avoids changing the provisioning of any other lab.
+PURPLE:
+  - build.yml
+  - ad-servers.yml
+  - ad-parent_domain.yml
+  - ad-child_domain.yml
+  - wait5m.yml
+  - ad-members.yml
+  - purple-dns-c2.yml
+  - ad-trusts.yml
+  - ad-data.yml
+  - ad-gmsa.yml
+  - laps.yml
+  - ad-relations.yml
+  - adcs.yml
+  - ad-acl.yml
+  - servers.yml
+  - security.yml
+  - vulnerabilities.yml
+
 default:
   - build.yml
   - ad-servers.yml
