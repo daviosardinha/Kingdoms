@@ -30,6 +30,15 @@ class PurpleDnsC2SourceTests(unittest.TestCase):
                           'Add-DnsServerConditionalForwarderZone'):
             self.assertNotIn(dangerous, body)
 
+    def test_first_run_does_not_look_up_a_missing_child_delegation(self):
+        body = (ROOT / 'ansible/purple-dns-c2.yml').read_text()
+        # WinDNS raises WIN32 9714 if queried directly for a missing child.
+        self.assertNotIn("Get-DnsServerZoneDelegation -Name 'purple.lab' -ChildZoneName 'c2'", body)
+        self.assertEqual(body.count("Get-DnsServerZoneDelegation -Name 'purple.lab' -ErrorAction Stop"), 2)
+        self.assertEqual(body.count("([string]$_.ChildZoneName).TrimEnd('.').ToLowerInvariant() -eq 'c2.purple.lab'"), 2)
+        self.assertIn('Add-DnsServerZoneDelegation', body)
+        self.assertIn('PURPLE_DNS_DELEGATION_UNCHANGED=1', body)
+
     def test_existing_lab_has_guarded_source_owned_apply_command(self):
         deploy = (ROOT / 'scripts/purple-dns-c2-apply.sh').read_text()
         for marker in (
