@@ -33,6 +33,8 @@ class NorthRuntimeSourceTests(unittest.TestCase):
         cls.north = NORTH.read_text(encoding="utf-8")
         cls.legacy = LEGACY.read_text(encoding="utf-8")
         cls.playbook = PLAYBOOK.read_text(encoding="utf-8")
+        cls.parent = (ROOT / 'ansible/files/north-parent-winrs.ps1').read_text()
+        cls.health = (ROOT / 'ansible/files/north-parent-dc-health.ps1').read_text()
 
     def test_bash_syntax_and_inline_python_compile(self):
         subprocess.run(["bash", "-n", str(NORTH)], check=True)
@@ -72,6 +74,65 @@ class NorthRuntimeSourceTests(unittest.TestCase):
         self.assertNotIn("hosts: all", self.playbook)
         self.assertIn("Test-ComputerSecureChannel", self.playbook)
         self.assertIn("kingslanding.sevenkingdoms.local", self.playbook)
+
+
+    def test_parent_root_dc_requires_guest_side_authenticated_proof(self):
+        # No host vmnet20 route or NAT fallback: hop is DC02 -> DC01.
+        self.assertIn("hosts: dc02:srv02:ws01", self.playbook)
+        self.assertIn("hosts: dc02\n", self.playbook)
+        self.assertIn("Invoke-NorthParentWinRS", self.playbook)
+        self.assertIn("Get-NorthParentCredential $ParentCredential", self.playbook)
+        self.assertIn("param([PSCredential]$ParentCredential)", self.playbook)
+        self.assertIn("sensitive_parameters:", self.playbook)
+        self.assertIn("hostvars['dc01'].ansible_user", self.playbook)
+        self.assertIn("hostvars['dc01'].ansible_password", self.playbook)
+        self.assertNotIn('{{ ansible_password }}', self.playbook)
+        self.assertIn("$session.Delete($locator, 0)", self.parent)
+        self.assertIn("$ns + '/cmd'", self.parent)
+        self.assertIn("SessionFlagUseNegotiate", self.parent)
+        self.assertNotIn('New-PSSession', self.parent)
+        self.assertNotIn('Invoke-Command -Session', self.parent)
+        for expected in (
+            "NTDS','DNS','ADWS','Netlogon','Kdc','W32Time",
+            "SYSVOL','NETLOGON",
+            "Get-CimInstance Win32_ComputerSystem",
+            "DomainRole -ne 5",
+            "Get-SmbShare -Name $name",
+            "_ldap._tcp.dc._msdcs.sevenkingdoms.local",
+            "nltest.exe '/dsgetdc:sevenkingdoms.local' /timeserv /force",
+            "w32tm.exe /query /source",
+            "w32tm.exe /query /status",
+        ):
+            self.assertIn(expected, self.health)
+        self.assertIn(
+            'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING',
+            self.north,
+        )
+        self.assertIn('NORTH_PARENT_DC_AD_HEALTH_READY', self.north)
+        self.assertLess(
+            self.north.index('NORTH_PARENT_DC_AD_HEALTH_READY'),
+            self.north.index('NORTH_RUNTIME_ACCEPTANCE=PASS'),
+        )
+
+    def test_parent_direct_proof_has_no_fallback_or_guest_modification(self):
+        parent = self.playbook.split(
+            "- name: Verify KINGSLANDING directly through the permitted inter-DC path",
+            1
+        )[1] + self.parent + self.health
+        self.assertIn("changed_when: false", parent)
+        self.assertIn("'NORTH_PARENT_DC_AD_HEALTH=PASS host=KINGSLANDING'", parent)
+        for forbidden in (
+            "Reset-ComputerMachinePassword", "Restart-Service",
+            "Start-Service", "Set-ItemProperty", "New-ItemProperty",
+            "w32tm.exe /config", "w32tm.exe /resync",
+            "ip route", "ethernet0.startConnected", "vagrant",
+            "Set-NetFirewallRule", "New-NetFirewallRule",
+            "Add-Computer", "New-PSSession -ComputerName 10.4.20.10",
+        ):
+            self.assertNotIn(forbidden, parent)
+        self.assertNotIn("ignore_errors: true", parent)
+        self.assertNotIn("failed_when: false", parent)
+        self.assertNotIn("rescue:", parent)
 
 
 class NorthRuntimeProviderDispatchTests(unittest.TestCase):

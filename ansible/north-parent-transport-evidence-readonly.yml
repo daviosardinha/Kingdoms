@@ -1,0 +1,202 @@
+---
+# Read-only evidence from the NORTH child DC to the protected parent PDC.
+# No NAT change, route addition, guest restart, certificate installation,
+# WinRM configuration, account change or domain repair.
+- name: Diagnose KINGSLANDING WinRS proof from WINTERFELL
+  hosts: dc02
+  gather_facts: false
+  tasks:
+    - name: Inspect parent DC route, TLS certificate and inventory account type
+      ansible.windows.win_powershell:
+        script: |
+          param([PSCredential]$ParentCredential)
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          if ($env:COMPUTERNAME -ne 'WINTERFELL') {
+              throw 'Expected WINTERFELL as read-only diagnostic origin'
+          }
+
+          $hostName = 'kingslanding.sevenkingdoms.local'
+          $expected = '10.4.20.10'
+          $resolved = @(Resolve-DnsName $hostName -Type A -ErrorAction Stop |
+              Where-Object { $_.IPAddress -eq $expected })
+          if ($resolved.Count -ne 1) {
+              throw 'Unexpected parent DC DNS path'
+          }
+          Write-Output 'NORTH_PARENT_DNS=PASS'
+
+          $client = [Net.Sockets.TcpClient]::new()
+          $stream = $null
+          try {
+              $async = $client.BeginConnect($expected, 5986, $null, $null)
+              if (-not $async.AsyncWaitHandle.WaitOne(5000)) {
+                  throw 'Parent HTTPS TCP connection timed out'
+              }
+              $client.EndConnect($async)
+              Write-Output 'NORTH_PARENT_TCP_5986=PASS'
+
+              # Certificate inspection only: bypass chain verification for
+              # this in-memory TLS handshake to READ the presented cert.
+              # The real WinRS connector retains its existing TLS policy.
+              $callback = [Net.Security.RemoteCertificateValidationCallback]{
+                  param($sender, $certificate, $chain, $errors)
+                  return $true
+              }
+              $stream = [Net.Security.SslStream]::new(
+                  $client.GetStream(), $false, $callback)
+              $stream.AuthenticateAsClient($hostName)
+              if (-not $stream.RemoteCertificate) {
+                  throw 'No parent HTTPS certificate presented'
+              }
+              $cert = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                  $stream.RemoteCertificate)
+              $utc = [DateTime]::UtcNow
+              $state = if ($cert.NotAfter.ToUniversalTime() -lt $utc) {
+                  'EXPIRED'
+              } elseif ($cert.NotBefore.ToUniversalTime() -gt $utc) {
+                  'NOT_YET_VALID'
+              } else {
+                  'WITHIN_VALIDITY'
+              }
+              Write-Output "NORTH_PARENT_TLS_VALIDITY=$state"
+              Write-Output ("NORTH_PARENT_TLS_NOTAFTER_UTC={0:yyyy-MM-ddTHH:mm:ssZ}" -f
+                  $cert.NotAfter.ToUniversalTime())
+          } catch {
+              $type = $_.Exception.GetType().Name
+              Write-Output "NORTH_PARENT_TLS_INSPECTION=ERROR type=$type"
+          } finally {
+              if ($stream) { $stream.Dispose() }
+              $client.Dispose()
+          }
+
+          # The current validator auto-prefixes unqualified inventory names
+          # with SEVENKINGDOMS\\. Check whether that account actually exists.
+          $user = '{{ hostvars["dc01"].ansible_user }}'
+          $sam = if ($user -match '^([^\\@]+)$') {
+              $Matches[1]
+          } elseif ($user -match '^[^\\]+\\([^\\]+)$') {
+              $Matches[1]
+          } elseif ($user -match '^([^@]+)@') {
+              $Matches[1]
+          } else { '' }
+          $userType = if ($user -match '^[^\\]+\\') {
+              'QUALIFIED'
+          } elseif ($user -match '@') {
+              'UPN'
+          } else { 'UNQUALIFIED' }
+          Write-Output "NORTH_PARENT_INVENTORY_IDENTITY=$userType"
+          if ($sam -match '^[A-Za-z0-9._-]{1,48}$') {
+              try {
+                  Import-Module ActiveDirectory -ErrorAction Stop
+                  $escaped = $sam.Replace("'", "''")
+                  $account = @(Get-ADUser -Server $hostName -Filter "SamAccountName -eq '$escaped'" -ErrorAction Stop)
+                  if ($account.Count -eq 1) {
+                      Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=EXISTS'
+                  } else {
+                      Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=ABSENT'
+                  }
+              } catch {
+                  Write-Output ("NORTH_PARENT_DOMAIN_ACCOUNT=UNKNOWN error={0}" -f
+                      $_.Exception.GetType().Name)
+              }
+          } else {
+              Write-Output 'NORTH_PARENT_DOMAIN_ACCOUNT=UNKNOWN'
+          }
+
+          # Attempt only the same protected remote-shell CREATE performed by
+          # production validator. The shell is deleted immediately and no
+          # command is started. Output contains a code/class, not raw exception
+          # messages, remoting objects, usernames or credentials.
+          # Reuse production's EPR ShellId selector parser verbatim.
+          {{ lookup('ansible.builtin.file', 'files/north-parent-winrs.ps1') | indent(10) }}
+
+          $session = $null
+          $locator = $null
+          $options = $null
+          $winrsStage = 'com_automation'
+          try {
+              $automation = New-Object -ComObject WSMan.Automation
+              $winrsStage = 'connection_options'
+              $options = $automation.CreateConnectionOptions()
+              $winrsStage = 'credential_qualification'
+              $identity = $ParentCredential.UserName
+              if ($identity -notmatch '[@\\]') {
+                  $identity = 'SEVENKINGDOMS\' + $identity
+              }
+              $options.UserName = $identity
+              $options.Password = $ParentCredential.GetNetworkCredential().Password
+              $winrsStage = 'session_flags'
+              $flags = $automation.SessionFlagCredUsernamePassword() -bor
+                  $automation.SessionFlagUseNegotiate() -bor
+                  $automation.SessionFlagSkipCACheck() -bor
+                  $automation.SessionFlagSkipCNCheck() -bor 0x2000000 -bor 0x8000000
+              $winrsStage = 'session_create'
+              $session = $automation.CreateSession(
+                  "https://$hostName" + ':5986/wsman', $flags, $options)
+              $session.Timeout = 15000
+              $ns = 'http://schemas.microsoft.com/wbem/wsman/1/windows/shell'
+              $resource = $ns + '/cmd'
+              $winrsStage = 'shell_create'
+              $created = [xml]$session.Create($resource,
+                  "<rsp:Shell xmlns:rsp='$ns'><rsp:InputStreams>stdin</rsp:InputStreams><rsp:OutputStreams>stdout stderr</rsp:OutputStreams></rsp:Shell>", 0)
+              # $ShellId is a built-in read-only PowerShell variable.
+              $parentEvidenceShellGuid = Get-NorthParentWinRSShellGuid $created
+              $winrsStage = 'resource_locator'
+              $locator = $automation.CreateResourceLocator($resource)
+              $locator.AddSelector('ShellId', $parentEvidenceShellGuid)
+              Write-Output 'NORTH_PARENT_WINRS_CREATE=PASS'
+          } catch {
+              $record = $_
+              $exceptionType = $record.Exception.GetType().Name
+              $hresult = [BitConverter]::ToUInt32(
+                  [BitConverter]::GetBytes([int]$record.Exception.HResult), 0).ToString('X8')
+              $errorId = [string]$record.FullyQualifiedErrorId
+              $errorId = ($errorId -replace '[^A-Za-z0-9._-]', '_')
+              if ($errorId.Length -gt 90) {
+                  $errorId = $errorId.Substring(0, 90)
+              }
+              $line = if ($record.InvocationInfo) {
+                  [int]$record.InvocationInfo.ScriptLineNumber
+              } else { 0 }
+              $item = if ($record.Exception -is
+                  [System.Management.Automation.SessionStateUnauthorizedAccessException]) {
+                  [string]$record.Exception.ItemName
+              } else { 'n/a' }
+              $item = ($item -replace '[^A-Za-z0-9._-]', '_')
+              if ($item.Length -gt 64) {
+                  $item = $item.Substring(0, 64)
+              }
+              $errorCode = 'unavailable'
+              $classification = 'other'
+              $detail = if ($session) { [string]$session.Error } else { '' }
+              if ($detail -match 'Code="([0-9]+)"') {
+                  $errorCode = $Matches[1]
+              }
+              if ($detail -match 'expired|validity period|not yet valid') {
+                  $classification = 'certificate_validity'
+              } elseif ($detail -match 'access denied|unauthorized|permission') {
+                  $classification = 'authorization'
+              } elseif ($detail -match 'credential|logon failure|username or password') {
+                  $classification = 'authentication'
+              } elseif ($detail -match 'connect|unreachable|timed out|network path') {
+                  $classification = 'connectivity'
+              }
+              Write-Output "NORTH_PARENT_WINRS_CREATE=FAIL stage=$winrsStage code=$errorCode hresult=$hresult kind=$exceptionType error_id=$errorId item=$item line=$line category=$classification"
+          } finally {
+              if ($locator -and $session) {
+                  try { $null = $session.Delete($locator, 0) } catch {}
+              }
+              if ($options) {
+                  $options.Password = ''
+              }
+          }
+        sensitive_parameters:
+          - name: ParentCredential
+            username: "{{ hostvars['dc01'].ansible_user }}"
+            password: "{{ hostvars['dc01'].ansible_password }}"
+      changed_when: false
+      register: north_parent_path_evidence
+
+    - name: Show only safe classification and TLS dates
+      ansible.builtin.debug:
+        msg: "{{ north_parent_path_evidence.output | join(' | ') }}"

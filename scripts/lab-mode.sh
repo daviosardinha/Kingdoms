@@ -12,8 +12,18 @@ case "${GOAD_LAB_PROFILE}" in
 esac
 readonly POLICY_DIR="${ROOT}/ad/${GOAD_LAB_PROFILE}/providers/vmware/router/nftables"
 
+# Explicitly enabled only by the failed-start NORTH recovery controller.
+# Normal exercise transitions still require every guest's AD readiness.
+EXERCISE_ALLOW_STOPPED_MEMBERS=0
+# Only requested by the parent provider after a complete, successful NORTH
+# installed cold-start readiness chain (four guests, not a single-VM start).
+EXERCISE_VALIDATED_COLD_START=0
+
 readonly AD_READINESS_TIMEOUT_SECONDS=300
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
+# Only NORTH/DC02 uses direct HTTPS WinRM; its existing 15s probe was
+# shorter than the proven 30s/45s operation/read timeout pair.
+readonly NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS=75
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
 readonly AD_REPAIR_TIMEOUT_SECONDS=90
 
@@ -373,6 +383,44 @@ ensure_vm_nat_state() {
         "${action}"
 }
 
+extract_dc02_time_marker() {
+    local vm="$1"
+    local kinds="$2"
+    local output="$3"
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+        # pywinrm can prepend PowerShell CLIXML progress without a newline:
+        # </Objs>KINGDOMS_DC_TIME_READY|source=... .
+        # Extract the marker instead of requiring the line to begin with it.
+        # Caller also requires a successful authenticated WinRM return code.
+        printf '%s\n' "${output}" |
+            grep -oE "KINGDOMS_DC_TIME_(${kinds})\|[^<]*" |
+            tail -n 1 || true
+    else
+        # Preserve original KINGDOMS/GOAD matching.
+        printf '%s\n' "${output}" |
+            grep -E "KINGDOMS_DC_TIME_(${kinds})\|" |
+            tail -n 1 || true
+    fi
+}
+
+north_direct_dc02_capture() {
+    local vm="$1"
+    local script="$2"
+    local timeout_seconds="$3"
+    local python="${HOME}/.goad/.venv/bin/python"
+
+    [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]] ||
+        fail "Direct DC02 transport is only supported for NORTH"
+    [[ -x "${python}" ]] ||
+        fail "Missing KINGDOMS management Python runtime: ${python}"
+
+    # Reuse direct WinRM/NTLM already proven by installed NORTH startup.
+    printf '%s' "${script}" |
+        timeout "${timeout_seconds}" "${python}" "${ROOT}/scripts/north-exercise-winrm.py" \
+            --machine "${vm}" --provider "${PROVIDER}" --timeout "${timeout_seconds}"
+}
+
 vagrant_powershell_ready() {
     local vm="$1"
     local script="$2"
@@ -380,6 +428,11 @@ vagrant_powershell_ready() {
     local encoded
 
     (( timeout_seconds > 0 )) || return 124
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+        north_direct_dc02_capture "${vm}" "${script}" "${timeout_seconds}" >/dev/null 2>&1
+        return $?
+    fi
 
     encoded="$(
         printf '%s' "${script}" |
@@ -401,6 +454,11 @@ vagrant_powershell_capture() {
     local encoded
 
     (( timeout_seconds > 0 )) || return 124
+
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+        north_direct_dc02_capture "${vm}" "${script}" "${timeout_seconds}" 2>&1
+        return $?
+    fi
 
     encoded="$(
         printf '%s' "${script}" |
@@ -425,6 +483,8 @@ ensure_child_dc_time_ready() {
     local output=""
     local marker=""
     local last_state="reason=transport"
+    local probe_rc=0
+    local transport_detail=""
     local consecutive_source_failures=0
     local repair_attempted=0
     [[ -n "${parent_domain}" && -n "${parent_server}" ]] || return 0
@@ -545,18 +605,22 @@ POWERSHELL
         elapsed=$((SECONDS - started))
         remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
         probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+        if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+            probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"
+        fi
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
 
         output=""
         marker=""
+        probe_rc=0
 
         if output="$(vagrant_powershell_capture "${vm}" "${probe_script}" "${probe_timeout}")"; then
             marker="$(
-                printf '%s\n' "${output}" |
-                    grep -E 'KINGDOMS_DC_TIME_(READY|NOT_READY)\|' |
-                    tail -n 1 || true
+                extract_dc02_time_marker "${vm}" "READY|NOT_READY" "${output}"
             )"
+        else
+            probe_rc=$?
         fi
 
         if [[ "${marker}" == KINGDOMS_DC_TIME_READY\|* ]]; then
@@ -568,6 +632,15 @@ POWERSHELL
             last_state="${marker#KINGDOMS_DC_TIME_NOT_READY|}"
         else
             last_state="reason=transport"
+            if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+                # NORTH-only failure evidence; never print arbitrary remote
+                # PowerShell output or potentially sensitive response content.
+                transport_detail="$(printf '%s\n' "${output}" |
+                    grep -E '^NORTH_DIRECT_WINRM_ERROR machine=GOAD-DC02 ' |
+                    tail -n 1 | cut -c 1-500 || true)"
+                printf '        [DIAG] NORTH DC02 probe rc=%s, output_bytes=%s; %s\n' \
+                    "${probe_rc}" "${#output}" "${transport_detail:-no recognized WinRM error or time-readiness marker}"
+            fi
         fi
 
         if [[ "${last_state}" == reason=source\|* ]]; then
@@ -590,9 +663,7 @@ POWERSHELL
             output=""
             if output="$(vagrant_powershell_capture "${vm}" "${repair_script}" "${repair_timeout}")"; then
                 marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
+                    extract_dc02_time_marker "${vm}" "REPAIRED|REPAIR_FAILED" "${output}"
                 )"
 
                 if [[ "${marker}" == KINGDOMS_DC_TIME_REPAIRED\|* ]]; then
@@ -604,9 +675,7 @@ POWERSHELL
                 fi
             else
                 marker="$(
-                    printf '%s\n' "${output}" |
-                        grep -E 'KINGDOMS_DC_TIME_(REPAIRED|REPAIR_FAILED)\|' |
-                        tail -n 1 || true
+                    extract_dc02_time_marker "${vm}" "REPAIRED|REPAIR_FAILED" "${output}"
                 )"
                 fail "${vm} child-domain time recovery transport failed within remaining readiness budget: ${marker:-no marker}"
             fi
@@ -688,6 +757,9 @@ POWERSHELL
         elapsed=$((SECONDS - started))
         remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
         probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
+        if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]; then
+            probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"
+        fi
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
 
@@ -1068,6 +1140,14 @@ prove_isolated_guest_ready() (
     [[ "${persistent}" == "FALSE" ]] ||
         fail "${vm}: exercise readiness probe requires persistent NAT to remain FALSE"
 
+    if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 && "${kind}" == dc ]]; then
+        # Do not reconnect DC02's isolated NAT adapter just to repeat a probe.
+        echo "        [*] NORTH GOAD-DC02: validating directly over owned lab WinRM"
+        wait_domain_controller_ready "${vm}"
+        echo "        [+] GOAD-DC02 authenticated direct readiness proven; NAT unchanged"
+        return 0
+    fi
+
     echo "        [*] temporarily connecting runtime NAT for authenticated readiness"
 
     vmrun -T ws connectNamedDevice "${vmx}" ethernet0 >/dev/null 2>&1 ||
@@ -1100,8 +1180,67 @@ prove_isolated_guest_ready() (
     echo "        [+] ${vm} authenticated post-reboot readiness proven; runtime NAT disconnected"
 )
 
+require_north_validated_cold_start() {
+    # The provider has already proven all four guests' authenticated AD/time
+    # contracts. Only a full, previously isolated NORTH cold start may avoid
+    # repeating the same probes through a now-unreliable Vagrant NAT path.
+    [[ "${GOAD_LAB_PROFILE}" == NORTH &&
+       "${EXERCISE_VALIDATED_COLD_START}" == 1 &&
+       "${EXERCISE_ALLOW_STOPPED_MEMBERS}" == 0 &&
+       "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" == exercise ]] ||
+        fail "NORTH validated cold-start isolation scope is not satisfied"
+
+    local vm vmx
+    for vm in "${WINDOWS_VMS[@]}"; do
+        vmx="$(vmx_for "${vm}")"
+        [[ "$(get_start_connected "${vmx}")" == FALSE ]] ||
+            fail "${vm}: validated cold-start cannot change a persistent NAT adapter"
+        is_running "${vmx}" ||
+            fail "${vm}: validated cold-start requires all previously verified guests running"
+    done
+}
+
 configure_windows_nat_exercise() {
     local vm
+
+    if [[ "${EXERCISE_VALIDATED_COLD_START:-0}" == 1 ]]; then
+        # Only after require_north_validated_cold_start has verified every VM,
+        # and after the provider's complete direct authenticated readiness
+        # chain. NICs remain persistently FALSE: no reboots, Vagrant WinRM,
+        # NAT re-connections, or duplicate AD/time repairs.
+        for vm in "${DOMAIN_MEMBERS[@]}" "${EXERCISE_DOMAIN_CONTROLLERS[@]}"; do
+            ensure_vm_nat_state "${vm}" FALSE disconnect
+        done
+        echo "[+] NORTH: all four guests were authenticated before isolation; NAT disconnected without Vagrant or restart"
+        return 0
+    fi
+
+    if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS:-0}" == 1 ]]; then
+        # Failed-start cleanup only: never use Vagrant/WinRM/AD authentication,
+        # reconnect NAT or restart guests to restore network isolation.
+        local vmx vm_list
+        vm_list="$(vmrun -T ws list)" ||
+            fail "NORTH failed-start: VMware power inventory unavailable"
+        [[ "${vm_list}" == "Total running VMs:"* ]] ||
+            fail "NORTH failed-start: ambiguous VMware power inventory"
+        for vm in "${DOMAIN_MEMBERS[@]}" "${EXERCISE_DOMAIN_CONTROLLERS[@]}"; do
+            vmx="$(vmx_for "${vm}")"
+            [[ "$(get_start_connected "${vmx}")" == FALSE ]] ||
+                fail "${vm}: offline isolation requires persistent NAT isolation"
+        done
+        for vm in "${DOMAIN_MEMBERS[@]}" "${EXERCISE_DOMAIN_CONTROLLERS[@]}"; do
+            vmx="$(vmx_for "${vm}")"
+            if printf '%s\n' "${vm_list}" | grep -Fxq "${vmx}"; then
+                vmrun -T ws disconnectNamedDevice "${vmx}" ethernet0 >/dev/null 2>&1 ||
+                    fail "${vm}: failed-start runtime NAT disconnection failed"
+                echo "    [ISOLATED] ${vm} running; runtime NAT disconnected; AD health not asserted"
+            else
+                echo "    [OFFLINE] ${vm} powered off; persistent NAT disabled; AD health not asserted"
+            fi
+        done
+        echo "[+] NORTH failed-start isolation restored without guest authentication; runtime NOT certified"
+        return 0
+    fi
 
     # Members reboot first while their DCs are still healthy. Every restarted
     # guest keeps ethernet0.startConnected=FALSE. The management NIC is then
@@ -1227,7 +1366,15 @@ enter_exercise_mode() {
     # On a cold start of an already-recorded exercise range, persistent NAT is
     # intentionally still FALSE, so probe only the child-DC time dependency
     # with temporary runtime NAT before checking members.
-    if [[ "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" != "exercise" ]]; then
+    if [[ "${EXERCISE_ALLOW_STOPPED_MEMBERS}" == 1 ]]; then
+        [[ "${GOAD_LAB_PROFILE}" == NORTH &&
+           "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" == exercise ]] ||
+            fail "NORTH failed-start isolation requires existing exercise-mode record"
+        echo "[*] NORTH failed-start: skip guest health preflight; restore isolation only"
+    elif [[ "${EXERCISE_VALIDATED_COLD_START}" == 1 ]]; then
+        require_north_validated_cold_start
+        echo "[+] NORTH: authenticated full installed-start guest readiness reused for isolation"
+    elif [[ "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" != "exercise" ]]; then
         preflight_domain_health
     else
         preflight_exercise_time_dependencies
@@ -1317,6 +1464,25 @@ main() {
         fail "${POLICY_DIR} is missing."
 
     resolve_provider
+
+    if [[ "$#" -eq 2 ]]; then
+        [[ "${1}" == exercise && "${GOAD_LAB_PROFILE}" == NORTH &&
+           "$(cat "${PROVIDER}/.goad-nomad-mode" 2>/dev/null || true)" == exercise ]] ||
+            fail "NORTH restoration flags require already-recorded exercise mode"
+        case "${2}" in
+            --allow-stopped-members)
+                EXERCISE_ALLOW_STOPPED_MEMBERS=1
+                ;;
+            --validated-cold-start)
+                EXERCISE_VALIDATED_COLD_START=1
+                ;;
+            *)
+                fail "Unknown NORTH exercise restoration flag"
+                ;;
+        esac
+    elif [[ "$#" -gt 2 ]]; then
+        fail "Unexpected mode controller arguments"
+    fi
 
     case "${1:-status}" in
         exercise)
