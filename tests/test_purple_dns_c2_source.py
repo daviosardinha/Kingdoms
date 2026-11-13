@@ -1,6 +1,7 @@
 """PURPLE-only source regressions for the Sliver DNS C2 provisioning path."""
 from pathlib import Path
 import unittest
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,6 +43,7 @@ class PurpleDnsC2SourceTests(unittest.TestCase):
         self.assertNotIn('goad.sh -t install', deploy)
         self.assertNotIn('vagrant up ', deploy)
         self.assertNotIn('vagrant destroy', deploy)
+        subprocess.run(['bash', '-n', str(ROOT / 'scripts/purple-dns-c2-apply.sh')], check=True)
 
     def test_lx01_split_dns_without_joining_ad(self):
         script = (ROOT / 'ad/PURPLE/providers/vmware/configure-linux-interface.sh').read_text()
