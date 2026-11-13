@@ -50,6 +50,24 @@ class PurpleDnsC2SourceTests(unittest.TestCase):
         self.assertIn('Add-DnsServerZoneDelegation', body)
         self.assertIn('PURPLE_DNS_DELEGATION_UNCHANGED=1', body)
 
+    def test_runtime_validator_is_read_only(self):
+        verify = (ROOT / 'ansible/purple-dns-c2-verify.yml').read_text()
+        self.assertIn('hosts: workstation', verify)
+        self.assertIn('Resolve-DnsName', verify)
+        self.assertIn('PURPLE_WS01_DEFAULT_DNS_READY=1', verify)
+        self.assertIn('$Ansible.Changed = $false', verify)
+        validator = ROOT / 'scripts/purple-dns-c2-validate.sh'
+        body = validator.read_text()
+        self.assertIn('PURPLE_DNS_C2_INFRASTRUCTURE_READY=1', body)
+        self.assertIn('vagrant ssh PURPLE-LX01', body)
+        self.assertIn('resolvectl query purple-c2.purple.lab', body)
+        self.assertIn('purple-dns-c2-verify.yml', body)
+        self.assertNotIn('vagrant up ', body)
+        self.assertNotIn('vagrant upload', body)
+        self.assertNotIn('Add-DnsServer', verify)
+        self.assertNotIn('Set-DnsServer', verify)
+        subprocess.run(['bash', '-n', str(validator)], check=True)
+
     def test_existing_lab_has_guarded_source_owned_apply_command(self):
         deploy = (ROOT / 'scripts/purple-dns-c2-apply.sh').read_text()
         for marker in (
