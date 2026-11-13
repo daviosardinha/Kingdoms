@@ -23,6 +23,9 @@
 - import_playbook: ad-parent_domain.yml
 - import_playbook: ad-child_domain.yml
 - import_playbook: ad-members.yml
+# PURPLE-only C2 DNS records and delegation, after domain provisioning.
+- import_playbook: purple-dns-c2.yml
+  when: domain_name == 'PURPLE'
 - import_playbook: kingdoms-time-backoff.yml
   when: domain_name == 'GOAD'
 # create the trust relationships
