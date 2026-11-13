@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Configure exactly the Purple Team lab NIC, selected by deterministic VMware MAC.
-# No gateway, DNS, NAT, host route, or host networking changes.
+# No gateway, NAT, or host-route changes; LX01 alone gets split DNS for purple.lab.
 set -euo pipefail
 ipaddr="${1:?expected IPv4 address}"
 mac="${2:?expected VMware NIC MAC}"
@@ -38,6 +38,20 @@ fi
 ip link set "$interface" up
 ip -4 address replace "$ipaddr/24" dev "$interface"
 ip -4 address show dev "$interface"
+
+# Only LX01 needs the lab DC to resolve purple.lab names.
+# Domain-specific routing leaves other DNS queries on their existing path.
+# The same setup is re-applied by purple-lab-interface.service on boot.
+if [[ "$ipaddr" == "172.28.233.32" ]]; then
+  if ! command -v resolvectl >/dev/null || ! systemctl is-active --quiet systemd-resolved; then
+    echo "PURPLE: LX01 requires active systemd-resolved for split DNS" >&2
+    exit 1
+  fi
+  resolvectl dns "$interface" 172.28.233.30
+  resolvectl domain "$interface" "~purple.lab"
+  resolvectl default-route "$interface" false
+  echo "PURPLE_LX01_SPLIT_DNS_READY=$interface 172.28.233.30 ~purple.lab"
+fi
 
 # Set the guest's stable Linux hostname on *fresh provisioning*, matching
 # the source VM name (Linux static hostnames use lowercase). Vagrant may set
