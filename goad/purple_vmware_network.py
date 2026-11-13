@@ -22,6 +22,14 @@ MACS = frozenset(
     f"00:50:56:10:04:{suffix:02x}" for suffix in (0x30, 0x31, 0x32, 0x51, 0x60)
 )
 VMX_REGISTRY = re.compile(r'(?m)^vmlist\d+\.config\s*=\s*"([^"]+)"')
+
+def registered_vmx_paths(inventory: str) -> list[str]:
+    """Return VMX entries, not VMware inventory UI folder markers."""
+    return [
+        path for path in VMX_REGISTRY.findall(inventory)
+        if not re.fullmatch(r"folder[0-9]+", path)
+    ]
+
 VMX_NET = re.compile(r'(?im)^\s*ethernet\d+\.vnet\s*=\s*"([^"]+)"')
 VMX_MAC = re.compile(
     r'(?im)^\s*ethernet\d+\.(?:address|generatedaddress)\s*=\s*"([^"]+)"'
@@ -76,7 +84,7 @@ def validate_config(content: str):
 
 def validate_vmx(vmware_inventory: str, contents: dict[str, str]):
     """Block if *any other* registered VMware guest owns vmnet4 or Purple MAC."""
-    for path in VMX_REGISTRY.findall(vmware_inventory):
+    for path in registered_vmx_paths(vmware_inventory):
         if path not in contents:
             raise PurpleNetworkError("Cannot inspect registered VMware guest: " + path)
         source = contents[path]
@@ -121,7 +129,7 @@ def check_host(provider_dir: str | None = None):
     if registry.exists():
         source = registry.read_text(encoding="utf-8")
         registered = {}
-        for raw in VMX_REGISTRY.findall(source):
+        for raw in registered_vmx_paths(source):
             p = Path(raw)
             if p.is_symlink() or not p.is_file():
                 raise PurpleNetworkError("Registered VMware VMX missing: " + raw)
