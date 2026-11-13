@@ -1,0 +1,58 @@
+---
+# Explicit opt-in only. Does not change existing service configurations.
+- name: NORTH WS01 | stage interactive SYSTEM shell pilot
+  hosts: workstation
+  gather_facts: false
+  tags:
+    - north_kingdom_shell_pilot
+  tasks:
+    - name: NORTH pilot | ensure source staging directory exists
+      ansible.windows.win_file:
+        path: 'C:\ProgramData\Kingdoms'
+        state: directory
+      when: domain_name == 'NORTH' and inventory_hostname == 'ws01'
+
+    - name: NORTH pilot | stage C# source
+      ansible.windows.win_copy:
+        src: roles/settings/north_kingdom_shell/files/KingdomShell.cs
+        dest: 'C:\ProgramData\Kingdoms\KingdomShell.cs'
+      register: north_shell_source
+      when: domain_name == 'NORTH' and inventory_hostname == 'ws01'
+
+    - name: NORTH pilot | detect staged EXE
+      ansible.windows.win_stat:
+        path: 'C:\Users\Public\Documents\KingdomShell.exe'
+      register: north_shell_existing
+      when: domain_name == 'NORTH' and inventory_hostname == 'ws01'
+
+    - name: NORTH pilot | compile without execution
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $source = Get-Content -LiteralPath 'C:\ProgramData\Kingdoms\KingdomShell.cs' -Raw
+          $destination = 'C:\Users\Public\Documents\KingdomShell.exe'
+          $temporary = Join-Path $env:TEMP ('KingdomShell-' + [guid]::NewGuid().ToString('N') + '.exe')
+          try {
+              Add-Type -TypeDefinition $source -Language CSharp -ReferencedAssemblies @('System.ServiceProcess.dll','System.Management.dll') -OutputAssembly $temporary -OutputType WindowsApplication -ErrorAction Stop
+              if (-not (Test-Path -LiteralPath $temporary -PathType Leaf)) { throw 'Pilot compilation failed' }
+              Copy-Item -LiteralPath $temporary -Destination $destination -Force -ErrorAction Stop
+          }
+          finally {
+              if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
+          }
+      when:
+        - domain_name == 'NORTH'
+        - inventory_hostname == 'ws01'
+        - north_shell_source.changed or not north_shell_existing.stat.exists
+
+    - name: NORTH pilot | verify PE without running
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $path = 'C:\Users\Public\Documents\KingdomShell.exe'
+          $bytes = [IO.File]::ReadAllBytes($path)
+          if ($bytes.Length -lt 512 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90) { throw 'Invalid pilot PE file' }
+          $Ansible.Changed = $false
+          Write-Output ('NORTH_SHELL_PILOT_READY|sha256=' + (Get-FileHash $path -Algorithm SHA256).Hash)
+      changed_when: false
+      when: domain_name == 'NORTH' and inventory_hostname == 'ws01'
