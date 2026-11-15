@@ -23,6 +23,19 @@ class PurpleLabSourceTests(unittest.TestCase):
         self.assertRegex(vm, r':name => "PURPLE-WAZUH"[\s\S]*?:cpus => 4, :mem => 8192')
         self.assertIn("provision-ubuntu-desktop.sh", vm)
 
+    def test_c2_diagnostics_preinstalled_on_fresh_build(self):
+        vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
+        provisioner = (PURPLE / "providers" / "vmware"
+                       / "provision-c2-tools.sh").read_text()
+        self.assertEqual(vm.count("provision-c2-tools.sh"), 1)
+        c2_entry = vm.split(':name => "PURPLE-C2"', 1)[1]
+        self.assertIn(':provision_scripts => [', c2_entry)
+        self.assertIn('provision-c2-tools.sh', c2_entry)
+        self.assertIn('apt-get install -y --no-install-recommends tcpdump', provisioner)
+        self.assertIn('command -v tcpdump', provisioner)
+        self.assertIn('PURPLE_C2_TCPDUMP_READY=PASS', provisioner)
+        self.assertNotIn('sliver-server', provisioner.lower())
+
     def test_ubuntu_desktop_xrdp_and_net_tools(self):
         vm = (PURPLE / "providers" / "vmware" / "Vagrantfile").read_text()
         installer = (PURPLE / "providers" / "vmware"
