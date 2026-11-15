@@ -152,6 +152,17 @@ creates `sliver.trainee` with `sliver123`, and runs Wazuh's own installer
 which displays the generated admin password when it finishes successfully.
 Sliver itself remains uninstalled until the manual training exercise.
 
+During fresh provisioning, PURPLE-C2 automatically installs the Debian
+`tcpdump` package through its dedicated Vagrant provisioner. Students can
+capture and inspect DNS and other network traffic without installing system
+packages themselves. Reprovisioning is safe to repeat and verifies the
+command is present. The automation installs only the diagnostic tool and
+does not install or configure Sliver.
+
+From the generated provider directory, verify a fresh build with
+`vagrant ssh PURPLE-C2 -c 'command -v tcpdump && tcpdump --version | head -n 1'`.
+Existing installed pilots are not automatically changed by this source update.
+
 **Read-only checks after the first complete installation:** on the Kali host,
 from the generated provider directory, run:
 

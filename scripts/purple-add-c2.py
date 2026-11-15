@@ -60,9 +60,21 @@ def extend_vagrantfile(source: str, existing: str) -> tuple[str, bool]:
         # "c2". Recognize that exact legacy definition as already installed,
         # without retroactively renaming or reprovisioning the guest. Fresh
         # deployments use the new canonical PURPLE-C2 hostname.
-        legacy_entry = entry.replace(':hostname => "PURPLE-C2"', ':hostname => "c2"', 1)
+        # Accept the exact older C2 definition without tcpdump provisioning.
+        # Preserve the already-installed pilot rather than modifying its VM.
+        legacy_no_tools = entry.replace(
+            '    :provision_scripts => [\n'
+            '      "../../../ad/PURPLE/providers/vmware/provision-c2-tools.sh"\n'
+            '    ],\n', '', 1
+        )
+        variants = (
+            entry,
+            entry.replace(':hostname => "PURPLE-C2"', ':hostname => "c2"', 1),
+            legacy_no_tools,
+            legacy_no_tools.replace(':hostname => "PURPLE-C2"', ':hostname => "c2"', 1),
+        )
         if (tuple(defined) == ORIGINALS + (C2,)
-                and (entry in body or legacy_entry in body)
+                and any(variant in body for variant in variants)
                 and body.count(f':name => "{C2}"') == 1):
             return existing, False
         raise UnsafeExtension("An incompatible PURPLE-C2 machine is already defined")
