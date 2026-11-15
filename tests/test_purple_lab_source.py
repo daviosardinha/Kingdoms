@@ -31,9 +31,13 @@ class PurpleLabSourceTests(unittest.TestCase):
         c2_entry = vm.split(':name => "PURPLE-C2"', 1)[1]
         self.assertIn(':provision_scripts => [', c2_entry)
         self.assertIn('provision-c2-tools.sh', c2_entry)
-        self.assertIn('apt-get install -y --no-install-recommends tcpdump', provisioner)
+        self.assertIn("dpkg-query -W -f='${Status}' tcpdump", provisioner)
+        self.assertIn("dpkg-query -W -f='${Status}' git", provisioner)
+        self.assertIn('apt-get install -y --no-install-recommends tcpdump git', provisioner)
         self.assertIn('command -v tcpdump', provisioner)
+        self.assertIn('command -v git', provisioner)
         self.assertIn('PURPLE_C2_TCPDUMP_READY=PASS', provisioner)
+        self.assertIn('PURPLE_C2_GIT_READY=PASS', provisioner)
         self.assertNotIn('sliver-server', provisioner.lower())
 
     def test_ubuntu_desktop_xrdp_and_net_tools(self):

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install network-capture diagnostics on a fresh PURPLE-C2 Debian guest.
+# Install network-capture diagnostics and Git on a fresh PURPLE-C2 Debian guest.
 # Sliver installation and operator activities remain manual course exercises.
 # Vagrant runs this after Linux lab NIC setup with root privileges.
 set -euo pipefail
@@ -10,9 +10,10 @@ if [[ "$(id -u)" -ne 0 ]]; then
     exit 1
 fi
 
-if ! dpkg-query -W -f='${Status}' tcpdump 2>/dev/null | grep -qx 'install ok installed'; then
+if ! dpkg-query -W -f='${Status}' tcpdump 2>/dev/null | grep -qx 'install ok installed' ||
+   ! dpkg-query -W -f='${Status}' git 2>/dev/null | grep -qx 'install ok installed'; then
     apt-get update
-    apt-get install -y --no-install-recommends tcpdump
+    apt-get install -y --no-install-recommends tcpdump git
 fi
 
 if ! command -v tcpdump >/dev/null 2>&1; then
@@ -20,4 +21,10 @@ if ! command -v tcpdump >/dev/null 2>&1; then
     exit 1
 fi
 
+if ! command -v git >/dev/null 2>&1; then
+    echo "[PURPLE-C2][ERROR] git is not available after provisioning" >&2
+    exit 1
+fi
+
 echo "PURPLE_C2_TCPDUMP_READY=PASS"
+echo "PURPLE_C2_GIT_READY=PASS"
