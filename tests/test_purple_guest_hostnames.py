@@ -84,7 +84,12 @@ class PurpleGuestHostnamesTests(unittest.TestCase):
         self.assertEqual(vm.count("provision-sliver-trainee.sh"), 1)
         self.assertEqual(vm.count("provision-wazuh-all-in-one.sh"), 1)
         c2 = vm.split(':name => "PURPLE-C2"', 1)[1]
-        self.assertNotIn(":provision_scripts", c2)
+        # The C2 guest may install packet-capture diagnostics during a fresh
+        # build, but it must not install Sliver or mutate existing VMs.
+        self.assertEqual(c2.count(':provision_scripts'), 1)
+        self.assertEqual(c2.count('provision-c2-tools.sh'), 1)
+        self.assertNotIn('provision-wazuh-all-in-one.sh', c2)
+        self.assertNotIn('provision-sliver-trainee.sh', c2)
         self.assertIn("configure-linux-interface.sh", c2)
         self.assertEqual(vm.count(':skip_private_network => true'), 3)
         self.assertEqual(vm.count(':vnet => "vmnet4"'), 3)
