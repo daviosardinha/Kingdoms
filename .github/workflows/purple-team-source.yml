@@ -43,6 +43,7 @@ jobs:
           bash -n ad/PURPLE/providers/vmware/provision-ubuntu-desktop.sh
           bash -n ad/PURPLE/providers/vmware/provision-sliver-trainee.sh
           bash -n ad/PURPLE/providers/vmware/provision-wazuh-all-in-one.sh
+          bash -n ad/PURPLE/providers/vmware/provision-c2-tools.sh
           bash -n scripts/purple-wazuh-credentials.sh
           bash -n scripts/purple-dns-c2-apply.sh
           bash -n scripts/purple-dns-c2-validate.sh
