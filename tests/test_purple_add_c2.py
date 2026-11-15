@@ -79,13 +79,26 @@ class PurpleC2ExtensionTests(unittest.TestCase):
             ["unexpected-vm"],
         )
 
-    def test_c2_has_no_software_installation_scripts(self):
+    def test_c2_provisions_only_tcpdump_not_sliver(self):
         entry = c2.c2_definition(SOURCE.read_text())
         self.assertIn('"bento/debian-12"', entry)
         self.assertIn('configure-linux-interface.sh', entry)
-        self.assertNotIn(':provision_scripts', entry)
+        self.assertEqual(entry.count(':provision_scripts'), 1)
+        self.assertEqual(entry.count('provision-c2-tools.sh'), 1)
         self.assertNotIn('wazuh-install', entry.lower())
-        self.assertNotIn('sliver', entry.lower())
+        self.assertNotIn('sliver-server', entry.lower())
+
+    def test_legacy_c2_without_tcpdump_provisioner_is_preserved(self):
+        old = existing_pilot_fixture()
+        updated, _ = c2.extend_vagrantfile(SOURCE.read_text(), old)
+        legacy = updated.replace(
+            '    :provision_scripts => [\n'
+            '      "../../../ad/PURPLE/providers/vmware/provision-c2-tools.sh"\n'
+            '    ],\n', '',
+        ).replace(':hostname => "PURPLE-C2"', ':hostname => "c2"')
+        unchanged, changed = c2.extend_vagrantfile(SOURCE.read_text(), legacy)
+        self.assertFalse(changed)
+        self.assertEqual(unchanged, legacy)
 
 
 if __name__ == '__main__':
