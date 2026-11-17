@@ -20,6 +20,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from goad.course1_foreign_nat import approved_foreign_forwardings
 from goad.course1_hostaddrs import (
     HELPER, SERVICE, TIMER, inspect_live_hostaddrs, inspect_live_hostaddr_assets,
 )
@@ -389,9 +390,15 @@ def inspect_installed_north(provider_dir, networking=NETWORKING, owner=OWNER,
             identity, saved.read_bytes(), source=retirement_path,
             owner_uid=owner_uid
         )
+        foreign = approved_foreign_forwardings(
+            identity, record_path.read_bytes(),
+            source=record_path.parent / "kingdoms-course1-foreign-vagrant.json",
+            owner_uid=owner_uid,
+        )
         verify_owned_vmnet_runtime(
             committed, installed, saved.read_bytes(), layout,
-            reviewed_nat_retirements=retirement
+            reviewed_nat_retirements=retirement,
+            reviewed_foreign_nat=foreign,
         )
 
     if inspect_host:

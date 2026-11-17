@@ -1,0 +1,216 @@
+"""Offline NORTH DC02 exercise-mode WinRM transport regression."""
+import importlib.util
+import subprocess
+import io
+from pathlib import Path
+import sys
+import tempfile
+import types
+import unittest
+from unittest.mock import Mock, patch
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts/north-exercise-winrm.py"
+LAB = ROOT / "scripts/lab-mode.sh"
+
+spec = importlib.util.spec_from_file_location("north_exercise_winrm", SCRIPT)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+
+class DirectDc02ModeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        workspace = Path(self.temp.name) / "workspace"
+        self.p = workspace / "0da0a9-north-vmware" / "provider"
+        d = self.p / ".vagrant/machines/GOAD-DC02/vmware_desktop" / "vm"
+        d.mkdir(parents=True)
+        vmx = d / "windows2019.vmx"
+        vmx.write_text("fixture")
+        (d.parent / "id").write_text(str(vmx))
+
+    def test_installed_north_vm_identity_is_required(self):
+        self.assertEqual(module.validate_provider(str(self.p)), self.p)
+        with self.assertRaises(ValueError):
+            module.validate_provider(str(self.p.parent))
+        with self.assertRaises(ValueError):
+            module.run("Write-Output 'OK'", timeout=15,
+                       machine="PURPLE-WS01", provider=str(self.p))
+        with self.assertRaises(ValueError):
+            module.run("Write-Output 'OK'", timeout=15,
+                       machine="GOAD-DC01", provider=str(self.p))
+        with self.assertRaises(ValueError):
+            module.run(" ", timeout=15, machine="GOAD-DC02",
+                       provider=str(self.p))
+        with self.assertRaises(ValueError):
+            module.run("Write-Output 'OK'", timeout=0, machine="GOAD-DC02",
+                       provider=str(self.p))
+
+    def test_vmx_foreign_directory_blocked(self):
+        pointer = self.p / ".vagrant/machines/GOAD-DC02/vmware_desktop/id"
+        external = Path(self.temp.name) / "foreign.vmx"
+        external.write_text("foreign")
+        pointer.write_text(str(external))
+        with self.assertRaises(ValueError):
+            module.validate_provider(str(self.p))
+
+    def test_pinned_https_ntlm_and_authenticated_return_code(self):
+        session = Mock()
+        session.run_ps.return_value = types.SimpleNamespace(
+            std_out=b"GOAD_READY\r\n", std_err=b"", status_code=0)
+        winrm = types.SimpleNamespace(Session=Mock(return_value=session))
+        with patch.dict(sys.modules, {"winrm": winrm}), patch(
+                "sys.stdout", new_callable=io.StringIO) as output:
+            module.run("Write-Output 'GOAD_READY'", timeout=15,
+                       machine="GOAD-DC02", provider=str(self.p))
+            self.assertIn("GOAD_READY", output.getvalue())
+        args, kw = winrm.Session.call_args
+        self.assertEqual(args[0], "https://10.4.10.11:5986/wsman")
+        self.assertEqual(kw["auth"], ("vagrant", "vagrant"))
+        self.assertEqual(kw["transport"], "ntlm")
+        self.assertEqual(kw["server_cert_validation"], "ignore")
+        # The 75s NORTH/DC02 probe reuses the already-proven KINGDOMS
+        # direct WinRM transport contract: operation 30s, HTTP read 45s.
+        with patch.dict(sys.modules, {"winrm": winrm}):
+            module.run("Write-Output 'GOAD_READY'", timeout=75,
+                       machine="GOAD-DC02", provider=str(self.p))
+        _, long_kw = winrm.Session.call_args
+        self.assertEqual(long_kw["operation_timeout_sec"], 30)
+        self.assertEqual(long_kw["read_timeout_sec"], 45)
+        self.assertEqual(session.run_ps.call_args.args[0],
+                         "Write-Output 'GOAD_READY'")
+        session.run_ps.return_value = types.SimpleNamespace(
+            std_out=b"", std_err=b"broken", status_code=1)
+        with patch.dict(sys.modules, {"winrm": winrm}), patch(
+                "sys.stderr", new_callable=io.StringIO):
+            with self.assertRaisesRegex(RuntimeError, "returned 1"):
+                module.run("Write-Output 'BAD'", timeout=15,
+                           machine="GOAD-DC02", provider=str(self.p))
+
+    def test_readonly_diagnostic_replays_the_exact_shell_probe(self):
+        diagnostic = ROOT / "scripts/diagnostics/north-dc02-exercise-readiness-evidence.py"
+        diag_spec = importlib.util.spec_from_file_location(
+            "north_dc02_exercise_readiness_evidence", diagnostic)
+        self.assertIsNotNone(diag_spec)
+        self.assertIsNotNone(diag_spec.loader)
+        diag_module = importlib.util.module_from_spec(diag_spec)
+        diag_spec.loader.exec_module(diag_module)
+        script = diag_module.exact_probe()
+        self.assertIn("w32tm.exe /query /source", script)
+        self.assertIn("/dsgetdc:north.sevenkingdoms.local", script)
+        self.assertIn("/timeserv /force", script)
+        self.assertIn("kingslanding.sevenkingdoms.local", script)
+        self.assertIn("KINGDOMS_DC_TIME_READY|", script)
+        self.assertNotIn("${", script)
+        self.assertNotIn(r"\$", script)
+
+    def _extract_time_marker(self, profile, machine, kinds, output):
+        source = LAB.read_text()
+        helper = source[source.index("extract_dc02_time_marker() {"):
+                        source.index("north_direct_dc02_capture() {")]
+        script = (
+            "set -euo pipefail\n" + helper +
+            '\nGOAD_LAB_PROFILE="$1"\n' +
+            'extract_dc02_time_marker "$2" "$3" "$4"\n'
+        )
+        result = subprocess.run(
+            ["bash", "-c", script, "_", profile, machine, kinds, output],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        return result.stdout.strip()
+
+    def test_north_dc02_clixml_prefixed_readiness_markers(self):
+        # Captured from a *successful* live WinRM probe where PowerShell
+        # progress CLIXML and the readiness token share the same line.
+        clixml = (
+            '<Objs Version="1.1.0.1" '
+            'xmlns="http://schemas.microsoft.com/powershell/2004/04">'
+            '<Obj S="progress">Preparing modules for first use.</Obj>'
+            '</Objs>'
+        )
+        ready = (
+            'KINGDOMS_DC_TIME_READY|'
+            'source=kingslanding.sevenkingdoms.local|'
+            'parent=kingslanding.sevenkingdoms.local'
+        )
+        pending = (
+            'KINGDOMS_DC_TIME_NOT_READY|reason=source|'
+            'source=Local CMOS Clock|expected=kingslanding.sevenkingdoms.local'
+        )
+        repaired = 'KINGDOMS_DC_TIME_REPAIRED|source=kingslanding.sevenkingdoms.local'
+        failed = 'KINGDOMS_DC_TIME_REPAIR_FAILED|stage=parent_timeserv_locator|rc=1'
+        for kind, value in (
+            ('READY|NOT_READY', ready),
+            ('READY|NOT_READY', pending),
+            ('REPAIRED|REPAIR_FAILED', repaired),
+            ('REPAIRED|REPAIR_FAILED', failed),
+        ):
+            with self.subTest(marker=value):
+                self.assertEqual(
+                    self._extract_time_marker(
+                        'NORTH', 'GOAD-DC02', kind, clixml + value),
+                    value,
+                )
+        # Keep the original full-line behavior for GOAD and other guests.
+        self.assertEqual(
+            self._extract_time_marker('GOAD', 'GOAD-DC02',
+                                      'READY|NOT_READY', clixml + ready),
+            clixml + ready,
+        )
+        self.assertEqual(
+            self._extract_time_marker('NORTH', 'GOAD-DC01',
+                                      'READY|NOT_READY', clixml + ready),
+            clixml + ready,
+        )
+        self.assertEqual(
+            self._extract_time_marker('NORTH', 'GOAD-DC02',
+                                      'READY|NOT_READY', clixml),
+            '',
+        )
+
+    def test_mode_controller_only_switches_north_dc02_transport(self):
+        script = LAB.read_text()
+        helpers = script[script.index("north_direct_dc02_capture()"):
+                         script.index("ensure_child_dc_time_ready()")]
+        self.assertEqual(helpers.count(
+            '    [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]'),
+            1)
+        self.assertEqual(helpers.count(
+            'if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]'),
+            2)
+        self.assertEqual(helpers.count(
+            'timeout "${timeout_seconds}" vagrant winrm "${vm}"'), 2)
+        self.assertIn('timeout "${timeout_seconds}" "${python}"', helpers)
+        self.assertIn('trap cleanup_runtime_nat EXIT', script)
+        self.assertIn('wait_domain_controller_ready "${vm}"', script)
+        self.assertIn('ensure_child_dc_time_ready "${vm}"', script)
+        self.assertIn('apply_router_policy exercise', script)
+        self.assertIn('verify_persistent_state FALSE', script)
+        self.assertIn('GOAD_PROVIDER_DIR', script)
+        self.assertIn('readonly NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS=75',
+                      script)
+        # A silent reason=transport must include the authenticated helper's
+        # return code/error class on NORTH only, without dumping arbitrary
+        # PowerShell output or changing the GOAD path.
+        self.assertIn("probe_rc=$?", script)
+        self.assertIn("NORTH DC02 probe rc=%s, output_bytes=%s", script)
+        self.assertIn("NORTH_DIRECT_WINRM_ERROR machine=GOAD-DC02", script)
+        for function_name, stop_name in (
+            ("ensure_child_dc_time_ready()", "wait_domain_controller_ready()"),
+            ("wait_domain_controller_ready()", "wait_domain_member_ready()"),
+        ):
+            body = script[script.index(function_name):script.index(
+                stop_name, script.index(function_name) + len(function_name))]
+            self.assertIn(
+                'probe_timeout="${NORTH_DC02_DIRECT_PROBE_TIMEOUT_SECONDS}"',
+                body,
+            )
+            self.assertIn(
+                'if [[ "${GOAD_LAB_PROFILE}" == NORTH && "${vm}" == GOAD-DC02 ]]',
+                body,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()
