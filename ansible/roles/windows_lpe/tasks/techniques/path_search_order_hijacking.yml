@@ -214,26 +214,6 @@
           try { return $Identity.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { return $null }
       }
 
-      function Test-WriteCapableAcl([string] $Path) {
-          $writeBits = @(
-              [System.Security.AccessControl.FileSystemRights]::WriteData,
-              [System.Security.AccessControl.FileSystemRights]::AppendData,
-              [System.Security.AccessControl.FileSystemRights]::WriteAttributes,
-              [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes,
-              [System.Security.AccessControl.FileSystemRights]::Delete,
-              [System.Security.AccessControl.FileSystemRights]::ChangePermissions,
-              [System.Security.AccessControl.FileSystemRights]::TakeOwnership
-          )
-          foreach ($ace in (Get-Acl -LiteralPath $Path).Access) {
-              if ((Convert-IdentityToSid $ace.IdentityReference) -ne $usersSid) { continue }
-              if ($ace.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { continue }
-              foreach ($bit in $writeBits) {
-                  if (($ace.FileSystemRights -band $bit) -eq $bit) { return $true }
-              }
-          }
-          return $false
-      }
-
       $service = Get-CimInstance Win32_Service -Filter "Name='$name'" -ErrorAction Stop
       if (-not $service) { throw 'KingdomPathSvc is missing' }
       if ($service.StartName -ne 'LocalSystem') { throw "service account=$($service.StartName)" }
