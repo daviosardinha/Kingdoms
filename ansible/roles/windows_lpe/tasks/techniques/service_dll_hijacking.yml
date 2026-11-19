@@ -175,7 +175,7 @@
           $input.Dispose()
       }
       $hash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
-      if ($hash -ne '2c377de8c7674d23725dbe6142d247dfb50afd662b430695deee2edd81b1ab45') {
+      if ($hash -ne 'cc3b582f9afd96e741a3110be556a8c4209afb48299963deb985f628f4215ba7') {
           throw "NORTH Topic 12 proof DLL hash mismatch: $hash"
       }
       Write-Output 'WINDOWS_LPE_TOPIC12_PROOF_DLL_READY'
@@ -227,7 +227,7 @@
           throw 'native NORTH Topic 12 proof DLL is missing'
       }
       $proofHash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
-      if ($proofHash -ne '2c377de8c7674d23725dbe6142d247dfb50afd662b430695deee2edd81b1ab45') {
+      if ($proofHash -ne 'cc3b582f9afd96e741a3110be556a8c4209afb48299963deb985f628f4215ba7') {
           throw "native NORTH Topic 12 proof DLL hash unexpected: $proofHash"
       }
 
