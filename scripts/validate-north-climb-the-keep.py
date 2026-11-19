@@ -43,7 +43,7 @@ TECHNIQUES = (
 EXPECTED = {name for _, name, _ in TECHNIQUES}
 SPECIAL_VALIDATOR = ROOT / "ansible/roles/windows_lpe/files/stored_runas/30_lifecycle.ps1"
 DEFAULTS = ROOT / "ansible/roles/windows_lpe/defaults/main.yml"
-REPORT_DIR = ROOT / "reports/north-climb-the-keep"
+REPORT_DIR = Path.home() / "Kingdoms-evidence/north-climb-the-keep"
 
 
 def source_audit():
