@@ -28,7 +28,7 @@ def test_native_x64_dll_is_reviewed_and_has_export():
     assert struct.unpack_from("<H", DLL, pe + 4)[0] == 0x8664
     assert b"KingdomDllProof\0" in DLL
     assert hashlib.sha256(DLL).hexdigest() == SHA256
-    assert b"whoami.exe" in DLL
+    assert "whoami.exe".encode("utf-16le") in DLL
     assert b"CreateProcessW\0" in DLL
 
 
