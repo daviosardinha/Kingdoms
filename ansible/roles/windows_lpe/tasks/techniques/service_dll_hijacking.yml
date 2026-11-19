@@ -144,11 +144,11 @@
       {{ lookup('ansible.builtin.file', role_path ~ '/files/dll_hijack/KingdomHelperProof.dll.gz.b64') | trim }}
       '@
       $compressed = [Convert]::FromBase64String($encoded)
-      $input = New-Object System.IO.MemoryStream(,$compressed)
-      $gzip = New-Object System.IO.Compression.GzipStream(
+      $input = [System.IO.MemoryStream]::new($compressed)
+      $gzip = [System.IO.Compression.GzipStream]::new(
           $input, [System.IO.Compression.CompressionMode]::Decompress
       )
-      $output = New-Object System.IO.MemoryStream
+      $output = [System.IO.MemoryStream]::new()
       try {
           $gzip.CopyTo($output)
           [System.IO.File]::WriteAllBytes($fixture, $output.ToArray())
