@@ -2,6 +2,7 @@
 import base64
 import gzip
 import hashlib
+import re
 import struct
 from pathlib import Path
 
@@ -27,7 +28,8 @@ def test_proof_is_native_x64_dll_with_only_benign_export():
     assert "S-1-5-18" in PROOF_SOURCE
     assert "rickon.stark" in PROOF_SOURCE
     assert "WS01" in PROOF_SOURCE
-    assert "system(" not in PROOF_SOURCE
+    # Match the C runtime function, not helpers such as process_is_system().
+    assert re.search(r"\bsystem\s*\(", PROOF_SOURCE) is None
     assert "CreateProcess" not in PROOF_SOURCE
     assert "DllMain(" not in PROOF_SOURCE
 
