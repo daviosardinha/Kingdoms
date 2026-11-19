@@ -132,7 +132,7 @@ windows_lpe_weak_service_registry_permissions:
 
 windows_lpe_service_dll_hijacking:
   service_name: KingdomDllSvc
-  display_name: GOAD Kingdoms DLL Loader Service
+  display_name: Kingdoms DLL Loader Service
   root: 'C:\Kingdom LPE\DLL Hijack'
   service_directory: 'C:\Kingdom LPE\DLL Hijack\Service'
   executable: 'C:\Kingdom LPE\DLL Hijack\Service\KingdomDllHost.exe'
