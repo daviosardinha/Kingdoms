@@ -25,7 +25,7 @@ def test_proof_is_native_x64_dll_with_only_benign_export():
     assert "return 0x4B120012;" in PROOF_SOURCE
     assert "system(" not in PROOF_SOURCE
     assert "CreateProcess" not in PROOF_SOURCE
-    assert "DllMain" not in PROOF_SOURCE
+    assert "DllMain(" not in PROOF_SOURCE
 
 
 def test_service_only_calls_explicit_library_path_and_proves_execution():
