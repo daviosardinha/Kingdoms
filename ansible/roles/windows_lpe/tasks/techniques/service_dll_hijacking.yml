@@ -28,6 +28,31 @@
       if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
       New-Item -ItemType Directory -Path $serviceDir -Force | Out-Null
 
+      # The wider NORTH training tree can carry inherited write-capable ACEs.
+      # Block inheritance on the service's private directory before compiling
+      # its executable, so standard users can plant only the missing DLL in
+      # the sibling parent directory, never replace the SYSTEM service binary
+      # or forge the protected execution-proof log.
+      $serviceAcl = Get-Acl -LiteralPath $serviceDir
+      $serviceAcl.SetAccessRuleProtection($true, $false)
+      $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+                 [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+      $propagate = [System.Security.AccessControl.PropagationFlags]::None
+      $allow = [System.Security.AccessControl.AccessControlType]::Allow
+      $safeEntries = @(
+          @{ Sid = 'S-1-5-18'; Rights = [System.Security.AccessControl.FileSystemRights]::FullControl },
+          @{ Sid = 'S-1-5-32-544'; Rights = [System.Security.AccessControl.FileSystemRights]::FullControl },
+          @{ Sid = 'S-1-5-32-545'; Rights = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute }
+      )
+      foreach ($entry in $safeEntries) {
+          $sid = [System.Security.Principal.SecurityIdentifier]::new($entry.Sid)
+          $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+              $sid, $entry.Rights, $inherit, $propagate, $allow
+          )
+          $serviceAcl.AddAccessRule($rule) | Out-Null
+      }
+      Set-Acl -LiteralPath $serviceDir -AclObject $serviceAcl
+
       $source = @"
       using System;
       using System.IO;
