@@ -15,6 +15,7 @@
       # Remove only the Topic 12 maintenance task before replacing its service.
       $previousTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
       if ($previousTask) {
+          Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
           Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop
       }
 
@@ -172,7 +173,10 @@
       $root = '{{ windows_lpe_service_dll_hijacking.root }}'
       $taskName = 'Workstation Component Health'
       $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-      if ($task) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop }
+      if ($task) {
+          Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+          Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop
+      }
       $existing = Get-Service -Name $name -ErrorAction SilentlyContinue
       if ($existing) {
           Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
