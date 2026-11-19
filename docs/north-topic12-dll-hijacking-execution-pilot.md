@@ -14,7 +14,7 @@ Fix the existing Topic 12 scenario without changing other NORTH techniques, KING
 - Ordinary users cannot start the service directly. Its existing service DACL is not changed to grant `SERVICE_START`.
 - The separate, visible Task Scheduler task `Workstation Component Health` runs under SYSTEM every minute and cycles **only** `KingdomDllSvc`. BUILTIN\\Users may read its definition, but cannot modify or start it on demand. This does not modify Topic 07's `Workstation Service Health` task.
 - A native x64 proof DLL is available at `C:\Users\Public\Documents\KingdomHelper.dll`. Copying it into the missing target location supplies an exported function, `KingdomDllProof`, returning a fixed marker.
-- On the next authorized maintenance start, the service calls the exported function in the loaded DLL. Only if the marker is correct does it append a UTC timestamp, token SID and account to the **protected** file `C:\Kingdom LPE\DLL Hijack\Service\KingdomDllProof.txt`. The expected SID for success is `S-1-5-18`.
+- On the next authorized maintenance start, the service calls the DLL's exported function. The DLL checks the WS01/SYSTEM identity and uses WTSSendMessageW to display a visible notification in the active NORTH Rickon RDP session. No text proof file is created.
 - The native DLL contains no reverse shell, network activity, process creation or `DllMain` side effects. It is not the earlier executable `KingdomProof.exe` renamed to `.dll`.
 
 ## Deterministic proof artifact
@@ -25,7 +25,7 @@ Reproducible compressed artifact: `ansible/roles/windows_lpe/files/dll_hijack/Ki
 
 Expected native DLL SHA-256:
 
-`2c377de8c7674d23725dbe6142d247dfb50afd662b430695deee2edd81b1ab45`
+`cc3b582f9afd96e741a3110be556a8c4209afb48299963deb985f628f4215ba7`
 
 On a developer machine with `clang-cl`, `lld-link`, and Python 3, rebuild the compressed artifact with:
 
@@ -74,13 +74,7 @@ Copy-Item -LiteralPath $src -Destination $dst -ErrorAction Stop
 Get-FileHash -LiteralPath $dst -Algorithm SHA256
 ```
 
-Allow the normal scheduled maintenance cycle to execute. Read the new proof file after the task has run:
-
-```powershell
-Get-Content -LiteralPath 'C:\Kingdom LPE\DLL Hijack\Service\KingdomDllProof.txt' -Tail 5
-```
-
-The proof must be a **new record** after the copy, containing `SID=S-1-5-18` and `Account=NT AUTHORITY\\SYSTEM`. A successful file copy, missing-DLL finding, scheduled-task registration, or successful service-start message is not enough by itself.
+Allow the normal scheduled maintenance cycle to execute. In Rickon's active NORTH RDP desktop, inspect the on-screen notification titled NORTH | DLL Hijacking proof. Its text should confirm that KingdomDllSvc loaded the DLL while running as NT AUTHORITY\SYSTEM. The DLL returns the success marker only if Windows accepts the notification. A copied DLL alone, or a successful task-start message, is not execution proof. This is a visible SYSTEM identity demonstration, not an interactive SYSTEM CMD.
 
 ## Rollback
 
@@ -92,7 +86,7 @@ Test-Path -LiteralPath 'C:\Kingdom LPE\DLL Hijack\KingdomHelper.dll' -PathType L
 sc.exe query KingdomDllSvc
 ```
 
-Expected `Test-Path=False`. The maintenance task may temporarily change service state during its next cycle. The protected proof log remains as recorded evidence until the scenario is reset.
+Expected `Test-Path=False`. The maintenance task may temporarily change service state during its next cycle. Preserve the notification screenshot as evidence; no protected text log is generated.
 
 For complete reset/reapply testing, use the repository's exact-technique Windows LPE reset and validation workflow on a disposable NORTH instance. Reset must delete only `Workstation Component Health`, `KingdomDllSvc`, the Topic 12 directory and its native proof DLL fixture. It must leave Topic 07 and all other exercises unchanged.
 
@@ -102,8 +96,8 @@ For complete reset/reapply testing, use the repository's exact-technique Windows
 - [ ] Selective apply completes with `WINDOWS_LPE_SERVICE_DLL_HIJACKING=VULNERABLE` and `WINDOWS_LPE_TOPIC12_TRIGGER_READY`.
 - [ ] Standard-user enumeration can inspect the Task Scheduler trigger without manually executing it.
 - [ ] Protected service directory rejects a standard-user file write, while the target parent permits DLL creation.
-- [ ] The SYSTEM maintenance cycle loads the planted DLL and produces a fresh protected `S-1-5-18` record.
+- [ ] The SYSTEM maintenance cycle loads the planted DLL and the active Rickon RDP session receives a fresh on-screen identity notification.
 - [ ] Removing the planted DLL restores the missing-DLL baseline.
 - [ ] Reset/reapply is idempotent and does not affect Topic 07 or any other NORTH scenario.
 
-Do not label the student exercise exploitable until the native DLL execution evidence has been collected on a real NORTH WS01.
+Do not mark runtime verification complete until the notification has been observed on NORTH WS01 and the DLL has been removed. The distinct requirement for an interactive SYSTEM CMD is not fulfilled by this proof and remains open.
