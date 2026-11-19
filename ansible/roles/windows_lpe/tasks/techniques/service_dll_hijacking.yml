@@ -10,7 +10,6 @@
       $exe = '{{ windows_lpe_service_dll_hijacking.executable }}'
       $dll = '{{ windows_lpe_service_dll_hijacking.writable_dll }}'
       $taskName = 'Workstation Component Health'
-      $proofLog = Join-Path $serviceDir 'KingdomDllProof.txt'
 
       # Remove only the Topic 12 maintenance task before replacing its service.
       $previousTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
@@ -31,8 +30,7 @@
       # The wider NORTH training tree can carry inherited write-capable ACEs.
       # Block inheritance on the service's private directory before compiling
       # its executable, so standard users can plant only the missing DLL in
-      # the sibling parent directory, never replace the SYSTEM service binary
-      # or forge the protected execution-proof log.
+      # the parent directory, never replace the SYSTEM service binary.
       $serviceAcl = Get-Acl -LiteralPath $serviceDir
       $serviceAcl.SetAccessRuleProtection($true, $false)
       $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
@@ -55,9 +53,7 @@
 
       $source = @"
       using System;
-      using System.IO;
       using System.Runtime.InteropServices;
-      using System.Security.Principal;
       using System.ServiceProcess;
       public sealed class KingdomDllService : ServiceBase
       {
@@ -83,15 +79,9 @@
                   if (exported == IntPtr.Zero) return;
                   ProofFunction execute = (ProofFunction)Marshal.GetDelegateForFunctionPointer(
                       exported, typeof(ProofFunction));
+                  // The native DLL displays a lab-specific identity proof in
+                  // Rickon's active RDP session. No privileged log is written.
                   if (execute() != 0x4B120012) return;
-
-                  // Only the privileged service writes this record. The root
-                  // folder's Users CreateFiles permission is NOT inherited by
-                  // the protected Service subdirectory.
-                  WindowsIdentity identity = WindowsIdentity.GetCurrent();
-                  File.AppendAllText(@"$proofLog",
-                      DateTime.UtcNow.ToString("o") + "|SID=" + identity.User.Value +
-                      "|Account=" + identity.Name + Environment.NewLine);
               }
               finally { FreeLibrary(library); }
           }
@@ -240,9 +230,6 @@
       if ($proofHash -ne '2c377de8c7674d23725dbe6142d247dfb50afd662b430695deee2edd81b1ab45') {
           throw "native NORTH Topic 12 proof DLL hash unexpected: $proofHash"
       }
-      if (Test-Path -LiteralPath (Join-Path (Split-Path $exe) 'KingdomDllProof.txt')) {
-          throw 'proof record exists on clean apply; remove prior exercise artifacts'
-      }
 
       $rootWritable = $false
       foreach ($ace in (Get-Acl -LiteralPath $root).Access) {
@@ -269,7 +256,7 @@
           try { $sid = $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { continue }
           if ($sid -in @('S-1-5-32-545', 'S-1-5-11', 'S-1-1-0') -and $ace.AccessControlType -eq 'Allow' -and
               (($ace.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::WriteData) -ne 0)) {
-              throw 'protected service proof directory must not be writable by ordinary users'
+              throw 'protected service executable directory must not be writable by ordinary users'
           }
       }
 
