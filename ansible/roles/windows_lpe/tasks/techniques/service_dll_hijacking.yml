@@ -9,6 +9,14 @@
       $serviceDir = '{{ windows_lpe_service_dll_hijacking.service_directory }}'
       $exe = '{{ windows_lpe_service_dll_hijacking.executable }}'
       $dll = '{{ windows_lpe_service_dll_hijacking.writable_dll }}'
+      $taskName = 'Workstation Component Health'
+      $proofLog = Join-Path $serviceDir 'KingdomDllProof.txt'
+
+      # Remove only the Topic 12 maintenance task before replacing its service.
+      $previousTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+      if ($previousTask) {
+          Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop
+      }
 
       $existing = Get-Service -Name $name -ErrorAction SilentlyContinue
       if ($existing) {
@@ -21,16 +29,45 @@
 
       $source = @"
       using System;
+      using System.IO;
       using System.Runtime.InteropServices;
+      using System.Security.Principal;
       using System.ServiceProcess;
       public sealed class KingdomDllService : ServiceBase
       {
-          [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+          [DllImport("kernel32.dll", EntryPoint = "LoadLibraryW", CharSet = CharSet.Unicode, SetLastError = true)]
           private static extern IntPtr LoadLibrary(string lpFileName);
+          [DllImport("kernel32.dll", EntryPoint = "GetProcAddress", CharSet = CharSet.Ansi, SetLastError = true)]
+          private static extern IntPtr GetProcAddress(IntPtr library, string name);
+          [DllImport("kernel32.dll", SetLastError = true)]
+          [return: MarshalAs(UnmanagedType.Bool)]
+          private static extern bool FreeLibrary(IntPtr library);
+          [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+          private delegate int ProofFunction();
           public KingdomDllService() { ServiceName = "KingdomDllSvc"; }
           protected override void OnStart(string[] args)
           {
-              LoadLibrary(@"$dll");
+              // Use an explicit path: this is a missing-library placement case,
+              // not general Windows DLL search-order behavior.
+              IntPtr library = LoadLibrary(@"$dll");
+              if (library == IntPtr.Zero) return;
+              try
+              {
+                  IntPtr exported = GetProcAddress(library, "KingdomDllProof");
+                  if (exported == IntPtr.Zero) return;
+                  ProofFunction execute = (ProofFunction)Marshal.GetDelegateForFunctionPointer(
+                      exported, typeof(ProofFunction));
+                  if (execute() != 0x4B120012) return;
+
+                  // Only the privileged service writes this record. The root
+                  // folder's Users CreateFiles permission is NOT inherited by
+                  // the protected Service subdirectory.
+                  WindowsIdentity identity = WindowsIdentity.GetCurrent();
+                  File.AppendAllText(@"$proofLog",
+                      DateTime.UtcNow.ToString("o") + "|SID=" + identity.User.Value +
+                      "|Account=" + identity.Name + Environment.NewLine);
+              }
+              finally { FreeLibrary(library); }
           }
           protected override void OnStop() { }
           public static void Main() { ServiceBase.Run(new KingdomDllService()); }
@@ -61,6 +98,40 @@
       Set-Acl -LiteralPath $root -AclObject $acl
 
       if (Test-Path -LiteralPath $dll) { Remove-Item -LiteralPath $dll -Force }
+
+      # A separate, discoverable SYSTEM maintenance cycle is the execution
+      # trigger. Standard users may inspect it but cannot edit or run it.
+      $taskExecutable = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+      $taskArgs = '-NoProfile -NonInteractive -Command "Stop-Service -Name KingdomDllSvc -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; & sc.exe start KingdomDllSvc | Out-Null; Start-Sleep -Seconds 5; Stop-Service -Name KingdomDllSvc -ErrorAction SilentlyContinue"'
+      $scheduler = New-Object -ComObject 'Schedule.Service'
+      $scheduler.Connect()
+      $definition = $scheduler.NewTask(0)
+      $definition.RegistrationInfo.Description = 'Periodically check local workstation component services'
+      $definition.RegistrationInfo.Author = 'NORTH Workstation Maintenance'
+      $definition.Principal.UserId = 'SYSTEM'
+      $definition.Principal.LogonType = 5
+      $definition.Principal.RunLevel = 1
+      $definition.Settings.Compatibility = 4
+      $definition.Settings.Enabled = $true
+      $definition.Settings.Hidden = $false
+      $definition.Settings.AllowDemandStart = $false
+      $definition.Settings.DisallowStartIfOnBatteries = $false
+      $definition.Settings.StopIfGoingOnBatteries = $false
+      $definition.Settings.StartWhenAvailable = $true
+      $definition.Settings.MultipleInstances = 2
+      $trigger = $definition.Triggers.Create(2)
+      $trigger.StartBoundary = '2026-01-01T00:00:00'
+      $trigger.DaysInterval = 1
+      $trigger.Repetition.Interval = 'PT1M'
+      $trigger.Repetition.Duration = 'P1D'
+      $trigger.Repetition.StopAtDurationEnd = $false
+      $action = $definition.Actions.Create(0)
+      $action.Path = $taskExecutable
+      $action.Arguments = $taskArgs
+      $taskAcl = 'D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GR;;;BU)'
+      $scheduler.GetFolder('\').RegisterTaskDefinition(
+          $taskName, $definition, 6, 'SYSTEM', $null, 5, $taskAcl
+      ) | Out-Null
       Write-Output 'WINDOWS_LPE_SERVICE_DLL_HIJACKING=APPLIED'
   when: windows_lpe_action == 'apply'
 
@@ -69,6 +140,9 @@
     script: |
       $name = '{{ windows_lpe_service_dll_hijacking.service_name }}'
       $root = '{{ windows_lpe_service_dll_hijacking.root }}'
+      $taskName = 'Workstation Component Health'
+      $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+      if ($task) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction Stop }
       $existing = Get-Service -Name $name -ErrorAction SilentlyContinue
       if ($existing) {
           Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
@@ -76,6 +150,8 @@
           Start-Sleep -Milliseconds 750
       }
       if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
+      $fixture = 'C:\Users\Public\Documents\KingdomHelper.dll'
+      if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Force }
       Write-Output 'WINDOWS_LPE_SERVICE_DLL_HIJACKING=RESET'
   when: windows_lpe_action == 'reset'
 
