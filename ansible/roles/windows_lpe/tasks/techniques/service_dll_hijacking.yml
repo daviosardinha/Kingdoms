@@ -135,6 +135,36 @@
       Write-Output 'WINDOWS_LPE_SERVICE_DLL_HIJACKING=APPLIED'
   when: windows_lpe_action == 'apply'
 
+- name: Publish native x64 proof DLL for the NORTH learner
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $fixture = 'C:\Users\Public\Documents\KingdomHelper.dll'
+      $encoded = @'
+      {{ lookup('ansible.builtin.file', role_path ~ '/files/dll_hijack/KingdomHelperProof.dll.gz.b64') | trim }}
+      '@
+      $compressed = [Convert]::FromBase64String($encoded)
+      $input = New-Object System.IO.MemoryStream(,$compressed)
+      $gzip = New-Object System.IO.Compression.GzipStream(
+          $input, [System.IO.Compression.CompressionMode]::Decompress
+      )
+      $output = New-Object System.IO.MemoryStream
+      try {
+          $gzip.CopyTo($output)
+          [System.IO.File]::WriteAllBytes($fixture, $output.ToArray())
+      }
+      finally {
+          $output.Dispose()
+          $gzip.Dispose()
+          $input.Dispose()
+      }
+      $hash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($hash -ne '2c377de8c7674d23725dbe6142d247dfb50afd662b430695deee2edd81b1ab45') {
+          throw "NORTH Topic 12 proof DLL hash mismatch: $hash"
+      }
+      Write-Output 'WINDOWS_LPE_TOPIC12_PROOF_DLL_READY'
+  when: windows_lpe_action == 'apply'
+
 - name: Reset service DLL hijacking candidate
   ansible.windows.win_powershell:
     script: |
@@ -171,6 +201,19 @@
       if (-not $service.PathName.TrimStart().StartsWith('"')) { throw 'service ImagePath is not quoted' }
       if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'service executable missing' }
       if (Test-Path -LiteralPath $dll) { throw 'training DLL is already planted; apply must leave the learner payload absent' }
+      if ($service.StartMode -ne 'Manual') { throw "service startup mode=$($service.StartMode)" }
+      if ($service.DisplayName -ne 'Kingdoms DLL Loader Service') { throw "service display name=$($service.DisplayName)" }
+      $fixture = 'C:\Users\Public\Documents\KingdomHelper.dll'
+      if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
+          throw 'native NORTH Topic 12 proof DLL is missing'
+      }
+      $proofHash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($proofHash -ne '2c377de8c7674d23725dbe6142d247dfb50afd662b430695deee2edd81b1ab45') {
+          throw "native NORTH Topic 12 proof DLL hash unexpected: $proofHash"
+      }
+      if (Test-Path -LiteralPath (Join-Path (Split-Path $exe) 'KingdomDllProof.txt')) {
+          throw 'proof record exists on clean apply; remove prior exercise artifacts'
+      }
 
       $rootWritable = $false
       foreach ($ace in (Get-Acl -LiteralPath $root).Access) {
@@ -191,6 +234,79 @@
           }
       }
 
+      # The protected service directory must remain nonwritable to ordinary users.
+      $serviceDir = Split-Path -Path $exe
+      foreach ($ace in (Get-Acl -LiteralPath $serviceDir).Access) {
+          try { $sid = $ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { continue }
+          if ($sid -in @('S-1-5-32-545', 'S-1-5-11', 'S-1-1-0') -and $ace.AccessControlType -eq 'Allow' -and
+              (($ace.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::WriteData) -ne 0)) {
+              throw 'protected service proof directory must not be writable by ordinary users'
+          }
+      }
+
+      # Do not grant Rickon SERVICE_START. The scheduled task is the separate trigger.
+      $serviceSddl = (& sc.exe sdshow $name | Where-Object { $_ -match '^D:' } | Select-Object -First 1)
+      if (-not $serviceSddl) { throw 'could not read service security descriptor' }
+      $serviceAcl = New-Object System.Security.AccessControl.RawSecurityDescriptor($serviceSddl)
+      foreach ($ace in $serviceAcl.DiscretionaryAcl) {
+          if ($ace -isnot [System.Security.AccessControl.KnownAce]) { continue }
+          if ($ace.AceQualifier -ne [System.Security.AccessControl.AceQualifier]::AccessAllowed) { continue }
+          if ($ace.SecurityIdentifier.Value -in @('S-1-5-32-545', 'S-1-5-11', 'S-1-1-0', 'S-1-5-4') -and
+              (($ace.AccessMask -band 16) -ne 0)) {
+              throw 'ordinary user can unexpectedly start KingdomDllSvc directly'
+          }
+      }
+
+      $taskName = 'Workstation Component Health'
+      $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
+      [xml]$taskXml = Export-ScheduledTask -TaskName $taskName -ErrorAction Stop
+      if ($task.State -eq 'Disabled') { throw 'Topic 12 maintenance task disabled' }
+      if ($task.Principal.UserId -notin @('SYSTEM', 'NT AUTHORITY\SYSTEM', 'S-1-5-18')) {
+          throw "Topic 12 task principal=$($task.Principal.UserId)"
+      }
+      if ($task.Settings.AllowDemandStart) { throw 'Topic 12 task must not be student-triggerable' }
+      $exec = $taskXml.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Command']")
+      $arguments = $taskXml.SelectSingleNode("//*[local-name()='Actions']/*[local-name()='Exec']/*[local-name()='Arguments']")
+      $interval = $taskXml.SelectSingleNode("//*[local-name()='Repetition']/*[local-name()='Interval']")
+      if (-not $exec -or $exec.InnerText -ne 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe') {
+          throw 'Topic 12 maintenance task executable mismatch'
+      }
+      if (-not $arguments -or $arguments.InnerText -notmatch 'sc\.exe start KingdomDllSvc.*Stop-Service -Name KingdomDllSvc') {
+          throw 'Topic 12 maintenance task must start and stop only KingdomDllSvc'
+      }
+      if (-not $interval -or $interval.InnerText -ne 'PT1M') {
+          throw 'Topic 12 maintenance repetition must be one minute'
+      }
+      $scheduler = New-Object -ComObject 'Schedule.Service'
+      $scheduler.Connect()
+      $taskSddl = $scheduler.GetFolder('\').GetTask($taskName).GetSecurityDescriptor(4)
+      $taskAcl = New-Object System.Security.AccessControl.RawSecurityDescriptor($taskSddl)
+      $usersRead = $false
+      $adminFull = $false
+      $systemFull = $false
+      foreach ($ace in $taskAcl.DiscretionaryAcl) {
+          if ($ace -isnot [System.Security.AccessControl.KnownAce]) { continue }
+          if ($ace.AceQualifier -ne [System.Security.AccessControl.AceQualifier]::AccessAllowed) { continue }
+          $sid = $ace.SecurityIdentifier.Value
+          $mask = ([long]$ace.AccessMask -band [long]4294967295)
+          if ($sid -eq 'S-1-5-18' -or $sid -eq 'S-1-5-32-544') {
+              $full = (($mask -band [long]0x10000000) -ne 0) -or (($mask -band [long]0x001F01FF) -eq [long]0x001F01FF)
+              if ($full) {
+                  if ($sid -eq 'S-1-5-18') { $systemFull = $true }
+                  else { $adminFull = $true }
+              }
+              continue
+          }
+          if (($mask -band [long]0x700D0176) -ne 0) { throw 'non-admin can modify or execute Topic 12 maintenance task' }
+          if ($sid -eq 'S-1-5-32-545' -and (($mask -band [long]0x80000000) -ne 0 -or ($mask -band 1) -ne 0)) {
+              $usersRead = $true
+          }
+      }
+      if (-not ($usersRead -and $adminFull -and $systemFull)) {
+          throw 'Topic 12 task must be read-only for Users, full control for SYSTEM and Administrators'
+      }
+
+      Write-Output 'WINDOWS_LPE_TOPIC12_TRIGGER_READY|principal=SYSTEM|interval=PT1M|service=KingdomDllSvc'
       Write-Output 'WINDOWS_LPE_SERVICE_DLL_HIJACKING=VULNERABLE'
   register: windows_lpe_service_dll_hijacking_vulnerable
   when:
@@ -210,6 +326,12 @@
       $root = '{{ windows_lpe_service_dll_hijacking.root }}'
       if (Get-Service -Name $name -ErrorAction SilentlyContinue) { throw 'KingdomDllSvc still exists' }
       if (Test-Path -LiteralPath $root) { throw 'DLL hijack lab directory still exists' }
+      if (Get-ScheduledTask -TaskName 'Workstation Component Health' -ErrorAction SilentlyContinue) {
+          throw 'Topic 12 maintenance task still exists'
+      }
+      if (Test-Path -LiteralPath 'C:\Users\Public\Documents\KingdomHelper.dll') {
+          throw 'Topic 12 proof DLL fixture still exists'
+      }
       Write-Output 'WINDOWS_LPE_SERVICE_DLL_HIJACKING=CLEAN'
   register: windows_lpe_service_dll_hijacking_clean
   when:
