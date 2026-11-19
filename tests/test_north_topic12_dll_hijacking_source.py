@@ -20,9 +20,13 @@ def test_proof_is_native_x64_dll_with_only_benign_export():
     assert struct.unpack_from("<H", PROOF_BYTES, pe_offset + 4)[0] == 0x8664
     assert b"KingdomDllProof\0" in PROOF_BYTES
     assert hashlib.sha256(PROOF_BYTES).hexdigest() == (
-        "2c377de8c7674d23725dbe6142d247dfb50afd662b430695deee2edd81b1ab45"
+        "cc3b582f9afd96e741a3110be556a8c4209afb48299963deb985f628f4215ba7"
     )
-    assert "return 0x4B120012;" in PROOF_SOURCE
+    assert "return delivered ? 0x4B120012 : 0;" in PROOF_SOURCE
+    assert "WTSSendMessageW" in PROOF_SOURCE
+    assert "S-1-5-18" in PROOF_SOURCE
+    assert "rickon.stark" in PROOF_SOURCE
+    assert "WS01" in PROOF_SOURCE
     assert "system(" not in PROOF_SOURCE
     assert "CreateProcess" not in PROOF_SOURCE
     assert "DllMain(" not in PROOF_SOURCE
@@ -32,9 +36,9 @@ def test_service_only_calls_explicit_library_path_and_proves_execution():
     assert "LoadLibrary(@\"$dll\")" in ROLE
     assert "GetProcAddress(library, \"KingdomDllProof\")" in ROLE
     assert "if (execute() != 0x4B120012) return;" in ROLE
-    assert "identity.User.Value" in ROLE
-    assert "KingdomDllProof.txt" in ROLE
-    assert "Join-Path $serviceDir 'KingdomDllProof.txt'" in ROLE
+    assert "execute() != 0x4B120012" in ROLE
+    assert "KingdomDllProof.txt" not in ROLE
+    assert "File.AppendAllText" not in ROLE
 
 
 def test_trigger_is_separate_from_topic07_and_not_student_writable():
@@ -51,8 +55,8 @@ def test_trigger_is_separate_from_topic07_and_not_student_writable():
 def test_vulnerable_apply_stages_proof_but_not_target_dll():
     assert "C:\\Users\\Public\\Documents\\KingdomHelper.dll" in ROLE
     assert "if (Test-Path -LiteralPath $dll) { Remove-Item" in ROLE
-    assert "proof record exists on clean apply" in ROLE
-    assert "protected service proof directory must not be writable" in ROLE
+    assert "native NORTH Topic 12 proof DLL is missing" in ROLE
+    assert "protected service executable directory must not be writable" in ROLE
     assert "WINDOWS_LPE_SERVICE_DLL_HIJACKING=VULNERABLE" in ROLE
     assert "display_name: Kingdoms DLL Loader Service" in DEFAULTS
 
@@ -76,4 +80,4 @@ def test_protected_service_directory_does_not_inherit_write_access():
     assert ROLE.index("Set-Acl -LiteralPath $serviceDir -AclObject $serviceAcl") < ROLE.index(
         "Add-Type -TypeDefinition $source"
     )
-    assert "protected service proof directory must not be writable by ordinary users" in ROLE
+    assert "protected service executable directory must not be writable by ordinary users" in ROLE
