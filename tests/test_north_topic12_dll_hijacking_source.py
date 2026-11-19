@@ -53,6 +53,9 @@ def test_result_transport_is_local_read_only_and_ends():
     assert "NamedPipeServerStream" in VIEWER
     assert "PipeDirection]::In" in VIEWER
     assert "'S-1-5-18'" in VIEWER
+    # The SYSTEM-side native client requests GENERIC_WRITE, whose mapping
+    # includes more rights than PipeAccessRights.Write alone.
+    assert "$systemSid, [System.IO.Pipes.PipeAccessRights]::FullControl, $allow" in VIEWER
     assert "WaitOne(150000)" in VIEWER
     assert "ReadToEnd()" in VIEWER
     assert "End of SYSTEM command proof" in VIEWER
