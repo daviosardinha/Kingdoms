@@ -24,9 +24,43 @@
           Remove-Item -LiteralPath $root -Recurse -Force
       }
 
+      # Protect only Topic 13. Do not change C:\ or C:\Kingdom LPE ACLs.
+      function Set-Topic13DirectoryAcl(
+        [string] $Path,
+        [System.Security.AccessControl.FileSystemRights] $UsersRights
+      ) {
+        $acl = Get-Acl -LiteralPath $Path
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($oldRule in @($acl.Access)) {
+          if (-not $oldRule.IsInherited) {
+            $acl.RemoveAccessRuleSpecific($oldRule)
+          }
+        }
+        $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+        foreach ($entry in @(
+          @{ Sid = 'S-1-5-18'; Rights = [System.Security.AccessControl.FileSystemRights]::FullControl },
+          @{ Sid = 'S-1-5-32-544'; Rights = [System.Security.AccessControl.FileSystemRights]::FullControl },
+          @{ Sid = 'S-1-5-32-545'; Rights = $UsersRights }
+        )) {
+          $sid = [System.Security.Principal.SecurityIdentifier]::new($entry.Sid)
+          $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            $sid, $entry.Rights, $inherit,
+            [System.Security.AccessControl.PropagationFlags]::None,
+            [System.Security.AccessControl.AccessControlType]::Allow
+          )
+          $acl.AddAccessRule($rule) | Out-Null
+        }
+        Set-Acl -LiteralPath $Path -AclObject $acl
+      }
+
+      New-Item -ItemType Directory -Path $root -Force | Out-Null
+      Set-Topic13DirectoryAcl -Path $root -UsersRights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute)
       New-Item -ItemType Directory -Path $serviceDir -Force | Out-Null
       New-Item -ItemType Directory -Path $writableDir -Force | Out-Null
       New-Item -ItemType Directory -Path $protectedDir -Force | Out-Null
+      Set-Topic13DirectoryAcl -Path $serviceDir -UsersRights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute)
+      Set-Topic13DirectoryAcl -Path $protectedDir -UsersRights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute)
+      Set-Topic13DirectoryAcl -Path $writableDir -UsersRights ([System.Security.AccessControl.FileSystemRights]::Modify)
 
       $serviceSource = @"
       using System;
@@ -86,20 +120,6 @@
           -Language CSharp `
           -OutputAssembly $protectedHelper `
           -OutputType ConsoleApplication
-
-      # Only the candidate lookup directory is writable. The privileged service
-      # binary and the legitimate fallback helper stay non-writable to Users.
-      $acl = Get-Acl -LiteralPath $writableDir
-      $usersSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-545')
-      $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-          $usersSid,
-          [System.Security.AccessControl.FileSystemRights]::Modify,
-          [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
-          [System.Security.AccessControl.PropagationFlags]::None,
-          [System.Security.AccessControl.AccessControlType]::Allow
-      )
-      $acl.AddAccessRule($rule) | Out-Null
-      Set-Acl -LiteralPath $writableDir -AclObject $acl
 
       # Put the writable lab directory before the protected fallback directory in
       # the machine PATH while preserving every unrelated PATH entry.
@@ -182,7 +202,9 @@
       $ErrorActionPreference = 'Stop'
 
       $name = '{{ windows_lpe_path_search_order_hijacking.service_name }}'
+      $root = '{{ windows_lpe_path_search_order_hijacking.root }}'
       $exe = '{{ windows_lpe_path_search_order_hijacking.executable }}'
+      $serviceDir = '{{ windows_lpe_path_search_order_hijacking.service_directory }}'
       $writableDir = '{{ windows_lpe_path_search_order_hijacking.writable_directory }}'
       $protectedDir = '{{ windows_lpe_path_search_order_hijacking.protected_directory }}'
       $protectedHelper = '{{ windows_lpe_path_search_order_hijacking.protected_helper }}'
@@ -190,26 +212,6 @@
 
       function Convert-IdentityToSid([System.Security.Principal.IdentityReference] $Identity) {
           try { return $Identity.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { return $null }
-      }
-
-      function Test-WriteCapableAcl([string] $Path) {
-          $writeBits = @(
-              [System.Security.AccessControl.FileSystemRights]::WriteData,
-              [System.Security.AccessControl.FileSystemRights]::AppendData,
-              [System.Security.AccessControl.FileSystemRights]::WriteAttributes,
-              [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes,
-              [System.Security.AccessControl.FileSystemRights]::Delete,
-              [System.Security.AccessControl.FileSystemRights]::ChangePermissions,
-              [System.Security.AccessControl.FileSystemRights]::TakeOwnership
-          )
-          foreach ($ace in (Get-Acl -LiteralPath $Path).Access) {
-              if ((Convert-IdentityToSid $ace.IdentityReference) -ne $usersSid) { continue }
-              if ($ace.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { continue }
-              foreach ($bit in $writeBits) {
-                  if (($ace.FileSystemRights -band $bit) -eq $bit) { return $true }
-              }
-          }
-          return $false
       }
 
       $service = Get-CimInstance Win32_Service -Filter "Name='$name'" -ErrorAction Stop
@@ -221,14 +223,60 @@
       if (-not (Test-Path -LiteralPath $writableDir -PathType Container)) { throw 'writable PATH directory missing' }
       if (-not (Test-Path -LiteralPath $protectedDir -PathType Container)) { throw 'protected PATH directory missing' }
 
-      if (-not (Test-WriteCapableAcl $writableDir)) {
-          throw 'BUILTIN\Users cannot write the intended PATH preemption directory'
+      # Refuse inherited write access from Authenticated Users, Everyone,
+      # or any other unprivileged SID on a protected Topic 13 resource.
+      $writeMask = [long](
+        [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+        [System.Security.AccessControl.FileSystemRights]::AppendData -bor
+        [System.Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+        [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
+        [System.Security.AccessControl.FileSystemRights]::Delete -bor
+        [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+        [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+      )
+      function Assert-ProtectedTopic13Path([string] $Path) {
+        foreach ($ace in (Get-Acl -LiteralPath $Path).Access) {
+          if ($ace.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { continue }
+          $sid = Convert-IdentityToSid $ace.IdentityReference
+          if (-not $sid) { throw "Unknown ACL principal on $Path" }
+          if ($sid -in @('S-1-5-18', 'S-1-5-32-544')) { continue }
+          if (([long]$ace.FileSystemRights -band $writeMask) -ne 0) {
+            throw "Topic 13 protected path writable/deletable by $sid : $Path"
+          }
+        }
       }
-      if (Test-WriteCapableAcl $exe) {
-          throw 'privileged service executable is also writable by BUILTIN\Users'
+      foreach ($dir in @($root, $serviceDir, $protectedDir, $writableDir)) {
+        if (-not (Get-Acl -LiteralPath $dir).AreAccessRulesProtected) {
+          throw "Topic 13 directory inherits outside permissions: $dir"
+        }
       }
-      if (Test-WriteCapableAcl $protectedHelper) {
-          throw 'protected fallback helper is also writable by BUILTIN\Users'
+      foreach ($protectedPath in @($root, $serviceDir, $protectedDir, $exe, $protectedHelper)) {
+        Assert-ProtectedTopic13Path $protectedPath
+      }
+      # A vulnerable DELETE_CHILD on the shared parent can defeat local ACLs.
+      # Stop instead of changing a parent used by Topics 07-12.
+      $sharedParent = Split-Path -Path $root -Parent
+      foreach ($ace in (Get-Acl -LiteralPath $sharedParent).Access) {
+        if ($ace.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { continue }
+        $sid = Convert-IdentityToSid $ace.IdentityReference
+        if (-not $sid) { throw "Unknown shared parent ACL principal: $sharedParent" }
+        if ($sid -in @('S-1-5-18', 'S-1-5-32-544')) { continue }
+        if (([long]$ace.FileSystemRights -band [long][System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles) -ne 0) {
+          throw "Shared parent grants DELETE_CHILD to $sid : $sharedParent"
+        }
+      }
+      # Keep only the intended candidate writable by BUILTIN\Users.
+      $candidateCreate = $false
+      foreach ($ace in (Get-Acl -LiteralPath $writableDir).Access) {
+        if ($ace.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { continue }
+        if ((Convert-IdentityToSid $ace.IdentityReference) -ne $usersSid) { continue }
+        if (([long]$ace.FileSystemRights -band [long][System.Security.AccessControl.FileSystemRights]::CreateFiles) -ne 0) {
+          $candidateCreate = $true
+        }
+      }
+      if (-not $candidateCreate) {
+        throw 'BUILTIN\Users cannot create the intended PATH preemption file'
       }
 
       $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
