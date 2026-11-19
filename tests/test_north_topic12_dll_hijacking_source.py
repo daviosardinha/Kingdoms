@@ -62,3 +62,18 @@ def test_reset_removes_only_topic12_service_task_and_fixture():
     assert "Topic 12 maintenance task still exists" in ROLE
     assert "Topic 12 proof DLL fixture still exists" in ROLE
     assert "WINDOWS_LPE_SERVICE_DLL_HIJACKING=CLEAN" in ROLE
+
+def test_protected_service_directory_does_not_inherit_write_access():
+    # WS01's parent training tree may be broadly writable. The private
+    # service executable and proof log must not inherit those permissions.
+    assert "$serviceAcl.SetAccessRuleProtection($true, $false)" in ROLE
+    assert "Set-Acl -LiteralPath $serviceDir -AclObject $serviceAcl" in ROLE
+    assert "S-1-5-18" in ROLE
+    assert "S-1-5-32-544" in ROLE
+    assert "S-1-5-32-545" in ROLE
+    assert "Rights = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute" in ROLE
+    assert "InheritanceFlags]::None" in ROLE
+    assert ROLE.index("Set-Acl -LiteralPath $serviceDir -AclObject $serviceAcl") < ROLE.index(
+        "Add-Type -TypeDefinition $source"
+    )
+    assert "protected service proof directory must not be writable by ordinary users" in ROLE
