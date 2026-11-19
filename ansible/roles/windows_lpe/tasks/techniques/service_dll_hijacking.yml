@@ -79,8 +79,10 @@
                   if (exported == IntPtr.Zero) return;
                   ProofFunction execute = (ProofFunction)Marshal.GetDelegateForFunctionPointer(
                       exported, typeof(ProofFunction));
-                  // The native DLL displays a lab-specific identity proof in
-                  // Rickon's active RDP session. No privileged log is written.
+                  // The native DLL creates only two fixed whoami processes
+                  // under this SYSTEM service token, and streams their real
+                  // stdout to Rickon's read-only PowerShell viewer.
+                  // No shell, arbitrary command input or proof file exists.
                   if (execute() != 0x4B120012) return;
               }
               finally { FreeLibrary(library); }
@@ -175,10 +177,16 @@
           $input.Dispose()
       }
       $hash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
-      if ($hash -ne 'cc3b582f9afd96e741a3110be556a8c4209afb48299963deb985f628f4215ba7') {
+      if ($hash -ne '3a68f77286498a365fece9e53cda32417eb7294c63ef031be27a00ccb036b9d1') {
           throw "NORTH Topic 12 proof DLL hash mismatch: $hash"
       }
       Write-Output 'WINDOWS_LPE_TOPIC12_PROOF_DLL_READY'
+  when: windows_lpe_action == 'apply'
+
+- name: Publish read-only native DLL result viewer for NORTH Rickon
+  ansible.windows.win_copy:
+    src: dll_hijack/KingdomDllProofViewer.ps1
+    dest: 'C:\Users\Public\Documents\KingdomDllProofViewer.ps1'
   when: windows_lpe_action == 'apply'
 
 - name: Reset service DLL hijacking candidate
@@ -201,6 +209,8 @@
       if (Test-Path -LiteralPath $root) { Remove-Item -LiteralPath $root -Recurse -Force }
       $fixture = 'C:\Users\Public\Documents\KingdomHelper.dll'
       if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Force }
+      $viewer = 'C:\Users\Public\Documents\KingdomDllProofViewer.ps1'
+      if (Test-Path -LiteralPath $viewer) { Remove-Item -LiteralPath $viewer -Force }
       Write-Output 'WINDOWS_LPE_SERVICE_DLL_HIJACKING=RESET'
   when: windows_lpe_action == 'reset'
 
@@ -226,8 +236,12 @@
       if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
           throw 'native NORTH Topic 12 proof DLL is missing'
       }
+      $viewer = 'C:\Users\Public\Documents\KingdomDllProofViewer.ps1'
+      if (-not (Test-Path -LiteralPath $viewer -PathType Leaf)) {
+          throw 'Topic 12 read-only terminal viewer is missing'
+      }
       $proofHash = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
-      if ($proofHash -ne 'cc3b582f9afd96e741a3110be556a8c4209afb48299963deb985f628f4215ba7') {
+      if ($proofHash -ne '3a68f77286498a365fece9e53cda32417eb7294c63ef031be27a00ccb036b9d1') {
           throw "native NORTH Topic 12 proof DLL hash unexpected: $proofHash"
       }
 
@@ -347,6 +361,9 @@
       }
       if (Test-Path -LiteralPath 'C:\Users\Public\Documents\KingdomHelper.dll') {
           throw 'Topic 12 proof DLL fixture still exists'
+      }
+      if (Test-Path -LiteralPath 'C:\Users\Public\Documents\KingdomDllProofViewer.ps1') {
+          throw 'Topic 12 terminal viewer still exists'
       }
       Write-Output 'WINDOWS_LPE_SERVICE_DLL_HIJACKING=CLEAN'
   register: windows_lpe_service_dll_hijacking_clean
