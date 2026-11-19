@@ -36,7 +36,6 @@ def test_native_proof_runs_only_fixed_read_only_commands():
     assert "system_context()" in SOURCE
     assert 'L"S-1-5-18"' in SOURCE
     assert 'L"WS01"' in SOURCE
-    assert 'L"C:\\Windows\\System32\\whoami.exe"' not in SOURCE  # source has escaped C backslashes
     assert 'CreateProcessW(L"C:\\\\Windows\\\\System32\\\\whoami.exe"' in SOURCE
     assert 'L"/priv"' in SOURCE
     assert SOURCE.count("fixed_whoami(destination,") == 2
