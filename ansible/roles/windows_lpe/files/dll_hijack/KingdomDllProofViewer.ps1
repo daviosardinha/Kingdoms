@@ -1,6 +1,7 @@
 # NORTH Topic 12 - read-only terminal viewer for fixed SYSTEM identity commands.
 # Run as NORTH\rickon.stark in a non-elevated PowerShell window BEFORE planting
-# the prepared DLL. Only SYSTEM can send data into the local named pipe.
+# the prepared DLL. SYSTEM receives the permissions needed by CreateFileW
+# with GENERIC_WRITE; the learner-facing pipe remains receive-only.
 # This viewer cannot send commands, spawn privileged processes or modify the lab.
 $ErrorActionPreference = 'Stop'
 $pipeName = 'KingdomsTopic12Proof'
@@ -14,7 +15,7 @@ try {
         $currentUser, [System.IO.Pipes.PipeAccessRights]::ReadWrite, $allow
     ))
     $rules.AddAccessRule([System.IO.Pipes.PipeAccessRule]::new(
-        $systemSid, [System.IO.Pipes.PipeAccessRights]::Write, $allow
+        $systemSid, [System.IO.Pipes.PipeAccessRights]::FullControl, $allow
     ))
     $pipe = [System.IO.Pipes.NamedPipeServerStream]::new(
         $pipeName, [System.IO.Pipes.PipeDirection]::In, 1,
