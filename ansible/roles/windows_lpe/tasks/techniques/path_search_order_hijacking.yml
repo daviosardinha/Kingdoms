@@ -279,7 +279,7 @@
         'C:\Users\Public\Documents\KingdomPathShell.exe'
       )) {
         if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
-          throw "Topic 13 local command fixture missing: $fixture"
+          throw "Topic 13 interactive RDP helper missing: $fixture"
         }
       }
 
@@ -403,7 +403,7 @@
         'C:\Users\Public\Documents\KingdomPathShell.exe'
       )) {
         if (Test-Path -LiteralPath $fixture) {
-          throw "Topic 13 local command fixture was not removed: $fixture"
+          throw "Topic 13 interactive RDP helper was not removed: $fixture"
         }
       }
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=CLEAN'
