@@ -159,6 +159,48 @@
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=APPLIED'
   when: windows_lpe_action == 'apply'
 
+# Reuse the previously validated WS01 RDP-session source, but compile a
+# separate Topic 13 artifact. No dependency on Topic 11's installed binary.
+- name: Stage proven Windows RDP session helper source for Topic 13
+  ansible.windows.win_copy:
+    src: config_shell/KingdomConfigShell.cs
+    dest: 'C:\Kingdom LPE\Path Search\Service\KingdomPathShell.cs'
+  when: windows_lpe_action == 'apply'
+
+- name: Compile dedicated Topic 13 interactive RDP helper without executing it
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $source = 'C:\Kingdom LPE\Path Search\Service\KingdomPathShell.cs'
+      $fixture = 'C:\Users\Public\Documents\KingdomPathShell.exe'
+      $temporary = Join-Path $env:TEMP ('KingdomPathShell-{0}.exe' -f [Guid]::NewGuid().ToString('N'))
+      if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw 'Topic 13 RDP helper source missing'
+      }
+      $text = [IO.File]::ReadAllText($source)
+      if ($text -notlike '*NORTH_KINGDOM_CONFIG_SYSTEM_SHELL*') {
+        throw 'Validated RDP helper source contract changed'
+      }
+      $text = $text.Replace('KingdomConfigShell', 'KingdomPathShell')
+      $text = $text.Replace('NORTH_KINGDOM_CONFIG_SYSTEM_SHELL', 'NORTH_KINGDOM_PATH_SYSTEM_SHELL')
+      try {
+        Add-Type -TypeDefinition $text -Language CSharp -OutputAssembly $temporary -OutputType WindowsApplication -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $temporary -PathType Leaf)) {
+          throw 'Topic 13 RDP helper compilation did not produce an executable'
+        }
+        Copy-Item -LiteralPath $temporary -Destination $fixture -Force -ErrorAction Stop
+      }
+      finally {
+        if (Test-Path -LiteralPath $temporary) {
+          Remove-Item -LiteralPath $temporary -Force -ErrorAction Stop
+        }
+        if (Test-Path -LiteralPath $source) {
+          Remove-Item -LiteralPath $source -Force -ErrorAction Stop
+        }
+      }
+      Write-Output 'NORTH_TOPIC13_INTERACTIVE_RDP_HELPER=READY'
+  when: windows_lpe_action == 'apply'
+
 - name: Reset PATH search-order hijacking candidate
   ansible.windows.win_powershell:
     script: |
@@ -193,6 +235,14 @@
           Remove-Item -LiteralPath $root -Recurse -Force
       }
 
+      # Remove only Topic 13's prepared interactive helper.
+      foreach ($fixture in @(
+        'C:\Users\Public\Documents\KingdomPathShell.exe'
+      )) {
+        if (Test-Path -LiteralPath $fixture) {
+          Remove-Item -LiteralPath $fixture -Force -ErrorAction Stop
+        }
+      }
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=RESET'
   when: windows_lpe_action == 'reset'
 
@@ -222,6 +272,16 @@
       if (-not (Test-Path -LiteralPath $protectedHelper -PathType Leaf)) { throw 'protected fallback helper missing' }
       if (-not (Test-Path -LiteralPath $writableDir -PathType Container)) { throw 'writable PATH directory missing' }
       if (-not (Test-Path -LiteralPath $protectedDir -PathType Container)) { throw 'protected PATH directory missing' }
+
+      # The local-only proof fixture is installed by Topic 13, not shared
+      # with the other service-abuse exercises.
+      foreach ($fixture in @(
+        'C:\Users\Public\Documents\KingdomPathShell.exe'
+      )) {
+        if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
+          throw "Topic 13 interactive RDP helper missing: $fixture"
+        }
+      }
 
       # Refuse inherited write access from Authenticated Users, Everyone,
       # or any other unprivileged SID on a protected Topic 13 resource.
@@ -339,6 +399,13 @@
           }
       }
 
+      foreach ($fixture in @(
+        'C:\Users\Public\Documents\KingdomPathShell.exe'
+      )) {
+        if (Test-Path -LiteralPath $fixture) {
+          throw "Topic 13 interactive RDP helper was not removed: $fixture"
+        }
+      }
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=CLEAN'
   register: windows_lpe_path_search_order_hijacking_clean
   when:
