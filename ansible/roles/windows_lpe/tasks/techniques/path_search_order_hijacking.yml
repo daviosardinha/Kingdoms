@@ -179,7 +179,7 @@
       if (Test-Path -LiteralPath $fixture) {
         Remove-Item -LiteralPath $fixture -Force -ErrorAction Stop
       }
-      Add-Type -Path $source -OutputAssembly $fixture -OutputType WindowsApplication -ErrorAction Stop
+      Add-Type -Path $source -ReferencedAssemblies 'System.dll', 'System.Core.dll' -OutputAssembly $fixture -OutputType WindowsApplication -ErrorAction Stop
       if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
         throw 'Topic 13 local command helper failed to compile'
       }
