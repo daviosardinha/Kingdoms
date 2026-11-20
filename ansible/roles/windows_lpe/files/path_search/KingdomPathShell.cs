@@ -44,13 +44,18 @@ internal static class KingdomPathShell
         {
             using (NamedPipeClientStream pipe = new NamedPipeClientStream(
                 ".", PipeName, PipeDirection.InOut, PipeOptions.None,
-                TokenImpersonationLevel.Identification))
+                TokenImpersonationLevel.Impersonation))
             {
                 pipe.Connect(ConnectTimeoutMs);
                 using (StreamReader request = new StreamReader(pipe, new UTF8Encoding(false), true, 1024, true))
                 using (StreamWriter response = new StreamWriter(pipe, new UTF8Encoding(false), 1024, true))
                 using (Process cmd = new Process())
                 {
+                    // Authenticate the local SYSTEM client before spawning cmd.exe.
+                    response.AutoFlush = true;
+                    response.WriteLine("KINGDOMS_TOPIC13_HELLO");
+                    if (request.ReadLine() != "KINGDOMS_TOPIC13_APPROVED") return;
+
                     cmd.StartInfo.FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe");
                     cmd.StartInfo.Arguments = "/Q /D";
                     cmd.StartInfo.UseShellExecute = false;
