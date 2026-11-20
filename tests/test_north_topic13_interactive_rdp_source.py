@@ -60,8 +60,8 @@ def test_apply_and_reset_are_isolated_to_topic13_artifact():
     assert "when: windows_lpe_action == 'reset'" in ROLE
     assert "Remove-Item -LiteralPath $root -Recurse -Force" in ROLE
     assert "C:\\Users\\Public\\Documents\\KingdomPathShell.exe" in ROLE
-    assert "Topic 13 local command fixture missing" in ROLE
-    assert "Topic 13 local command fixture was not removed" in ROLE
+    assert "Topic 13 interactive RDP helper missing" in ROLE
+    assert "Topic 13 interactive RDP helper was not removed" in ROLE
     assert "WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=RESET" in ROLE
     assert "WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=CLEAN" in ROLE
 
