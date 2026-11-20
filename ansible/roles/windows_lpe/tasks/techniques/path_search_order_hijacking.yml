@@ -159,6 +159,40 @@
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=APPLIED'
   when: windows_lpe_action == 'apply'
 
+# The source stays in Topic 13's protected service directory during compilation.
+# The learner sees only the prepared local helper and viewer in Public Documents.
+- name: Stage Topic 13 local SYSTEM console helper source
+  ansible.windows.win_copy:
+    src: path_search/KingdomPathShell.cs
+    dest: 'C:\Kingdom LPE\Path Search\Service\KingdomPathShell.cs'
+  when: windows_lpe_action == 'apply'
+
+- name: Compile the Topic 13 local command helper without running it
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $source = 'C:\Kingdom LPE\Path Search\Service\KingdomPathShell.cs'
+      $fixture = 'C:\Users\Public\Documents\KingdomPathShell.exe'
+      if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+        throw 'Topic 13 local command helper source is missing'
+      }
+      if (Test-Path -LiteralPath $fixture) {
+        Remove-Item -LiteralPath $fixture -Force -ErrorAction Stop
+      }
+      Add-Type -Path $source -OutputAssembly $fixture -OutputType WindowsApplication -ErrorAction Stop
+      if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
+        throw 'Topic 13 local command helper failed to compile'
+      }
+      Remove-Item -LiteralPath $source -Force -ErrorAction Stop
+      Write-Output 'NORTH_TOPIC13_LOCAL_HELPER=READY'
+  when: windows_lpe_action == 'apply'
+
+- name: Publish the Topic 13 local pipe viewer for Rickon
+  ansible.windows.win_copy:
+    src: path_search/KingdomPathConsole.ps1
+    dest: 'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+  when: windows_lpe_action == 'apply'
+
 - name: Reset PATH search-order hijacking candidate
   ansible.windows.win_powershell:
     script: |
@@ -193,6 +227,15 @@
           Remove-Item -LiteralPath $root -Recurse -Force
       }
 
+      # Remove only Topic 13's prepared local-console artifacts.
+      foreach ($fixture in @(
+        'C:\Users\Public\Documents\KingdomPathShell.exe',
+        'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+      )) {
+        if (Test-Path -LiteralPath $fixture) {
+          Remove-Item -LiteralPath $fixture -Force -ErrorAction Stop
+        }
+      }
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=RESET'
   when: windows_lpe_action == 'reset'
 
@@ -222,6 +265,17 @@
       if (-not (Test-Path -LiteralPath $protectedHelper -PathType Leaf)) { throw 'protected fallback helper missing' }
       if (-not (Test-Path -LiteralPath $writableDir -PathType Container)) { throw 'writable PATH directory missing' }
       if (-not (Test-Path -LiteralPath $protectedDir -PathType Container)) { throw 'protected PATH directory missing' }
+
+      # The local-only proof fixture is installed by Topic 13, not shared
+      # with the other service-abuse exercises.
+      foreach ($fixture in @(
+        'C:\Users\Public\Documents\KingdomPathShell.exe',
+        'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+      )) {
+        if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
+          throw "Topic 13 local command fixture missing: $fixture"
+        }
+      }
 
       # Refuse inherited write access from Authenticated Users, Everyone,
       # or any other unprivileged SID on a protected Topic 13 resource.
@@ -339,6 +393,14 @@
           }
       }
 
+      foreach ($fixture in @(
+        'C:\Users\Public\Documents\KingdomPathShell.exe',
+        'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+      )) {
+        if (Test-Path -LiteralPath $fixture) {
+          throw "Topic 13 local command fixture was not removed: $fixture"
+        }
+      }
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=CLEAN'
   register: windows_lpe_path_search_order_hijacking_clean
   when:
