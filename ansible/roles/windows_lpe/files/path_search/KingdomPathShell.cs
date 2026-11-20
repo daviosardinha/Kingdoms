@@ -85,7 +85,7 @@ internal static class KingdomPathShell
                     {
                         Thread monitor = new Thread(delegate()
                         {
-                            try { cmd.WaitForExit(); pipe.Close(); } catch { }
+                            try { cmd.WaitForExit(); stdout.Join(2000); stderr.Join(2000); pipe.Close(); } catch { }
                         });
                         monitor.IsBackground = true;
                         monitor.Start();
