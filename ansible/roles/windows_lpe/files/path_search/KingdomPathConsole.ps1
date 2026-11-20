@@ -87,7 +87,7 @@ public static class KingdomPathConsole
                 writer.AutoFlush = true;
                 writer.WriteLine("KINGDOMS_TOPIC13_APPROVED");
 
-                Console.WriteLine("Verified command process owner: NT AUTHORITY\\SYSTEM");
+                Console.WriteLine("Verified local pipe client: NT AUTHORITY\\SYSTEM");
                 Console.WriteLine("Type 'whoami' to verify live execution, or /quit to disconnect.");
                 Thread output = new Thread(() => ReadOutput(reader));
                 output.IsBackground = true;
