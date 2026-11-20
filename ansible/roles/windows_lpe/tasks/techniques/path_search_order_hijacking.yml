@@ -159,38 +159,46 @@
       Write-Output 'WINDOWS_LPE_PATH_SEARCH_ORDER_HIJACKING=APPLIED'
   when: windows_lpe_action == 'apply'
 
-# The source stays in Topic 13's protected service directory during compilation.
-# The learner sees only the prepared local helper and viewer in Public Documents.
-- name: Stage Topic 13 local SYSTEM console helper source
+# Reuse the previously validated WS01 RDP-session source, but compile a
+# separate Topic 13 artifact. No dependency on Topic 11's installed binary.
+- name: Stage proven Windows RDP session helper source for Topic 13
   ansible.windows.win_copy:
-    src: path_search/KingdomPathShell.cs
+    src: config_shell/KingdomConfigShell.cs
     dest: 'C:\Kingdom LPE\Path Search\Service\KingdomPathShell.cs'
   when: windows_lpe_action == 'apply'
 
-- name: Compile the Topic 13 local command helper without running it
+- name: Compile dedicated Topic 13 interactive RDP helper without executing it
   ansible.windows.win_powershell:
     script: |
       $ErrorActionPreference = 'Stop'
       $source = 'C:\Kingdom LPE\Path Search\Service\KingdomPathShell.cs'
       $fixture = 'C:\Users\Public\Documents\KingdomPathShell.exe'
+      $temporary = Join-Path $env:TEMP ('KingdomPathShell-{0}.exe' -f [Guid]::NewGuid().ToString('N'))
       if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-        throw 'Topic 13 local command helper source is missing'
+        throw 'Topic 13 RDP helper source missing'
       }
-      if (Test-Path -LiteralPath $fixture) {
-        Remove-Item -LiteralPath $fixture -Force -ErrorAction Stop
+      $text = [IO.File]::ReadAllText($source)
+      if ($text -notlike '*NORTH_KINGDOM_CONFIG_SYSTEM_SHELL*') {
+        throw 'Validated RDP helper source contract changed'
       }
-      Add-Type -Path $source -ReferencedAssemblies 'System.dll', 'System.Core.dll' -OutputAssembly $fixture -OutputType WindowsApplication -ErrorAction Stop
-      if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
-        throw 'Topic 13 local command helper failed to compile'
+      $text = $text.Replace('KingdomConfigShell', 'KingdomPathShell')
+      $text = $text.Replace('NORTH_KINGDOM_CONFIG_SYSTEM_SHELL', 'NORTH_KINGDOM_PATH_SYSTEM_SHELL')
+      try {
+        Add-Type -TypeDefinition $text -Language CSharp -OutputAssembly $temporary -OutputType WindowsApplication -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $temporary -PathType Leaf)) {
+          throw 'Topic 13 RDP helper compilation did not produce an executable'
+        }
+        Copy-Item -LiteralPath $temporary -Destination $fixture -Force -ErrorAction Stop
       }
-      Remove-Item -LiteralPath $source -Force -ErrorAction Stop
-      Write-Output 'NORTH_TOPIC13_LOCAL_HELPER=READY'
-  when: windows_lpe_action == 'apply'
-
-- name: Publish the Topic 13 local pipe viewer for Rickon
-  ansible.windows.win_copy:
-    src: path_search/KingdomPathConsole.ps1
-    dest: 'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+      finally {
+        if (Test-Path -LiteralPath $temporary) {
+          Remove-Item -LiteralPath $temporary -Force -ErrorAction Stop
+        }
+        if (Test-Path -LiteralPath $source) {
+          Remove-Item -LiteralPath $source -Force -ErrorAction Stop
+        }
+      }
+      Write-Output 'NORTH_TOPIC13_INTERACTIVE_RDP_HELPER=READY'
   when: windows_lpe_action == 'apply'
 
 - name: Reset PATH search-order hijacking candidate
@@ -227,10 +235,9 @@
           Remove-Item -LiteralPath $root -Recurse -Force
       }
 
-      # Remove only Topic 13's prepared local-console artifacts.
+      # Remove only Topic 13's prepared interactive helper.
       foreach ($fixture in @(
-        'C:\Users\Public\Documents\KingdomPathShell.exe',
-        'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+        'C:\Users\Public\Documents\KingdomPathShell.exe'
       )) {
         if (Test-Path -LiteralPath $fixture) {
           Remove-Item -LiteralPath $fixture -Force -ErrorAction Stop
@@ -269,8 +276,7 @@
       # The local-only proof fixture is installed by Topic 13, not shared
       # with the other service-abuse exercises.
       foreach ($fixture in @(
-        'C:\Users\Public\Documents\KingdomPathShell.exe',
-        'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+        'C:\Users\Public\Documents\KingdomPathShell.exe'
       )) {
         if (-not (Test-Path -LiteralPath $fixture -PathType Leaf)) {
           throw "Topic 13 local command fixture missing: $fixture"
@@ -394,8 +400,7 @@
       }
 
       foreach ($fixture in @(
-        'C:\Users\Public\Documents\KingdomPathShell.exe',
-        'C:\Users\Public\Documents\KingdomPathConsole.ps1'
+        'C:\Users\Public\Documents\KingdomPathShell.exe'
       )) {
         if (Test-Path -LiteralPath $fixture) {
           throw "Topic 13 local command fixture was not removed: $fixture"
