@@ -683,8 +683,14 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
 
         Log.info(f'NORTH: {machine} authenticated first-boot VMware Tools state={state}')
         if state == 'healthy':
-            Log.success(f'NORTH: {machine} first-boot VMware Tools already healthy')
-            return True
+            if self._authenticated_guest_install_ready(machine, timeout=12):
+                Log.success(f'NORTH: {machine} first-boot VMware Tools and '
+                            'canonical guest readiness verified')
+                return True
+            Log.warning(f'NORTH: {machine} VMware Tools healthy but canonical '
+                        'lab address/readiness incomplete; allowing existing '
+                        'direct recovery or Vagrant provisioning, not reinstall')
+            return False
         if state != 'missing':
             Log.error(f'NORTH: {machine} VMware Tools partially installed or '
                       'an MSI operation is active; refusing automatic reinstall')
@@ -732,9 +738,17 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
                         Log.error('NORTH: original guest VMX changed during Tools install')
                         return False
                     if last_state == 'healthy':
-                        Log.success(f'NORTH: {machine} first-boot VMware Tools '
-                                    'verified without repeating installation')
-                        return True
+                        if self._authenticated_guest_install_ready(
+                                machine, timeout=12):
+                            Log.success(f'NORTH: {machine} VMware Tools and '
+                                        'canonical guest readiness verified')
+                            return True
+                        Log.warning(f'NORTH: {machine} VMware Tools installed '
+                                    'and authenticated, but canonical lab '
+                                    'readiness is still pending; delegating to '
+                                    'existing first-boot recovery without '
+                                    'reinstalling Tools')
+                        return False
                 except (NorthFirstbootToolsBlocked, NorthGuestRecoveryBlocked,
                         OSError, ValueError) as exc:
                     last_state = f'guest-inventory-unavailable:{type(exc).__name__}'
