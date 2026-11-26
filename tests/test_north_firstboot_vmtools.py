@@ -75,6 +75,16 @@ class FirstbootInventoryTests(unittest.TestCase):
             classify_firstboot_inventory(inventory(msi=1)),
             "partial",
         )
+        self.assertEqual(
+            classify_firstboot_inventory(inventory(
+                service="Running", binary=True, process=1, msi=1)),
+            "partial",
+        )
+        self.assertEqual(
+            classify_firstboot_inventory(inventory(
+                service="Running", binary=True, process=1, installing=True)),
+            "partial",
+        )
 
     def test_malformed_inventory_fails_closed(self):
         for record in (None, {}, {"ToolsService": [], "ToolsProcessCount": "0"}):
