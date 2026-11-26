@@ -643,7 +643,7 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             Log.error(f'NORTH: {machine} direct recovery failed after guest identity proof: {exc}')
         return False
 
-    def _ensure_vmware_tools(self, machine):
+    def _north_firstboot_ensure_tools(self, machine):
         """NORTH first boot: prove guest, install completely missing Tools once.
 
         Vagrant may fail its first NIC/guest operation before the canonical lab
@@ -1180,6 +1180,13 @@ if (
                         'telemetry as advisory'
                     )
                 return True
+
+            # NORTH must first classify an exact authenticated guest without
+            # requiring the lab IPv4, which may be unset until Vagrant runs its
+            # first adapter provisioner. Never invoke the generic installer
+            # against a missing or partially registered NORTH Tools package.
+            if self.lab_name == 'NORTH':
+                return self._north_firstboot_ensure_tools(machine)
 
             # Guest state is not yet proven. The inherited helper may install or
             # repair VMware Tools, but its success is not sufficient for
