@@ -1018,7 +1018,8 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             result = session.run_ps(rf"""
 $ErrorActionPreference = 'Stop'
 
-$svc = Get-Service -Name VMTools -ErrorAction Stop
+$svc = Get-Service -Name VMTools -ErrorAction SilentlyContinue
+$toolsService = if ($null -eq $svc) { 'Missing' } else { [string]$svc.Status }
 $file = Test-Path 'C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'
 $proc = Get-Process -Name vmtoolsd -ErrorAction SilentlyContinue
 $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
@@ -1026,7 +1027,7 @@ $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
     Select-Object -First 1
 
 if (
-    $svc.Status -eq 'Running' -and
+    $null -ne $svc -and $svc.Status -eq 'Running' -and
     $file -and
     $proc -and
     $ip
@@ -1034,7 +1035,7 @@ if (
     Write-Output 'GOAD_KINGDOMS_GUEST_READY'
 }}
 # Emit evidence without relaxing the original all-conditions-ready gate.
-Write-Output "GOAD_KINGDOMS_GUEST_DIAG|tools_service=$($svc.Status)|tools_file=$([bool]$file)|tools_process=$([bool]$proc)|canonical_ip=$([bool]$ip)"
+Write-Output "GOAD_KINGDOMS_GUEST_DIAG|tools_service=$($toolsService)|tools_file=$([bool]$file)|tools_process=$([bool]$proc)|canonical_ip=$([bool]$ip)"
 """)
         except Exception as exc:
             Log.warning(
