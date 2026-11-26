@@ -280,7 +280,6 @@ require_tokens(
     console,
     (
         'def _start_install_sudo_keepalive(self, stop_event):',
-        "['sudo', '-k']",
         "['sudo', '-v']",
         "['sudo', '-n', '-v']",
         "name='goad-kingdoms-sudo-keepalive'",
@@ -289,6 +288,21 @@ require_tokens(
         'refusing to report the install as successful',
     ),
 )
+
+# The current unattended lifecycle must reuse a valid sudo ticket rather
+# than invalidate it. Reject executable sudo -k/-K calls in the keepalive.
+console_tree = ast.parse(console)
+keepalive = next((node for node in ast.walk(console_tree)
+                  if isinstance(node, ast.FunctionDef)
+                  and node.name == '_start_install_sudo_keepalive'), None)
+if keepalive is None:
+    fail('missing sudo keepalive implementation')
+for node in ast.walk(keepalive):
+    if not isinstance(node, (ast.List, ast.Tuple)) or not node.elts:
+        continue
+    values = [item.value for item in node.elts if isinstance(item, ast.Constant)]
+    if values and values[0] == 'sudo' and any(flag in values for flag in ('-k', '-K', '--reset-timestamp', '--remove-timestamp')):
+        fail('unattended sudo keepalive must not invalidate cached credentials')
 
 vmware_provider = Path('goad/provider/vagrant/vmware.py').read_text()
 require_tokens(
