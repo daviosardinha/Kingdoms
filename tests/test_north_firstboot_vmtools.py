@@ -268,5 +268,145 @@ class ProviderSourceContracts(unittest.TestCase):
         self.assertIn("REBOOT=ReallySuppress", source)
 
 
+def isolated_vmware_method(name, namespace):
+    """Compile the real provider method without VMware or WinRM imports."""
+    tree = ast.parse(VMWARE_SOURCE.read_text())
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+               and node.name == "VmwareProvider")
+    method = next(node for node in cls.body if isinstance(node, ast.FunctionDef)
+                  and node.name == name)
+    exec(compile(ast.Module(body=[method], type_ignores=[]),
+                 str(VMWARE_SOURCE), "exec"), namespace)
+    return namespace[name]
+
+
+class UpgradePolicyTests(unittest.TestCase):
+    def test_template_sets_north_windows_policy_after_box_overrides(self):
+        template = (ROOT / "template/provider/vmware/Vagrantfile").read_text()
+        policy = 'v.vmx["tools.upgrade.policy"] = "manual"'
+        self.assertEqual(template.count(policy), 1)
+        self.assertIn(
+            """{% if lab_name == 'NORTH' %}
+        # Decouple VMware Tools maintenance""", template)
+        self.assertGreater(template.index(policy), template.index("box[:vmware_vmx].each"))
+        self.assertIn('if box[:os] == "windows"\n          ' + policy, template)
+
+    def test_generated_north_vagrantfile_migration_is_idempotent(self):
+        migrate = isolated_vmware_method(
+            "_sync_goad_nomad_vagrantfile_compatibility",
+            {"os": os, "Log": Mock()},
+        )
+        with TemporaryDirectory() as tmp:
+            provider = SimpleNamespace(lab_name="NORTH", path=tmp)
+            vf = Path(tmp) / "Vagrantfile"
+            source = (
+                "# GOAD-DC01 GOAD-DC02 GOAD-SRV02 GOAD-WS01 GOAD-ROUTER\n"
+                "        # GOAD_NOMAD segmented labs may request explicit existing VMware vmnets.\n"
+            )
+            vf.write_text(source)
+            self.assertTrue(migrate(provider))
+            updated = vf.read_text()
+            self.assertEqual(updated.count('v.vmx["tools.upgrade.policy"] = "manual"'), 1)
+            self.assertIn('if box[:os] == "windows"', updated)
+            self.assertTrue(migrate(provider))
+            self.assertEqual(vf.read_text(), updated)
+
+    def test_migration_refuses_unknown_or_ambiguous_policy(self):
+        migrate = isolated_vmware_method(
+            "_sync_goad_nomad_vagrantfile_compatibility",
+            {"os": os, "Log": Mock()},
+        )
+        with TemporaryDirectory() as tmp:
+            provider = SimpleNamespace(lab_name="NORTH", path=tmp)
+            vf = Path(tmp) / "Vagrantfile"
+            for value in ("", 'v.vmx["tools.upgrade.policy"] = "upgradeAtPowerCycle"\n'):
+                source = "# GOAD-DC01 GOAD-DC02 GOAD-SRV02 GOAD-WS01 GOAD-ROUTER\n" + value
+                vf.write_text(source)
+                self.assertFalse(migrate(provider))
+                self.assertEqual(vf.read_text(), source)
+
+
+class InstallerRebootTests(unittest.TestCase):
+    def make_installer(self, *responses):
+        session = Mock()
+        session.run_ps.side_effect = list(responses)
+        provider = SimpleNamespace(
+            lab_name="NORTH",
+            _wait_tcp=Mock(return_value=True),
+            _wait_winrm_ready=Mock(return_value=True),
+            _winrm_session=Mock(return_value=session),
+            _guest_tools_healthy=Mock(return_value=True),
+            _wait_guest_ip=Mock(return_value=True),
+        )
+        clock = Mock()
+        clock.time.return_value = 0
+        process = Mock()
+        process.run.return_value = SimpleNamespace(returncode=0)
+        process.PIPE = subprocess.PIPE
+        process.TimeoutExpired = subprocess.TimeoutExpired
+        method = isolated_vmware_method(
+            "_install_vmware_tools",
+            {"Log": Mock(), "subprocess": process, "time": clock,
+             "re": __import__("re")},
+        )
+        return method, provider, session
+
+    def response(self, code, status=0):
+        return SimpleNamespace(
+            status_code=status,
+            std_out=("GOAD_VMTOOLS_INSTALL_EXIT=%d\n" % code).encode(),
+        )
+
+    def test_1641_does_not_send_second_restart(self):
+        install, provider, session = self.make_installer(self.response(1641))
+        self.assertTrue(install(provider, "GOAD-DC02", "/original/dc02.vmx", 2204))
+        self.assertEqual(session.run_ps.call_count, 1)
+        provider._wait_winrm_ready.assert_called_with(2204, 180)
+
+    def test_acknowledged_success_requests_at_most_one_guarded_restart(self):
+        for code in (0, 3010):
+            with self.subTest(code=code):
+                install, provider, session = self.make_installer(
+                    self.response(code), SimpleNamespace(status_code=0))
+                self.assertTrue(install(provider, "GOAD-WS01", "/original/ws01.vmx", 2207))
+                self.assertEqual(session.run_ps.call_count, 2)
+                restart = session.run_ps.call_args.args[0]
+                self.assertIn("Installer\\InProgress", restart)
+                self.assertIn("shutdown.exe /r /t 5", restart)
+                self.assertNotIn("/f |", restart)
+
+    def test_interrupted_setup_is_not_replayed_or_followed_by_blind_restart(self):
+        install, provider, session = self.make_installer(RuntimeError("WinRM reset"))
+        self.assertFalse(install(provider, "GOAD-WS01", "/original/ws01.vmx", 2207))
+        self.assertEqual(session.run_ps.call_count, 1)
+        provider._guest_tools_healthy.assert_not_called()
+
+    def test_interrupted_restart_is_not_replayed(self):
+        install, provider, session = self.make_installer(
+            self.response(3010), RuntimeError("WinRM closed on restart"))
+        self.assertFalse(install(provider, "GOAD-WS01", "/original/ws01.vmx", 2207))
+        self.assertEqual(session.run_ps.call_count, 2)
+
+    def test_fatal_or_missing_result_never_requests_restart(self):
+        for response in (
+            self.response(1603, status=1603),
+            SimpleNamespace(status_code=0, std_out=b"unconfirmed"),
+        ):
+            with self.subTest(response=response):
+                install, provider, session = self.make_installer(response)
+                self.assertFalse(install(provider, "GOAD-WS01", "/original/ws01.vmx", 2207))
+                self.assertEqual(session.run_ps.call_count, 1)
+
+    def test_busy_installer_guard_prevents_restart_replay(self):
+        install, provider, session = self.make_installer(
+            self.response(3010), SimpleNamespace(status_code=1))
+        self.assertFalse(install(provider, "GOAD-WS01", "/original/ws01.vmx", 2207))
+        self.assertEqual(session.run_ps.call_count, 2)
+        self.assertIn("refusing overlapping VMware Tools setup",
+                      session.run_ps.call_args_list[0].args[0])
+        self.assertIn("MSI activity remains; refusing reboot",
+                      session.run_ps.call_args_list[1].args[0])
+
+
 if __name__ == "__main__":
     unittest.main()
