@@ -402,6 +402,28 @@ Write-Output "GOAD_VMTOOLS_POST_SETUP|service=$state|binary=$([bool](Test-Path '
             if any(text.count(name) == 0 for name in expected):
                 Log.error('Course 1 Vagrantfile is missing a required machine')
                 return False
+            # Existing workspaces were generated before the upgrade policy
+            # was pinned. Update only their Vagrantfile, never a live VMX.
+            policy = 'v.vmx["tools.upgrade.policy"] = "manual"'
+            anchor = '        # GOAD_NOMAD segmented labs may request explicit existing VMware vmnets.'
+            if text.count('v.vmx["tools.upgrade.policy"]') == 0:
+                if text.count(anchor) != 1:
+                    Log.error('NORTH: cannot safely migrate VMware Tools policy')
+                    return False
+                text = text.replace(
+                    anchor,
+                    '        # Keep VMware Tools upgrades separate from provisioning.\n'
+                    '        if box[:os] == "windows"\n'
+                    '          ' + policy + '\n'
+                    '        end\n\n' + anchor,
+                    1,
+                )
+                with open(vagrantfile, 'w', encoding='utf-8') as handle:
+                    handle.write(text)
+                Log.success('NORTH: generated Vagrantfile now pins manual VMware Tools upgrades')
+            elif text.count('v.vmx["tools.upgrade.policy"]') != 1 or text.count(policy) != 1:
+                Log.error('NORTH: ambiguous VMware Tools upgrade policy in generated Vagrantfile')
+                return False
             return True
 
         # Also migrate existing generated workspaces: template edits alone do
