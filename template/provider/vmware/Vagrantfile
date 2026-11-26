@@ -76,6 +76,14 @@ boxes.append(
           end
         end
 
+{% if lab_name == 'NORTH' %}
+        # Decouple VMware Tools maintenance from Windows provisioning reboots.
+        # Apply after box-specific VMX overrides and before the first power-on.
+        if box[:os] == "windows"
+          v.vmx["tools.upgrade.policy"] = "manual"
+        end
+{% endif %}
+
         # GOAD_NOMAD segmented labs may request explicit existing VMware vmnets.
         # vagrant-vmware-desktop accepts :nat/:hostonly/:bridged as adapter input
         # types. Passing :nat with :device causes the provider to emit a VMware
