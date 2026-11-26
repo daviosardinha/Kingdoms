@@ -75,7 +75,8 @@ def classify_firstboot_inventory(record: dict) -> str:
     if (len(services) == 1 and isinstance(services[0], dict)
             and services[0].get("Name") == "VMTools"
             and services[0].get("State") == "Running"
-            and binary and process_count > 0):
+            and binary and process_count > 0
+            and not installing and msi_count == 0):
         return "healthy"
     if (not services and not products and not binary and process_count == 0
             and not installing and msi_count == 0):
