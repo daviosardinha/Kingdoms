@@ -156,6 +156,7 @@ class OneShotBootstrapTests(unittest.TestCase):
             _wait_winrm_ready=Mock(return_value=True),
             _winrm_session=Mock(return_value=object()),
             _install_vmware_tools=Mock(return_value=False),
+            _authenticated_guest_install_ready=Mock(return_value=True),
         )
 
     def test_healthy_vm_never_installs_or_marks(self):
@@ -189,6 +190,33 @@ class OneShotBootstrapTests(unittest.TestCase):
                 self.assertEqual(marker.stat().st_mode & 0o777, 0o600)
                 self.assertFalse(bootstrap(provider, "GOAD-DC02"))
             provider._install_vmware_tools.assert_called_once()
+
+    def test_healthy_tools_without_canonical_ip_is_not_install_ready(self):
+        with TemporaryDirectory() as tmp:
+            provider = self.make_provider(Path(tmp))
+            provider._authenticated_guest_install_ready.return_value = False
+            with patch("goad.course1_firstboot_vmtools.inspect_firstboot_guest_tools",
+                       return_value=("/original/dc02.vmx", "healthy")):
+                self.assertFalse(isolated_north_bootstrap()(
+                    provider, "GOAD-DC02"))
+            provider._install_vmware_tools.assert_not_called()
+            self.assertFalse(list(Path(tmp).rglob("*.attempted")))
+
+    def test_successful_tools_install_still_requires_canonical_readiness(self):
+        with TemporaryDirectory() as tmp:
+            provider = self.make_provider(Path(tmp))
+            provider._authenticated_guest_install_ready.return_value = False
+            with patch("goad.course1_firstboot_vmtools.inspect_firstboot_guest_tools",
+                       side_effect=[
+                           ("/original/dc02.vmx", "missing"),
+                           ("/original/dc02.vmx", "healthy"),
+                       ]):
+                self.assertFalse(isolated_north_bootstrap()(
+                    provider, "GOAD-DC02"))
+            provider._install_vmware_tools.assert_called_once()
+            marker = (Path(tmp) / "abcdef-north-vmware" /
+                      ".north-firstboot-vmtools-GOAD-DC02.attempted")
+            self.assertTrue(marker.exists())
 
     def test_partial_or_msi_busy_never_installs(self):
         with TemporaryDirectory() as tmp:
