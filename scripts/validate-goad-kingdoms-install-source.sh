@@ -344,9 +344,9 @@ require_tokens(
         'def _recover_failed_windows_vagrant_up(self, machine):',
         'def install(self):',
         "first_up = self.command.run_vagrant(['up', machine], self.path)",
-        'tools_ready = self._ensure_vmware_tools(machine)',
+        'self._ensure_vmware_tools(machine)',
         'def _authenticated_guest_recovery_ready(self, machine, timeout=60):',
-        'if not first_up or not tools_ready:',
+        'if (not first_up or not tools_ready) and north_direct is not True:',
         'if not self._recover_failed_windows_vagrant_up(machine):',
         'shutdown.exe /s /t 0 /f',
         "['vmrun', '-T', 'ws', 'stop', vmx, 'soft']",
@@ -467,19 +467,39 @@ guest_loop = next((n for n in methods['install'].body
                    if isinstance(n, ast.For) and matches(n.iter, 'self.goad_nomad_windows')), None)
 if guest_loop is None:
     fail('cannot find the independent Windows install loop')
+# NORTH can skip Vagrant only after exact-guest canonical proof.
+def assigns(node, name, expression):
+    return (isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == name for t in node.targets)
+            and matches(node.value, expression))
+
 creation = next((i for i, n in enumerate(guest_loop.body)
-                 if isinstance(n, ast.Assign)
-                 and any(isinstance(t, ast.Name) and t.id == 'first_up' for t in n.targets)
-                 and matches(n.value, "self.command.run_vagrant(['up', machine], self.path)")), -1)
+                 if isinstance(n, ast.If)
+                 and matches(n.test, 'north_direct is True')
+                 and any(assigns(t, 'first_up', 'True') for t in n.body)
+                 and any(assigns(t, 'first_up', "self.command.run_vagrant(['up', machine], self.path)")
+                         for t in n.orelse)), -1)
+direct_proof = next((i for i, n in enumerate(guest_loop.body)
+                    if isinstance(n, ast.If)
+                    and matches(n.test, "self.lab_name == 'NORTH'")
+                    and any(assigns(t, 'north_direct', 'self._north_existing_canonical_ready(machine)')
+                            for t in n.body)), -1)
+if not 0 <= direct_proof < creation:
+    fail('Vagrant bypass must follow the NORTH existing-guest canonical proof')
+proof_block = guest_loop.body[direct_proof]
+if not any(isinstance(n, ast.If) and matches(n.test, 'north_direct is False')
+           and any(isinstance(t, ast.Return) and matches(t.value, 'False') for t in n.body)
+           for n in proof_block.body):
+    fail('existing-guest identity failure must block Vagrant bring-up')
 readiness = next((i for i, n in enumerate(guest_loop.body)
                   if isinstance(n, ast.Assign)
                   and any(isinstance(t, ast.Name) and t.id == 'tools_ready' for t in n.targets)
-                  and matches(n.value, 'self._ensure_vmware_tools(machine)')), -1)
+                  and matches(n.value, 'north_direct is True or self._ensure_vmware_tools(machine)')), -1)
 recovery_probe = next((i for i, n in enumerate(guest_loop.body)
                        if isinstance(n, ast.If) and matches(n.test, 'not tools_ready')), -1)
 dispatch = next((i for i, n in enumerate(guest_loop.body)
                  if isinstance(n, ast.If)
-                 and matches(n.test, 'not first_up or not tools_ready')), -1)
+                 and matches(n.test, '(not first_up or not tools_ready) and north_direct is not True')), -1)
 if not 0 <= creation < readiness < recovery_probe < dispatch:
     fail(
         'Windows recovery must evaluate first-up result, strict Kingdoms readiness, '
