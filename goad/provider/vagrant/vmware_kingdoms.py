@@ -1033,7 +1033,7 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
 $ErrorActionPreference = 'Stop'
 
 $svc = Get-Service -Name VMTools -ErrorAction SilentlyContinue
-$toolsService = if ($null -eq $svc) { 'Missing' } else { [string]$svc.Status }
+$toolsService = if ($null -eq $svc) {{ 'Missing' }} else {{ [string]$svc.Status }}
 $file = Test-Path 'C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'
 $proc = Get-Process -Name vmtoolsd -ErrorAction SilentlyContinue
 $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
