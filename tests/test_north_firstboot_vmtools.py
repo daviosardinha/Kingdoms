@@ -246,6 +246,80 @@ class OneShotBootstrapTests(unittest.TestCase):
             provider._winrm_forwarded_port.assert_not_called()
 
 
+def isolated_north_policy_gate():
+    tree = ast.parse(PROVIDER_SOURCE.read_text())
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+               and node.name == "GoadKingdomsVmwareProvider")
+    method = next(node for node in cls.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "_north_running_vmtools_policy_gate")
+    namespace = {"Log": Mock(), "os": os, "re": __import__("re")}
+    exec(compile(ast.Module(body=[method], type_ignores=[]),
+                 str(PROVIDER_SOURCE), "exec"), namespace)
+    return namespace["_north_running_vmtools_policy_gate"]
+
+
+class ExistingRunningUpgradePolicyTests(unittest.TestCase):
+    def make_provider(self, vmx, *, running=None, lab="NORTH"):
+        return SimpleNamespace(
+            lab_name=lab,
+            _running_instance_vms=Mock(return_value=running),
+            _vmx_path=Mock(return_value=str(vmx)),
+        )
+
+    def test_existing_running_windows_with_manual_policy_passes(self):
+        with TemporaryDirectory() as tmp:
+            vmx = Path(tmp) / "dc01.vmx"
+            vmx.write_text('tools.upgrade.policy = "manual"\n')
+            provider = self.make_provider(vmx, running=["GOAD-DC01"])
+            self.assertTrue(isolated_north_policy_gate()(provider))
+
+    def test_existing_running_windows_with_auto_upgrade_fails_closed(self):
+        with TemporaryDirectory() as tmp:
+            vmx = Path(tmp) / "dc01.vmx"
+            vmx.write_text('tools.upgrade.policy = "upgradeAtPowerCycle"\n')
+            provider = self.make_provider(vmx, running=["GOAD-DC01"])
+            self.assertFalse(isolated_north_policy_gate()(provider))
+            self.assertEqual(vmx.read_text(),
+                             'tools.upgrade.policy = "upgradeAtPowerCycle"\n')
+
+    def test_ambiguous_or_missing_running_policy_fails(self):
+        with TemporaryDirectory() as tmp:
+            vmx = Path(tmp) / "dc02.vmx"
+            provider = self.make_provider(vmx, running=["GOAD-DC02"])
+            for state in ('', 'tools.upgrade.policy = "manual"\n'
+                          'tools.upgrade.policy = "manual"\n'):
+                vmx.write_text(state)
+                self.assertFalse(isolated_north_policy_gate()(provider))
+
+    def test_running_vm_without_registered_vmx_fails(self):
+        with TemporaryDirectory() as tmp:
+            provider = self.make_provider(Path(tmp) / "missing.vmx",
+                                          running=["GOAD-WS01"])
+            self.assertFalse(isolated_north_policy_gate()(provider))
+
+    def test_vmrun_failure_blocks_but_new_instance_without_running_vms_passes(self):
+        with TemporaryDirectory() as tmp:
+            provider = self.make_provider(Path(tmp) / "absent.vmx", running=None)
+            self.assertFalse(isolated_north_policy_gate()(provider))
+            provider._running_instance_vms.return_value = []
+            self.assertTrue(isolated_north_policy_gate()(provider))
+
+    def test_other_labs_unchanged(self):
+        with TemporaryDirectory() as tmp:
+            provider = self.make_provider(Path(tmp) / "absent.vmx",
+                                          running=None, lab="GOAD")
+            self.assertTrue(isolated_north_policy_gate()(provider))
+            provider._running_instance_vms.assert_not_called()
+
+    def test_gate_precedes_router_bringup_and_guest_reboots(self):
+        source = PROVIDER_SOURCE.read_text()
+        install = source[source.index("    def install(self):"):]
+        self.assertLess(
+            install.index("self._north_running_vmtools_policy_gate()"),
+            install.index("self._bring_up_router()"),
+        )
+
+
 class ProviderSourceContracts(unittest.TestCase):
     def test_existing_provider_override_kept_with_north_only_dispatch(self):
         text = PROVIDER_SOURCE.read_text()
