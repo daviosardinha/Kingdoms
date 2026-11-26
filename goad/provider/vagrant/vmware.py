@@ -220,26 +220,39 @@ $ErrorActionPreference = 'Stop'
 $deadline = (Get-Date).AddSeconds(90)
 $setup = $null
 while ((Get-Date) -lt $deadline -and -not $setup) {
-    $setup = Get-CimInstance Win32_LogicalDisk |
-        Where-Object { $_.DriveType -eq 5 } |
-        ForEach-Object {
-            $candidate = "$($_.DeviceID)\setup.exe"
-            if (Test-Path $candidate) { $candidate }
-        } |
-        Select-Object -First 1
+    # Never execute an arbitrary setup.exe from a Windows/other installation ISO.
+    # Both legacy and current VMware Tools media have a VMware Tools volume label.
+    $media = @(Get-CimInstance Win32_LogicalDisk -ErrorAction Stop |
+        Where-Object { $_.DriveType -eq 5 -and $_.VolumeName -match '(?i)vmware[\s_-]*tools' })
+    $candidates = @($media | ForEach-Object {
+        $drive = $_.DeviceID
+        # Modern Tools ISO uses setup.exe; older versions may offer setup64.exe.
+        foreach ($name in @('setup.exe','setup64.exe')) {
+            $candidate = Join-Path ($drive + '\') $name
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $candidate
+                break
+            }
+        }
+    })
+    if ($candidates.Count -gt 1) { throw 'Ambiguous VMware Tools installation media' }
+    if ($candidates.Count -eq 1) { $setup = $candidates[0] }
     if (-not $setup) { Start-Sleep -Seconds 2 }
 }
-if (-not $setup) { throw 'VMware Tools setup.exe was not found on a mounted CD/DVD drive' }
+if (-not $setup) { throw 'A VMware Tools-labelled ISO with setup.exe was not mounted' }
 
-$p = Start-Process -FilePath $setup -ArgumentList '/S','/v"/qn REBOOT=ReallySuppress"' -Wait -PassThru
+$p = Start-Process -FilePath $setup -ArgumentList '/S','/v"/qn REBOOT=ReallySuppress"' -Wait -PassThru -ErrorAction Stop
 Write-Output "GOAD_VMTOOLS_INSTALL_EXIT=$($p.ExitCode)"
 if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
+$svc = Get-Service -Name VMTools -ErrorAction SilentlyContinue
+$state = if ($null -eq $svc) { 'Missing' } else { [string]$svc.Status }
+Write-Output "GOAD_VMTOOLS_POST_SETUP|service=$state|binary=$([bool](Test-Path 'C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'))"
 ''')
             if install.status_code != 0:
                 Log.error(f'GOAD_NOMAD: VMware Tools installer failed for {machine}')
                 return False
 
-            Log.info(f'GOAD_NOMAD: VMware Tools installed on {machine}; rebooting guest')
+            Log.info(f'GOAD_NOMAD: VMware Tools setup completed on {machine}; rebooting to verify guest health')
             session.run_ps("shutdown.exe /r /t 5 /f | Out-Null")
         except Exception as exc:
             # VMware Tools installation/reboot can transiently tear down the
