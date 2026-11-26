@@ -643,6 +643,108 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             Log.error(f'NORTH: {machine} direct recovery failed after guest identity proof: {exc}')
         return False
 
+    def _ensure_vmware_tools(self, machine):
+        """NORTH first boot: prove guest, install completely missing Tools once.
+
+        Vagrant may fail its first NIC/guest operation before the canonical lab
+        address exists. Authenticate the exact original Windows VM through its
+        forwarded NAT WinRM and both VMX-owned NIC MACs before mutation. The
+        canonical address, routes and WinRM HTTPS remain mandatory later in
+        the ordinary direct-recovery and provisioning readiness gates.
+
+        Healthy Tools need no mutation. Partially registered Tools or an MSI
+        transaction are *not* permission to reinstall. A persistent one-shot
+        marker prevents a failed attempt from being silently replayed.
+        Other labs keep their existing VMware bootstrap behavior.
+        """
+        if self.lab_name != 'NORTH':
+            return super()._ensure_vmware_tools(machine)
+
+        from goad.course1_firstboot_vmtools import (
+            NorthFirstbootToolsBlocked, inspect_firstboot_guest_tools,
+        )
+        from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+
+        if machine not in ('GOAD-DC01', 'GOAD-DC02', 'GOAD-SRV02', 'GOAD-WS01'):
+            Log.error(f'NORTH: unexpected first-boot Tools target: {machine}')
+            return False
+        try:
+            port = self._winrm_forwarded_port(machine)
+            if not port or not self._wait_winrm_ready(port, 60):
+                Log.error(f'NORTH: {machine} first-boot authenticated WinRM unavailable')
+                return False
+            vmx, state = inspect_firstboot_guest_tools(
+                self.path, machine, self._winrm_session(port)
+            )
+        except (NorthFirstbootToolsBlocked, NorthGuestRecoveryBlocked,
+                OSError, ValueError) as exc:
+            Log.error(f'NORTH: {machine} initial VMware Tools inventory blocked: {exc}')
+            return False
+
+        Log.info(f'NORTH: {machine} authenticated first-boot VMware Tools state={state}')
+        if state == 'healthy':
+            Log.success(f'NORTH: {machine} first-boot VMware Tools already healthy')
+            return True
+        if state != 'missing':
+            Log.error(f'NORTH: {machine} VMware Tools partially installed or '
+                      'an MSI operation is active; refusing automatic reinstall')
+            return False
+
+        marker = os.path.join(
+            os.path.dirname(os.path.realpath(self.path)),
+            f'.north-firstboot-vmtools-{machine}.attempted',
+        )
+        try:
+            fd = os.open(
+                marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                getattr(os, 'O_NOFOLLOW', 0), 0o600,
+            )
+        except OSError as exc:
+            Log.error(f'NORTH: {machine} VMware Tools first-boot repair already '
+                      f'attempted or marker unavailable: {exc}')
+            return False
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(f'machine={machine}\nvmx={vmx}\n')
+
+        Log.warning(f'NORTH: {machine} VMware Tools completely missing; '
+                    'installing once on original registered Windows guest')
+        installer_returned = False
+        try:
+            installer_returned = bool(
+                self._install_vmware_tools(machine, vmx, port)
+            )
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            Log.warning(f'NORTH: {machine} VMware Tools bootstrap interrupted: {exc}')
+
+        # The inherited installer can return False only because Workstation's
+        # vmrun guest-IP telemetry remains stale. Never accept that return
+        # value alone. Recheck authenticated Windows service+binary+process
+        # on the exact same VMX, with a bounded read-only convergence window.
+        deadline = time.monotonic() + 90
+        last_state = 'unavailable'
+        while time.monotonic() < deadline:
+            if self._wait_winrm_ready(port, 5):
+                try:
+                    final_vmx, last_state = inspect_firstboot_guest_tools(
+                        self.path, machine, self._winrm_session(port)
+                    )
+                    if final_vmx != vmx:
+                        Log.error('NORTH: original guest VMX changed during Tools install')
+                        return False
+                    if last_state == 'healthy':
+                        Log.success(f'NORTH: {machine} first-boot VMware Tools '
+                                    'verified without repeating installation')
+                        return True
+                except (NorthFirstbootToolsBlocked, NorthGuestRecoveryBlocked,
+                        OSError, ValueError) as exc:
+                    last_state = f'guest-inventory-unavailable:{type(exc).__name__}'
+            time.sleep(5)
+
+        Log.error(f'NORTH: {machine} VMware Tools failed first-boot verification '
+                  f'(installer_returned={installer_returned}; state={last_state}); '
+                  'one-shot marker retained; do not replay automatically')
+        return False
+
     def _north_tools_transition_gate(self, machine, phase):
         """Prove or repair one exact NORTH Windows guest at a reboot boundary.
 
