@@ -643,6 +643,122 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             Log.error(f'NORTH: {machine} direct recovery failed after guest identity proof: {exc}')
         return False
 
+    def _north_firstboot_ensure_tools(self, machine):
+        """NORTH first boot: prove guest, install completely missing Tools once.
+
+        Vagrant may fail its first NIC/guest operation before the canonical lab
+        address exists. Authenticate the exact original Windows VM through its
+        forwarded NAT WinRM and both VMX-owned NIC MACs before mutation. The
+        canonical address, routes and WinRM HTTPS remain mandatory later in
+        the ordinary direct-recovery and provisioning readiness gates.
+
+        Healthy Tools need no mutation. Partially registered Tools or an MSI
+        transaction are *not* permission to reinstall. A persistent one-shot
+        marker prevents a failed attempt from being silently replayed.
+        Other labs keep their existing VMware bootstrap behavior.
+        """
+        if self.lab_name != 'NORTH':
+            return super()._ensure_vmware_tools(machine)
+
+        from goad.course1_firstboot_vmtools import (
+            NorthFirstbootToolsBlocked, inspect_firstboot_guest_tools,
+        )
+        from goad.course1_direct_winrm import NorthGuestRecoveryBlocked
+
+        if machine not in ('GOAD-DC01', 'GOAD-DC02', 'GOAD-SRV02', 'GOAD-WS01'):
+            Log.error(f'NORTH: unexpected first-boot Tools target: {machine}')
+            return False
+        try:
+            port = self._winrm_forwarded_port(machine)
+            if not port or not self._wait_winrm_ready(port, 60):
+                Log.error(f'NORTH: {machine} first-boot authenticated WinRM unavailable')
+                return False
+            vmx, state = inspect_firstboot_guest_tools(
+                self.path, machine, self._winrm_session(port)
+            )
+        except (NorthFirstbootToolsBlocked, NorthGuestRecoveryBlocked,
+                OSError, ValueError) as exc:
+            Log.error(f'NORTH: {machine} initial VMware Tools inventory blocked: {exc}')
+            return False
+
+        Log.info(f'NORTH: {machine} authenticated first-boot VMware Tools state={state}')
+        if state == 'healthy':
+            if self._authenticated_guest_install_ready(machine, timeout=12):
+                Log.success(f'NORTH: {machine} first-boot VMware Tools and '
+                            'canonical guest readiness verified')
+                return True
+            Log.warning(f'NORTH: {machine} VMware Tools healthy but canonical '
+                        'lab address/readiness incomplete; allowing existing '
+                        'direct recovery or Vagrant provisioning, not reinstall')
+            return False
+        if state != 'missing':
+            Log.error(f'NORTH: {machine} VMware Tools partially installed or '
+                      'an MSI operation is active; refusing automatic reinstall')
+            return False
+
+        marker = os.path.join(
+            os.path.dirname(os.path.realpath(self.path)),
+            f'.north-firstboot-vmtools-{machine}.attempted',
+        )
+        try:
+            fd = os.open(
+                marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                getattr(os, 'O_NOFOLLOW', 0), 0o600,
+            )
+        except OSError as exc:
+            Log.error(f'NORTH: {machine} VMware Tools first-boot repair already '
+                      f'attempted or marker unavailable: {exc}')
+            return False
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(f'machine={machine}\nvmx={vmx}\n')
+
+        Log.warning(f'NORTH: {machine} VMware Tools completely missing; '
+                    'installing once on original registered Windows guest')
+        installer_returned = False
+        try:
+            installer_returned = bool(
+                self._install_vmware_tools(machine, vmx, port)
+            )
+        except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+            Log.warning(f'NORTH: {machine} VMware Tools bootstrap interrupted: {exc}')
+
+        # The inherited installer can return False only because Workstation's
+        # vmrun guest-IP telemetry remains stale. Never accept that return
+        # value alone. Recheck authenticated Windows service+binary+process
+        # on the exact same VMX, with a bounded read-only convergence window.
+        deadline = time.monotonic() + 90
+        last_state = 'unavailable'
+        while time.monotonic() < deadline:
+            if self._wait_winrm_ready(port, 5):
+                try:
+                    final_vmx, last_state = inspect_firstboot_guest_tools(
+                        self.path, machine, self._winrm_session(port)
+                    )
+                    if final_vmx != vmx:
+                        Log.error('NORTH: original guest VMX changed during Tools install')
+                        return False
+                    if last_state == 'healthy':
+                        if self._authenticated_guest_install_ready(
+                                machine, timeout=12):
+                            Log.success(f'NORTH: {machine} VMware Tools and '
+                                        'canonical guest readiness verified')
+                            return True
+                        Log.warning(f'NORTH: {machine} VMware Tools installed '
+                                    'and authenticated, but canonical lab '
+                                    'readiness is still pending; delegating to '
+                                    'existing first-boot recovery without '
+                                    'reinstalling Tools')
+                        return False
+                except (NorthFirstbootToolsBlocked, NorthGuestRecoveryBlocked,
+                        OSError, ValueError) as exc:
+                    last_state = f'guest-inventory-unavailable:{type(exc).__name__}'
+            time.sleep(5)
+
+        Log.error(f'NORTH: {machine} VMware Tools failed first-boot verification '
+                  f'(installer_returned={installer_returned}; state={last_state}); '
+                  'one-shot marker retained; do not replay automatically')
+        return False
+
     def _north_tools_transition_gate(self, machine, phase):
         """Prove or repair one exact NORTH Windows guest at a reboot boundary.
 
@@ -916,7 +1032,8 @@ class GoadKingdomsVmwareProvider(GoadNomadVmwareProvider):
             result = session.run_ps(rf"""
 $ErrorActionPreference = 'Stop'
 
-$svc = Get-Service -Name VMTools -ErrorAction Stop
+$svc = Get-Service -Name VMTools -ErrorAction SilentlyContinue
+$toolsService = if ($null -eq $svc) {{ 'Missing' }} else {{ [string]$svc.Status }}
 $file = Test-Path 'C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'
 $proc = Get-Process -Name vmtoolsd -ErrorAction SilentlyContinue
 $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
@@ -924,7 +1041,7 @@ $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
     Select-Object -First 1
 
 if (
-    $svc.Status -eq 'Running' -and
+    $null -ne $svc -and $svc.Status -eq 'Running' -and
     $file -and
     $proc -and
     $ip
@@ -932,7 +1049,7 @@ if (
     Write-Output 'GOAD_KINGDOMS_GUEST_READY'
 }}
 # Emit evidence without relaxing the original all-conditions-ready gate.
-Write-Output "GOAD_KINGDOMS_GUEST_DIAG|tools_service=$($svc.Status)|tools_file=$([bool]$file)|tools_process=$([bool]$proc)|canonical_ip=$([bool]$ip)"
+Write-Output "GOAD_KINGDOMS_GUEST_DIAG|tools_service=$($toolsService)|tools_file=$([bool]$file)|tools_process=$([bool]$proc)|canonical_ip=$([bool]$ip)"
 """)
         except Exception as exc:
             Log.warning(
@@ -1078,6 +1195,13 @@ if (
                         'telemetry as advisory'
                     )
                 return True
+
+            # NORTH must first classify an exact authenticated guest without
+            # requiring the lab IPv4, which may be unset until Vagrant runs its
+            # first adapter provisioner. Never invoke the generic installer
+            # against a missing or partially registered NORTH Tools package.
+            if self.lab_name == 'NORTH':
+                return self._north_firstboot_ensure_tools(machine)
 
             # Guest state is not yet proven. The inherited helper may install or
             # repair VMware Tools, but its success is not sufficient for
@@ -1481,6 +1605,52 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
         )
         return True
 
+    def _north_running_vmtools_policy_gate(self):
+        """Refuse NORTH guest mutation while running Windows VMs can auto-upgrade Tools.
+
+        Generated Vagrantfile migration affects the *next* provider apply, not
+        an already-running VMware Workstation guest. Inspect only the exact
+        registered VMX paths and never edit live VMX files.
+        """
+        if self.lab_name != 'NORTH':
+            return True
+
+        running = self._running_instance_vms()
+        if running is None:
+            Log.error('NORTH: VMware running-state inventory unavailable; '
+                      'cannot prove existing guests have manual Tools updates')
+            return False
+
+        for machine in running:
+            if machine not in ('GOAD-DC01', 'GOAD-DC02',
+                               'GOAD-SRV02', 'GOAD-WS01'):
+                continue
+            vmx = self._vmx_path(machine)
+            if not vmx or not os.path.isfile(vmx) or os.path.islink(vmx):
+                Log.error(f'NORTH: {machine} original VMware VMX unavailable')
+                return False
+            try:
+                with open(vmx, 'r', encoding='utf-8') as stream:
+                    policies = re.findall(
+                        r'(?im)^\s*tools\.upgrade\.policy\s*=\s*"([^"]+)"\s*$',
+                        stream.read(),
+                    )
+            except (OSError, UnicodeError) as exc:
+                Log.error(f'NORTH: {machine} VMware Tools policy unreadable: {exc}')
+                return False
+            if policies != ['manual']:
+                Log.error(
+                    f'NORTH: {machine} running VMX Tools upgrade policy is '
+                    f'{policies!r}; select "Update manually (do nothing)" '
+                    'in VMware Workstation and verify the saved VMX before '
+                    'resuming. No live VMX write attempted.'
+                )
+                return False
+
+        Log.success('NORTH: all running original Windows VMX files pin '
+                    'manual VMware Tools upgrades')
+        return True
+
     def install(self):
         """Bring up a segmented GOAD instance with fail-closed Windows recovery."""
         if self._course1_unwired():
@@ -1507,6 +1677,12 @@ Write-Output 'GOAD_VMTOOLS_RESTARTED'
             return False
 
         if not self._sync_goad_nomad_vagrantfile_compatibility():
+            return False
+
+        # A generated Vagrantfile policy protects future boots, not existing
+        # running guests. Refuse an unmanaged Tools power-cycle upgrade before
+        # the router, any Windows Vagrant up, or evaluation rearm/reboot.
+        if self.lab_name == 'NORTH' and not self._north_running_vmtools_policy_gate():
             return False
 
         # Bring up the router independently so a Windows guest failure cannot

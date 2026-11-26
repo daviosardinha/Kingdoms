@@ -177,6 +177,7 @@ if ($svc -and $file) {
         return False
 
     def _install_vmware_tools(self, machine, vmx, port):
+        north = getattr(self, 'lab_name', None) == 'NORTH'
         Log.warning(f'GOAD_NOMAD: {machine} has no healthy VMware Tools; bootstrapping them')
 
         # Workstation can mount the Tools ISO successfully but leave
@@ -215,33 +216,83 @@ if ($svc -and $file) {
 
         try:
             session = self._winrm_session(port)
-            install = session.run_ps(r'''
+            install = session.run_ps(
+                ('$northToolsBootstrap = $true\n' if north else
+                 '$northToolsBootstrap = $false\n') + r'''
 $ErrorActionPreference = 'Stop'
 $deadline = (Get-Date).AddSeconds(90)
 $setup = $null
 while ((Get-Date) -lt $deadline -and -not $setup) {
-    $setup = Get-CimInstance Win32_LogicalDisk |
-        Where-Object { $_.DriveType -eq 5 } |
-        ForEach-Object {
-            $candidate = "$($_.DeviceID)\setup.exe"
-            if (Test-Path $candidate) { $candidate }
-        } |
-        Select-Object -First 1
+    # Never execute an arbitrary setup.exe from a Windows/other installation ISO.
+    # Both legacy and current VMware Tools media have a VMware Tools volume label.
+    $media = @(Get-CimInstance Win32_LogicalDisk -ErrorAction Stop |
+        Where-Object { $_.DriveType -eq 5 -and $_.VolumeName -match '(?i)vmware[\s_-]*tools' })
+    $candidates = @($media | ForEach-Object {
+        $drive = $_.DeviceID
+        # Modern Tools ISO uses setup.exe; older versions may offer setup64.exe.
+        foreach ($name in @('setup.exe','setup64.exe')) {
+            $candidate = Join-Path ($drive + '\') $name
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $candidate
+                break
+            }
+        }
+    })
+    if ($candidates.Count -gt 1) { throw 'Ambiguous VMware Tools installation media' }
+    if ($candidates.Count -eq 1) { $setup = $candidates[0] }
     if (-not $setup) { Start-Sleep -Seconds 2 }
 }
-if (-not $setup) { throw 'VMware Tools setup.exe was not found on a mounted CD/DVD drive' }
+if (-not $setup) { throw 'A VMware Tools-labelled ISO with setup.exe was not mounted' }
 
-$p = Start-Process -FilePath $setup -ArgumentList '/S','/v"/qn REBOOT=ReallySuppress"' -Wait -PassThru
+if ($northToolsBootstrap -and (
+    @(Get-Process msiexec -ErrorAction SilentlyContinue).Count -gt 0 -or
+    (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\InProgress')
+)) { throw 'MSI transaction active; refusing overlapping VMware Tools setup' }
+$p = Start-Process -FilePath $setup -ArgumentList '/S','/v"/qn REBOOT=ReallySuppress"' -Wait -PassThru -ErrorAction Stop
 Write-Output "GOAD_VMTOOLS_INSTALL_EXIT=$($p.ExitCode)"
-if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
+if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010 -and (-not $northToolsBootstrap -or $p.ExitCode -ne 1641)) { exit $p.ExitCode }
+$svc = Get-Service -Name VMTools -ErrorAction SilentlyContinue
+$state = if ($null -eq $svc) { 'Missing' } else { [string]$svc.Status }
+Write-Output "GOAD_VMTOOLS_POST_SETUP|service=$state|binary=$([bool](Test-Path 'C:\Program Files\VMware\VMware Tools\vmtoolsd.exe'))"
 ''')
             if install.status_code != 0:
                 Log.error(f'GOAD_NOMAD: VMware Tools installer failed for {machine}')
                 return False
 
-            Log.info(f'GOAD_NOMAD: VMware Tools installed on {machine}; rebooting guest')
-            session.run_ps("shutdown.exe /r /t 5 /f | Out-Null")
+            if north:
+                codes = re.findall(
+                    r'(?m)^GOAD_VMTOOLS_INSTALL_EXIT=([0-9]+)\s*$',
+                    install.std_out.decode('utf-8', errors='replace'),
+                )
+                if len(codes) != 1 or int(codes[0]) not in (0, 1641, 3010):
+                    Log.warning(f'NORTH: {machine} Tools result uncertain; no automatic restart')
+                    return False
+                if int(codes[0]) == 1641:
+                    Log.info(f'NORTH: {machine} installer initiated reboot; no second restart')
+                else:
+                    # Re-check MSI state immediately before the single restart.
+                    reboot = session.run_ps(r'''
+$ErrorActionPreference = 'Stop'
+if (@(Get-Process msiexec -ErrorAction SilentlyContinue).Count -gt 0 -or
+    (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\InProgress')) {
+    throw 'MSI activity remains; refusing reboot'
+}
+shutdown.exe /r /t 5 | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Restart command failed' }
+''')
+                    if reboot.status_code != 0:
+                        Log.warning(f'NORTH: {machine} restart not acknowledged; no retry')
+                        return False
+            else:
+                Log.info(f'GOAD_NOMAD: VMware Tools setup completed on {machine}; rebooting to verify guest health')
+                session.run_ps("shutdown.exe /r /t 5 /f | Out-Null")
         except Exception as exc:
+            if north:
+                # The NORTH caller already owns bounded authenticated guest
+                # revalidation. A lost session cannot authorize another reboot.
+                Log.warning(f'NORTH: {machine} Tools WinRM interrupted; '
+                            f'observe guest without replaying setup/restart: {exc}')
+                return False
             # VMware Tools installation/reboot can transiently tear down the
             # WinRM transport itself. The disconnect can happen before the
             # explicit reboot below, leaving a successful MSI installation in
@@ -388,6 +439,28 @@ if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { exit $p.ExitCode }
                 return False
             if any(text.count(name) == 0 for name in expected):
                 Log.error('Course 1 Vagrantfile is missing a required machine')
+                return False
+            # Existing workspaces were generated before the upgrade policy
+            # was pinned. Update only their Vagrantfile, never a live VMX.
+            policy = 'v.vmx["tools.upgrade.policy"] = "manual"'
+            anchor = '        # GOAD_NOMAD segmented labs may request explicit existing VMware vmnets.'
+            if text.count('v.vmx["tools.upgrade.policy"]') == 0:
+                if text.count(anchor) != 1:
+                    Log.error('NORTH: cannot safely migrate VMware Tools policy')
+                    return False
+                text = text.replace(
+                    anchor,
+                    '        # Keep VMware Tools upgrades separate from provisioning.\n'
+                    '        if box[:os] == "windows"\n'
+                    '          ' + policy + '\n'
+                    '        end\n\n' + anchor,
+                    1,
+                )
+                with open(vagrantfile, 'w', encoding='utf-8') as handle:
+                    handle.write(text)
+                Log.success('NORTH: generated Vagrantfile now pins manual VMware Tools upgrades')
+            elif text.count('v.vmx["tools.upgrade.policy"]') != 1 or text.count(policy) != 1:
+                Log.error('NORTH: ambiguous VMware Tools upgrade policy in generated Vagrantfile')
                 return False
             return True
 
