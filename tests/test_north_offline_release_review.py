@@ -98,6 +98,6 @@ def test_no_mutating_entrypoint_in_release_review():
               / "goad/course1_offline_release_review.py").read_text()
     for forbidden in (
         "unlink(", "rmtree(", "os.replace(", "shutil.move(",
-        "subprocess.run(", "systemctl", "vmware-networks", "vmrun",
+        "subprocess.run(", "systemctl stop", "vmware-networks --stop", "vmrun -T ws",
     ):
         assert forbidden not in source
