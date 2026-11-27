@@ -15,6 +15,12 @@ if [[ "${1:-}" == "--north" ]]; then
     exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
       python3 -m goad.course1_host_network_apply diagnose "$@"
   fi
+  if [[ "${1:-}" == "handoff-review" ]]; then
+    shift
+    # Pure review. No VMware, systemd, VMX, ownership or file mutations.
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_offline_release_review "$@"
+  fi
   if [[ "${1:-}" == "handoff-plan" ]]; then
     shift
     # Read-only. Never unregister VMs or release the immutable owner here.
