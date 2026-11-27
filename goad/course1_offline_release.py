@@ -389,8 +389,10 @@ def _run_locked(provider, inventory, reviewed_sha256, networking, owner, backups
         if networking.read_bytes() != original or owner.read_bytes() != owner_bytes:
             raise NorthReleaseError("NORTH owner/networking changed during durable backup")
         _verify_no_running_vmware()
-        _disable_timer()
+        # Mark rollback ownership before the first potentially partial systemd
+        # operation. An error after disabling the timer must still restore it.
         timer_disabled = True
+        _disable_timer()
         _atomic_bytes(networking, candidate, original_meta)
         wrote_network = True
         journal["state"] = "WRITTEN"
@@ -407,10 +409,13 @@ def _run_locked(provider, inventory, reviewed_sha256, networking, owner, backups
         if owner.is_symlink() or owner.read_bytes() != owner_bytes:
             raise NorthReleaseError("NORTH owner changed before final release")
         # Ownership is relinquished LAST, after runtime and asset checks.
+        # The move is not safe to treat as a single successful stage until
+        # directory fsyncs complete. If an fsync fails, check whether the owner
+        # was already moved and restore it during rollback.
         os.replace(owner, retired_owner)
+        owner_parked = True
         _fsync_dir(owner.parent)
         _fsync_dir(folder)
-        owner_parked = True
         journal["state"] = "COMMITTED_RELEASE"
         _stage_journal(folder, journal)
         return {"result": "COMMITTED_RELEASE", "release_backup": str(folder),
