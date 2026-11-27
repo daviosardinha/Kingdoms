@@ -86,6 +86,47 @@ OWNED_LABELS = (
 OWNED_ID = re.compile(rb"\bVNET_(10|20|99)_", re.I)
 
 
+EXPECTED_PORTS = {
+    "GOAD-DC01": {(22, 2200), (5985, 55985), (5986, 55986)},
+    "GOAD-DC02": {(22, 2203), (5985, 2201), (5986, 2202)},
+    "GOAD-SRV02": {(22, 2206), (5985, 2204), (5986, 2205)},
+    "GOAD-WS01": {(22, 2209), (5985, 2207), (5986, 2208)},
+    "GOAD-ROUTER": {(22, 2222)},
+}
+PORT_MAP = re.compile(r"(?m)^\s*(\d+)\s*\(guest\)\s*=>\s*(\d+)\s*\(host\)\s*$")
+
+
+def verify_vagrant_ports(provider: Path) -> dict:
+    """Read-only Vagrant port provenance BEFORE Workstation library removal."""
+    import pwd
+    import subprocess
+    user = os.environ.get("SUDO_USER")
+    if not user or user == "root":
+        raise NorthReleaseError("Review Vagrant port mappings via sudo from Kali user")
+    pwd.getpwnam(user)
+    proof = {}
+    for vm, expected in EXPECTED_PORTS.items():
+        try:
+            result = subprocess.run(
+                ("runuser", "-u", user, "--", "vagrant", "port", vm),
+                cwd=provider, capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise NorthReleaseError("Vagrant port proof is unavailable for " + vm) from exc
+        if result.returncode:
+            raise NorthReleaseError("Cannot verify Vagrant ports for " + vm)
+        ports = [(int(guest), int(host))
+                 for guest, host in PORT_MAP.findall(result.stdout)]
+        if len(ports) != len(expected) or set(ports) != expected:
+            raise NorthReleaseError("Unexpected/duplicate Vagrant forwarded ports for " + vm)
+        proof[vm] = sorted(ports)
+    if sum(map(len, proof.values())) != 13:
+        raise NorthReleaseError("Expected exactly thirteen verified NORTH port mappings")
+    return proof
+
+
+
+
 def digest(blob: bytes) -> str:
     return hashlib.sha256(blob).hexdigest()
 
@@ -160,6 +201,8 @@ def manifest(provider, inventory, networking=NETWORKING, owner=OWNER,
     """Read-only. Both registered and unregistered states yield the SAME hash."""
     provider, inventory = Path(provider), Path(inventory)
     state = plan(provider, inventory, expect)
+    if expect == "registered":
+        verify_vagrant_ports(provider)
     if state["vm_count"] != 5:
         raise NorthReleaseError("Expected five preserved NORTH VMs")
     config = Path(networking)
