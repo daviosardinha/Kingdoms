@@ -20,6 +20,17 @@ def test_router_provision_bash_parses():
     subprocess.run(["bash", "-n", str(ROUTER)], check=True)
 
 
+def test_dc_readiness_closes_before_member_function():
+    text = LIFECYCLE.read_text()
+    dc = text.split("wait_domain_controller_ready() {", 1)[1].split(
+        "\nwait_domain_member_ready() {", 1
+    )[0]
+    assert '(( basic_ready == 1 )) ||' in dc
+    assert 'ensure_child_dc_time_ready "${vm}"' in dc
+    assert 'echo "        [+] ${vm} AD runtime ready (${fqdn})"' in dc
+    assert dc.rstrip().endswith("}")
+
+
 def test_lifecycle_bash_parses_and_member_function_has_single_end():
     subprocess.run(["bash", "-n", str(LIFECYCLE)], check=True)
     s = LIFECYCLE.read_text()
