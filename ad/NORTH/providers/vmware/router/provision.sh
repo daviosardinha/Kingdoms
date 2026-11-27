@@ -55,7 +55,7 @@ EOF
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y --no-install-recommends nftables
+apt-get install -y --no-install-recommends nftables chrony
 
 install -d -m 0755 /etc/network/interfaces.d
 cat > /etc/network/interfaces.d/goad-router <<'EOF'
@@ -68,6 +68,29 @@ EOF
 configure_lab_interface "NORTH" "${NORTH_MAC}" "10.4.10.1"
 configure_lab_interface "SEVENKINGDOMS" "${SEVENKINGDOMS_MAC}" "10.4.20.1"
 configure_lab_interface "MANAGEMENT" "${MANAGEMENT_MAC}" "10.4.99.1"
+
+# NORTH-only domain time root. The router is an infrastructure service:
+# it retains Vagrant NAT for upstream NTP, while exercise-mode forwarding
+# remains deny-by-default. Only the forest-root PDC may query this listener.
+# Do not configure chrony to serve untrusted student or management subnets.
+install -d -m 0755 /etc/chrony
+cat > /etc/chrony/chrony.conf <<'EOF'
+pool 2.debian.pool.ntp.org iburst maxsources 4
+driftfile /var/lib/chrony/chrony.drift
+makestep 1 3
+rtcsync
+bindaddress 10.4.20.1
+allow 10.4.20.10/32
+cmdport 0
+logdir /var/log/chrony
+EOF
+
+systemctl enable chrony >/dev/null
+systemctl restart chrony
+chronyc waitsync 12 1 0 10
+chronyc tracking | grep -Eq '^Leap status[[:space:]]*:[[:space:]]*Normal'
+ss -lun | grep -Eq '10\.4\.20\.1:123[[:space:]]'
+echo "[+] NORTH router upstream NTP synchronized; forest-root PDC listener ready on 10.4.20.1:123"
 
 cat > /etc/sysctl.d/99-goad-nomad-router.conf <<'EOF'
 net.ipv4.ip_forward = 1

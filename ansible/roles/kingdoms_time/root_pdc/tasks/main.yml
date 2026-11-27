@@ -1,0 +1,62 @@
+---
+# NORTH-specific forest time authority. The isolated Windows guests must not
+# query the internet or the VMware host to establish their AD time hierarchy.
+- name: Configure NORTH forest-root PDC from router-local authenticated management time reference
+  ansible.windows.win_powershell:
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $peer = '10.4.20.1'
+      $peerSpec = '10.4.20.1,0x8'
+      # Windows may report the configured client-mode suffix in /query /source.
+      # Accept ONLY the exact router IP or that same peer with the 0x8 flag.
+      $acceptedSources = @($peer, $peerSpec)
+
+      Import-Module ActiveDirectory -ErrorAction Stop
+      $forest = Get-ADForest -ErrorAction Stop
+      $pdc = (Get-ADDomain -Identity $forest.RootDomain -ErrorAction Stop).PDCEmulator
+      if ($forest.RootDomain -ine 'sevenkingdoms.local' -or
+          $pdc -ine 'kingslanding.sevenkingdoms.local' -or
+          $env:COMPUTERNAME -ine 'KINGSLANDING') {
+          throw "Refusing to configure the wrong time authority: forest=$($forest.RootDomain), pdc=$pdc, host=$env:COMPUTERNAME"
+      }
+
+      # No change until the router has answered real NTP samples. A reachable
+      # management SSH port or a synchronized router *client* is not sufficient.
+      & w32tm.exe /stripchart /computer:10.4.20.1 /samples:3 /dataonly | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw 'Router NTP endpoint 10.4.20.1:123 did not answer correctly' }
+
+      $settings = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters' -ErrorAction Stop
+      $needsConfig = $settings.Type -ine 'NTP' -or $settings.NtpServer -ine $peerSpec
+      if ($needsConfig) {
+          & w32tm.exe /config '/manualpeerlist:10.4.20.1,0x8' /syncfromflags:manual /reliable:yes /update | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to configure root-PDC NTP source' }
+          Restart-Service W32Time -Force -ErrorAction Stop
+          $Ansible.Changed = $true
+      }
+
+      # A successful /resync exit is not proof of convergence. Confirm the
+      # selected peer and zero last-sync error, with bounded retries.
+      $verified = $false
+      for ($attempt=1; $attempt -le 12; $attempt++) {
+          $source = (& w32tm.exe /query /source 2>$null | Out-String).Trim().TrimEnd('.')
+          $sourceRc = $LASTEXITCODE
+          $status = (& w32tm.exe /query /status /verbose 2>$null | Out-String)
+          $statusRc = $LASTEXITCODE
+          if ($sourceRc -eq 0 -and $statusRc -eq 0 -and
+              $source -in $acceptedSources -and
+              $status -match '(?im)^\s*Last Sync Error:\s*0\b') {
+              $verified = $true
+              break
+          }
+          if ($attempt -eq 1 -or ($attempt % 3) -eq 0) {
+              & w32tm.exe /resync /rediscover | Out-Null
+          }
+          Start-Sleep -Seconds 5
+      }
+      if (-not $verified) {
+          throw "Root-PDC NTP did not converge: source=$source; status=$($status -replace '[\r\n]+',' ')"
+      }
+
+      Write-Output "KINGDOMS_NORTH_ROOT_TIME_READY|source=$source|peer=$peer|type=NTP"
+  register: kingdoms_north_root_time

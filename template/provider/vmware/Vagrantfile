@@ -81,6 +81,9 @@ boxes.append(
         # Apply after box-specific VMX overrides and before the first power-on.
         if box[:os] == "windows"
           v.vmx["tools.upgrade.policy"] = "manual"
+          # Domain time belongs to W32Time. The forest-root PDC uses the
+          # verified NORTH router NTP endpoint; other guests use NT5DS.
+          v.vmx["tools.syncTime"] = "FALSE"
         end
 {% endif %}
 
