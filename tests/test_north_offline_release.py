@@ -297,6 +297,55 @@ def test_concurrent_foreign_edit_is_never_overwritten(tmp_path, monkeypatch):
     assert state == "MANUAL_RECONCILIATION"
 
 
+def test_partial_timer_disable_failure_still_restores_north_timer(tmp_path, monkeypatch):
+    env = synthetic_transaction(tmp_path, monkeypatch)
+    provider, inv, net, owner, backups, tools, original, installed, paths, events, vmx = env
+
+    def partially_disable():
+        events.append("timer-disabled-partially")
+        raise RuntimeError("Injected service stop failure after timer disable")
+
+    monkeypatch.setattr(release, "_disable_timer", partially_disable)
+    with pytest.raises(release.NorthReleaseError, match="rolled back"):
+        release.release(provider, inv, "a" * 64, net, owner, backups,
+                        tmp_path / "no-netmap", tools)
+    assert "timer-disabled-partially" in events
+    assert "activate-timer" in events
+    assert "restart" not in events
+    assert net.read_bytes() == installed
+    assert owner.exists()
+    assert all(path.exists() for path in paths.values())
+    state = json.loads(next(backups.glob("release-*/release.json")).read_text())["state"]
+    assert state == "ROLLED_BACK"
+
+
+def test_owner_move_followed_by_fsync_failure_restores_owner_and_network(tmp_path, monkeypatch):
+    env = synthetic_transaction(tmp_path, monkeypatch)
+    provider, inv, net, owner, backups, tools, original, installed, paths, events, vmx = env
+    original_fsync = release._fsync_dir
+    injection = {"raised": False}
+
+    def fail_after_owner_move(directory):
+        if Path(directory) == owner.parent and not injection["raised"]:
+            injection["raised"] = True
+            raise OSError("Injected directory fsync failure after owner retirement")
+        return original_fsync(directory)
+
+    monkeypatch.setattr(release, "_fsync_dir", fail_after_owner_move)
+    with pytest.raises(release.NorthReleaseError, match="rolled back"):
+        release.release(provider, inv, "a" * 64, net, owner, backups,
+                        tmp_path / "no-netmap", tools)
+    assert injection["raised"]
+    assert owner.exists()
+    assert net.read_bytes() == installed
+    assert "activate-timer" in events
+    assert all(path.exists() for path in paths.values())
+    assert all(path.is_file() for path in vmx.values())
+    folder = next(backups.glob("release-*"))
+    assert not (folder / "owner.retired").exists()
+    assert json.loads((folder / "release.json").read_text())["state"] == "ROLLED_BACK"
+
+
 def test_stale_review_refuses_all_mutations(tmp_path, monkeypatch):
     env = synthetic_transaction(tmp_path, monkeypatch)
     provider, inv, net, owner, backups, tools, original, installed, paths, events, vmx = env
