@@ -944,8 +944,8 @@ POWERSHELL
         fi
 
         if [[ "${last_state}" == reason=time\|* ]]; then
-            # A positive trust, DNS, Netlogon and account check is prerequisite
-            # to reason=time. Extend only this specific NORTH convergence path.
+            # A complete identity check precedes reason=time. Extend only
+            # NORTH's post-reboot time-specific convergence deadline.
             if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then
                 readiness_deadline="${AD_MEMBER_TIME_CONVERGENCE_TIMEOUT_SECONDS}"
             fi
@@ -980,10 +980,9 @@ POWERSHELL
                 if [[ "${marker}" == KINGDOMS_MEMBER_TIME_REPAIRED\|* ]]; then
                     echo "        [+] ${vm} bounded domain-time recovery completed: ${marker}"
                 elif [[ "${marker}" == KINGDOMS_MEMBER_TIME_REPAIR_FAILED\|stage=rediscover\|* && "${GOAD_LAB_PROFILE}" == NORTH ]]; then
-                    # A zero /nowait exit is not sync completion. If source
-                    # selection is still pending, continue read-only probes
-                    # until the bounded NORTH time-specific deadline.
-                    echo "        [!] ${vm} W32Time source still converging after bounded rediscovery: ${marker}"
+                    # A zero /nowait exit does not prove that the source has
+                    # converged. Do not treat this transient state as fatal.
+                    echo "        [!] ${vm} W32Time source still converging after rediscovery: ${marker}"
                 elif [[ "${marker}" == KINGDOMS_MEMBER_TIME_REPAIR_FAILED\|* ]]; then
                     fail "${vm} bounded domain-time recovery failed: ${marker}"
                 else
@@ -1017,11 +1016,6 @@ POWERSHELL
         fi
     done
     fail "${vm} did not regain domain identity readiness for ${domain} within ${readiness_deadline}s; ${last_state}; time_repair_attempted=${time_repair_attempted}"
-}
-sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
-        fi
-    done
-    fail "${vm} did not regain domain identity readiness for ${domain} within 300s; ${last_state}; time_repair_attempted=${time_repair_attempted}"
 }
 
 preflight_domain_health() {
