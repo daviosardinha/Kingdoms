@@ -391,6 +391,7 @@ def _run_locked(provider, inventory, reviewed_sha256, networking, owner, backups
         # Prove the released NICs, routes, MACs and vmnet IDs are unused.
         inspect_clean_host(networking=networking, library=inventory)
         _remove_exact_assets(assets, paths)
+        _verify_no_running_vmware()
         if owner.is_symlink() or owner.read_bytes() != owner_bytes:
             raise NorthReleaseError("NORTH owner changed before final release")
         # Ownership is relinquished LAST, after runtime and asset checks.
@@ -411,10 +412,13 @@ def _run_locked(provider, inventory, reviewed_sha256, networking, owner, backups
                 _fsync_dir(owner.parent)
                 _fsync_dir(folder)
             if wrote_network:
+                # Never restart VMware networking underneath a newly started guest.
+                _verify_no_running_vmware()
                 # A concurrent admin edit must NEVER be overwritten, even to rollback.
                 if networking.read_bytes() != candidate:
                     raise NorthReleaseError("Concurrent VMware networking drift; manual reconciliation")
                 _atomic_bytes(networking, original, original_meta)
+                _verify_no_running_vmware()
                 restart()
                 if networking.read_bytes() != original:
                     raise NorthReleaseError("VMware networking rollback did not restore original bytes")
