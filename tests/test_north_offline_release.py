@@ -102,6 +102,7 @@ def test_manifest_checksum_independent_of_library_registration(tmp_path, monkeyp
                     for i in range(5)},
         }
     monkeypatch.setattr(release, "plan", fake_plan)
+    monkeypatch.setattr(release, "verify_vagrant_ports", lambda provider: {})
     monkeypatch.setattr(release, "_read_assets",
                         lambda *args: {"helper": b"h", "service": b"s", "timer": b"t"})
     a = release.manifest(provider, tmp_path / "inventory", network, owner, "registered")
@@ -126,6 +127,7 @@ def test_manifest_hash_changes_when_reviewed_config_drifts(tmp_path, monkeypatch
     monkeypatch.setattr(release, "plan", lambda p, i, e:
                         {"provider": str(p), "vm_count": 5,
                          "inventory_reference_count": 10, "vmx": {"x": "y"}})
+    monkeypatch.setattr(release, "verify_vagrant_ports", lambda provider: {})
     monkeypatch.setattr(release, "_read_assets",
                         lambda *args: {"helper": b"h", "service": b"s", "timer": b"t"})
     initial = release.manifest(provider, tmp_path / "inventory", network, owner)
@@ -295,3 +297,38 @@ def test_release_source_does_not_destroy_old_vms():
     for disallowed in ("vagrant destroy", "deleteVM", "rmtree(",
                        "shutil.rmtree(", "vmrun -T ws deleteVM"):
         assert disallowed not in code
+
+
+def test_vagrant_port_proof_requires_exact_five_guest_maps(monkeypatch, tmp_path):
+    import subprocess
+    import pwd
+    class Result:
+        def __init__(self, value):
+            self.returncode = 0
+            self.stdout = value
+    monkeypatch.setenv("SUDO_USER", "fictional")
+    monkeypatch.setattr(pwd, "getpwnam", lambda user: object())
+
+    def fake_run(command, **kwargs):
+        vm = command[-1]
+        pairs = release.EXPECTED_PORTS[vm]
+        return Result("\n".join(f"{guest} (guest) => {host} (host)"
+                                for guest, host in sorted(pairs)))
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    actual = release.verify_vagrant_ports(tmp_path)
+    assert len(actual) == 5
+    assert sum(map(len, actual.values())) == 13
+    assert actual["GOAD-ROUTER"] == [(22, 2222)]
+
+
+def test_vagrant_port_proof_rejects_unexpected_forward(monkeypatch, tmp_path):
+    import subprocess
+    import pwd
+    class Result:
+        returncode = 0
+        stdout = "22 (guest) => 2222 (host)\n"
+    monkeypatch.setenv("SUDO_USER", "fictional")
+    monkeypatch.setattr(pwd, "getpwnam", lambda user: object())
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: Result())
+    with pytest.raises(release.NorthReleaseError, match="Unexpected/duplicate"):
+        release.verify_vagrant_ports(tmp_path)
