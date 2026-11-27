@@ -26,7 +26,7 @@ from goad.course1_host_network_apply import (
     run_command, snapshot_netmap, systemd_activate, systemd_reload,
 )
 from goad.course1_hostaddrs import SERVICE, TIMER, render_hostaddr_assets
-from goad.course1_network_preflight import inactive_vmware
+from goad.course1_network_preflight import inactive_vmware, inspect_live as inspect_clean_host
 from goad.course1_offline_handoff import (
     HandoffPlanError, expected_guest_vmx, inventory_state, plan, regular_file,
 )
@@ -340,10 +340,13 @@ def _run_locked(provider, inventory, reviewed_sha256, networking, owner, backups
         wrote_network = True
         journal["state"] = "WRITTEN"
         _stage_journal(folder, journal)
+        _verify_no_running_vmware()
         restart()
         journal["state"] = "VERIFYING"
         _stage_journal(folder, journal)
         _verify_network_after_release(networking, candidate, original_nat)
+        # Prove the released NICs, routes, MACs and vmnet IDs are unused.
+        inspect_clean_host(networking=networking, library=inventory)
         _remove_exact_assets(assets, paths)
         if owner.is_symlink() or owner.read_bytes() != owner_bytes:
             raise NorthReleaseError("NORTH owner changed before final release")
