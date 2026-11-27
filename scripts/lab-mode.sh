@@ -714,7 +714,16 @@ POWERSHELL
             sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
         fi
     done
-   wait_domain_member_ready() {
+    (( basic_ready == 1 )) ||
+        fail "${vm} did not regain AD/DC Locator readiness for ${domain} within 300s"
+
+    ensure_child_dc_time_ready "${vm}"
+
+    echo "        [+] ${vm} AD runtime ready (${fqdn})"
+}
+
+
+wait_domain_member_ready() {
     local vm="$1"
     local domain="${MEMBER_DOMAIN[${vm}]}"
     local dc="${MEMBER_DC[${vm}]}"
