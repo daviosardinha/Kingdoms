@@ -101,3 +101,10 @@ def test_read_only_design_contains_no_host_mutation_actions():
                       "vmrun -T ws deleteVM", "vmrun -T ws unregister",
                       "subprocess.run(", "systemctl stop", "vmware-networks --stop"):
         assert forbidden not in source
+
+
+def test_public_north_wrapper_exposes_only_read_only_plan():
+    source = (Path(__file__).resolve().parents[1]
+              / "scripts/setup-vmware-networks.sh").read_text()
+    assert 'if [[ "${1:-}" == "handoff-plan" ]]; then' in source
+    assert "python3 -m goad.course1_offline_handoff" in source
