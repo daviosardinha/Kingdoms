@@ -38,6 +38,26 @@ def test_exact_13_nat_and_15_declarations_preserve_every_foreign_byte():
     assert release.nat_lines(original) == Counter([FOREIGN_NAT.decode().strip()])
 
 
+def test_annotated_north_nat_forward_surrounding_whitespace_is_removed():
+    # /etc/vmware/networking may indent or pad managed add_nat_portfwd
+    # entries even when the Vagrant port map and parsed NAT counter match.
+    original, installed = configuration()
+    plain = (release.NORTH_NAT[0] + "\n").encode()
+    padded = b"  " + release.NORTH_NAT[0].encode() + b" \t\r\n"
+    configured = installed.replace(plain, padded)
+    assert release.nat_lines(configured) == release.nat_lines(installed)
+    assert release.release_candidate(configured, original) == original
+
+
+def test_overlapping_preexisting_nat_forward_requires_manual_ownership_review():
+    original, installed = configuration()
+    existing_forward = (release.NORTH_NAT[0] + "\n").encode()
+    # Both pre-existing and newly added rules are present. Their byte
+    # equality makes ownership ambiguous; never delete both.
+    with pytest.raises(release.NorthReleaseError, match="ownership ambiguous"):
+        release.release_candidate(installed + existing_forward, original + existing_forward)
+
+
 def test_missing_or_duplicate_nat_rule_blocks_without_write():
     original, installed = configuration()
     nat = (release.NORTH_NAT[0] + "\n").encode()
