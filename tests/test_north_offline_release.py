@@ -332,3 +332,22 @@ def test_vagrant_port_proof_rejects_unexpected_forward(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: Result())
     with pytest.raises(release.NorthReleaseError, match="Unexpected/duplicate"):
         release.verify_vagrant_ports(tmp_path)
+
+
+def test_foreign_vm_started_mid_release_blocks_global_restart(tmp_path, monkeypatch):
+    env = synthetic_transaction(tmp_path, monkeypatch)
+    provider, inv, net, owner, backups, tools, original, installed, paths, events, vmx = env
+    calls = {"count": 0}
+    def changing_vm_state():
+        calls["count"] += 1
+        if calls["count"] >= 4:
+            raise release.NorthReleaseError("A foreign VMware VM started")
+    monkeypatch.setattr(release, "_verify_no_running_vmware", changing_vm_state)
+    with pytest.raises(release.NorthReleaseError, match="manual reconciliation"):
+        release.release(provider, inv, "a" * 64, net, owner, backups,
+                        tmp_path / "no-netmap", tools)
+    # Fail closed: never restart the networking service underneath any guest.
+    assert "restart" not in events
+    assert owner.exists()
+    assert net.read_bytes() != installed
+    assert json.loads(next(backups.glob("release-*/release.json")).read_text())["state"] == "MANUAL_RECONCILIATION"
