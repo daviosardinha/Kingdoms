@@ -1,4 +1,13 @@
 ---
+# Only NORTH uses the isolated router as the forest-root NTP authority.
+# GOAD's existing time hierarchy and other laboratory profiles are unchanged.
+- name: Configure NORTH forest-root authoritative time before member rediscovery
+  hosts: parent_dc
+  gather_facts: false
+  roles:
+    - role: kingdoms_time/root_pdc
+      when: domain_name == 'NORTH'
+
 # Kingdoms-specific member time policy.
 #
 # Domain members stay on the native NT5DS hierarchy. Only the peer-discovery
