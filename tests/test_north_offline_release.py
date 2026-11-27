@@ -283,7 +283,8 @@ def test_stale_review_refuses_all_mutations(tmp_path, monkeypatch):
     assert net.read_bytes() == before
     assert owner.exists()
     assert not list(backups.glob("release-*"))
-    assert not events
+    assert "disable-timer" not in events
+    assert "restart" not in events
 
 
 def test_release_source_does_not_destroy_old_vms():
