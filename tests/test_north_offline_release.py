@@ -206,6 +206,8 @@ def synthetic_transaction(tmp_path, monkeypatch, failure=None):
                         lambda: events.append("daemon-reload"))
     monkeypatch.setattr(release, "systemd_activate",
                         lambda: events.append("activate-timer"))
+    monkeypatch.setattr(release, "inspect_clean_host",
+                        lambda **kwargs: events.append("clean-host-check"))
 
     @contextmanager
     def lock(_):
