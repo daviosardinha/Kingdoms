@@ -13,6 +13,9 @@ esac
 readonly POLICY_DIR="${ROOT}/ad/${GOAD_LAB_PROFILE}/providers/vmware/router/nftables"
 
 readonly AD_READINESS_TIMEOUT_SECONDS=300
+# Only NORTH gets a longer bounded W32Time convergence window, and only after
+# all identity checks have passed and the failure reason is specifically time.
+readonly AD_MEMBER_TIME_CONVERGENCE_TIMEOUT_SECONDS=600
 readonly AD_READINESS_PROBE_TIMEOUT_SECONDS=15
 readonly AD_READINESS_RETRY_DELAY_SECONDS=5
 readonly AD_REPAIR_TIMEOUT_SECONDS=90
@@ -711,15 +714,7 @@ POWERSHELL
             sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
         fi
     done
-    (( basic_ready == 1 )) ||
-        fail "${vm} did not regain AD/DC Locator readiness for ${domain} within 300s"
-
-    ensure_child_dc_time_ready "${vm}"
-
-    echo "        [+] ${vm} AD runtime ready (${fqdn})"
-}
-
-wait_domain_member_ready() {
+   wait_domain_member_ready() {
     local vm="$1"
     local domain="${MEMBER_DOMAIN[${vm}]}"
     local dc="${MEMBER_DC[${vm}]}"
@@ -731,6 +726,9 @@ wait_domain_member_ready() {
     local last_state="reason=transport"
     local consecutive_time_failures=0
     local time_repair_attempted=0
+    local readiness_deadline="${AD_READINESS_TIMEOUT_SECONDS}"
+    local time_repair_threshold=6
+    [[ "${GOAD_LAB_PROFILE}" == NORTH ]] && time_repair_threshold=18
 
     script="$(cat <<POWERSHELL
 \$ErrorActionPreference = 'Stop'
@@ -911,14 +909,14 @@ POWERSHELL
 
     local started="${SECONDS}"
     local elapsed=0
-    local remaining="${AD_READINESS_TIMEOUT_SECONDS}"
+    local remaining="${readiness_deadline}"
     local probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
     local repair_timeout=0
     local next_report=30
 
-    while (( SECONDS - started < AD_READINESS_TIMEOUT_SECONDS )); do
+    while (( SECONDS - started < readiness_deadline )); do
         elapsed=$((SECONDS - started))
-        remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
+        remaining=$((readiness_deadline - elapsed))
         probe_timeout="${AD_READINESS_PROBE_TIMEOUT_SECONDS}"
         (( remaining < probe_timeout )) && probe_timeout="${remaining}"
         (( probe_timeout > 0 )) || break
@@ -946,6 +944,11 @@ POWERSHELL
         fi
 
         if [[ "${last_state}" == reason=time\|* ]]; then
+            # A positive trust, DNS, Netlogon and account check is prerequisite
+            # to reason=time. Extend only this specific NORTH convergence path.
+            if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then
+                readiness_deadline="${AD_MEMBER_TIME_CONVERGENCE_TIMEOUT_SECONDS}"
+            fi
             consecutive_time_failures=$((consecutive_time_failures + 1))
         else
             consecutive_time_failures=0
@@ -955,13 +958,13 @@ POWERSHELL
         # machine trust, domain account translation and the Netlogon secure
         # session all passed in this same probe. Never reset a machine password
         # or repair trust here.
-        if (( time_repair_attempted == 0 && consecutive_time_failures >= 6 )); then
-            echo "        [!] ${vm} identity checks are healthy but domain time stayed unsynchronized for ~30s"
+        if (( time_repair_attempted == 0 && consecutive_time_failures >= time_repair_threshold )); then
+            echo "        [!] ${vm} identity checks are healthy but domain time stayed unsynchronized for ${consecutive_time_failures} probes"
             echo "        [*] attempting one bounded W32Time domain-hierarchy rediscovery/resync"
             time_repair_attempted=1
 
             elapsed=$((SECONDS - started))
-            remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
+            remaining=$((readiness_deadline - elapsed))
             (( remaining > 0 )) || break
             repair_timeout="${AD_REPAIR_TIMEOUT_SECONDS}"
             (( remaining < repair_timeout )) && repair_timeout="${remaining}"
@@ -976,6 +979,11 @@ POWERSHELL
 
                 if [[ "${marker}" == KINGDOMS_MEMBER_TIME_REPAIRED\|* ]]; then
                     echo "        [+] ${vm} bounded domain-time recovery completed: ${marker}"
+                elif [[ "${marker}" == KINGDOMS_MEMBER_TIME_REPAIR_FAILED\|stage=rediscover\|* && "${GOAD_LAB_PROFILE}" == NORTH ]]; then
+                    # A zero /nowait exit is not sync completion. If source
+                    # selection is still pending, continue read-only probes
+                    # until the bounded NORTH time-specific deadline.
+                    echo "        [!] ${vm} W32Time source still converging after bounded rediscovery: ${marker}"
                 elif [[ "${marker}" == KINGDOMS_MEMBER_TIME_REPAIR_FAILED\|* ]]; then
                     fail "${vm} bounded domain-time recovery failed: ${marker}"
                 else
@@ -994,7 +1002,7 @@ POWERSHELL
         fi
 
         elapsed=$((SECONDS - started))
-        remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))
+        remaining=$((readiness_deadline - elapsed))
         (( remaining < 0 )) && remaining=0
         if (( elapsed >= next_report )); then
             echo "        [*] waiting for ${vm} domain runtime readiness (${elapsed}s elapsed, ${remaining}s remaining); ${last_state}"
@@ -1006,6 +1014,11 @@ POWERSHELL
             sleep "${remaining}"
         else
             sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
+        fi
+    done
+    fail "${vm} did not regain domain identity readiness for ${domain} within ${readiness_deadline}s; ${last_state}; time_repair_attempted=${time_repair_attempted}"
+}
+sleep "${AD_READINESS_RETRY_DELAY_SECONDS}"
         fi
     done
     fail "${vm} did not regain domain identity readiness for ${domain} within 300s; ${last_state}; time_repair_attempted=${time_repair_attempted}"
