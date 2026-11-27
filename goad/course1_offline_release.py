@@ -150,6 +150,14 @@ def release_candidate(current: bytes, baseline: bytes) -> bytes:
         raise NorthReleaseError("A pre-NORTH NAT forward was removed; review ownership")
     if now - old != Counter(NORTH_NAT):
         raise NorthReleaseError("Live NAT delta does not match all 13 reviewed NORTH forwards")
+    # Identical pre-existing forwards cannot be attributed safely to NORTH.
+    if any(old[forward] for forward in NORTH_NAT):
+        raise NorthReleaseError("Existing baseline forward overlaps NORTH; ownership ambiguous")
+    # nat_lines() strips surrounding whitespace. Use the same canonicalization
+    # when selecting lines for removal or we can leave a forward in place and
+    # falsely report that a foreign NAT rule would be changed.
+    expected_nat = Counter(NORTH_NAT)
+    removed_nat = Counter()
     expected = Counter(s.encode("utf-8") for s in NORTH_DECLS)
     labels = set(s.encode("utf-8") for s in OWNED_LABELS)
     seen = Counter()
@@ -163,9 +171,13 @@ def release_candidate(current: bytes, baseline: bytes) -> bytes:
             continue
         if OWNED_ID.search(stripped):
             raise NorthReleaseError("Unknown or altered NORTH vmnet declaration")
-        if stripped.decode("utf-8", errors="replace") in NORTH_NAT:
+        normalized = line.strip().decode("utf-8")
+        if normalized in expected_nat and removed_nat[normalized] < expected_nat[normalized]:
+            removed_nat[normalized] += 1
             continue
         retained.append(line)
+    if removed_nat != expected_nat:
+        raise NorthReleaseError("NORTH NAT forward removal count mismatch")
     if seen != expected:
         raise NorthReleaseError("NORTH vmnet declarations missing, duplicated or changed")
     result = b"".join(retained)
