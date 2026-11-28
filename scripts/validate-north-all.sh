@@ -57,6 +57,7 @@ if ! "$HOST_PYTEST_PYTHON" -m pytest --version >/dev/null 2>&1; then
 fi
 readonly HOST_PYTEST_PYTHON
 echo "Host test Python: $HOST_PYTEST_PYTHON"
+export KINGDOMS_SOURCE_TEST_PYTHON="$HOST_PYTEST_PYTHON"
 export ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg"
 export ROOT INSTANCE PROVIDER
 export GOAD_PROVIDER_DIR="$PROVIDER"
@@ -143,6 +144,11 @@ PY
 run_stage source-synchronization '' source-sync.log bash scripts/verify-test-source.sh || finish 1
 run_stage north-source-gate 'GOAD Kingdoms clean-install source gate passed' source-gate.log bash scripts/validate-goad-kingdoms-install-source.sh || finish 1
 run_stage north-source-unit-regression '' north-tests.log "$HOST_PYTEST_PYTHON" -m pytest -q tests/test_north_*.py tests/test_course1_*.py || finish 1
+# Phase04's --installed owner gate independently invokes this entire source
+# contract. Check it NOW, so no unrelated fixture failure can surface only
+# after time-consuming live Phase01/02/03 probes.
+run_stage north-course1-full-source 'All unit tests, syntax, Kingdoms contracts' course1-source.log \
+  bash scripts/validate-course1.sh --skip-host || finish 1
 
 # Runtime ownership guard is required before any course probes can contact guests.
 sudo -v || finish 1
