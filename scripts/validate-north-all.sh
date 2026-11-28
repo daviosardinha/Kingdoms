@@ -110,6 +110,7 @@ report = {
     'readiness': 'PASS' if not fail_count and int(rc) == 0 else 'FAIL',
     'pass': pass_count, 'fail': fail_count,
     'phases': results,
+    'phase03_fixture_exploitability': 'NOT_PROVEN_BY_INSPECTION',
     'phase03_active_attack_chains': 'NOT_TESTED',
     'phase04_Rickon_to_SYSTEM_exploit': 'NOT_TESTED',
     'mutations': 'No attack or lifecycle changes; LPE validation temporarily grants/restores SeBatchLogonRight'
@@ -119,6 +120,7 @@ print('\n===== NORTH VALIDATION SUMMARY =====')
 for item in results:
     print(f"[{item['status']}] {item['stage']}: {item['log']}")
 print(f'PASS={pass_count} FAIL={fail_count}')
+print('PHASE03_FIXTURE_EXPLOITABILITY=NOT_PROVEN_BY_INSPECTION')
 print('PHASE03_ACTIVE_ATTACK_CHAINS=NOT_TESTED')
 print('PHASE04_RICKON_TO_SYSTEM_EXPLOIT=NOT_TESTED')
 print(f'NORTH_ALL_READINESS={report["readiness"]}')
@@ -148,8 +150,31 @@ run_stage phase03-poisoning-relay-readiness '[READY] 03' phase03.log \
 
 # Run the NORTH-specific AD fixture preflights DIRECTLY with the exact NORTH
 # inventories: their legacy shell wrappers default to unrelated GOAD paths.
+# Diagnostic preflights may print unfavorable states and still exit zero.
+# Verify each probe actually ran, but call this an inspection, not proof that
+# the associated attack works. Preserve all raw evidence for human review.
 for spec in rbcd shadow adidns webdav-shortcut; do
-  run_stage "phase03-$spec-prerequisites" 'PLAY RECAP' "phase03-$spec.log" \
+  case "$spec" in
+    rbcd) marker='PHASE03_RBCD_TARGET=WS01
+
+# One existing explicit-approval validator covers Rickon's low-privilege
+# foothold and proves all 20 LPE scenarios in their seeded vulnerable state.
+run_stage phase04-full-20-lpe 'PHASE04_LPE_ACTIVE_ACCEPTANCE=PASS' phase04.log \
+  bash scripts/course1-phase04-acceptance.sh "$INSTANCE" --validate --confirm-transient-right || true
+
+# Always reprove isolation/AD trust after all guest-facing checks.
+run_stage north-runtime-after 'NORTH_RUNTIME_ACCEPTANCE=PASS' runtime-after.log \
+  bash ./goad.sh -t validate -l NORTH -p vmware -i "$INSTANCE" || true
+run_stage north-instance-status 'Network Mode' status.log \
+  bash ./goad.sh -t status -l NORTH -p vmware -i "$INSTANCE" || true
+
+if (( failure > 0 )); then finish 1; else finish 0; fi
+ ;;
+    shadow) marker='PHASE03_SHADOW_PREFLIGHT_COMPLETE=True' ;;
+    adidns) marker='PHASE03_ADIDNS_PREFLIGHT_COMPLETE=True' ;;
+    webdav-shortcut) marker='PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True' ;;
+  esac
+  run_stage "phase03-$spec-inspection" "$marker" "phase03-$spec.log" \
     "$ANSIBLE" -i "$DATA_INVENTORY" -i "$INSTANCE_INVENTORY" -i "$GLOBAL" \
     "ansible/phase03-$spec-preflight.yml" || true
 done
