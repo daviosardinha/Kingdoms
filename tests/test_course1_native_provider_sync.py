@@ -67,7 +67,10 @@ class NorthProviderSyncTests(unittest.TestCase):
             sync = provider_method("_sync_goad_nomad_vagrantfile_compatibility")
             self.assertTrue(sync(provider))
             migrated = path.read_text(encoding="utf-8")
-            self.assertIn(content, migrated)
+            for name in ("GOAD-DC01", "GOAD-DC02", "GOAD-SRV02",
+                         "GOAD-WS01", "GOAD-ROUTER"):
+                self.assertIn(name, migrated)
+            self.assertEqual(migrated.count(anchor), 1)
             self.assertEqual(migrated.count('v.vmx["tools.upgrade.policy"] = "manual"'), 1)
             self.assertTrue(sync(provider))
             self.assertEqual(path.read_text(encoding="utf-8"), migrated)
