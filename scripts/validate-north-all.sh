@@ -38,6 +38,19 @@ mkdir -p -m 700 "$EVIDENCE_ROOT"
 readonly EVIDENCE="$(mktemp -d "$EVIDENCE_ROOT/north-all-$INSTANCE-XXXXXXXX")"
 readonly RESULTS="$EVIDENCE/results.tsv"
 printf 'stage\tstatus\texit_code\tlog\n' > "$RESULTS"
+# Capture the operator/host Python BEFORE adding the GOAD Ansible venv to PATH.
+# The Ansible venv may have no pytest; host pytest is a separate dependency.
+HOST_PYTEST_PYTHON="$(command -v python3)"
+if ! "$HOST_PYTEST_PYTHON" -m pytest --version >/dev/null 2>&1; then
+  for candidate in /usr/bin/python3 /usr/local/bin/python3; do
+    if [[ -x "$candidate" ]] && "$candidate" -m pytest --version >/dev/null 2>&1; then
+      HOST_PYTEST_PYTHON="$candidate"
+      break
+    fi
+  done
+fi
+readonly HOST_PYTEST_PYTHON
+echo "Host test Python: $HOST_PYTEST_PYTHON"
 export ANSIBLE_CONFIG="$ROOT/ansible/ansible.cfg"
 export ROOT INSTANCE PROVIDER
 export GOAD_PROVIDER_DIR="$PROVIDER"
@@ -116,7 +129,7 @@ PY
 # Stop before guest tests if the source cannot be trusted.
 run_stage source-synchronization '' source-sync.log bash scripts/verify-test-source.sh || finish 1
 run_stage north-source-gate 'GOAD Kingdoms clean-install source gate passed' source-gate.log bash scripts/validate-goad-kingdoms-install-source.sh || finish 1
-run_stage north-source-unit-regression '' north-tests.log bash -c 'python3 -m pytest -q tests/test_north_*.py tests/test_course1_*.py' || finish 1
+run_stage north-source-unit-regression '' north-tests.log "$HOST_PYTEST_PYTHON" -m pytest -q tests/test_north_*.py tests/test_course1_*.py || finish 1
 
 # Runtime ownership guard is required before any course probes can contact guests.
 sudo -v || finish 1
