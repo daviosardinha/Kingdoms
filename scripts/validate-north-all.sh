@@ -166,21 +166,7 @@ run_stage phase03-poisoning-relay-readiness '[READY] 03' phase03.log \
 # the associated attack works. Preserve all raw evidence for human review.
 for spec in rbcd shadow adidns webdav-shortcut; do
   case "$spec" in
-    rbcd) marker='PHASE03_RBCD_TARGET=WS01
-
-# One existing explicit-approval validator covers Rickon's low-privilege
-# foothold and proves all 20 LPE scenarios in their seeded vulnerable state.
-run_stage phase04-full-20-lpe 'PHASE04_LPE_ACTIVE_ACCEPTANCE=PASS' phase04.log \
-  bash scripts/course1-phase04-acceptance.sh "$INSTANCE" --validate --confirm-transient-right || true
-
-# Always reprove isolation/AD trust after all guest-facing checks.
-run_stage north-runtime-after 'NORTH_RUNTIME_ACCEPTANCE=PASS' runtime-after.log \
-  bash ./goad.sh -t validate -l NORTH -p vmware -i "$INSTANCE" || true
-run_stage north-instance-status 'Network Mode' status.log \
-  bash ./goad.sh -t status -l NORTH -p vmware -i "$INSTANCE" || true
-
-if (( failure > 0 )); then finish 1; else finish 0; fi
- ;;
+    rbcd) marker='PHASE03_RBCD_SELF_CAN_WRITE=' ;;
     shadow) marker='PHASE03_SHADOW_PREFLIGHT_COMPLETE=True' ;;
     adidns) marker='PHASE03_ADIDNS_PREFLIGHT_COMPLETE=True' ;;
     webdav-shortcut) marker='PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True' ;;
