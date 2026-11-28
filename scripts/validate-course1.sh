@@ -53,6 +53,25 @@ for binary in git python3 bash ruby; do
   fi
 done
 
+# Source suites contain both unittest and pytest-importing modules. The GOAD
+# Ansible venv is intentionally allowed to omit pytest, so do not import those
+# modules under its Python merely because a parent validator prepended PATH.
+SOURCE_TEST_PYTHON="${KINGDOMS_SOURCE_TEST_PYTHON:-$(command -v python3)}"
+if ! "$SOURCE_TEST_PYTHON" -c 'import pytest' >/dev/null 2>&1; then
+  for candidate in /usr/bin/python3 /usr/local/bin/python3; do
+    if [[ -x "$candidate" ]] && "$candidate" -c 'import pytest' >/dev/null 2>&1; then
+      SOURCE_TEST_PYTHON="$candidate"
+      break
+    fi
+  done
+fi
+if ! "$SOURCE_TEST_PYTHON" -c 'import pytest' >/dev/null 2>&1; then
+  echo '[BLOCKED] Source-test Python requires pytest; do not install pytest into the GOAD Ansible environment' >&2
+  exit 1
+fi
+readonly SOURCE_TEST_PYTHON
+printf '[INFO] Course1 source-test Python: %s\n' "$SOURCE_TEST_PYTHON"
+
 STARTED=$SECONDS
 PASSED=0
 STAGES=0
@@ -184,7 +203,7 @@ stage "Ruby syntax: NORTH and full Kingdoms Vagrantfiles" check_ruby_source
 # Discover all test_*.py files automatically. New tests and new Course 1
 # modules join this gate without another hand-edited unittest command.
 stage "All Kingdoms and Course 1 unit tests" \
-  python3 -m unittest discover -s tests -p 'test_*.py'
+  "$SOURCE_TEST_PYTHON" -m unittest discover -s tests -p 'test_*.py'
 
 stage "NORTH static source and 21-play Ansible manifest" \
   python3 -m goad.course1_source_preflight
