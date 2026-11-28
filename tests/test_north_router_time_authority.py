@@ -97,6 +97,22 @@ def test_forest_root_identity_and_ntp_response_proven_before_modification():
     assert script.index("w32tm.exe /stripchart") < script.index("w32tm.exe /config")
 
 
+def test_root_pdc_source_accepts_only_exact_router_and_client_mode_forms():
+    s = ROOT_PDC_ROLE.read_text()
+    script = yaml.safe_load(s)[0]["ansible.windows.win_powershell"]["script"]
+    # Windows Server can return `10.4.20.1,0x8` from /query /source even
+    # when Last Sync Error is zero and the router NTP peer is healthy.
+    assert "$peer = '10.4.20.1'" in script
+    assert "$peerSpec = '10.4.20.1,0x8'" in script
+    assert "$acceptedSources = @($peer, $peerSpec)" in script
+    assert "$source -in $acceptedSources" in script
+    assert "$source -eq $peer -and" not in script
+    assert "Last Sync Error:" in script
+    # No prefix-only match that could accept an unrelated 10.4.20.10 host.
+    assert "$source -like" not in script
+    assert "$source -match" not in script
+
+
 def test_north_new_windows_guests_use_windows_time():
     s = TEMPLATE.read_text()
     block = s.split("{% if lab_name == 'NORTH' %}", 1)[1].split("{% endif %}", 1)[0]

@@ -128,6 +128,7 @@ class ProviderInstallResumeTests(unittest.TestCase):
             prepare_install=Mock(return_value=True),
             _sync_goad_nomad_inventories=Mock(return_value=True),
             _sync_goad_nomad_vagrantfile_compatibility=Mock(return_value=True),
+            _north_running_vmtools_policy_gate=Mock(return_value=True),
             _bring_up_router=Mock(return_value=True),
             _north_existing_canonical_ready=Mock(side_effect=preflight),
             _north_existing_ws01_orphan_before_vagrant=Mock(return_value=None),

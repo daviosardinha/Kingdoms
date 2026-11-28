@@ -58,13 +58,25 @@ class NorthProviderSyncTests(unittest.TestCase):
                 "GOAD-DC01", "GOAD-DC02", "GOAD-SRV02",
                 "GOAD-WS01", "GOAD-ROUTER",
             ))
+            # Current NORTH migration requires the unique segmented-VMware
+            # anchor and pins manual Tools upgrade before future Vagrant boots.
+            anchor = "        # GOAD_NOMAD segmented labs may request explicit existing VMware vmnets."
+            content += "\n" + anchor + "\n"
             path.write_text(content, encoding="utf-8")
             provider = SimpleNamespace(lab_name="NORTH", path=folder)
             sync = provider_method("_sync_goad_nomad_vagrantfile_compatibility")
             self.assertTrue(sync(provider))
-            self.assertEqual(path.read_text(encoding="utf-8"), content)
-            path.write_text(content + " GOAD-SRV03", encoding="utf-8")
+            migrated = path.read_text(encoding="utf-8")
+            for name in ("GOAD-DC01", "GOAD-DC02", "GOAD-SRV02",
+                         "GOAD-WS01", "GOAD-ROUTER"):
+                self.assertIn(name, migrated)
+            self.assertEqual(migrated.count(anchor), 1)
+            self.assertEqual(migrated.count('v.vmx["tools.upgrade.policy"] = "manual"'), 1)
+            self.assertTrue(sync(provider))
+            self.assertEqual(path.read_text(encoding="utf-8"), migrated)
+            path.write_text(migrated + " GOAD-SRV03", encoding="utf-8")
             self.assertFalse(sync(provider))
+            self.assertEqual(path.read_text(encoding="utf-8"), migrated + " GOAD-SRV03")
 
     def test_original_goad_compatibility_branches_preserved(self):
         source = VMWARE.read_text(encoding="utf-8")

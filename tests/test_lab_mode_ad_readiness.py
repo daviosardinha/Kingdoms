@@ -90,15 +90,33 @@ class LabModeAdReadinessTests(unittest.TestCase):
         for fn in (child, dc, member):
             self.assertIn('local started="${SECONDS}"', fn)
             self.assertIn(
-                "while (( SECONDS - started < AD_READINESS_TIMEOUT_SECONDS )); do",
-                fn,
-            )
-            self.assertIn("remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))", fn)
-            self.assertIn(
                 '(( remaining < probe_timeout )) && probe_timeout="${remaining}"',
                 fn,
             )
             self.assertNotIn("for attempt in {1..60}", fn)
+
+        # Original child/DC probes remain bounded by 300s.
+        for fn in (child, dc):
+            self.assertIn(
+                "while (( SECONDS - started < AD_READINESS_TIMEOUT_SECONDS )); do",
+                fn,
+            )
+            self.assertIn("remaining=$((AD_READINESS_TIMEOUT_SECONDS - elapsed))", fn)
+
+        # NORTH members alone can extend the deadline for time-only convergence.
+        self.assertIn('local readiness_deadline="${AD_READINESS_TIMEOUT_SECONDS}"', member)
+        self.assertIn(
+            "while (( SECONDS - started < readiness_deadline )); do", member
+        )
+        self.assertIn("remaining=$((readiness_deadline - elapsed))", member)
+        self.assertIn("readonly AD_MEMBER_TIME_CONVERGENCE_TIMEOUT_SECONDS=600", text)
+        reason = member.index('if [[ "${last_state}" == reason=time\\|* ]]; then')
+        extension = member.index('readiness_deadline="${AD_MEMBER_TIME_CONVERGENCE_TIMEOUT_SECONDS}"')
+        self.assertLess(reason, extension)
+        self.assertIn(
+            'if [[ "${GOAD_LAB_PROFILE}" == NORTH ]]; then',
+            member[reason:extension],
+        )
 
         self.assertIn(
             'vagrant_powershell_capture "${vm}" "${probe_script}" "${probe_timeout}"',
@@ -132,8 +150,11 @@ class LabModeAdReadinessTests(unittest.TestCase):
         self.assertNotIn("for attempt in {1..60}", relevant)
         self.assertGreaterEqual(
             relevant.count("AD_READINESS_TIMEOUT_SECONDS - elapsed"),
-            3,
+            2,
         )
+
+        member = relevant[relevant.index("wait_domain_member_ready()"):]
+        self.assertGreaterEqual(member.count("readiness_deadline - elapsed"), 3)
 
     def test_dc_readiness_is_ad_aware_not_merely_winrm(self):
         text = self.text
@@ -231,7 +252,7 @@ class LabModeAdReadinessTests(unittest.TestCase):
             self.assertIn(marker, fn)
 
         self.assertIn(
-            'did not regain domain identity readiness for ${domain} within 300s; ${last_state}',
+            'did not regain domain identity readiness for ${domain} within ${readiness_deadline}s; ${last_state}; time_repair_attempted=${time_repair_attempted}',
             fn,
         )
 
@@ -241,7 +262,7 @@ class LabModeAdReadinessTests(unittest.TestCase):
                   text.index("preflight_domain_health()")]
 
         for token in (
-            "consecutive_time_failures >= 6",
+            "consecutive_time_failures >= time_repair_threshold",
             "time_repair_attempted == 0",
             "w32tm.exe /config /syncfromflags:domhier /update",
             "nltest.exe '/dsgetdc:${domain}' /timeserv /force",
@@ -253,6 +274,10 @@ class LabModeAdReadinessTests(unittest.TestCase):
             "KINGDOMS_MEMBER_TIME_REPAIR_FAILED",
         ):
             self.assertIn(token, fn)
+
+        self.assertIn("local time_repair_threshold=6", fn)
+        self.assertIn('[[ "${GOAD_LAB_PROFILE}" == NORTH ]] && time_repair_threshold=18', fn)
+        self.assertIn("time_repair_attempted=1", fn)
 
         # Normal lifecycle may recover W32Time only. Directory trust repair
         # remains an explicit maintenance/provisioning operation.

@@ -15,6 +15,20 @@ if [[ "${1:-}" == "--north" ]]; then
     exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
       python3 -m goad.course1_host_network_apply diagnose "$@"
   fi
+  if [[ "${1:-}" == "handoff-release-plan" ]]; then
+    shift
+    # Read-only manifest of THIS preserved NORTH instance. No shutdown.
+    [[ ${EUID} -eq 0 ]] || { echo "[BLOCKED] sudo required for NORTH owner inspection" >&2; exit 1; }
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_offline_release "$@"
+  fi
+  if [[ "${1:-}" == "handoff-release" ]]; then
+    shift
+    # Explicit, checksum-bound OFFLINE host mutation. Never invoked by install.
+    [[ ${EUID} -eq 0 ]] || { echo "[BLOCKED] sudo required for NORTH offline release" >&2; exit 1; }
+    exec env PYTHONPATH="${KINGDOMS_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+      python3 -m goad.course1_offline_release --apply "$@"
+  fi
   if [[ "${1:-}" == "handoff-review" ]]; then
     shift
     # Pure review. No VMware, systemd, VMX, ownership or file mutations.

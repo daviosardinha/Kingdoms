@@ -12,7 +12,17 @@ pass() { printf '[PASS] %s\n' "$*"; }
 [[ "${GOAD_LAB_PROFILE:-}" == "NORTH" ]] || fail "GOAD_LAB_PROFILE must be NORTH"
 [[ "$PROVIDER" == /* && -d "$PROVIDER" && ! -L "$PROVIDER" ]] ||
   fail "Missing exact absolute NORTH provider directory"
-[[ -d "$ROOT/.git" ]] || fail "Not in the tracked KINGDOMS clone"
+# A normal checkout has a .git directory; an independently validated Git
+# worktree has a .git file. Verify Git's authoritative root and tracked source
+# rather than rejecting the worktree layout.
+[[ -d "$ROOT/.git" || -f "$ROOT/.git" ]] ||
+  fail "Not in a tracked KINGDOMS checkout or worktree"
+git_root="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" ||
+  fail "KINGDOMS Git source root could not be verified"
+[[ "$git_root" == "$ROOT" ]] ||
+  fail "Validator is not executing from the exact KINGDOMS checkout root"
+git -C "$ROOT" ls-files --error-unmatch -- scripts/validate-north-runtime.sh >/dev/null 2>&1 ||
+  fail "NORTH runtime validator is not tracked by Git"
 
 for cmd in python3 vmrun ip sudo ssh; do
   command -v "$cmd" >/dev/null 2>&1 || fail "Missing dependency $cmd"

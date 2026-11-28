@@ -32,6 +32,7 @@ class DirectBootstrapIntegrationTests(unittest.TestCase):
         provider.prepare_install = Mock(return_value=True)
         provider._sync_goad_nomad_inventories = Mock(return_value=True)
         provider._sync_goad_nomad_vagrantfile_compatibility = Mock(return_value=True)
+        provider._north_running_vmtools_policy_gate = Mock(return_value=True)
         provider._bring_up_router = Mock(return_value=True)
         provider.command = Mock()
         provider.command.run_vagrant.return_value = first_up

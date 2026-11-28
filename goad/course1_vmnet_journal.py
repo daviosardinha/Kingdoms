@@ -108,6 +108,33 @@ def inspect_vmnet_journals(backup_root: Path) -> tuple[dict, ...]:
     return tuple(results)
 
 
+def inspect_north_release_journals(backup_root: Path) -> tuple[dict, ...]:
+    """Fail closed on a stranded offline release without modifying old journals."""
+    root = Path(backup_root)
+    results = []
+    for folder in sorted(root.glob("release-*")):
+        if not folder.is_dir() or folder.is_symlink() or folder.stat().st_mode & 0o077:
+            raise VmnetJournalError("Unsafe NORTH release backup folder")
+        path = folder / "release.json"
+        if path.is_symlink() or not path.is_file():
+            raise VmnetJournalError("NORTH release recovery folder lacks a journal")
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError) as exc:
+            raise VmnetJournalError("Malformed NORTH release journal") from exc
+        allowed = {"PREPARED", "WRITTEN", "VERIFYING", "MANUAL_RECONCILIATION",
+                   "COMMITTED_RELEASE", "ROLLED_BACK"}
+        if (not isinstance(state, dict)
+                or state.get("schema") != "kingdoms.north.offline-release.v1"
+                or state.get("state") not in allowed
+                or state.get("backup_folder") != str(folder)
+                or not isinstance(state.get("provider"), str)
+                or not isinstance(state.get("reviewed_sha256"), str)):
+            raise VmnetJournalError("Invalid NORTH release journal identity/state")
+        results.append(state)
+    return tuple(results)
+
+
 def require_reconciled(backup_root: Path) -> None:
     unresolved = [item for item in inspect_vmnet_journals(backup_root)
                   if item["state"] in ACTIVE]
@@ -115,4 +142,12 @@ def require_reconciled(backup_root: Path) -> None:
         raise VmnetJournalError(
             f"{len(unresolved)} interrupted/active vmnet transaction(s); "
             "manual ownership reconciliation required before another install"
+        )
+    releases = inspect_north_release_journals(backup_root)
+    pending = [item for item in releases
+               if item["state"] not in ("COMMITTED_RELEASE", "ROLLED_BACK")]
+    if pending:
+        raise VmnetJournalError(
+            f"{len(pending)} unfinished NORTH release(s); "
+            "manual reconciliation required before another install"
         )
