@@ -24,6 +24,8 @@ def test_instance_and_mode_are_exact_north_only():
         "ad/NORTH/data/inventory",
         "GOAD_LAB_PROFILE=NORTH",
         "KINGDOMS_PHASE02_PROFILE=NORTH",
+        'PHASE02_RDP_BOT_MODE="$RDP_MODE"',
+        "RDP_BOT_CONTRACT=",
         "KINGDOMS_PHASE03_PROFILE=NORTH",
         '"$(cat "$MODE_FILE")" == exercise',
         "flock -n 9",
@@ -61,6 +63,21 @@ def test_validate_all_existing_contracts_and_two_sided_runtime():
     assert code.index("north-runtime-before") < code.index("phase01-anonymous-and-http")
     assert code.index("phase04-full-20-lpe") < code.index("north-runtime-after")
 
+
+
+def test_rdp_mode_is_explicit_and_defaults_to_actual_legacy_install():
+    code = SCRIPT.read_text()
+    assert "RDP_MODE=legacy" in code
+    assert "--rdp-mode legacy|headless" in code
+    assert '"$3" == --rdp-mode' in code
+    assert '"$4" == legacy || "$4" == headless' in code
+    assert 'PHASE02_RDP_BOT_MODE="$RDP_MODE"' in code
+    bad = subprocess.run(
+        ["bash", str(SCRIPT), "34a864-north-vmware",
+         "--confirm-transient-right", "--rdp-mode", "unverified"],
+        capture_output=True, text=True,
+    )
+    assert bad.returncode == 2
 
 def test_active_exploit_and_lifecycle_commands_are_not_in_orchestrator():
     code = SCRIPT.read_text()
