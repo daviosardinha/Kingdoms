@@ -8,12 +8,18 @@ set -Eeuo pipefail
 umask 077
 
 usage() {
-  printf 'Usage: bash scripts/validate-north-all.sh <six-hex>-north-vmware --confirm-transient-right\n' >&2
+  printf 'Usage: bash scripts/validate-north-all.sh <six-hex>-north-vmware --confirm-transient-right [--rdp-mode legacy|headless]\n' >&2
 }
-if [[ $# -ne 2 || ! "${1:-}" =~ ^[a-f0-9]{6}-north-vmware$ || "${2:-}" != --confirm-transient-right ]]; then
+if [[ ( $# -ne 2 && $# -ne 4 ) || ! "${1:-}" =~ ^[a-f0-9]{6}-north-vmware$ || "${2:-}" != --confirm-transient-right ]]; then
   usage
   exit 2
 fi
+RDP_MODE=legacy
+if [[ $# -eq 4 ]]; then
+  [[ "$3" == --rdp-mode && ( "$4" == legacy || "$4" == headless ) ]] || { usage; exit 2; }
+  RDP_MODE="$4"
+fi
+readonly RDP_MODE
 readonly INSTANCE="$1"
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly PROVIDER="$ROOT/workspace/$INSTANCE/provider"
@@ -63,6 +69,7 @@ flock -n 9 || { echo '[BLOCKED] Another NORTH all-in-one acceptance is running' 
 echo '===== NORTH SINGLE-SHOT ACCEPTANCE ====='
 echo "Instance: $INSTANCE"
 echo "Provider: $PROVIDER"
+echo "RDP bot contract: $RDP_MODE (legacy is the installed default; headless requires a separately verified handover)"
 echo "Evidence: $EVIDENCE"
 echo 'No install, destroy, reset, account rejoin, poisoning, relay or credential dumping.'
 echo 'Stored RunAs test temporarily changes then restores SeBatchLogonRight.'
@@ -106,6 +113,7 @@ with open(src, newline='', encoding='utf-8') as stream:
 pass_count = sum(r['status'] == 'PASS' for r in results)
 fail_count = sum(r['status'] == 'FAIL' for r in results)
 report = {
+    'rdp_contract': 'explicitly-selected; see per-stage Phase02 evidence',
     'instance': instance,
     'readiness': 'PASS' if not fail_count and int(rc) == 0 else 'FAIL',
     'pass': pass_count, 'fail': fail_count,
@@ -142,7 +150,7 @@ run_stage north-runtime-before 'NORTH_RUNTIME_ACCEPTANCE=PASS' runtime-before.lo
 run_stage phase01-anonymous-and-http 'PASS: ' phase01.log \
   python3 scripts/validate-phase01.py --out "$EVIDENCE/phase01" || true
 run_stage phase02-rdp-smb-mssql-http '[READY] 02' phase02.log \
-  env KINGDOMS_PHASE02_PROFILE=NORTH PHASE02_RDP_BOT_MODE=headless \
+  env KINGDOMS_PHASE02_PROFILE=NORTH PHASE02_RDP_BOT_MODE="$RDP_MODE" \
     EVIDENCE="$EVIDENCE/phase02" bash scripts/validate-phase02-readiness.sh || true
 run_stage phase03-poisoning-relay-readiness '[READY] 03' phase03.log \
   env KINGDOMS_PHASE03_PROFILE=NORTH EVIDENCE="$EVIDENCE/phase03" \
