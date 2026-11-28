@@ -37,6 +37,9 @@ def test_validate_all_existing_contracts_and_two_sided_runtime():
     code = SCRIPT.read_text()
     for marker in (
         "verify-test-source.sh",
+        "KINGDOMS_SOURCE_TEST_PYTHON",
+        "north-course1-full-source",
+        "validate-course1.sh --skip-host",
         "validate-goad-kingdoms-install-source.sh",
         "tests/test_north_*.py tests/test_course1_*.py",
         "validate-phase01.py",
@@ -60,6 +63,7 @@ def test_validate_all_existing_contracts_and_two_sided_runtime():
         "PHASE04_RICKON_TO_SYSTEM_EXPLOIT=NOT_TESTED",
     ):
         assert marker in code
+    assert code.index("north-course1-full-source") < code.index("north-runtime-before")
     assert code.index("north-runtime-before") < code.index("phase01-anonymous-and-http")
     assert code.index("phase04-full-20-lpe") < code.index("north-runtime-after")
     assert code.count("for spec in rbcd shadow adidns webdav-shortcut; do") == 1
