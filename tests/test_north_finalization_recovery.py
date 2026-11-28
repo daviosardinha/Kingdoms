@@ -1,5 +1,6 @@
 """Source-only receipt qualification for the exact NORTH finalization failure."""
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -58,7 +59,10 @@ class NorthFinalizationRecoveryTests(unittest.TestCase):
 
     def test_expected_playbooks_match_north_manifest(self):
         text = (ROOT / "playbooks.yml").read_text(encoding="utf-8")
-        block = text.split("\nNORTH:\n", 1)[1].split("\ndefault:\n", 1)[0]
+        # Parse only the NORTH section. PURPLE is a separate lab section
+        # inserted before default: and must never count as a NORTH playbook.
+        north_section = text.split("\nNORTH:\n", 1)[1]
+        block = re.split(r"(?m)^[A-Za-z_][\w-]*:\\s*$", north_section, maxsplit=1)[0]
         actual = tuple(
             line.strip()[2:].strip() for line in block.splitlines()
             if line.strip().startswith("- ")
