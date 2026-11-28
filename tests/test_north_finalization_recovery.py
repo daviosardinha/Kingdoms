@@ -62,7 +62,7 @@ class NorthFinalizationRecoveryTests(unittest.TestCase):
         # Parse only the NORTH section. PURPLE is a separate lab section
         # inserted before default: and must never count as a NORTH playbook.
         north_section = text.split("\nNORTH:\n", 1)[1]
-        block = re.split(r"(?m)^[A-Za-z_][\w-]*:\\s*$", north_section, maxsplit=1)[0]
+        block = re.split(r"(?m)^[A-Za-z_][\w-]*:\s*$", north_section, maxsplit=1)[0]
         actual = tuple(
             line.strip()[2:].strip() for line in block.splitlines()
             if line.strip().startswith("- ")
