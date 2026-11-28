@@ -114,6 +114,7 @@ pass_count = sum(r['status'] == 'PASS' for r in results)
 fail_count = sum(r['status'] == 'FAIL' for r in results)
 report = {
     'rdp_contract': rdp_mode,
+    'headless_rdp_handover': 'NOT_TESTED' if rdp_mode == 'legacy' else 'PROBED_BY_PHASE02',
     'instance': instance,
     'readiness': 'PASS' if not fail_count and int(rc) == 0 else 'FAIL',
     'pass': pass_count, 'fail': fail_count,
@@ -129,6 +130,7 @@ for item in results:
     print(f"[{item['status']}] {item['stage']}: {item['log']}")
 print(f'PASS={pass_count} FAIL={fail_count}')
 print(f'RDP_BOT_CONTRACT={rdp_mode}')
+print('HEADLESS_RDP_HANDOVER=' + ('NOT_TESTED' if rdp_mode == 'legacy' else 'PROBED_BY_PHASE02'))
 print('PHASE03_FIXTURE_EXPLOITABILITY=NOT_PROVEN_BY_INSPECTION')
 print('PHASE03_ACTIVE_ATTACK_CHAINS=NOT_TESTED')
 print('PHASE04_RICKON_TO_SYSTEM_EXPLOIT=NOT_TESTED')
