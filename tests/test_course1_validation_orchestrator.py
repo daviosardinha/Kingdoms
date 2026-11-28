@@ -32,8 +32,10 @@ class Course1UnifiedValidationTests(unittest.TestCase):
         self.assertIn("READ-ONLY", completed.stdout.upper())
 
     def test_dynamically_discovers_every_python_unit_test(self):
-        self.assertIn("python3 -m unittest discover -s tests -p 'test_*.py'",
-                      self.source)
+        self.assertIn('"$SOURCE_TEST_PYTHON" -m unittest discover -s tests -p \'test_*.py\'', self.source)
+        self.assertIn("if ! \"$SOURCE_TEST_PYTHON\" -c 'import pytest'", self.source)
+        self.assertIn("KINGDOMS_SOURCE_TEST_PYTHON", self.source)
+        self.assertNotIn("  python3 -m unittest discover -s tests -p 'test_*.py'", self.source)
         self.assertIn('Path("tests").glob("test_*.py")', self.source)
 
     def test_preserves_kingdoms_original_source_validation(self):
