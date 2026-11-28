@@ -52,7 +52,7 @@ def test_validate_all_existing_contracts_and_two_sided_runtime():
         "summary.json",
         "NORTH_ALL_READINESS=",
         "PHASE03_FIXTURE_EXPLOITABILITY=NOT_PROVEN_BY_INSPECTION",
-        "PHASE03_RBCD_TARGET=WS01$",
+        "PHASE03_RBCD_SELF_CAN_WRITE=",
         "PHASE03_SHADOW_PREFLIGHT_COMPLETE=True",
         "PHASE03_ADIDNS_PREFLIGHT_COMPLETE=True",
         "PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True",
@@ -62,6 +62,9 @@ def test_validate_all_existing_contracts_and_two_sided_runtime():
         assert marker in code
     assert code.index("north-runtime-before") < code.index("phase01-anonymous-and-http")
     assert code.index("phase04-full-20-lpe") < code.index("north-runtime-after")
+    assert code.count("for spec in rbcd shadow adidns webdav-shortcut; do") == 1
+    assert code.count("run_stage phase04-full-20-lpe") == 1
+    assert code.count("run_stage north-runtime-after") == 1
 
 
 
