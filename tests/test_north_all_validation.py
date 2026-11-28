@@ -69,3 +69,15 @@ def test_active_exploit_and_lifecycle_commands_are_not_in_orchestrator():
         assert forbidden not in code
     assert "--confirm-transient-right" in code
     assert "failure=$((failure + 1))" in code
+
+
+def test_host_python_is_pinned_before_ansible_venv_path():
+    code = SCRIPT.read_text()
+    capture = 'HOST_PYTEST_PYTHON="$(command -v python3)"'
+    path_mutation = 'export PATH="$HOME/.goad/.venv/bin:$PATH"'
+    use = '"$HOST_PYTEST_PYTHON" -m pytest -q tests/test_north_*.py tests/test_course1_*.py'
+    assert capture in code
+    assert path_mutation in code
+    assert use in code
+    assert code.index(capture) < code.index(path_mutation) < code.index(use)
+    assert "bash -c 'python3 -m pytest" not in code
