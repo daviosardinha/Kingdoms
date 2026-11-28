@@ -12,7 +12,7 @@ def test_script_parses_without_execution():
 
 def test_probe_is_only_for_exact_north_ws01_and_restores_runtime_nat():
     s = SCRIPT.read_text()
-    assert "workspace/\${instance}/provider" in s
+    assert "workspace/${instance}/provider" in s
     assert "GOAD-WS01/vmware_desktop/id" in s
     assert "vmrun -T ws list | grep -Fxq" in s
     assert "ethernet0\\.startConnected" in s
