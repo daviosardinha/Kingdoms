@@ -20,7 +20,7 @@ def test_probe_is_only_for_exact_north_ws01_and_restores_runtime_nat():
     assert "trap cleanup EXIT" in s
     assert "trap 'exit 130' INT" in s
     assert "trap 'exit 143' TERM" in s
-    assert s.count("connectNamedDevice") == 1
+    assert s.count("vmrun -T ws connectNamedDevice") == 1
     assert s.count("disconnectNamedDevice") >= 3
     assert "NORTH_WS01_ISOLATED_BEFORE" in s
     assert "NORTH_WS01_NAT_CONNECTED" in s
