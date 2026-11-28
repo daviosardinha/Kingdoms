@@ -102,18 +102,18 @@ run_stage() {
 }
 finish() {
   local exitcode="$1"
-  python3 - "$RESULTS" "$EVIDENCE" "$INSTANCE" "$exitcode" <<'PY'
+  python3 - "$RESULTS" "$EVIDENCE" "$INSTANCE" "$exitcode" "$RDP_MODE" <<'PY'
 import csv
 import json
 import sys
 from pathlib import Path
-src, path, instance, rc = sys.argv[1:]
+src, path, instance, rc, rdp_mode = sys.argv[1:]
 with open(src, newline='', encoding='utf-8') as stream:
     results = list(csv.DictReader(stream, delimiter='\t'))
 pass_count = sum(r['status'] == 'PASS' for r in results)
 fail_count = sum(r['status'] == 'FAIL' for r in results)
 report = {
-    'rdp_contract': 'explicitly-selected; see per-stage Phase02 evidence',
+    'rdp_contract': rdp_mode,
     'instance': instance,
     'readiness': 'PASS' if not fail_count and int(rc) == 0 else 'FAIL',
     'pass': pass_count, 'fail': fail_count,
@@ -128,6 +128,7 @@ print('\n===== NORTH VALIDATION SUMMARY =====')
 for item in results:
     print(f"[{item['status']}] {item['stage']}: {item['log']}")
 print(f'PASS={pass_count} FAIL={fail_count}')
+print(f'RDP_BOT_CONTRACT={rdp_mode}')
 print('PHASE03_FIXTURE_EXPLOITABILITY=NOT_PROVEN_BY_INSPECTION')
 print('PHASE03_ACTIVE_ATTACK_CHAINS=NOT_TESTED')
 print('PHASE04_RICKON_TO_SYSTEM_EXPLOIT=NOT_TESTED')
