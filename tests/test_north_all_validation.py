@@ -49,6 +49,11 @@ def test_validate_all_existing_contracts_and_two_sided_runtime():
         "north-runtime-after",
         "summary.json",
         "NORTH_ALL_READINESS=",
+        "PHASE03_FIXTURE_EXPLOITABILITY=NOT_PROVEN_BY_INSPECTION",
+        "PHASE03_RBCD_TARGET=WS01$",
+        "PHASE03_SHADOW_PREFLIGHT_COMPLETE=True",
+        "PHASE03_ADIDNS_PREFLIGHT_COMPLETE=True",
+        "PHASE03_WEBDAV_PREFLIGHT_COMPLETE=True",
         "PHASE03_ACTIVE_ATTACK_CHAINS=NOT_TESTED",
         "PHASE04_RICKON_TO_SYSTEM_EXPLOIT=NOT_TESTED",
     ):
